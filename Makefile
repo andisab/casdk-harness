@@ -173,11 +173,11 @@ test-unit: ## Run unit tests only
 
 .PHONY: test-integration
 test-integration: ## Run integration tests
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/ -v --docker
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/ -v -m integration
 
 .PHONY: test-e2e
 test-e2e: ## Run end-to-end tests
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/e2e/ -v --slow
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/e2e/ -v -m e2e
 
 .PHONY: test-smoke
 test-smoke: ## Run smoke tests

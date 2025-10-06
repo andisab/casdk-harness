@@ -184,3 +184,57 @@ class MetricsCollector:
             bytes_used: Memory usage in bytes
         """
         memory_usage_bytes.labels(component=component).set(bytes_used)
+
+    @staticmethod
+    def record_tokens(agent: str, model: str, usage: dict[str, Any]) -> None:
+        """
+        Record token usage and calculate API costs from usage dictionary.
+
+        Handles usage data from Claude Agent SDK and tracks both token counts
+        and associated costs based on model pricing.
+
+        Args:
+            agent: Agent name
+            model: Model name (e.g., 'claude-sonnet-4-5-20250929')
+            usage: Usage dictionary with token counts:
+                - input_tokens: Number of input tokens
+                - output_tokens: Number of output tokens
+                - cache_read_input_tokens: Number of cached input tokens (optional)
+
+        Pricing (as of October 2025):
+            - Sonnet 4.5: $0.003/1K input, $0.015/1K output, $0.0003/1K cached
+        """
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        cached_tokens = usage.get("cache_read_input_tokens", 0)
+
+        # Record individual token types
+        if input_tokens > 0:
+            MetricsCollector.record_token_usage(model, "input", input_tokens)
+
+        if output_tokens > 0:
+            MetricsCollector.record_token_usage(model, "output", output_tokens)
+
+        if cached_tokens > 0:
+            MetricsCollector.record_token_usage(model, "cached", cached_tokens)
+
+        # Calculate cost based on Sonnet 4.5 pricing
+        # TODO: Add pricing for other models when needed
+        cost = (
+            (input_tokens / 1000.0) * 0.003
+            + (output_tokens / 1000.0) * 0.015
+            + (cached_tokens / 1000.0) * 0.0003
+        )
+
+        if cost > 0:
+            MetricsCollector.record_api_cost(model, cost)
+
+            logger.debug(
+                "Recorded token usage and cost",
+                agent=agent,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_tokens=cached_tokens,
+                cost_dollars=cost,
+            )

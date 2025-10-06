@@ -6,11 +6,13 @@ ARG PYTHON_VERSION=3.12
 # =============================================================================
 FROM python:${PYTHON_VERSION}-slim AS base
 
-# Install system dependencies
+# Install system dependencies including Node.js for MCP servers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,8 +25,9 @@ FROM base AS deps
 # Install uv for faster dependency management
 RUN pip install --no-cache-dir uv
 
-# Copy only dependency files for better caching
+# Copy dependency files and source code
 COPY pyproject.toml ./
+COPY src/ ./src/
 
 # Install dependencies with cache mount (OrbStack optimized)
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -39,15 +42,20 @@ FROM deps AS development
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -e ".[dev]"
 
-# Install Claude Code CLI
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install Claude Code CLI and make it accessible to all users
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    cp /root/.local/bin/claude /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude
 
-# Create non-root user for development
-RUN groupadd -r claude && useradd -r -g claude claude
+# Create non-root user for development with home directory
+RUN groupadd -r claude && \
+    useradd -r -g claude -m -d /home/claude claude && \
+    chown -R claude:claude /home/claude
 
-# Copy source code
+# Copy source code and tests
 COPY src/ ./src/
 COPY config/ ./config/
+COPY tests/ ./tests/
 
 # Set ownership
 RUN chown -R claude:claude /app

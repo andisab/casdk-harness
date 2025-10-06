@@ -6,13 +6,12 @@ authors = [
     {name = "Andis A. Blukis", email = "andis.blukis@gmail.com"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.12"
 keywords = ["claude", "agent", "ai", "automation", "development"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -57,6 +56,9 @@ dependencies = [
 
     # Utilities
     "python-dateutil>=2.8.2",
+
+    # Docker (for Docker MCP server)
+    "docker>=7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -107,7 +109,7 @@ requires = ["setuptools>=68.0.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["harness", "mcp", "utils"]
+packages = ["harness", "mcp_servers", "utils"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
@@ -131,10 +133,11 @@ python_functions = ["test_*"]
 asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
+    "integration: marks tests as integration tests with real API calls",
     "e2e: marks tests as end-to-end tests",
     "smoke: marks tests as smoke tests",
     "docker: marks tests that require Docker",
+    "requires_api_key: marks tests that require ANTHROPIC_API_KEY",
 ]
 timeout = 300
 

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # =============================================================================
 # Development Override Configuration
 # =============================================================================
@@ -16,6 +14,7 @@ services:
     # Mount source code for hot reload
     volumes:
       - ./src:/app/src:cached
+      - ./tests:/app/tests:cached
       - ./workspace:/workspace:cached
       - ./memory:/memory:cached
       - ./logs/main:/logs:cached
@@ -30,6 +29,9 @@ services:
         - action: sync
           path: ./src
           target: /app/src
+        - action: sync
+          path: ./tests
+          target: /app/tests
         - action: rebuild
           path: ./pyproject.toml
         - action: sync+restart
@@ -43,11 +45,15 @@ services:
       - DEBUG=${DEBUG:-true}
     volumes:
       - ./src:/app/src:cached
+      - ./tests:/app/tests:cached
     develop:
       watch:
         - action: sync
           path: ./src
           target: /app/src
+        - action: sync
+          path: ./tests
+          target: /app/tests
 
   tester-agent:
     build:
@@ -56,11 +62,15 @@ services:
       - DEBUG=${DEBUG:-true}
     volumes:
       - ./src:/app/src:cached
+      - ./tests:/app/tests:cached
     develop:
       watch:
         - action: sync
           path: ./src
           target: /app/src
+        - action: sync
+          path: ./tests
+          target: /app/tests
 
   # Development database with exposed port
   postgres:

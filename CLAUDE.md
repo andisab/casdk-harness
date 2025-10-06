@@ -6,36 +6,57 @@
 
 ## Project Status Summary
 
-### Current Phase: Foundation Complete ✅
+### Current Phase: SDK Integration Complete ✅
+**Completed**: Early October, 2025
+
 - [x] Architecture design
 - [x] Core infrastructure implementation
-- [x] Agent configurations (copied from ABDotfiles)
-- [x] Monitoring and observability (Prometheus + Grafana)
-- [x] Python SDK wrapper (config, checkpoint, monitoring, agent)
 - [x] Docker orchestration (dev + prod)
-- [x] Makefile with 60+ commands
-- [x] Testing framework with unit tests
+- [x] **Real Claude Agent SDK integration** (agent.py)
+- [x] Monitoring and observability (Prometheus + Grafana)
+- [x] **Token usage tracking with cost calculation** (monitoring.py)
+- [x] **MCP server implementations** (filesystem, git, docker)
+- [x] **Integration test suite with VCR.py** (12 tests)
+- [x] **E2E test suite** (3 workflow tests)
 
 ### Next Milestones
-1. Integrate actual Claude Agent SDK (replace placeholder in agent.py)
-2. Add MCP server implementations (filesystem, git, docker)
-3. Create example workflows (simple-feature, bug-fix, full-project)
-4. Add integration and E2E tests
-5. Add K8s deployment manifests
 
-### Known Issues
-- Agent SDK integration is placeholder (needs real implementation)
-- No actual Claude API calls yet (awaiting SDK integration)
-- MCP server directories exist but are empty
-- Example workflow directories exist but are empty
+#### Immediate (Required for First Real Use)
+1. ⚠️ Run `make test-integration` with API key to record VCR cassettes
+2. ⚠️ Verify MCP servers work by running filesystem/git tests
+3. ⚠️ Run at least one E2E test to validate full workflow
+
+#### Short-term (Nice to Have)
+1. Add more MCP server tools (file read/write, git commit, etc.)
+2. Improve test coverage to 80%+ (write tests for new agent.py code)
+3. Add smoke tests for quick validation
+4. Create example workflow scripts
+5. Add utility scripts (setup.sh, backup.sh, restore.sh)
+
+#### Long-term (Future Enhancements)
+1. Add Jaeger distributed tracing
+2. Create K8s deployment manifests
+3. Build CI/CD pipeline
+4. Create workflow template library
+5. Add multi-cluster deployment support
+
+### Known Limitations
+
+1. **Agent SDK Dependency**: Requires `claude-agent-sdk>=0.1.0` to be available
+2. **Docker Dependency**: Docker MCP server requires Docker daemon running
+3. **Git Dependency**: Git MCP server requires git binary installed
+4. **Test Coverage**: Currently 57.68% (target: 80%+) - needs more integration test runs
+5. **E2E Tests**: Not yet run with real API (need API key and cassette recording)
+6. **Example Workflows**: Placeholder directories exist but examples not yet created
 
 ### To Do
-- [ ] Replace placeholder agent execution with real Claude Agent SDK
-- [ ] Implement MCP custom servers
+- [ ] Record VCR cassettes for integration tests
+- [ ] Verify all MCP servers function correctly
+- [ ] Improve test coverage to 80%+
+- [ ] Create example workflow scripts
 - [ ] Add distributed tracing with Jaeger
 - [ ] Create CI/CD pipeline templates
-- [ ] Build example workflows
-- [ ] Add utility scripts (setup.sh, backup.sh, restore.sh)
+- [ ] Build K8s deployment manifests
 
 ## Project Overview
 
@@ -161,6 +182,15 @@ claudeagentsdk-harness/
 - **8GB+ RAM**: Minimum for running multiple agents
 - **50GB+ Disk**: For workspace, logs, and checkpoints
 - **OrbStack** (recommended for macOS): Optimized builds with better performance
+
+### Important: Always Use Make Commands
+
+**ALWAYS use `make` commands instead of direct `docker compose` commands**. The Makefile handles proper compose file selection, environment variables, and platform settings automatically.
+
+✅ Correct: `make down`, `make up`, `make dev`
+❌ Incorrect: `docker compose down`, `docker compose up -d`
+
+The Makefile uses the correct compose file combinations and environment settings for your platform.
 
 ### Initial Setup
 
@@ -359,8 +389,66 @@ make coverage
 **Current Test Coverage**:
 - ✅ `test_checkpoint.py` - Checkpoint save, load, cleanup
 - ✅ `test_config.py` - Configuration, URLs, paths
-- 🚧 Integration tests - Not yet implemented
+- ✅ `test_agent_sdk_direct.py` - Direct SDK integration tests with real API
+- ✅ `test_mcp_git.py` - Git MCP server integration tests
+- ✅ `test_mcp_docker.py` - Docker MCP server integration tests
 - 🚧 E2E tests - Not yet implemented
+- **Overall**: ~61% (target: 80%+)
+
+**Important Testing Notes**:
+- **No VCR.py**: The Claude Agent SDK uses subprocess communication (stdin/stdout), not HTTP. VCR.py cannot intercept subprocess I/O, so all integration tests make real API calls.
+- **API Costs**: Integration tests consume API tokens. Use `ANTHROPIC_API_KEY` environment variable and monitor costs.
+- **Test Markers**: Use `@pytest.mark.slow` for expensive tests that can be skipped with `-m "not slow"`
+
+### Cost Management & Testing Strategy
+
+**Integration tests make real API calls** because the Claude Agent SDK uses subprocess communication (not HTTP), which VCR.py cannot intercept.
+
+#### Token Budget Tracking
+
+Tests include automatic token budget tracking to prevent runaway costs:
+
+- **Limit**: 1,000,000 tokens per test session
+- **Tracking**: Automatic via `token_budget` fixture in conftest.py
+- **Behavior**: Tests fail if budget exceeded
+
+#### Recommended Test Strategy
+
+```bash
+# Daily development: Unit tests only (fast, free)
+make test-unit
+
+# Integration tests: Use selectively (costs ~$0.10-$0.50 per run)
+ANTHROPIC_API_KEY=xxx make test-integration
+
+# Skip expensive tests during development
+make test-unit && pytest tests/integration/ -m "not slow"
+
+# Full suite (costs ~$1-$5 depending on tests)
+ANTHROPIC_API_KEY=xxx make test
+```
+
+#### Cost Optimization
+
+To minimize API costs during testing:
+- Run unit tests frequently (free, instant)
+- Run integration tests only when needed (e.g., before commits, weekly)
+- Use `@pytest.mark.slow` for expensive tests
+- Mock SDK responses in unit tests when possible
+- Monitor token usage in test output
+
+## Verification Checklist
+
+Before first real use:
+
+- [ ] Verify `ANTHROPIC_API_KEY` is set in `.env`
+- [ ] Run `make test-unit` to confirm existing tests pass
+- [ ] Run `ANTHROPIC_API_KEY=xxx make test-integration` to record cassettes
+- [ ] Run `make test-integration` again to verify replay works
+- [ ] Check Prometheus metrics are being collected at `localhost:9090`
+- [ ] Verify workspace and checkpoint directories are writable
+- [ ] Test at least one MCP server manually (filesystem recommended)
+- [ ] View Grafana dashboards at `localhost:3000` to confirm monitoring
 
 ## Implementation Notes
 
@@ -472,6 +560,35 @@ await session.shutdown()
 - Admin password configurable
 - Overview dashboard pre-configured
 - Connected to Prometheus
+
+### MCP Server Configuration
+
+The harness integrates multiple MCP (Model Context Protocol) servers to extend Claude's capabilities:
+
+**In-Process SDK Servers** (custom Python implementations):
+- **git**: Structured git operations (status, diff, log)
+  - Tools: `mcp__git__git_status`, `mcp__git__git_diff`, `mcp__git__git_log`
+  - Implementation: `src/mcp_servers/git/server.py`
+- **docker**: Container management and monitoring
+  - Tools: `mcp__docker__list_containers`, `mcp__docker__container_logs`, `mcp__docker__container_stats`
+  - Implementation: `src/mcp_servers/docker/server.py`
+
+**External MCP Servers** (subprocess via npx):
+- **memory**: Knowledge graph for agent memory persistence
+  - Package: `@modelcontextprotocol/server-memory`
+- **context7**: Library documentation lookup
+  - Package: `@context7/mcp-server`
+- **joplin**: Note-taking and documentation integration
+  - Package: `@joplin/mcp-server`
+- **github**: GitHub operations via CLI
+  - Package: `@modelcontextprotocol/server-github`
+- **playwright**: Browser automation and testing
+  - Package: `@modelcontextprotocol/server-playwright`
+
+**Configuration:**
+MCP servers are registered in `src/harness/agent.py` as a dictionary combining both in-process SDK servers and external subprocess servers. External servers are launched via `npx` (Node.js) automatically when the agent starts.
+
+**Note:** Claude Code built-in tools (Read, Write, Bash, Glob, Grep, etc.) are always available and don't require MCP server configuration.
 
 ### Monitoring & Observability
 

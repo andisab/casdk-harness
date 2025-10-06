@@ -5,11 +5,21 @@ from datetime import datetime
 from typing import Any, AsyncGenerator
 
 import structlog
+from claude_agent_sdk import (
+    CLIConnectionError,
+    CLIJSONDecodeError,
+    CLINotFoundError,
+    ClaudeAgentOptions,
+    ProcessError,
+    query,
+)
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, get_config
 from harness.monitoring import MetricsCollector
+from mcp_servers.docker.server import docker_server
+from mcp_servers.git.server import git_server
 
 logger = structlog.get_logger(__name__)
 
@@ -53,10 +63,44 @@ class AgentSession:
             "current_task": None,
         }
 
+        # Register MCP servers (both in-process SDK and external servers)
+        self.mcp_servers = {
+            # In-process SDK servers (custom Python implementations)
+            "git": git_server,
+            "docker": docker_server,
+            # External MCP servers (subprocess communication via npx)
+            "memory": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-memory"],
+            },
+            "context7": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@context7/mcp-server"],
+            },
+            "joplin": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@joplin/mcp-server"],
+            },
+            "github": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+            },
+            "playwright": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-playwright"],
+            },
+        }
+
         logger.info(
             "Agent session initialized",
             agent=agent_name,
             session_id=self.session_id,
+            mcp_servers=len(self.mcp_servers),
         )
 
     async def start(self) -> None:
@@ -156,16 +200,80 @@ class AgentSession:
         Yields:
             Agent response messages
         """
-        # Placeholder for actual Claude Agent SDK integration
-        # This will be implemented with the actual SDK
-        logger.debug("Executing agent prompt", prompt_length=len(prompt))
+        logger.debug("Executing agent prompt with Claude SDK", prompt_length=len(prompt))
 
-        # Simulate response for now
-        yield {
-            "type": "message",
-            "content": f"[Simulated response to: {prompt[:50]}...]",
-            "timestamp": datetime.now().isoformat(),
-        }
+        # Configure Claude Agent SDK options
+        options = ClaudeAgentOptions(
+            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch"],
+            permission_mode=self.config.claude_permission_mode,
+            max_turns=self.config.claude_max_turns,
+            cwd=str(self.config.workspace_dir),
+            model=self.config.claude_model,
+            mcp_servers=self.mcp_servers,  # Register custom MCP servers
+        )
+
+        try:
+            # Execute with Claude Agent SDK
+            async for message in query(prompt=prompt, options=options):
+                # Track token usage if available
+                if isinstance(message, dict) and "usage" in message:
+                    usage = message["usage"]
+                    self.metrics.record_tokens(
+                        agent=self.agent_name,
+                        model=self.config.claude_model,
+                        usage=usage,
+                    )
+                    logger.debug(
+                        "Token usage recorded",
+                        agent=self.agent_name,
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                        cached_tokens=usage.get("cache_read_input_tokens", 0),
+                    )
+
+                yield message
+
+        except CLINotFoundError as e:
+            logger.error(
+                "Claude CLI not found - ensure Claude Agent SDK is installed",
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+
+        except CLIConnectionError as e:
+            logger.error(
+                "Failed to connect to Claude CLI",
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+
+        except ProcessError as e:
+            logger.error(
+                "Claude CLI process error",
+                exit_code=getattr(e, "exit_code", None),
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+
+        except CLIJSONDecodeError as e:
+            logger.error(
+                "Failed to decode Claude CLI JSON response",
+                raw_output=getattr(e, "raw_output", None),
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+
+        except Exception as e:
+            logger.error(
+                "Unexpected error during agent execution",
+                error=str(e),
+                exc_info=True,
+            )
+            raise
 
     async def _get_state_async(self) -> dict[str, Any]:
         """
