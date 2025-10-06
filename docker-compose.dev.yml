@@ -1,0 +1,73 @@
+version: '3.8'
+
+# =============================================================================
+# Development Override Configuration
+# =============================================================================
+# Use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  main-agent:
+    build:
+      target: development
+    environment:
+      - DEBUG=${DEBUG:-true}
+      - HOT_RELOAD=${HOT_RELOAD:-true}
+      - ENABLE_PROFILING=${ENABLE_PROFILING:-false}
+    # Mount source code for hot reload
+    volumes:
+      - ./src:/app/src:cached
+      - ./workspace:/workspace:cached
+      - ./memory:/memory:cached
+      - ./logs/main:/logs:cached
+    # Enable debugging port
+    ports:
+      - "5678:5678"  # Python debugger
+    # Override command for development
+    command: python -m harness.agent --debug
+    # Watch mode for automatic reload (Docker Compose 2.22+)
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: sync+restart
+          path: ./config
+          target: /app/config
+
+  reviewer-agent:
+    build:
+      target: development
+    environment:
+      - DEBUG=${DEBUG:-true}
+    volumes:
+      - ./src:/app/src:cached
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+
+  tester-agent:
+    build:
+      target: development
+    environment:
+      - DEBUG=${DEBUG:-true}
+    volumes:
+      - ./src:/app/src:cached
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+
+  # Development database with exposed port
+  postgres:
+    ports:
+      - "5432:5432"
+
+  # Development redis with exposed port
+  redis:
+    ports:
+      - "6379:6379"

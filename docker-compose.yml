@@ -1,0 +1,273 @@
+version: '3.8'
+
+# =============================================================================
+# Claude Agent SDK Harness - Base Configuration
+# =============================================================================
+# Use with: docker compose up
+# Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  # ===========================================================================
+  # Main Development Agent
+  # ===========================================================================
+  main-agent:
+    build:
+      context: .
+      dockerfile: agents/main/Dockerfile
+      target: ${BUILD_TARGET:-development}
+      cache_from:
+        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+    image: ${REGISTRY:-claudeagentsdk-harness}/main:${IMAGE_TAG:-latest}
+    container_name: claude-main-agent
+    hostname: main-agent
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
+      - CLAUDE_PERMISSION_MODE=${CLAUDE_PERMISSION_MODE:-acceptEdits}
+      - CLAUDE_MAX_TURNS=${CLAUDE_MAX_TURNS:-1000}
+      - CLAUDE_SESSION_TIMEOUT=${CLAUDE_SESSION_TIMEOUT:-72000}
+      - CLAUDE_CHECKPOINT_INTERVAL=${CLAUDE_CHECKPOINT_INTERVAL:-3600}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-claude_harness}
+      - POSTGRES_USER=${POSTGRES_USER:-claude}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./workspace:/workspace:delegated
+      - ./memory:/memory:delegated
+      - ./logs/main:/logs:delegated
+      - ./config:/app/config:ro
+    ports:
+      - "${MAIN_AGENT_PORT:-8080}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - claude-network
+    deploy:
+      resources:
+        limits:
+          cpus: ${AGENT_CPU_LIMIT:-4}
+          memory: ${AGENT_MEMORY_LIMIT:-8G}
+        reservations:
+          cpus: ${AGENT_CPU_RESERVATION:-2}
+          memory: ${AGENT_MEMORY_RESERVATION:-4G}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: ${HEALTH_CHECK_INTERVAL:-30s}
+      timeout: ${HEALTH_CHECK_TIMEOUT:-3s}
+      retries: ${HEALTH_CHECK_RETRIES:-3}
+      start_period: ${HEALTH_CHECK_START_PERIOD:-10s}
+
+  # ===========================================================================
+  # Code Reviewer Agent
+  # ===========================================================================
+  reviewer-agent:
+    build:
+      context: .
+      dockerfile: agents/main/Dockerfile
+      target: ${BUILD_TARGET:-development}
+      cache_from:
+        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
+    image: ${REGISTRY:-claudeagentsdk-harness}/reviewer:${IMAGE_TAG:-latest}
+    container_name: claude-reviewer-agent
+    hostname: reviewer-agent
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
+      - CLAUDE_PERMISSION_MODE=manual
+      - CLAUDE_MAX_TURNS=50
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDIS_HOST=redis
+    volumes:
+      - ./workspace:/workspace:ro
+      - ./memory:/memory:delegated
+      - ./logs/reviewer:/logs:delegated
+      - ./config:/app/config:ro
+    ports:
+      - "${REVIEWER_AGENT_PORT:-8081}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - claude-network
+    deploy:
+      resources:
+        limits:
+          cpus: ${REVIEWER_CPU_LIMIT:-2}
+          memory: ${REVIEWER_MEMORY_LIMIT:-4G}
+
+  # ===========================================================================
+  # Tester Agent
+  # ===========================================================================
+  tester-agent:
+    build:
+      context: .
+      dockerfile: agents/main/Dockerfile
+      target: ${BUILD_TARGET:-development}
+      cache_from:
+        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
+    image: ${REGISTRY:-claudeagentsdk-harness}/tester:${IMAGE_TAG:-latest}
+    container_name: claude-tester-agent
+    hostname: tester-agent
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
+      - CLAUDE_PERMISSION_MODE=acceptAll
+      - CLAUDE_MAX_TURNS=100
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDIS_HOST=redis
+    volumes:
+      - ./workspace:/workspace:delegated
+      - ./memory:/memory:delegated
+      - ./logs/tester:/logs:delegated
+      - ./config:/app/config:ro
+    ports:
+      - "${TESTER_AGENT_PORT:-8082}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - claude-network
+    deploy:
+      resources:
+        limits:
+          cpus: ${TESTER_CPU_LIMIT:-2}
+          memory: ${TESTER_MEMORY_LIMIT:-4G}
+
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: claude-postgres
+    hostname: postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-claude_harness}
+      - POSTGRES_USER=${POSTGRES_USER:-claude}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_postgres_password}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    networks:
+      - claude-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Redis Cache & Pub/Sub
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: claude-redis
+    hostname: redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    networks:
+      - claude-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ===========================================================================
+  # Prometheus Monitoring
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: claude-prometheus
+    hostname: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+    networks:
+      - claude-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # Grafana Dashboards
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: claude-grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:${GRAFANA_PORT:-3000}
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - ./config/monitoring/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - claude-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  claude-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

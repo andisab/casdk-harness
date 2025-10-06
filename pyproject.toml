@@ -1,0 +1,222 @@
+[project]
+name = "claude-agent-harness"
+version = "0.1.0"
+description = "Production-ready framework for autonomous software development with Claude Agent SDK"
+authors = [
+    {name = "Andis A. Blukis", email = "andis.blukis@gmail.com"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+keywords = ["claude", "agent", "ai", "automation", "development"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # Claude Agent SDK
+    "claude-agent-sdk>=0.1.0",
+    "anthropic>=0.40.0",
+
+    # Async & Core
+    "asyncio>=3.4.3",
+    "aiofiles>=23.2.1",
+    "tenacity>=8.2.3",
+
+    # Data Validation & Serialization
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # HTTP & API
+    "httpx>=0.26.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+
+    # Database & Caching
+    "redis>=5.0.1",
+    "asyncpg>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0.25",
+
+    # Monitoring & Observability
+    "prometheus-client>=0.19.0",
+    "structlog>=24.1.0",
+
+    # Configuration
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0.1",
+
+    # CLI
+    "click>=8.1.7",
+    "rich>=13.7.0",
+
+    # Utilities
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.23.2",
+    "pytest-cov>=4.1.0",
+    "pytest-docker>=2.0.1",
+    "pytest-timeout>=2.2.0",
+    "pytest-xdist>=3.5.0",
+    "httpx>=0.26.0",
+
+    # Linting & Formatting
+    "ruff>=0.1.9",
+    "mypy>=1.8.0",
+    "types-redis>=4.6.0.20240106",
+    "types-pyyaml>=6.0.12.12",
+
+    # Development Tools
+    "ipython>=8.19.0",
+    "ipdb>=0.13.13",
+
+    # Profiling
+    "snakeviz>=2.2.0",
+    "py-spy>=0.3.14",
+]
+
+monitoring = [
+    "opentelemetry-api>=1.22.0",
+    "opentelemetry-sdk>=1.22.0",
+    "opentelemetry-instrumentation-fastapi>=0.43b0",
+    "jaeger-client>=4.8.0",
+]
+
+cloud = [
+    "boto3>=1.34.21",  # AWS
+    "google-cloud-storage>=2.14.0",  # GCP
+]
+
+[project.scripts]
+claude-harness = "harness.cli:main"
+harness-agent = "harness.agent:run"
+harness-monitor = "harness.monitoring:run"
+
+[build-system]
+requires = ["setuptools>=68.0.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["harness", "mcp", "utils"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+harness = ["py.typed"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src/harness",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests",
+    "smoke: marks tests as smoke tests",
+    "docker: marks tests that require Docker",
+]
+timeout = 300
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "**/__pycache__/*",
+    "**/site-packages/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "W191",  # indentation contains tabs
+]
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = ["ARG"]
+
+[tool.ruff.isort]
+known-first-party = ["harness", "mcp", "utils"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+strict_optional = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true

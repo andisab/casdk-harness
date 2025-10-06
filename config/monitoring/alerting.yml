@@ -1,0 +1,99 @@
+# Alert Rules for Claude Agent SDK Harness
+
+groups:
+  - name: agent_alerts
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          rate(agent_requests_total{status="error"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected for {{ $labels.agent }}"
+          description: "Agent {{ $labels.agent }} has error rate above 5% (current: {{ $value }})"
+
+      # Slow response time
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95, rate(agent_duration_seconds_bucket[5m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow response time for {{ $labels.agent }}"
+          description: "95th percentile response time is {{ $value }}s (threshold: 30s)"
+
+      # No active sessions (when expected)
+      - alert: NoActiveSessions
+        expr: |
+          agent_active_sessions == 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "No active sessions for {{ $labels.agent }}"
+          description: "Agent {{ $labels.agent }} has no active sessions for 15 minutes"
+
+  - name: resource_alerts
+    interval: 30s
+    rules:
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          memory_usage_bytes{component=~".*"} > 7000000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage for {{ $labels.component }}"
+          description: "Memory usage is {{ $value | humanize }}B (threshold: 7GB)"
+
+      # Large checkpoint files
+      - alert: LargeCheckpointSize
+        expr: |
+          checkpoint_size_bytes > 1000000000
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Checkpoint size is large"
+          description: "Total checkpoint size is {{ $value | humanize }}B (threshold: 1GB)"
+
+      # Disk space low (workspace)
+      - alert: WorkspaceFilesHigh
+        expr: |
+          workspace_files_total > 10000
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "High file count in workspace"
+          description: "Workspace contains {{ $value }} files (threshold: 10,000)"
+
+  - name: cost_alerts
+    interval: 1h
+    rules:
+      # High API costs
+      - alert: HighAPICost
+        expr: |
+          rate(api_cost_dollars_total[1h]) > 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API costs detected"
+          description: "API cost rate is ${{ $value }}/hour (threshold: $10/hour)"
+
+      # High token usage
+      - alert: HighTokenUsage
+        expr: |
+          rate(api_tokens_used_total[1h]) > 1000000
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "High token usage for {{ $labels.model }}"
+          description: "Using {{ $value }} tokens/hour (threshold: 1M tokens/hour)"

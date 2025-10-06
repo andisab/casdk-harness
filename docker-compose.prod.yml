@@ -1,0 +1,129 @@
+version: '3.8'
+
+# =============================================================================
+# Production Override Configuration
+# =============================================================================
+# Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+
+services:
+  main-agent:
+    build:
+      target: production
+      cache_to:
+        - type=registry,ref=${REGISTRY}/main:cache,mode=max,compression=zstd
+    environment:
+      - DEBUG=false
+      - HOT_RELOAD=false
+      - ENABLE_PROFILING=false
+    # Production volumes (no source code mount)
+    volumes:
+      - ./workspace:/workspace
+      - ./memory:/memory
+      - ./logs/main:/logs
+      - ./config:/app/config:ro
+    # Remove debug port
+    ports:
+      - "8080:8080"
+    # Production restart policy
+    restart: always
+    # Production resource limits (stricter)
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  reviewer-agent:
+    build:
+      target: production
+    environment:
+      - DEBUG=false
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  tester-agent:
+    build:
+      target: production
+    environment:
+      - DEBUG=false
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Production database with connection pooling
+  postgres:
+    # Don't expose port in production
+    ports: []
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+  # Production redis
+  redis:
+    # Don't expose port in production
+    ports: []
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+
+  # Production Prometheus with persistence
+  prometheus:
+    volumes:
+      - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/monitoring/alerting.yml:/etc/prometheus/alerting.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=90d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Production Grafana
+  grafana:
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_LOG_LEVEL=warn
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G

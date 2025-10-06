@@ -1,0 +1,53 @@
+# Prometheus Configuration for Claude Agent SDK Harness
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'claude-harness'
+    environment: 'development'
+
+# Scrape configurations
+scrape_configs:
+  # Main Agent
+  - job_name: 'main-agent'
+    static_configs:
+      - targets: ['main-agent:9090']
+        labels:
+          agent: 'main'
+          role: 'development'
+
+  # Reviewer Agent
+  - job_name: 'reviewer-agent'
+    static_configs:
+      - targets: ['reviewer-agent:9090']
+        labels:
+          agent: 'reviewer'
+          role: 'review'
+
+  # Tester Agent
+  - job_name: 'tester-agent'
+    static_configs:
+      - targets: ['tester-agent:9090']
+        labels:
+          agent: 'tester'
+          role: 'testing'
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:9187']
+        labels:
+          service: 'database'
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'cache'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
