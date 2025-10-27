@@ -1,0 +1,39 @@
+{
+  "outputStyle": "default",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/log_agent_actions.py",
+            "description": "Log all agent tool calls to structured log files"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Agent notification triggered'",
+            "description": "Simple notification handler (replace with sound if desired)"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Read(/Users/andisblukis/Projects/claudeagentsdk-harness/**)",
+      "Write(/Users/andisblukis/Projects/claudeagentsdk-harness/workspace/**)",
+      "Write(/Users/andisblukis/Projects/claudeagentsdk-harness/logs/**)",
+      "Bash(make *)",
+      "Bash(docker *)",
+      "Bash(pytest *)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

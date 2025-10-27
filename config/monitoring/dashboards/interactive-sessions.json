@@ -1,0 +1,264 @@
+{
+  "title": "Interactive Sessions",
+    "tags": ["claude", "interactive", "sessions"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "5s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Interactive Sessions",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "agent_active_sessions{agent=\"main\"}",
+            "legendFormat": "Active Sessions"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total User Prompts",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(interactive_session_prompts_total{agent=\"main\"})",
+            "legendFormat": "Total Prompts"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Average Response Time (seconds)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(agent_duration_seconds_sum{agent=\"main\"}[5m]) / rate(agent_duration_seconds_count{agent=\"main\"}[5m])",
+            "legendFormat": "Avg Response Time"
+          }
+        ],
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Cache Hit Ratio",
+        "type": "gauge",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "expr": "interactive_cache_hit_ratio{agent=\"main\"}",
+            "legendFormat": "Cache Hit Ratio"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "value": 0, "color": "red" },
+                { "value": 0.3, "color": "orange" },
+                { "value": 0.6, "color": "green" }
+              ]
+            },
+            "unit": "percentunit"
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Session Cost Over Time",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "rate(api_cost_dollars_total[5m]) * 3600",
+            "legendFormat": "{{model}} ($/hour)"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "currencyUSD",
+            "label": "Cost per Hour"
+          },
+          {
+            "format": "short"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true
+        }
+      },
+      {
+        "id": 6,
+        "title": "Token Usage Breakdown",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "rate(api_tokens_used_total{type=\"input\"}[5m]) * 60",
+            "legendFormat": "Input Tokens/min"
+          },
+          {
+            "expr": "rate(api_tokens_used_total{type=\"output\"}[5m]) * 60",
+            "legendFormat": "Output Tokens/min"
+          },
+          {
+            "expr": "rate(api_tokens_used_total{type=\"cached\"}[5m]) * 60",
+            "legendFormat": "Cached Tokens/min"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Tokens per Minute"
+          },
+          {
+            "format": "short"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true
+        }
+      },
+      {
+        "id": 7,
+        "title": "Tool Usage Heat Map",
+        "type": "bargauge",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "sum by (tool_name) (interactive_tool_calls_total{agent=\"main\"})",
+            "legendFormat": "{{tool_name}}"
+          }
+        ],
+        "options": {
+          "orientation": "horizontal",
+          "displayMode": "gradient"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Message Type Distribution",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+        "targets": [
+          {
+            "expr": "sum by (message_type) (interactive_message_types_total{agent=\"main\"})",
+            "legendFormat": "{{message_type}}"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "calcs": ["lastNotNull"]
+          },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 9,
+        "title": "Session Duration Distribution",
+        "type": "heatmap",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "sum(rate(interactive_session_duration_seconds_bucket[5m])) by (le)",
+            "legendFormat": "{{le}}",
+            "format": "heatmap"
+          }
+        ],
+        "yAxis": {
+          "format": "s"
+        },
+        "dataFormat": "tsbuckets"
+      },
+      {
+        "id": 10,
+        "title": "Cache Performance Over Time",
+        "type": "graph",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+        "targets": [
+          {
+            "expr": "rate(interactive_cache_read_tokens_total[5m]) * 60",
+            "legendFormat": "Cache Read Tokens/min"
+          },
+          {
+            "expr": "rate(interactive_cache_creation_tokens_total[5m]) * 60",
+            "legendFormat": "Cache Creation Tokens/min"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Tokens per Minute"
+          },
+          {
+            "format": "short"
+          }
+        ],
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true
+        },
+        "fill": 1,
+        "linewidth": 2
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]
+    }
+}
