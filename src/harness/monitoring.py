@@ -56,6 +56,56 @@ api_cost_dollars = Counter(
     ["model"],
 )
 
+# Interactive Session Metrics
+interactive_session_prompts_total = Counter(
+    "interactive_session_prompts_total",
+    "Total user prompts in interactive sessions",
+    ["agent", "session_id"],
+)
+
+interactive_session_responses_total = Counter(
+    "interactive_session_responses_total",
+    "Total agent responses in interactive sessions",
+    ["agent", "session_id"],
+)
+
+interactive_session_duration_seconds = Histogram(
+    "interactive_session_duration_seconds",
+    "Interactive session duration in seconds",
+    ["agent"],
+    buckets=[10, 30, 60, 120, 300, 600, 1800, 3600, 7200],  # Up to 2 hours
+)
+
+interactive_tool_calls_total = Counter(
+    "interactive_tool_calls_total",
+    "Total tool calls in interactive sessions",
+    ["agent", "tool_name", "status"],
+)
+
+interactive_message_types_total = Counter(
+    "interactive_message_types_total",
+    "Count of message types in interactive sessions",
+    ["agent", "message_type"],
+)
+
+interactive_cache_read_tokens = Counter(
+    "interactive_cache_read_tokens_total",
+    "Total cache read tokens in interactive sessions",
+    ["agent", "model"],
+)
+
+interactive_cache_creation_tokens = Counter(
+    "interactive_cache_creation_tokens_total",
+    "Total cache creation tokens in interactive sessions",
+    ["agent", "model"],
+)
+
+interactive_cache_hit_ratio = Gauge(
+    "interactive_cache_hit_ratio",
+    "Cache hit ratio for interactive sessions (read / total input)",
+    ["agent"],
+)
+
 
 class MetricsCollector:
     """Collects and exports metrics for monitoring."""
@@ -84,6 +134,16 @@ class MetricsCollector:
         try:
             start_http_server(self.port)
             logger.info("Metrics server started", port=self.port)
+        except OSError as e:
+            # Port already in use - this is OK, metrics are still collected
+            if e.errno == 98:  # Address already in use
+                logger.warning(
+                    "Metrics server port already in use - skipping HTTP server start. "
+                    "Metrics will still be collected and available via Prometheus scraping.",
+                    port=self.port
+                )
+            else:
+                logger.error("Failed to start metrics server", error=str(e), exc_info=True)
         except Exception as e:
             logger.error("Failed to start metrics server", error=str(e), exc_info=True)
 
@@ -238,3 +298,94 @@ class MetricsCollector:
                 cached_tokens=cached_tokens,
                 cost_dollars=cost,
             )
+
+    @staticmethod
+    def record_user_prompt(agent: str, session_id: str) -> None:
+        """
+        Record a user prompt in an interactive session.
+
+        Args:
+            agent: Agent name
+            session_id: Session ID
+        """
+        interactive_session_prompts_total.labels(agent=agent, session_id=session_id).inc()
+
+    @staticmethod
+    def record_agent_response(agent: str, session_id: str) -> None:
+        """
+        Record an agent response in an interactive session.
+
+        Args:
+            agent: Agent name
+            session_id: Session ID
+        """
+        interactive_session_responses_total.labels(
+            agent=agent, session_id=session_id
+        ).inc()
+
+    @staticmethod
+    def record_interactive_session_duration(agent: str, duration: float) -> None:
+        """
+        Record interactive session duration.
+
+        Args:
+            agent: Agent name
+            duration: Duration in seconds
+        """
+        interactive_session_duration_seconds.labels(agent=agent).observe(duration)
+
+    @staticmethod
+    def record_tool_call(agent: str, tool_name: str, status: str = "success") -> None:
+        """
+        Record a tool call in an interactive session.
+
+        Args:
+            agent: Agent name
+            tool_name: Name of the tool called
+            status: Call status (success, error, timeout)
+        """
+        interactive_tool_calls_total.labels(
+            agent=agent, tool_name=tool_name, status=status
+        ).inc()
+
+    @staticmethod
+    def record_message_type(agent: str, message_type: str) -> None:
+        """
+        Record a message type occurrence.
+
+        Args:
+            agent: Agent name
+            message_type: Type of message (text, tool_use, thinking, tool_result)
+        """
+        interactive_message_types_total.labels(
+            agent=agent, message_type=message_type
+        ).inc()
+
+    @staticmethod
+    def update_cache_metrics(
+        agent: str, model: str, cache_read: int, cache_creation: int, total_input: int
+    ) -> None:
+        """
+        Update cache-related metrics and calculate hit ratio.
+
+        Args:
+            agent: Agent name
+            model: Model name
+            cache_read: Number of cache read tokens
+            cache_creation: Number of cache creation tokens
+            total_input: Total input tokens
+        """
+        if cache_read > 0:
+            interactive_cache_read_tokens.labels(agent=agent, model=model).inc(
+                cache_read
+            )
+
+        if cache_creation > 0:
+            interactive_cache_creation_tokens.labels(agent=agent, model=model).inc(
+                cache_creation
+            )
+
+        # Calculate and update cache hit ratio
+        if total_input > 0:
+            hit_ratio = cache_read / total_input
+            interactive_cache_hit_ratio.labels(agent=agent).set(hit_ratio)
