@@ -11,19 +11,13 @@ services:
       - DEBUG=${DEBUG:-true}
       - HOT_RELOAD=${HOT_RELOAD:-true}
       - ENABLE_PROFILING=${ENABLE_PROFILING:-false}
-    # Mount source code for hot reload
-    volumes:
-      - ./src:/app/src:cached
-      - ./tests:/app/tests:cached
-      - ./workspace:/workspace:cached
-      - ./memory:/memory:cached
-      - ./logs/main:/logs:cached
     # Enable debugging port
     ports:
       - "5678:5678"  # Python debugger
     # Override command for development
     command: python -m harness.agent --debug
     # Watch mode for automatic reload (Docker Compose 2.22+)
+    # Note: Paths watched here should NOT be in volumes: section
     develop:
       watch:
         - action: sync
@@ -43,9 +37,7 @@ services:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    volumes:
-      - ./src:/app/src:cached
-      - ./tests:/app/tests:cached
+    # Watch mode for automatic reload
     develop:
       watch:
         - action: sync
@@ -60,9 +52,7 @@ services:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    volumes:
-      - ./src:/app/src:cached
-      - ./tests:/app/tests:cached
+    # Watch mode for automatic reload
     develop:
       watch:
         - action: sync

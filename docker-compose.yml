@@ -44,6 +44,7 @@ services:
       - ./config:/app/config:ro
     ports:
       - "${MAIN_AGENT_PORT:-8080}:8080"
+      - "${MAIN_METRICS_PORT:-9091}:9090"  # Prometheus metrics
     depends_on:
       redis:
         condition: service_healthy
@@ -94,6 +95,7 @@ services:
       - ./config:/app/config:ro
     ports:
       - "${REVIEWER_AGENT_PORT:-8081}:8080"
+      - "${REVIEWER_METRICS_PORT:-9092}:9090"  # Prometheus metrics
     depends_on:
       redis:
         condition: service_healthy
@@ -133,6 +135,7 @@ services:
       - ./config:/app/config:ro
     ports:
       - "${TESTER_AGENT_PORT:-8082}:8080"
+      - "${TESTER_METRICS_PORT:-9093}:9090"  # Prometheus metrics
     depends_on:
       redis:
         condition: service_healthy
@@ -165,7 +168,7 @@ services:
     networks:
       - claude-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude} -d ${POSTGRES_DB:-claude_harness}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -233,6 +236,7 @@ services:
       - GF_INSTALL_PLUGINS=
     volumes:
       - ./config/monitoring/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/monitoring/datasources:/etc/grafana/provisioning/datasources:ro
       - grafana_data:/var/lib/grafana
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
