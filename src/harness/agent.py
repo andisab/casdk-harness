@@ -11,6 +11,7 @@ from claude_agent_sdk import (
     CLINotFoundError,
     ClaudeAgentOptions,
     ProcessError,
+    ResultMessage,
     query,
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -215,9 +216,9 @@ class AgentSession:
         try:
             # Execute with Claude Agent SDK
             async for message in query(prompt=prompt, options=options):
-                # Track token usage if available
-                if isinstance(message, dict) and "usage" in message:
-                    usage = message["usage"]
+                # Track token usage from ResultMessage
+                if isinstance(message, ResultMessage) and hasattr(message, "usage"):
+                    usage = message.usage
                     self.metrics.record_tokens(
                         agent=self.agent_name,
                         model=self.config.claude_model,
