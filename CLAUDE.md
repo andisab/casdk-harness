@@ -2,61 +2,95 @@
 
 # Claude Agent SDK Harness - Technical Documentation
 
-**Last updated**: October 6, 2025
+**Last updated**: October 26, 2025
 
-## Project Status Summary
+## Current Status
 
-### Current Phase: SDK Integration Complete ✅
-**Completed**: Early October, 2025
+**Phase**: Enhanced Observability (Fixes Applied, Testing Required)
+**Test Coverage**: ~61% (Target: 80%+)
+**Last Updated**: October 26, 2025
 
-- [x] Architecture design
-- [x] Core infrastructure implementation
-- [x] Docker orchestration (dev + prod)
-- [x] **Real Claude Agent SDK integration** (agent.py)
-- [x] Monitoring and observability (Prometheus + Grafana)
-- [x] **Token usage tracking with cost calculation** (monitoring.py)
-- [x] **MCP server implementations** (filesystem, git, docker)
-- [x] **Integration test suite with VCR.py** (12 tests)
-- [x] **E2E test suite** (3 workflow tests)
+### What's Working
+- ✅ Interactive conversation mode with Rich CLI (cli.py, interactive.py)
+- ✅ Action logging hooks and session metrics (infrastructure in place)
+- ✅ Grafana dashboard with 10 panels (visible and accessible)
+- ✅ Docker orchestration with Prometheus + Grafana monitoring
+- ✅ Checkpoint & recovery system with auto-save
+- ✅ MCP server integration (git, docker, memory, context7, playwright, joplin)
+- ✅ Token usage tracking and cost calculation (implementation complete)
+- ✅ **FIXED**: Grafana datasource configuration (Prometheus connection)
+- ✅ **FIXED**: Metrics port exposure in docker-compose.yml (9090 now exposed)
+- ✅ **FIXED**: Token usage tracking in interactive sessions (ResultMessage handling)
 
-### Next Milestones
+### Recent Fixes (October 26, 2025)
 
-#### Immediate (Required for First Real Use)
-1. ⚠️ Run `make test-integration` with API key to record VCR cassettes
-2. ⚠️ Verify MCP servers work by running filesystem/git tests
-3. ⚠️ Run at least one E2E test to validate full workflow
+**Issue #1: Missing Grafana Datasource Configuration**
+- **Problem**: Grafana had no datasource configuration to connect to Prometheus
+- **Fix**: Created `config/monitoring/datasources/prometheus.yml` and mounted in docker-compose.yml
+- **Impact**: Grafana can now query Prometheus for metrics data
 
-#### Short-term (Nice to Have)
-1. Add more MCP server tools (file read/write, git commit, etc.)
-2. Improve test coverage to 80%+ (write tests for new agent.py code)
-3. Add smoke tests for quick validation
-4. Create example workflow scripts
-5. Add utility scripts (setup.sh, backup.sh, restore.sh)
+**Issue #2: Metrics Port Not Exposed**
+- **Problem**: Agent containers didn't expose port 9090 for Prometheus scraping
+- **Fix**: Added port mappings in docker-compose.yml:
+  - main-agent: 9091:9090
+  - reviewer-agent: 9092:9090
+  - tester-agent: 9093:9090
+- **Impact**: Prometheus can now scrape metrics from all agent containers
 
-#### Long-term (Future Enhancements)
-1. Add Jaeger distributed tracing
-2. Create K8s deployment manifests
-3. Build CI/CD pipeline
-4. Create workflow template library
-5. Add multi-cluster deployment support
+**Issue #3: Token Usage Not Tracked in Interactive Sessions**
+- **Problem**: Type checking in agent.py used `isinstance(message, dict)` but SDK yields `ResultMessage` objects
+- **Fix**: Updated agent.py:src/harness/agent.py:220 to check for `ResultMessage` type instead
+- **Impact**: Token usage, costs, and cache metrics are now properly recorded during interactive sessions
 
-### Known Limitations
+### What's Pending
+- [ ] **TEST: Restart containers to apply fixes** (`docker compose down && docker compose up -d`)
+- [ ] **TEST: Verify Prometheus is scraping metrics** (check http://localhost:9090/targets)
+- [ ] **TEST: Verify Grafana shows accurate data** (check Interactive Sessions dashboard)
+- [ ] End-to-end testing of full observability stack
+- [ ] Commit untracked files to git (cli.py, interactive.py, hooks/, datasources/)
+- [ ] Increase test coverage to 70%+ (interim goal toward 80%)
+- [ ] Test action logging with real agent sessions
 
-1. **Agent SDK Dependency**: Requires `claude-agent-sdk>=0.1.0` to be available
-2. **Docker Dependency**: Docker MCP server requires Docker daemon running
-3. **Git Dependency**: Git MCP server requires git binary installed
-4. **Test Coverage**: Currently 57.68% (target: 80%+) - needs more integration test runs
-5. **E2E Tests**: Not yet run with real API (need API key and cassette recording)
-6. **Example Workflows**: Placeholder directories exist but examples not yet created
+✅ **Status Update**: Three critical issues identified and fixed. Metrics pipeline should now work correctly after container restart.
 
-### To Do
-- [ ] Record VCR cassettes for integration tests
+### Next Steps
+1. Complete testing of observability features
+2. Commit working changes to git
+3. Polish core functionality and improve test coverage
+4. Then: Configuration & extensibility features (see docs/future/)
+
+⚠️ **Note**: Some documented features are implemented but not yet committed to git.
+
+## To Do
+
+### Immediate (Complete Current Phase)
+- [x] **FIXED: Grafana datasource configuration** (created prometheus.yml datasource)
+- [x] **FIXED: Prometheus scraping configuration** (exposed port 9090 on agent containers)
+- [x] **FIXED: Metric collection in interactive sessions** (ResultMessage type handling)
+- [ ] **TEST: Restart containers and verify fixes** (`docker compose down && docker compose up -d`)
+- [ ] **TEST: Check Prometheus targets** (http://localhost:9090/targets should show all agents)
+- [ ] **TEST: Verify Grafana data accuracy** (Interactive Sessions dashboard)
+- [ ] Test full observability stack end-to-end with real agent session
+- [ ] Test action logging hook with real agent sessions
+- [ ] Commit all implementation files (cli.py, interactive.py, hooks/, datasources/, agent.py changes)
+- [ ] Improve test coverage to 70%+ (interim goal)
+
+### Near-term (Polish & Stabilize)
 - [ ] Verify all MCP servers function correctly
-- [ ] Improve test coverage to 80%+
+- [ ] Run integration tests with real API (record VCR cassettes if applicable)
 - [ ] Create example workflow scripts
-- [ ] Add distributed tracing with Jaeger
-- [ ] Create CI/CD pipeline templates
-- [ ] Build K8s deployment manifests
+- [ ] Improve test coverage to 80%+ (final goal)
+- [ ] Stabilize Docker service startup and health checks
+
+### Future (Deferred - See docs/future/)
+- Configuration builder system (YAML/JSON profiles)
+- Agent library with auto-discovery
+- Tool registry and custom tool development
+- External repository support (git clone, volume mounting)
+- Web frontend UI (separate project)
+- Jaeger distributed tracing
+- K8s deployment manifests
+- CI/CD pipeline templates
 
 ## Project Overview
 
@@ -100,16 +134,16 @@ claudeagentsdk-harness/
 │   │   ├── __init__.py
 │   │   ├── agent.py            # Agent session wrapper with retry logic
 │   │   ├── checkpoint.py       # Checkpoint manager with auto-save
+│   │   ├── cli.py              # Rich CLI formatting and message parsing
 │   │   ├── config.py           # Pydantic config management
+│   │   ├── interactive.py      # Interactive conversation loop
 │   │   ├── monitoring.py       # Prometheus metrics collector
 │   │   └── py.typed            # PEP 561 type marker
-│   ├── mcp/                    # Custom MCP servers (placeholders)
-│   │   ├── __init__.py
-│   │   ├── filesystem/
-│   │   ├── git/
-│   │   └── docker/
-│   └── utils/
-│       └── __init__.py
+│   └── mcp/                    # Custom MCP servers (placeholders)
+│       ├── __init__.py
+│       ├── filesystem/
+│       ├── git/
+│       └── docker/
 │
 ├── config/                     # Configuration files
 │   └── monitoring/             # Prometheus & Grafana configs
@@ -259,7 +293,301 @@ make reset                  # Full reset (destructive!)
 # Diagnostics
 make doctor                 # Run diagnostics
 make version                # Show version information
+
+# Interactive Agent (Phase 1)
+make interactive            # Start interactive conversation session
+make chat                   # Alias for interactive mode
+make interactive-model MODEL=opus  # Use specific model (opus, sonnet, haiku)
 ```
+
+## Quick Start Examples (No Docker Required)
+
+Before diving into the full harness infrastructure, you can try these simple examples to understand the Claude Agent SDK basics. These examples run directly without Docker and are perfect for learning or quick testing.
+
+### Prerequisites
+
+```bash
+# Make sure you're in the repository root
+cd ~/Projects/claudeagentsdk-harness
+
+# Create a virtual environment and install dependencies
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -e .
+
+# Ensure ANTHROPIC_API_KEY is set in .env
+echo "ANTHROPIC_API_KEY=sk-ant-your_key_here" >> .env
+```
+
+### Example 1: Simple Query Pattern
+
+**File**: `examples/simple_query.py`
+
+**What it demonstrates**:
+- Basic `query()` function for one-off questions (stateless)
+- `ClaudeSDKClient` for multi-turn conversations (stateful)
+- Message streaming and parsing
+
+**Run it**:
+```bash
+# Run with default model (haiku - cheapest)
+python examples/simple_query.py
+
+# Run with more powerful models
+python examples/simple_query.py --model sonnet
+python examples/simple_query.py --model opus
+```
+
+**What you'll see**:
+- Example 1: A simple query/response using `query()`
+- Example 2: Same query using `ClaudeSDKClient` (shows stateful pattern)
+
+**Cost**: ~$0.001-0.01 per run (using haiku model)
+
+### Example 2: Basic Interactive Mode
+
+**File**: `examples/interactive_basic.py`
+
+**What it demonstrates**:
+- Continuous conversation loop
+- Rich formatted output with colored panels
+- Integration with harness CLI utilities
+- Session management with graceful exit
+
+**Run it**:
+```bash
+# Run with default model (haiku)
+python examples/interactive_basic.py
+
+# Run with sonnet for better performance
+python examples/interactive_basic.py --model sonnet
+
+# Show session stats on exit
+python examples/interactive_basic.py --model sonnet --stats
+```
+
+**What you'll see**:
+```
+┌──────────────────────────────────────┐
+│     Basic Interactive Mode           │
+│                                      │
+│ Selected model: haiku                │
+│                                      │
+│ Type your questions or requests      │
+│ Type 'exit' or 'quit' to end        │
+└──────────────────────────────────────┘
+
+You: _
+```
+
+**Features**:
+- Type naturally and get formatted responses
+- Maintains conversation context across turns
+- Type `exit` or `quit` to end the session
+- Optional `--stats` flag shows token usage and costs
+
+**Cost**: ~$0.01-0.10 per session (depending on length and model)
+
+### Key Differences from Full Interactive Mode
+
+| Feature | Basic Examples | Full Harness (`make interactive`) |
+|---------|----------------|-----------------------------------|
+| Docker Required | ❌ No | ✅ Yes |
+| Checkpointing | ❌ No | ✅ Auto-save every hour |
+| Metrics | ❌ No | ✅ Prometheus + Grafana |
+| MCP Servers | ❌ Basic only | ✅ Git, Docker, Memory, etc. |
+| Multi-Agent | ❌ No | ✅ Orchestration support |
+| Setup Time | < 1 minute | ~5-10 minutes |
+| Best For | Learning, testing | Production, long sessions |
+
+### Next Steps
+
+Once you're comfortable with these examples:
+
+1. **Try the full interactive mode** (see next section) for production features
+2. **Explore MCP integration** - Add custom tools and servers
+3. **Build workflows** - Combine multiple agents for complex tasks
+4. **Add monitoring** - Use Grafana dashboards to track costs and performance
+
+## Phase 1: Interactive Agent Setup
+
+### Overview
+
+Phase 1 adds interactive conversation mode to the harness, allowing you to chat directly with Claude agents using a Rich console UI. This mode integrates seamlessly with the existing infrastructure (checkpointing, monitoring, MCP servers) while providing an intuitive CLI experience.
+
+### Components
+
+**CLI Module** (`src/harness/cli.py`):
+- Rich console formatting for all message types (user, assistant, tool_use, tool_result, system)
+- Message parsing for SDK messages (AssistantMessage, UserMessage, SystemMessage, ResultMessage)
+- Session statistics display (tokens, cost, duration, cache usage)
+- Structured logging integration with correlation IDs
+
+**Interactive Module** (`src/harness/interactive.py`):
+- Conversation loop with Rich UI
+- Integration with AgentSession (automatic checkpointing, metrics)
+- Checkpoint recovery on session start
+- Graceful error handling and session shutdown
+- Support for CLI arguments (--model, --stats, --print-raw)
+
+**Makefile Targets**:
+- `make interactive` - Start interactive session with default model (sonnet)
+- `make chat` - Alias for interactive mode
+- `make interactive-model MODEL=opus` - Use specific model
+
+### Usage
+
+**Start an Interactive Session**:
+```bash
+# 1. Ensure Docker is running
+make dev
+
+# 2. In another terminal, start interactive mode
+make interactive
+```
+
+**What You'll See**:
+```
+┌─────────────────────────────────────────────┐
+│            🤖 Welcome                       │
+├─────────────────────────────────────────────┤
+│ Claude Agent SDK Harness                    │
+│ Production-ready autonomous framework       │
+│                                             │
+│ Agent: main                                 │
+│ Model: claude-sonnet-4-5-20250929          │
+│                                             │
+│ Type 'exit' or 'quit' to end the session   │
+└─────────────────────────────────────────────┘
+
+You: _
+```
+
+**Features**:
+- ✅ Rich formatted messages with colored panels
+- ✅ Syntax highlighting for JSON tool results
+- ✅ Real-time tool use display
+- ✅ Session statistics on exit
+- ✅ Automatic checkpoint recovery
+- ✅ Graceful error handling
+- ✅ Integration with all MCP servers
+
+**Using Different Models**:
+```bash
+# Use Opus (most capable)
+make interactive-model MODEL=opus
+
+# Use Haiku (fastest, cheapest)
+make interactive-model MODEL=haiku
+
+# Use Sonnet (default, balanced)
+make interactive
+```
+
+**View Session Stats**:
+When you exit with "quit" or "exit", you'll see:
+```
+┌─────────────────────┬──────────────────────┐
+│      Session Stats                        │
+├─────────────────────┼──────────────────────┤
+│ Session ID          │ main_2025-10-26...  │
+│ Result              │ success             │
+│ Duration (s)        │ 125.34              │
+│ Cost (USD)          │ $0.0342             │
+│ Input Tokens        │ 12,450              │
+│ Output Tokens       │ 3,210               │
+│ Cache Read Tokens   │ 8,940               │
+│ Cache Creation ...  │ 1,200               │
+└─────────────────────┴──────────────────────┘
+```
+
+### Architecture
+
+**Message Flow**:
+```
+User Input (CLI)
+    ↓
+interactive.py (conversation loop)
+    ↓
+AgentSession.execute()
+    ↓
+ClaudeSDKClient.query() (with MCP servers)
+    ↓
+← Message Stream ←
+    ↓
+cli.parse_and_print_message()
+    ↓
+Rich Console Display
+```
+
+**Integration Points**:
+- `AgentSession` - Handles checkpointing, metrics, retry logic
+- `MetricsCollector` - Tracks tokens, cost, duration automatically
+- `CheckpointManager` - Auto-saves every hour, recovers on startup
+- `MCP Servers` - Git, Docker, Memory, Context7, Playwright, etc.
+- `structlog` - Structured logging with correlation IDs
+
+### Checkpoint Recovery
+
+If your session is interrupted, the next session will automatically recover:
+
+```bash
+make interactive
+
+# Output:
+✓ Recovered from previous checkpoint
+
+You: _
+```
+
+The agent resumes with:
+- Completed tasks list
+- Session state (agent name, session ID, timestamps)
+- Workspace and memory context
+
+### Troubleshooting
+
+**Issue: "Module not found: harness.cli"**
+```bash
+# Rebuild the container
+make build
+make dev
+```
+
+**Issue: "Not running in Docker container"**
+```bash
+# Start Docker services first
+make dev
+
+# Then in another terminal:
+make interactive
+```
+
+**Issue: "Permission denied" or "No tty available"**
+```bash
+# Ensure you're using make interactive, not direct docker commands
+make interactive  # Correct
+docker compose exec main-agent python -m harness.interactive  # Wrong (missing -it)
+```
+
+**Issue: "Session stats not displayed"**
+```bash
+# Stats are enabled by default. To disable:
+make interactive-model MODEL=sonnet STATS=false
+```
+
+### Next Steps (Phase 2)
+
+Now that interactive mode is working, Phase 2 will add:
+
+1. **Configuration Builder** - Load agent configs from YAML/JSON profiles
+2. **Agent Library** - Auto-discover and load agent definitions from `.claude/agents/`
+3. **Tool Registry** - Plugin architecture for custom tools
+4. **Enhanced Observability** - Port logging hooks from intro repository
+5. **Workflow Templates** - Pre-built workflows (feature, bug-fix, refactor)
+6. **Session Management** - Save/load conversations, session analytics
+
+See [Phase 2 Roadmap](#phase-2-configuration--extensibility-roadmap) below for details.
 
 ## Configuration Settings
 
@@ -594,16 +922,25 @@ MCP servers are registered in `src/harness/agent.py` as a dictionary combining b
 
 #### Prometheus Metrics
 
-All agents export metrics on port 9090:
-
-- `agent_requests_total{agent, status}` - Request counts
+**General Agent Metrics** (all agents, port 9090):
+- `agent_requests_total{agent, status}` - Request counts by status
 - `agent_duration_seconds{agent}` - Execution duration histogram
 - `agent_active_sessions{agent}` - Active session count
 - `checkpoint_size_bytes` - Total checkpoint storage
 - `workspace_files_total` - Files in workspace
-- `memory_usage_bytes{component}` - Memory usage
-- `api_tokens_used_total{model, type}` - Token consumption
-- `api_cost_dollars_total{model}` - API costs
+- `memory_usage_bytes{component}` - Memory usage by component
+- `api_tokens_used_total{model, type}` - Token consumption (input/output/cached)
+- `api_cost_dollars_total{model}` - API costs in USD
+
+**Interactive Session Metrics** (NEW):
+- `interactive_session_prompts_total{agent, session_id}` - User prompt count
+- `interactive_session_responses_total{agent, session_id}` - Agent response count
+- `interactive_session_duration_seconds{agent}` - Session duration histogram
+- `interactive_tool_calls_total{agent, tool_name, status}` - Tool usage frequency
+- `interactive_message_types_total{agent, message_type}` - Message type distribution
+- `interactive_cache_read_tokens_total{agent, model}` - Cache read tokens
+- `interactive_cache_creation_tokens_total{agent, model}` - Cache creation tokens
+- `interactive_cache_hit_ratio{agent}` - Cache hit ratio (0-1)
 
 #### Alert Rules
 
@@ -719,6 +1056,556 @@ python -m cProfile -o profile.stats -m harness.agent
 pip install snakeviz
 snakeviz profile.stats
 ```
+
+## Enhanced Observability & Hooks
+
+### Overview
+
+The harness includes comprehensive observability for interactive sessions with real-time Prometheus metrics, Grafana dashboards, and action logging hooks. All metrics are automatically collected during interactive sessions without any additional configuration.
+
+### Action Logging Hooks
+
+**Location**: `.claude/hooks/log_agent_actions.py`
+
+**What It Does**:
+- Parses JSONL transcript files from Claude Agent SDK
+- Extracts all tool calls with timestamps, inputs, and IDs
+- Logs to `logs/actions/{timestamp}_{session_id}.log`
+- Deduplicates actions (only logs new tool calls)
+- Runs automatically on session Stop events
+
+**Hook Configuration** (`.claude/settings.json`):
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/log_agent_actions.py",
+            "description": "Log all agent tool calls"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Action Log Format**:
+```
+================================================================================
+Agent Actions Log - Session: main_2025-10-26T15:30:45.123456
+================================================================================
+
+Action:
+  Timestamp: 2025-10-26T15:31:12.456789
+  Tool: Read
+  Tool ID: toolu_01ABC123
+  Input: {
+      "file_path": "/workspace/example.py"
+  }
+
+Action:
+  Timestamp: 2025-10-26T15:31:15.789012
+  Tool: Write
+  Tool ID: toolu_02DEF456
+  Input: {
+      "file_path": "/workspace/output.txt",
+      "content": "Hello World"
+  }
+```
+
+### Interactive Session Metrics
+
+**Real-time Metrics Collected**:
+
+1. **User Prompts** - Counted when user submits input
+2. **Agent Responses** - Counted for each AssistantMessage
+3. **Tool Calls** - Tracked by tool name and success/failure status
+4. **Message Types** - Distribution of text, tool_use, thinking blocks
+5. **Cache Performance** - Read/creation tokens and hit ratio
+6. **Session Duration** - Total time from start to exit
+
+**Metrics Integration in Code**:
+```python
+# In interactive.py, metrics are recorded automatically:
+
+# User input recorded
+session.metrics.record_user_prompt(agent_name, session.session_id)
+
+# Agent response recorded
+session.metrics.record_agent_response(agent_name, session.session_id)
+
+# Tool calls tracked
+session.metrics.record_tool_call(agent_name, tool_name, "success")
+
+# Message types logged
+session.metrics.record_message_type(agent_name, "tool_use")
+
+# Cache metrics updated
+session.metrics.update_cache_metrics(agent_name, model, cache_read, cache_creation, total_input)
+```
+
+### Grafana Dashboard: Interactive Sessions
+
+**Access**: http://localhost:3000 → Dashboards → Interactive Sessions
+
+**10 Real-time Panels**:
+
+1. **Active Interactive Sessions** (Stat)
+   - Shows current number of active sessions
+   - Updates every 5 seconds
+
+2. **Total User Prompts** (Stat)
+   - Cumulative count of user inputs
+   - Per session breakdown
+
+3. **Average Response Time** (Stat)
+   - Mean agent response latency
+   - Calculated from last 5 minutes
+
+4. **Cache Hit Ratio** (Gauge)
+   - Visual gauge from 0-100%
+   - Green (>60%), Orange (30-60%), Red (<30%)
+
+5. **Session Cost Over Time** (Graph)
+   - Cost per hour trend
+   - Per-model breakdown
+
+6. **Token Usage Breakdown** (Graph)
+   - Input, output, and cached tokens
+   - Tokens per minute rate
+
+7. **Tool Usage Heat Map** (Bar Gauge)
+   - Most frequently used tools
+   - Horizontal bars with gradient coloring
+
+8. **Message Type Distribution** (Pie Chart)
+   - Percentage of text vs tool_use vs thinking
+   - Donut chart with legend
+
+9. **Session Duration Distribution** (Heatmap)
+   - Duration buckets: 10s, 30s, 1m, 2m, 5m, 10m, 30m, 1h, 2h
+   - Color intensity shows frequency
+
+10. **Cache Performance Over Time** (Graph)
+    - Cache read and creation tokens per minute
+    - Stacked area chart
+
+### Prometheus Queries
+
+**Useful Queries for Ad-hoc Analysis**:
+
+```promql
+# Total prompts in last hour
+sum(increase(interactive_session_prompts_total[1h]))
+
+# Average cache hit ratio
+avg(interactive_cache_hit_ratio)
+
+# Most used tools
+topk(5, sum by (tool_name) (interactive_tool_calls_total))
+
+# Cost per session
+sum(api_cost_dollars_total) / count(interactive_session_prompts_total)
+
+# Response time p95
+histogram_quantile(0.95, sum(rate(agent_duration_seconds_bucket[5m])) by (le))
+
+# Tool failure rate
+sum(interactive_tool_calls_total{status="error"}) / sum(interactive_tool_calls_total) * 100
+```
+
+### Viewing Metrics in Real-time
+
+**During an Interactive Session**:
+
+1. Start interactive mode in one terminal:
+   ```bash
+   make interactive
+   ```
+
+2. Open Grafana in browser:
+   ```bash
+   make metrics
+   # Opens http://localhost:3000
+   ```
+
+3. Navigate to "Interactive Sessions" dashboard
+
+4. Watch metrics update in real-time as you chat:
+   - Type prompts → see prompt counter increment
+   - Agent uses tools → see tool heat map update
+   - Session runs → see cost graph climb
+   - Cache used → see cache hit ratio adjust
+
+### Structured Logging
+
+**All metrics are also logged via structlog**:
+```json
+{
+  "event": "Message displayed",
+  "message_type": "tool_use",
+  "message_length": 324,
+  "timestamp": "2025-10-26T15:31:12.456789Z",
+  "level": "info"
+}
+
+{
+  "event": "Token usage recorded",
+  "agent": "main",
+  "model": "claude-sonnet-4-5-20250929",
+  "input_tokens": 1234,
+  "output_tokens": 567,
+  "cached_tokens": 890,
+  "cost_dollars": 0.0234,
+  "timestamp": "2025-10-26T15:31:15.789012Z",
+  "level": "debug"
+}
+```
+
+**View structured logs**:
+```bash
+# JSON format with jq filtering
+make logs-json | jq 'select(.event == "Token usage recorded")'
+
+# View all interactive session events
+make logs-json | jq 'select(.session_id != null)'
+```
+
+### Action Log Directory
+
+**Location**: `logs/actions/`
+
+**Files Created**:
+- `{timestamp}_{session_id}.log` - One per session
+- Append mode - new actions added to existing file
+- Deduplication - tool IDs prevent duplicate logging
+
+**Example**:
+```
+logs/actions/
+├── 20251026_153045_main_2025-10-26T15:30:45.123456.log
+├── 20251026_161230_main_2025-10-26T16:12:30.789012.log
+└── 20251026_174512_main_2025-10-26T17:45:12.345678.log
+```
+
+### Cost Tracking
+
+**Real-time Cost Calculation**:
+- Based on Sonnet 4.5 pricing (as of Oct 2025)
+  - Input: $0.003 per 1K tokens
+  - Output: $0.015 per 1K tokens
+  - Cached: $0.0003 per 1K tokens
+
+**Cost Metrics**:
+```python
+# Automatic cost recording in agent.py
+cost = (
+    (input_tokens / 1000.0) * 0.003
+    + (output_tokens / 1000.0) * 0.015
+    + (cached_tokens / 1000.0) * 0.0003
+)
+MetricsCollector.record_api_cost(model, cost)
+```
+
+**View Costs in Grafana**:
+- "Session Cost Over Time" panel shows $/hour
+- "Token Usage Breakdown" shows which token type dominates
+- Set budget alerts in Prometheus (see alerting.yml)
+
+### Troubleshooting Observability
+
+**Issue**: Metrics not appearing in Grafana
+```bash
+# Check Prometheus is scraping
+curl http://localhost:9090/api/v1/targets
+
+# Verify metrics endpoint
+docker compose exec main-agent curl http://localhost:9090/metrics | grep interactive_session
+```
+
+**Issue**: Dashboard not loading
+```bash
+# Check Grafana logs
+make logs | grep grafana
+
+# Restart Grafana
+docker compose restart grafana
+```
+
+**Issue**: Action logs not being created
+```bash
+# Verify hooks directory exists
+ls -la .claude/hooks/
+
+# Check hook script is executable
+ls -l .claude/hooks/log_agent_actions.py
+
+# Test hook manually
+echo '{"transcript_path": "/path/to/transcript.jsonl", "session_id": "test"}' | python .claude/hooks/log_agent_actions.py
+```
+
+**Issue**: Cache hit ratio shows 0
+```bash
+# Cache metrics only update when cache is used
+# Run a few prompts in the same session to build cache
+# Check Prometheus query:
+curl -s 'http://localhost:9090/api/v1/query?query=interactive_cache_hit_ratio' | jq .
+```
+
+## Phase 2: Configuration & Extensibility Roadmap
+
+### Overview
+
+Phase 2 transforms the harness from an interactive CLI into a full framework with configuration management, extensible agent/tool libraries, and enhanced observability. The goal is to make the harness reusable across different agent runs without rebuilding infrastructure.
+
+### 2.1 Configuration Builder System
+
+**Goal**: Support YAML/JSON configuration profiles for agents
+
+**Files to Create**:
+- `src/harness/config_builder.py` - Profile loader with validation
+- `config/profiles/default.yaml` - Base configuration
+- `config/profiles/research.yaml` - Research agent profile
+- `config/profiles/coding.yaml` - Coding agent profile
+- `config/profiles/analysis.yaml` - Data analysis profile
+
+**Features**:
+- Configuration inheritance (profiles extend base configs)
+- Pydantic schema validation
+- Environment variable overrides
+- Hot-reload without container restart
+
+**Example Profile** (`config/profiles/research.yaml`):
+```yaml
+name: "Research Agent"
+base: "default"
+
+agent:
+  model: "sonnet"
+  permission_mode: "acceptEdits"
+  max_turns: 500
+
+tools:
+  allowed:
+    - Read
+    - Write
+    - WebSearch
+    - WebFetch
+  restricted:
+    - Bash
+
+mcp_servers:
+  playwright:
+    enabled: false
+  memory:
+    enabled: true
+
+monitoring:
+  checkpoint_interval: 3600
+  log_level: "INFO"
+```
+
+**Usage**:
+```bash
+make interactive PROFILE=research
+# or
+make chat PROFILE=coding
+```
+
+### 2.2 Agent & Tool Library
+
+**Agent Library** (`config/agents/library/`):
+- Port agent definitions from `claude-agent-sdk-intro/.claude/agents/`
+- Front-matter YAML parsing (name, description, tools, model)
+- Auto-discovery via glob patterns
+- Versioning for backwards compatibility
+
+**Tool Library** (`src/harness/tools/`):
+- Registry pattern with auto-discovery
+- Each tool as Python module with `@tool` decorator
+- Grouped by category (filesystem, web, data, etc.)
+- Automatic MCP server generation
+
+**Structure**:
+```
+src/harness/tools/
+├── registry.py          # Auto-discovery engine
+├── filesystem/
+│   ├── advanced_search.py
+│   └── file_watcher.py
+├── web/
+│   ├── scraper.py
+│   └── api_client.py
+└── data/
+    ├── csv_processor.py
+    └── json_validator.py
+```
+
+**Usage**:
+```python
+# Tools auto-register on import
+from harness.tools import registry
+
+# Get all available tools
+tools = registry.get_all_tools()
+
+# Load specific category
+web_tools = registry.get_tools_by_category("web")
+```
+
+### 2.3 Enhanced Observability
+
+**Port from `claude-agent-sdk-intro`**:
+- `.claude/hooks/log_agent_actions.py` - JSONL transcript parsing
+- Session hooks (Stop, Notification) with sound/logging
+- Real-time action logging (not just on stop)
+
+**New Features**:
+- Structured logging with correlation IDs across all messages
+- Export to observability platforms (Datadog, Honeycomb)
+- Cost analytics dashboard in Grafana
+- Session replay functionality
+
+**Hook Configuration** (`.claude/settings.json`):
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "uv run src/harness/hooks/log_actions.py"
+      },
+      {
+        "type": "command",
+        "command": "uv run src/harness/hooks/export_metrics.py"
+      }
+    ],
+    "Notification": [
+      {
+        "type": "command",
+        "command": "afplay /System/Library/Sounds/Purr.aiff"
+      }
+    ]
+  }
+}
+```
+
+### 2.4 Workflow Templates
+
+**Location**: `examples/workflows/`
+
+**Templates**:
+1. **simple-feature/** - Single file feature implementation
+2. **bug-fix/** - Debug, fix, test workflow
+3. **refactoring/** - Code improvement workflow
+4. **research-and-implement/** - Multi-agent (researcher → coder)
+5. **full-project/** - Complete project from spec
+
+**Each Template Includes**:
+- `workflow.yaml` - Workflow definition and steps
+- `agent_config.yaml` - Agent configuration
+- `README.md` - Usage instructions and examples
+- Example inputs/outputs
+
+**Example** (`examples/workflows/simple-feature/workflow.yaml`):
+```yaml
+name: "Simple Feature Implementation"
+description: "Implement a single-file feature with tests"
+
+steps:
+  - name: "Analyze requirements"
+    agent: "main"
+    tools: ["Read", "Grep", "Glob"]
+
+  - name: "Implement feature"
+    agent: "main"
+    tools: ["Read", "Write", "Edit"]
+
+  - name: "Write tests"
+    agent: "tester"
+    tools: ["Read", "Write", "Bash"]
+
+  - name: "Review code"
+    agent: "reviewer"
+    tools: ["Read", "Grep"]
+
+outputs:
+  - "Feature implementation"
+  - "Unit tests"
+  - "Code review report"
+```
+
+### 2.5 Session Management Improvements
+
+**Features**:
+- Save/load conversation history as markdown
+- Export conversations for sharing
+- Conversation branching (try different approaches)
+- Session analytics dashboard (time, cost, tasks completed)
+- Compare sessions side-by-side
+
+**CLI Commands**:
+```bash
+# Save session
+make save-session NAME=feature-implementation
+
+# Load session
+make load-session NAME=feature-implementation
+
+# Export to markdown
+make export-session NAME=feature-implementation
+
+# List all sessions
+make list-sessions
+
+# Session analytics
+make session-stats NAME=feature-implementation
+```
+
+### 2.6 Multi-Agent Orchestration UI
+
+**Advanced CLI Features**:
+- View all active agents in real-time
+- Switch between agent conversations
+- Broadcast messages to multiple agents
+- Monitor agent coordination and task delegation
+- Visual workflow progress
+
+**Example**:
+```bash
+make orchestrate
+
+# Interactive menu:
+# 1. View all agents
+# 2. Chat with main agent
+# 3. Chat with reviewer
+# 4. Broadcast to all
+# 5. View workflow status
+# 6. Exit
+```
+
+### Implementation Timeline
+
+**Week 1**: Configuration builder + YAML profiles
+**Week 2**: Agent/tool library with auto-discovery
+**Week 3**: Enhanced observability + hooks
+**Week 4**: Workflow templates + session management
+
+### Success Criteria
+
+**Phase 2 Complete When**:
+- ✅ Can load custom agent profiles via CLI
+- ✅ Can add new tools without modifying core code
+- ✅ Observability hooks capture all actions
+- ✅ At least 3 workflow templates documented
+- ✅ Configuration schema fully documented
+- ✅ Agent library has 10+ pre-built agents
+- ✅ Session save/load working
+- ✅ Multi-agent orchestration UI functional
 
 ## Contributing
 

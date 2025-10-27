@@ -161,6 +161,23 @@ shell-tester: ## Shell into tester agent
 	docker compose $(COMPOSE_FILES) exec tester-agent /bin/bash
 
 # =============================================================================
+# Interactive Agent
+# =============================================================================
+.PHONY: interactive
+interactive: ## Start interactive conversation with main agent
+	@echo "$(GREEN)Starting interactive session...$(NC)"
+	@echo "$(YELLOW)Type 'exit' or 'quit' to end the session$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive
+
+.PHONY: chat
+chat: interactive ## Alias for interactive mode
+
+.PHONY: interactive-model
+interactive-model: ## Start interactive with specific model (usage: make interactive-model MODEL=opus)
+	@echo "$(GREEN)Starting interactive session with $(MODEL) model...$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --model $(MODEL)
+
+# =============================================================================
 # Testing
 # =============================================================================
 .PHONY: test

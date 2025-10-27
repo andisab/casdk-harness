@@ -109,7 +109,7 @@ requires = ["setuptools>=68.0.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["harness", "mcp_servers", "utils"]
+packages = ["harness", "mcp_servers"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
@@ -198,7 +198,7 @@ exclude = [
 "tests/**/*.py" = ["ARG"]
 
 [tool.ruff.isort]
-known-first-party = ["harness", "mcp", "utils"]
+known-first-party = ["harness", "mcp_servers"]
 
 [tool.mypy]
 python_version = "3.12"
