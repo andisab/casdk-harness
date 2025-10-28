@@ -177,6 +177,12 @@ interactive-model: ## Start interactive with specific model (usage: make interac
 	@echo "$(GREEN)Starting interactive session with $(MODEL) model...$(NC)"
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --model $(MODEL)
 
+.PHONY: interactive-quiet
+interactive-quiet: ## Start interactive in quiet mode (no system logs)
+	@echo "$(GREEN)Starting interactive session in quiet mode...$(NC)"
+	@echo "$(YELLOW)Type 'exit' or 'quit' to end the session$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --quiet
+
 # =============================================================================
 # Testing
 # =============================================================================

@@ -298,6 +298,7 @@ make version                # Show version information
 make interactive            # Start interactive conversation session
 make chat                   # Alias for interactive mode
 make interactive-model MODEL=opus  # Use specific model (opus, sonnet, haiku)
+make interactive-quiet      # Quiet mode - suppress all system logs (clean chat only)
 ```
 
 ## Quick Start Examples (No Docker Required)
@@ -428,12 +429,13 @@ Phase 1 adds interactive conversation mode to the harness, allowing you to chat 
 - Integration with AgentSession (automatic checkpointing, metrics)
 - Checkpoint recovery on session start
 - Graceful error handling and session shutdown
-- Support for CLI arguments (--model, --stats, --print-raw)
+- Support for CLI arguments (--model, --stats, --print-raw, --quiet)
 
 **Makefile Targets**:
 - `make interactive` - Start interactive session with default model (sonnet)
 - `make chat` - Alias for interactive mode
 - `make interactive-model MODEL=opus` - Use specific model
+- `make interactive-quiet` - Quiet mode (suppress all system logs for clean chat)
 
 ### Usage
 
@@ -483,6 +485,29 @@ make interactive-model MODEL=haiku
 # Use Sonnet (default, balanced)
 make interactive
 ```
+
+**Quiet Mode for Clean Chat**:
+```bash
+# Suppress all system logs (checkpoints, metrics, session info)
+make interactive-quiet
+
+# Or manually with any model
+docker compose exec -it main-agent python -m harness.interactive --quiet --model opus
+```
+
+Quiet mode suppresses:
+- ✅ Checkpoint recovery messages
+- ✅ Session initialization logs
+- ✅ Metrics collection logs
+- ✅ Internal agent operations
+
+But still shows:
+- ✅ User prompts and agent responses (the actual chat)
+- ✅ Errors and warnings (important information)
+- ✅ Tool use and results
+
+**Alternative: Use LOG_LEVEL=WARNING in .env**
+For persistent quiet-ish sessions without the --quiet flag, set `LOG_LEVEL=WARNING` in your `.env` file. This reduces verbosity while still showing some system events.
 
 **View Session Stats**:
 When you exit with "quit" or "exit", you'll see:

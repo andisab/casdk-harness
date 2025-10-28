@@ -60,6 +60,12 @@ parser.add_argument(
     default="False",
     help="Print raw messages for debugging (default: False)",
 )
+parser.add_argument(
+    "--quiet",
+    "-q",
+    action="store_true",
+    help="Suppress all system logs (only show chat messages)",
+)
 
 
 # --------------------------------
@@ -212,6 +218,7 @@ def parse_and_print_message(
     message: Message,
     console: Console,
     print_stats: bool = False,
+    quiet: bool = False,
 ) -> None:
     """
     Parse and print a message based on its type and content.
@@ -220,10 +227,15 @@ def parse_and_print_message(
         message: SDK message to parse and display
         console: Rich console instance
         print_stats: Whether to print session statistics for ResultMessage
+        quiet: Whether to suppress system messages
     """
     # Assistant messages include TextBlock, ToolUseBlock, ThinkingBlock
     # https://docs.claude.com/en/api/agent-sdk/python#content-block-types
     if isinstance(message, SystemMessage):
+        # Skip system messages in quiet mode
+        if quiet:
+            return
+
         if message.subtype == "compact_boundary":
             compact_meta = message.data.get("compact_metadata", {})
             print_rich_message(

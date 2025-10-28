@@ -33,6 +33,15 @@ async def run_interactive_session() -> None:
     args = parser.parse_args()
     console = Console()
 
+    # Configure quiet mode if requested
+    if args.quiet:
+        # Suppress all logging by setting to CRITICAL level
+        import logging
+        logging.getLogger().setLevel(logging.CRITICAL)
+        structlog.configure(
+            wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
+        )
+
     # Get configuration
     config = get_config()
 
@@ -63,7 +72,7 @@ async def run_interactive_session() -> None:
 
         # Attempt to recover from checkpoint if available
         recovered = await session.recover_from_checkpoint()
-        if recovered:
+        if recovered and not args.quiet:
             console.print(
                 "[green]✓ Recovered from previous checkpoint[/green]\n",
                 style="dim",
@@ -145,6 +154,7 @@ async def run_interactive_session() -> None:
                         message,
                         console,
                         print_stats=print_stats,
+                        quiet=args.quiet,
                     )
 
             except KeyboardInterrupt:
