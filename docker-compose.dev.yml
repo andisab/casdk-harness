@@ -14,8 +14,9 @@ services:
     # Enable debugging port
     ports:
       - "5678:5678"  # Python debugger
-    # Override command for development
-    command: python -m harness.agent --debug
+    # Override command for development - keep container alive for interactive sessions
+    # Use 'make interactive' to start a session
+    command: tail -f /dev/null
     # Watch mode for automatic reload (Docker Compose 2.22+)
     # Note: Paths watched here should NOT be in volumes: section
     develop:
