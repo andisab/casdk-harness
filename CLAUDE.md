@@ -2,78 +2,29 @@
 
 # Claude Agent SDK Harness - Technical Documentation
 
-**Last updated**: October 26, 2025
+**Last updated**: October 28, 2025
 
 ## Current Status
 
-**Phase**: Enhanced Observability (Fixes Applied, Testing Required)
+**Phase**: Enhanced Observability (✅ Complete and Verified)
 **Test Coverage**: ~61% (Target: 80%+)
-**Last Updated**: October 26, 2025
+**Last Updated**: October 28, 2025
 
 ### What's Working
 - ✅ Interactive conversation mode with Rich CLI (cli.py, interactive.py)
+- ✅ **Quiet mode for clean chat** (--quiet flag suppresses system logs)
 - ✅ Action logging hooks and session metrics (infrastructure in place)
-- ✅ Grafana dashboard with 10 panels (visible and accessible)
+- ✅ **Grafana dashboard with real-time metrics** (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
 - ✅ MCP server integration (git, docker, memory, context7, playwright, joplin)
-- ✅ Token usage tracking and cost calculation (implementation complete)
-- ✅ **FIXED**: Grafana datasource configuration (Prometheus connection)
-- ✅ **FIXED**: Metrics port exposure in docker-compose.yml (9090 now exposed)
-- ✅ **FIXED**: Token usage tracking in interactive sessions (ResultMessage handling)
+- ✅ Token usage tracking and cost calculation (verified in Grafana)
 
-### Recent Fixes (October 26, 2025)
-
-**Issue #1: Missing Grafana Datasource Configuration**
-- **Problem**: Grafana had no datasource configuration to connect to Prometheus
-- **Fix**: Created `config/monitoring/datasources/prometheus.yml` and mounted in docker-compose.yml
-- **Impact**: Grafana can now query Prometheus for metrics data
-
-**Issue #2: Metrics Port Not Exposed**
-- **Problem**: Agent containers didn't expose port 9090 for Prometheus scraping
-- **Fix**: Added port mappings in docker-compose.yml:
-  - main-agent: 9091:9090
-  - reviewer-agent: 9092:9090
-  - tester-agent: 9093:9090
-- **Impact**: Prometheus can now scrape metrics from all agent containers
-
-**Issue #3: Token Usage Not Tracked in Interactive Sessions**
-- **Problem**: Type checking in agent.py used `isinstance(message, dict)` but SDK yields `ResultMessage` objects
-- **Fix**: Updated agent.py:src/harness/agent.py:220 to check for `ResultMessage` type instead
-- **Impact**: Token usage, costs, and cache metrics are now properly recorded during interactive sessions
-
-### What's Pending
-- [ ] **TEST: Restart containers to apply fixes** (`docker compose down && docker compose up -d`)
-- [ ] **TEST: Verify Prometheus is scraping metrics** (check http://localhost:9090/targets)
-- [ ] **TEST: Verify Grafana shows accurate data** (check Interactive Sessions dashboard)
-- [ ] End-to-end testing of full observability stack
-- [ ] Commit untracked files to git (cli.py, interactive.py, hooks/, datasources/)
+### ToDO & Next Steps
+- [ ] Test metrics / action logging hooks with real agent sessions
 - [ ] Increase test coverage to 70%+ (interim goal toward 80%)
-- [ ] Test action logging with real agent sessions
-
-✅ **Status Update**: Three critical issues identified and fixed. Metrics pipeline should now work correctly after container restart.
-
-### Next Steps
-1. Complete testing of observability features
-2. Commit working changes to git
-3. Polish core functionality and improve test coverage
-4. Then: Configuration & extensibility features (see docs/future/)
-
-⚠️ **Note**: Some documented features are implemented but not yet committed to git.
-
-## To Do
-
-### Immediate (Complete Current Phase)
-- [x] **FIXED: Grafana datasource configuration** (created prometheus.yml datasource)
-- [x] **FIXED: Prometheus scraping configuration** (exposed port 9090 on agent containers)
-- [x] **FIXED: Metric collection in interactive sessions** (ResultMessage type handling)
-- [ ] **TEST: Restart containers and verify fixes** (`docker compose down && docker compose up -d`)
-- [ ] **TEST: Check Prometheus targets** (http://localhost:9090/targets should show all agents)
-- [ ] **TEST: Verify Grafana data accuracy** (Interactive Sessions dashboard)
-- [ ] Test full observability stack end-to-end with real agent session
-- [ ] Test action logging hook with real agent sessions
-- [ ] Commit all implementation files (cli.py, interactive.py, hooks/, datasources/, agent.py changes)
-- [ ] Improve test coverage to 70%+ (interim goal)
+- [ ] Add integration tests for metrics collection
+- [ ] Implement configuration profiles (Phase 3) and features documented in @docs/future/
 
 ### Near-term (Polish & Stabilize)
 - [ ] Verify all MCP servers function correctly
