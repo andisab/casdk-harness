@@ -8,9 +8,7 @@
 
 **Claude Agent SDK Harness** is an enterprise-grade automation toolkit that enables 20+ hour autonomous development sessions using Anthropic's Claude Agent SDK. Built for teams that want to accelerate software delivery while maintaining quality, security, and observability.
 
-> **Current Status**: Foundation infrastructure complete with monitoring, checkpointing, and multi-agent orchestration. Claude SDK integration in progress.
-
-## ✨ Key Features
+## Key Features
 
 - 🤖 **Multi-Agent Coordination** - Run multiple specialized agents (dev, review, test) in parallel
 - 💾 **Checkpoint & Recovery** - Automatic state persistence every hour with instant recovery
@@ -21,132 +19,396 @@
 - 🔌 **Extensible** - Plugin architecture for custom agents and tools
 - 📈 **Cost Optimized** - Smart caching reduces API costs by 90%
 
-## 🚀 Quick Start
+## Prerequisites
 
-### Prerequisites
-
-```bash
-# Required
+**Required:**
 - Docker 24.0+ with BuildKit
 - Docker Compose 2.22+
 - Python 3.12 or 3.13
 - Anthropic API key
 - 8GB+ RAM
+- 50GB+ disk space
 
-# Check versions
+**Verify versions:**
+```bash
 docker --version
 docker compose version
 python --version
 ```
 
-### Installation
+**Recommended:**
+- OrbStack (macOS) - 2x faster than Docker Desktop
+
+## Getting Started
 
 ```bash
-# 1. Clone repository (if needed)
+# 1. Navigate to repository
 cd ~/Projects/claudeagentsdk-harness
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
-
-# 3. Initialize and build
+# 2. Initialize directories and environment
 make init
+
+# 3. Edit .env and add your ANTHROPIC_API_KEY
+# ANTHROPIC_API_KEY=sk-ant-your_key_here
+
+# 4. Build containers
 make build
 
-# 4. Start development environment
+# 5. Start development environment
 make dev
 ```
 
-That's it! Your autonomous development environment is running at:
+That's it! Your environment is running at:
 - **Main Agent**: http://localhost:8080
 - **Grafana**: http://localhost:3000
 - **Prometheus**: http://localhost:9090
 
-### 📊 Monitoring Access
+## Quick Start Commands
 
-**Grafana Dashboards**:
-- **URL**: http://localhost:3000
-- **Default Login**: `admin` / `admin` (or password from `.env`: `GRAFANA_PASSWORD`)
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start development environment with hot-reload |
+| `make down` | Stop all services |
+| `make interactive` | Start interactive chat with agent |
+| `make logs` | View all service logs |
+| `make shell` | Shell into main agent container |
+| `make test` | Run test suite (see [CLAUDE.md](./CLAUDE.md) for testing strategy) |
+| `make metrics` | Open Grafana dashboard |
+| `make health` | Check all services health |
+| `make restart` | Restart all services |
+| `make clean` | Remove containers and volumes |
+
+> **Always use `make` commands** instead of direct `docker compose` commands. The Makefile handles proper compose file selection and environment settings automatically.
+
+## Interactive Mode
+
+The primary way to interact with agents is through interactive mode, which provides a Rich console UI for chatting with Claude.
+
+### Starting a Session
+
+```bash
+# Start with default model (sonnet)
+make interactive
+
+# Use different models
+make interactive-model MODEL=opus    # Most capable
+make interactive-model MODEL=haiku   # Fastest, cheapest
+
+# Quiet mode (clean chat, suppress system logs)
+make interactive-quiet
+```
+
+### What You'll See
+
+```
+┌─────────────────────────────────────────────┐
+│            🤖 Welcome                       │
+├─────────────────────────────────────────────┤
+│ Claude Agent SDK Harness                    │
+│ Production-ready autonomous framework       │
+│                                             │
+│ Agent: main                                 │
+│ Model: claude-sonnet-4-5-20250929          │
+│                                             │
+│ Type 'exit' or 'quit' to end the session   │
+└─────────────────────────────────────────────┘
+
+You: _
+```
+
+### Features
+
+- ✅ Rich formatted messages with colored panels
+- ✅ Syntax highlighting for code and JSON
+- ✅ Real-time tool use display
+- ✅ Session statistics on exit (tokens, cost, duration)
+- ✅ Automatic checkpoint recovery if interrupted
+- ✅ Integration with all MCP servers (git, docker, memory, etc.)
+
+### Session Stats
+
+When you exit with "quit" or "exit":
+
+```
+┌─────────────────────┬──────────────────────┐
+│      Session Stats                        │
+├─────────────────────┼──────────────────────┤
+│ Session ID          │ main_2025-10-26...  │
+│ Result              │ success             │
+│ Duration (s)        │ 125.34              │
+│ Cost (USD)          │ $0.0342             │
+│ Input Tokens        │ 12,450              │
+│ Output Tokens       │ 3,210               │
+│ Cache Read Tokens   │ 8,940               │
+│ Cache Creation ...  │ 1,200               │
+└─────────────────────┴──────────────────────┘
+```
+
+### Checkpoint Recovery
+
+If your session is interrupted, the next session automatically recovers:
+
+```bash
+make interactive
+# Output: ✓ Recovered from previous checkpoint
+```
+
+## Complete Command Reference
+
+### Development
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start with hot-reload and watch mode |
+| `make shell` | Shell into main agent container |
+| `make shell-reviewer` | Shell into reviewer agent |
+| `make shell-tester` | Shell into tester agent |
+| `make logs` | Tail all service logs |
+| `make logs-main` | Main agent logs only |
+| `make logs-json` | Structured JSON logs |
+
+### Operations
+
+| Command | Description |
+|---------|-------------|
+| `make up` | Start all services |
+| `make down` | Stop all services |
+| `make restart` | Restart services |
+| `make ps` | Show running containers |
+| `make clean` | Remove containers and volumes |
+| `make prune` | Clean up unused Docker resources |
+| `make reset` | Full reset (destructive!) |
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run full test suite |
+| `make test-unit` | Unit tests only |
+| `make test-integration` | Integration tests |
+| `make test-e2e` | End-to-end tests |
+| `make coverage` | Generate coverage report |
+
+> See [CLAUDE.md](./CLAUDE.md) for complete testing strategy and cost management.
+
+### Monitoring
+
+| Command | Description |
+|---------|-------------|
+| `make metrics` | Open Grafana (localhost:3000) |
+| `make prometheus` | Open Prometheus (localhost:9090) |
+| `make health` | Check all services health |
+
+### Maintenance
+
+| Command | Description |
+|---------|-------------|
+| `make backup` | Backup workspace and checkpoints |
+| `make restore` | Restore from latest backup |
+| `make db-shell` | PostgreSQL shell |
+| `make db-backup` | Backup database |
+| `make db-restore` | Restore database |
+
+### Interactive Agent
+
+| Command | Description |
+|---------|-------------|
+| `make interactive` | Start interactive session (default: sonnet) |
+| `make chat` | Alias for interactive mode |
+| `make interactive-model MODEL=opus` | Use specific model |
+| `make interactive-quiet` | Quiet mode (suppress system logs) |
+
+## Configuration
+
+Configuration is done through `.env` file (copy from `.env.example`):
+
+### Required Settings
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `ANTHROPIC_API_KEY` | Anthropic API key (required) | `sk-ant-...` |
+
+### Agent Behavior
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLAUDE_MODEL` | Model to use | `claude-sonnet-4-5-20250929` |
+| `CLAUDE_PERMISSION_MODE` | Permission mode | `acceptEdits` |
+| `CLAUDE_MAX_TURNS` | Maximum conversation turns | `1000` |
+| `CLAUDE_SESSION_TIMEOUT` | Session timeout (seconds) | `72000` (20 hours) |
+| `CLAUDE_CHECKPOINT_INTERVAL` | Checkpoint interval (seconds) | `3600` (1 hour) |
+
+**Permission modes:**
+- `manual` - Require approval for every action
+- `acceptEdits` - Auto-approve file edits, prompt for commands
+- `acceptAll` - Auto-approve all actions
+
+### Resource Limits
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGENT_CPU_LIMIT` | CPU cores per agent | `4` |
+| `AGENT_MEMORY_LIMIT` | Memory per agent | `8G` |
+| `AGENT_CPU_RESERVATION` | Reserved CPU | `2` |
+| `AGENT_MEMORY_RESERVATION` | Reserved memory | `4G` |
+
+### Monitoring
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GRAFANA_PASSWORD` | Grafana admin password | `changeme123` |
+| `GRAFANA_PORT` | Grafana port | `3000` |
+| `PROMETHEUS_PORT` | Prometheus port | `9090` |
+| `PROMETHEUS_RETENTION` | Data retention period | `30d` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `LOG_FORMAT` | Log format | `json` |
+
+### Database
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `POSTGRES_HOST` | PostgreSQL host | `postgres` |
+| `POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `POSTGRES_DB` | Database name | `claude_harness` |
+| `POSTGRES_USER` | Database user | `claude` |
+| `POSTGRES_PASSWORD` | Database password | (set in .env) |
+
+### Redis
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `REDIS_HOST` | Redis host | `redis` |
+| `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_PASSWORD` | Redis password | (set in .env) |
+
+See [`.env.example`](./.env.example) for complete configuration template.
+
+### Agent Configuration
+
+Customize agent behavior in `.claude/agents/` (44 total agents with prefix naming):
+
+**Development Agents (dev-*):**
+- `dev-python-expert.md` - Python with FastAPI, async, type safety
+- `dev-typescript-expert.md` - TypeScript with modern patterns
+- `dev-nodejs-expert.md` - Node.js backend development
+- `dev-go-expert.md`, `dev-rust-expert.md`, `dev-cpp-expert.md` - Language specialists
+- And 10 more: React, Vue, Next.js, JavaScript, PHP, Perl, Lua, HTML, Kotlin, refactoring
+
+**Database Agents (db-*):**
+- `db-postgres-expert.md`, `db-mongodb-expert.md` - Traditional and NoSQL
+- `db-neo4j-expert.md`, `db-cassandra-expert.md` - Graph and distributed
+- `db-sql-expert.md`, `db-vector-expert.md` - Query and embedding specialists
+
+**Infrastructure Agents (infra-*):**
+- `infra-docker-engineer.md` - Docker and container optimization
+- `infra-k8s-engineer.md` - Kubernetes orchestration
+- `infra-terraform-engineer.md` - Infrastructure as Code
+- `infra-gcp-architect.md`, `infra-aws-architect.md` - Cloud specialists
+- `infra-github-actions-expert.md`, `infra-gitlab-ci-expert.md` - CI/CD pipelines
+
+**ML/AI Agents (ml-*):**
+- `ml-pytorch-expert.md`, `ml-tensorflow-expert.md` - Deep learning
+- `ml-langchain-expert.md`, `ml-scikit-learn-expert.md` - LLMs and classical ML
+
+**Other Specialists:**
+- **Build (build-*)**: `build-orchestrator.md`, `build-project-planner.md`
+- **Documentation (doc-*)**: `doc-content-writer.md`, `doc-prd-writer.md`
+- **Web (web-*)**: `web-frontend-designer.md`, `web-fastapi-architect.md`
+- **Data (data-*)**: `data-python-engineer.md`
+
+## Monitoring & Observability
+
+### Accessing Dashboards
+
+**Grafana** (http://localhost:3000):
+- **Login**: `admin` / `admin` (or `GRAFANA_PASSWORD` from `.env`)
 - **Dashboards**:
-  - **Overview**: General system health and metrics
+  - **Overview**: System health and general metrics
   - **Interactive Sessions**: Real-time chat metrics, tool usage, cache performance
-- **Change Password**: Settings → Profile → Change Password (recommended on first login)
+  - **Agent Performance**: Per-agent metrics and timing
+  - **Resource Usage**: CPU, memory, disk utilization
+  - **Costs**: API usage and cost breakdown
 
-**Prometheus Metrics**:
-- **URL**: http://localhost:9090
-- **No Authentication Required** (development mode)
-- **Useful Queries**:
-  - `interactive_session_prompts_total` - User prompts count
-  - `api_cost_dollars_total` - Total API costs
-  - `interactive_tool_calls_total` - Tool usage by name
-  - `interactive_cache_hit_ratio` - Cache effectiveness
+**Prometheus** (http://localhost:9090):
+- **No authentication required** (development mode)
+- Direct access to all metrics
+- Query builder for ad-hoc analysis
 
-## 📚 Usage Examples
+### Key Metrics
 
-### Getting Started
+**Interactive Session Metrics:**
+- `interactive_session_prompts_total` - User prompts count
+- `interactive_session_responses_total` - Agent responses count
+- `interactive_tool_calls_total` - Tool usage by name
+- `interactive_cache_hit_ratio` - Cache effectiveness (0-1)
+- `interactive_cache_read_tokens_total` - Cache read tokens
+- `interactive_cache_creation_tokens_total` - Cache creation tokens
 
-```bash
-# 1. Start the development environment
-make dev
+**Agent Metrics:**
+- `agent_requests_total{agent, status}` - Request counts by status
+- `agent_duration_seconds{agent}` - Execution duration histogram
+- `agent_active_sessions{agent}` - Active session count
 
-# 2. Monitor service logs (in another terminal)
-make logs
+**Cost Metrics:**
+- `api_tokens_used_total{model, type}` - Token consumption
+- `api_cost_dollars_total{model}` - API costs in USD
 
-# 3. View metrics dashboard
-make metrics  # Opens Grafana at localhost:3000
+**Resource Metrics:**
+- `checkpoint_size_bytes` - Total checkpoint storage
+- `workspace_files_total` - Files in workspace
+- `memory_usage_bytes{component}` - Memory usage by component
 
-# 4. Check system health
-make health
+### Useful Prometheus Queries
 
-# 5. Access Prometheus
-make prometheus  # Opens at localhost:9090
+```promql
+# Total prompts in last hour
+sum(increase(interactive_session_prompts_total[1h]))
+
+# Average cache hit ratio
+avg(interactive_cache_hit_ratio)
+
+# Most used tools
+topk(5, sum by (tool_name) (interactive_tool_calls_total))
+
+# Cost per session
+sum(api_cost_dollars_total) / count(interactive_session_prompts_total)
+
+# Response time p95
+histogram_quantile(0.95, sum(rate(agent_duration_seconds_bucket[5m])) by (le))
 ```
 
-### Working with Agents
+### Viewing Logs
 
 ```bash
-# Shell into main agent container
-make shell
+# All logs (live tail)
+make logs
 
-# Inside container, interact with Claude Agent SDK
-# (SDK integration in progress - currently placeholder)
+# Structured JSON logs with filtering
+make logs-json | jq 'select(.event == "Token usage recorded")'
 
-# View main agent logs
+# View interactive session events only
+make logs-json | jq 'select(.session_id != null)'
+
+# Specific agent logs
 make logs-main
-
-# View all logs
-make logs
-
-# Restart all services
-make restart
+docker compose logs reviewer-agent
 ```
 
-**Advanced**: For agent-specific operations, use make targets:
-- `make shell-reviewer` - Shell into reviewer agent
-- `make shell-tester` - Shell into tester agent
+### Cost Tracking
 
-### Development Workflow
+Real-time cost calculation based on current Anthropic pricing:
+- **Input tokens**: $0.003 per 1K tokens
+- **Output tokens**: $0.015 per 1K tokens
+- **Cached tokens**: $0.0003 per 1K tokens
 
-```bash
-# Start development with hot-reload
-make dev
+View costs in Grafana:
+1. Open http://localhost:3000
+2. Navigate to "Cost Dashboard"
+3. Monitor $/hour trends and token usage breakdown
 
-# Run tests
-make test
+## Architecture
 
-# Check code coverage
-make coverage
-
-# View structured logs
-make logs-json | jq '.level, .message'
-
-# Stop all services
-make down
-```
-
-> **Note**: Full workflow scripts (`submit_task.py`, `run_workflow.py`) will be added after Claude SDK integration is complete. See [CLAUDE.md](./CLAUDE.md) for detailed implementation status.
-
-## 🏗️ Architecture
+### System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -172,218 +434,40 @@ make down
 | **Tester** | Test generation, execution | Read, Write, Bash | Sonnet 4.5 |
 | **Orchestrator** | Multi-agent coordination | All | Opus 4.1 |
 
-## 🛠️ Common Commands
+### Services & Ports
 
-### Development
+| Service | Port | Purpose | Access |
+|---------|------|---------|--------|
+| Main Agent | 8080 | Primary development agent | http://localhost:8080 |
+| Reviewer Agent | 8081 | Code review agent | http://localhost:8081 |
+| Tester Agent | 8082 | Testing agent | http://localhost:8082 |
+| Grafana | 3000 | Monitoring dashboards | http://localhost:3000 |
+| Prometheus | 9090 | Metrics collection | http://localhost:9090 |
+| PostgreSQL | 5432 | Database (dev mode only) | localhost:5432 |
+| Redis | 6379 | Cache (dev mode only) | localhost:6379 |
 
-```bash
-make dev              # Start with hot-reload and watch mode
-make shell            # Shell into main agent container
-make logs             # Tail all service logs
-make logs-json        # Structured JSON logs
-```
+### Volume Mounts
 
-### Operations
+| Path | Purpose | Persistent |
+|------|---------|------------|
+| `./workspace` | Agent working directory | Yes (gitignored) |
+| `./memory` | Checkpoints and context | Yes (gitignored) |
+| `./logs` | Application logs | Yes (gitignored) |
+| `./config` | Configuration files | Yes (committed) |
+| `./src` | Source code (dev mode) | Yes (committed) |
 
-```bash
-make up               # Start all services
-make down             # Stop all services
-make restart          # Restart services
-make ps               # Show running containers
-make clean            # Remove containers and volumes
-```
+## Long-Running Sessions (20+ Hours)
 
-### Testing
+The harness is designed for extended autonomous sessions with built-in safeguards.
 
-```bash
-make test             # Run full test suite
-make test-unit        # Unit tests only
-make test-integration # Integration tests
-make test-e2e         # End-to-end tests
-make coverage         # Generate coverage report
-```
-
-### Monitoring
+### Starting a Long Session
 
 ```bash
-make metrics          # Open Grafana (localhost:3000)
-make prometheus       # Open Prometheus (localhost:9090)
-make health           # Check all services health
-```
+# 1. Stop any existing sessions
+make down
 
-### Maintenance
-
-```bash
-make prune            # Clean up unused Docker resources
-make clean            # Remove containers and volumes
-make reset            # Full reset (destructive!)
-```
-
-> **Note**: Backup and restore functionality planned for future release.
-
-## 📖 Documentation
-
-- **This README** - Quick start guide and common commands (you are here)
-- **[CLAUDE.md](./CLAUDE.md)** - Complete technical documentation for Claude Code
-- **[docs/future/](./docs/future/)** - Proposed features (low priority, deferred)
-
-For detailed architecture, implementation notes, configuration options, and troubleshooting, see [CLAUDE.md](./CLAUDE.md).
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Key configuration options in `.env`:
-
-```bash
-# API Keys
-ANTHROPIC_API_KEY=sk-ant-...           # Required
-
-# Agent Behavior
-CLAUDE_MODEL=claude-sonnet-4-5-20250929
-CLAUDE_PERMISSION_MODE=acceptEdits     # manual|acceptEdits|acceptAll
-CLAUDE_MAX_TURNS=1000
-CLAUDE_SESSION_TIMEOUT=72000           # 20 hours
-
-# Resources
-AGENT_CPU_LIMIT=4
-AGENT_MEMORY_LIMIT=8G
-
-# Monitoring
-GRAFANA_PASSWORD=changeme123
-LOG_LEVEL=INFO
-```
-
-See [`.env.example`](./.env.example) for all options.
-
-### Agent Configuration
-
-Customize agent behavior in `.claude/agents/`:
-
-```yaml
-# .claude/agents/development/my-custom-agent.md
----
-name: my-custom-agent
-description: Specialized agent for my use case
-tools: Read, Write, Bash, Grep
-model: sonnet
----
-[Your custom agent instructions...]
-```
-
-## 🐳 Deployment
-
-### Local Development (OrbStack)
-
-```bash
-# Start development environment
-make dev
-
-# Production-like local build
-make prod
-```
-
-### Docker Compose
-
-```bash
-# Development
-make dev
-
-# Production configuration
-ENVIRONMENT=production make up
-```
-
-### Kubernetes (Coming Soon)
-
-Kubernetes manifests for GKE and EKS deployment will be added in a future release. The current architecture is designed to be K8s-ready with:
-- Health checks for all services
-- Resource limits and requests
-- ConfigMaps and Secrets support
-- StatefulSet patterns for agents
-
-See [CLAUDE.md](./CLAUDE.md) for roadmap details.
-
-## 🔐 Environment Isolation & Long-Running Sessions
-
-### What's Isolated in Containers ✅
-
-The harness runs **fully containerized** with the following components isolated from your host system:
-
-**Container-Based Services:**
-- ✅ All Claude agents (main, reviewer, tester) with complete Python environments
-- ✅ All dependencies (Python 3.12, Node.js/npm, git, Claude CLI)
-- ✅ MCP servers (memory, context7, joplin, playwright, github) run inside containers via npx
-- ✅ Custom MCP servers (git, docker) implemented in Python
-- ✅ PostgreSQL database with persistent volumes
-- ✅ Redis cache with persistent volumes
-- ✅ Prometheus metrics collection
-- ✅ Grafana dashboards
-
-**What This Means:**
-- No Python packages installed on your Mac
-- No Node.js/npm pollution of your global environment
-- All processes run in isolated container namespaces
-- Resource limits (CPU/memory) enforced at container level
-
-### Host System Dependencies ⚠️
-
-While agents run in containers, these components interact with your host system:
-
-**Shared Filesystem (Docker Volume Mounts):**
-```
-./workspace  → Agent working directory (read/write)
-./memory     → Checkpoints and context (read/write)
-./logs       → Application logs (write)
-./config     → Configuration files (read-only)
-./src        → Source code (dev mode hot-reload)
-```
-
-**Required on Host:**
-- Docker daemon (OrbStack or Docker Desktop must be running)
-- `.env` file with configuration
-- Disk space for workspace, memory, and logs (can grow large during long sessions)
-
-**Exposed Ports (accessible from your Mac):**
-- `8080` - Main agent HTTP endpoint
-- `8081` - Reviewer agent
-- `8082` - Tester agent
-- `3000` - Grafana dashboards
-- `9090` - Prometheus metrics
-- `5432` - PostgreSQL (dev mode only)
-- `6379` - Redis (dev mode only)
-
-### Running Long-Duration Sessions (20+ Hours)
-
-The harness is **designed for extended autonomous sessions** with built-in safeguards:
-
-**Checkpoint & Recovery:**
-- Auto-save state every hour (configurable via `CLAUDE_CHECKPOINT_INTERVAL`)
-- Keep 5 most recent checkpoints
-- Automatic recovery on container restart
-- Session state persists in `./memory/checkpoints/`
-
-**Monitoring & Alerts:**
-- Prometheus tracks resource usage, API costs, and errors
-- Grafana dashboards show real-time metrics
-- Pre-configured alerts for OOM, high error rates, slow responses
-- Health checks every 30 seconds with auto-restart
-
-**Resource Management:**
-- CPU/memory limits prevent runaway usage
-- Docker restart policy: `unless-stopped`
-- Log rotation to prevent disk exhaustion (configured in monitoring)
-
-### Starting a Long-Running Session
-
-**Clean Start (Recommended):**
-```bash
-# 1. Stop any existing background processes
-ps aux | grep "make build"   # Find and kill if running
-ps aux | grep "make dev"      # Find and kill if running
-
-# 2. Clean slate
-make down              # Stop all containers
-make clean             # Remove containers and volumes
+# 2. Clean start
+make clean
 
 # 3. Build fresh
 make build
@@ -396,61 +480,35 @@ make health
 make ps
 ```
 
-**Monitor Without Blocking Your Terminal:**
+### Before Starting
+
+**Prevent Mac Sleep:**
 ```bash
-# View logs when needed (non-blocking)
-make logs
+# Keep Mac awake
+caffeinate -s &
 
-# Check service health
-make health
-
-# View metrics dashboard
-make metrics          # Opens Grafana at localhost:3000
-
-# Check resource usage
-docker stats claude-main-agent
+# Or: System Settings > Energy Saver > Prevent automatic sleep
 ```
 
-### Important Considerations for Extended Sessions
+**Monitor Disk Space:**
+```bash
+# Check available space
+df -h .
 
-**Before Starting a 20+ Hour Session:**
+# Monitor growth during session
+du -sh workspace/ memory/ logs/
+```
 
-1. **Prevent Mac Sleep:**
-   ```bash
-   # macOS - keep Mac awake
-   caffeinate -s &
+**Verify Checkpointing:**
+```bash
+# Check checkpoints are being created
+ls -lh memory/checkpoints/
 
-   # Or use System Settings > Energy Saver > Prevent automatic sleep
-   ```
+# Should see new files every hour
+```
 
-2. **Monitor Disk Space:**
-   ```bash
-   # Check available space
-   df -h .
+### During the Session
 
-   # Monitor growth during session
-   du -sh workspace/ memory/ logs/
-   ```
-
-3. **Set API Budget Alerts:**
-   - Configure cost alerts in `.env`: `ENABLE_COST_OPTIMIZATION=true`
-   - Monitor in Grafana dashboard at `localhost:3000`
-   - Default alert: >$10/hour triggers notification
-
-4. **Checkpoint Verification:**
-   ```bash
-   # Check checkpoints are being created
-   ls -lh memory/checkpoints/
-
-   # Should see new files every hour
-   ```
-
-5. **Log Retention:**
-   - Logs rotate automatically but can grow large
-   - Check `logs/` directory size periodically
-   - Configure retention in `.env`: `PROMETHEUS_RETENTION=30d`
-
-**During the Session:**
 ```bash
 # Quick health check
 make health
@@ -466,207 +524,239 @@ make metrics
 ls -lth memory/checkpoints/ | head -10
 ```
 
-**Recovery from Interruption:**
-```bash
-# If containers stopped unexpectedly
-make up                    # Restart all services
+### Recovery from Interruption
 
-# Agents will automatically:
+If containers stop unexpectedly:
+
+```bash
+make up
+
+# Agents automatically:
 # 1. Load latest checkpoint
 # 2. Resume from last known state
 # 3. Continue task execution
 ```
 
-### Production Deployment (Future)
+### Monitoring Without Blocking Terminal
 
-For **truly isolated** cloud deployment without host dependencies:
+```bash
+# View logs when needed (non-blocking)
+make logs
 
-**Kubernetes (Coming in Phase 3):**
-- Dedicated K8s cluster (GKE or EKS)
-- Persistent volumes separate from your machine
-- Auto-scaling for resource management
-- No dependency on your Mac staying awake
-- Network load balancers for external access
+# Check service health
+make health
 
-See [roadmap](#-roadmap) for K8s deployment timeline.
+# View metrics dashboard
+make metrics          # Opens Grafana
 
-## 📊 Monitoring & Observability
+# Check resource usage
+docker stats claude-main-agent
+```
 
-### Key Metrics
+### Important Considerations
 
-- **Agent Requests**: Total requests by agent and status
-- **Session Duration**: p50, p95, p99 latencies
-- **Checkpoint Size**: Memory usage trends
-- **Workspace Files**: Files created/modified
-- **API Costs**: Token usage and cost tracking
+- **Checkpoint interval**: Default 1 hour (configurable via `CLAUDE_CHECKPOINT_INTERVAL`)
+- **Checkpoint retention**: Keeps 5 most recent checkpoints
+- **Health checks**: Every 30 seconds with auto-restart
+- **Log rotation**: Automatic (configured in monitoring)
+- **API budget**: Monitor in Grafana, set alerts in `.env`
 
-### Default Dashboards
-
-1. **Overview**: High-level system health
-2. **Interactive Sessions** (NEW): Real-time interactive chat metrics
-   - Active sessions and prompt counts
-   - Average response time
-   - Cache hit ratio gauge
-   - Cost per hour trend
-   - Token usage breakdown
-   - Tool usage heat map
-   - Message type distribution
-   - Session duration distribution
-   - Cache performance over time
-3. **Agent Performance**: Per-agent metrics and timing
-4. **Resource Usage**: CPU, memory, disk utilization
-5. **Costs**: API usage and cost breakdown
-
-### Alerts
-
-Pre-configured alerts for:
-- Agent OOM or crashes
-- High error rates (>5%)
-- Slow response times (>30s p95)
-- Disk space low (<10%)
-- Checkpoint failures
-
-## 🔒 Security
+## Security
 
 ### Built-in Security Features
 
-- ✅ Non-root container users
-- ✅ Read-only root filesystem
-- ✅ Network isolation
-- ✅ Secret rotation (30 days)
-- ✅ Audit logging with correlation IDs
-- ✅ Resource limits prevent DoS
-- ✅ No secrets in version control
+- ✅ **Non-root containers** - All services run as non-root users
+- ✅ **Read-only filesystems** - Where possible
+- ✅ **Network isolation** - Bridge network with isolated services
+- ✅ **Secret rotation** - Rotate every 30 days (recommended)
+- ✅ **Audit logging** - Structured logs with correlation IDs
+- ✅ **Resource limits** - Prevent DoS via container limits
+- ✅ **No secrets in version control** - All secrets in `.env` (gitignored)
 
-### Recommended Practices
+### Best Practices
 
-1. Rotate `ANTHROPIC_API_KEY` every 90 days
-2. Use dedicated service accounts
-3. Enable GitHub/GitLab SSO
-4. Review audit logs weekly
-5. Scan containers with Trivy/Snyk
-6. Backup checkpoints to S3/GCS
+1. **API Keys**: Rotate `ANTHROPIC_API_KEY` every 90 days
+2. **Passwords**: Change default Grafana password immediately
+3. **Service Accounts**: Use dedicated service accounts (not personal)
+4. **Access Control**: Enable GitHub/GitLab SSO when available
+5. **Audit Logs**: Review logs weekly for suspicious activity
+6. **Container Scanning**: Scan with Trivy/Snyk before deployment
+7. **Backups**: Backup checkpoints to S3/GCS with encryption
 
-## 🧪 Testing
-
-### Test Structure
-
-```
-tests/
-├── unit/              # Fast, isolated unit tests
-├── integration/       # Multi-service integration tests
-└── e2e/              # Full workflow end-to-end tests
-```
-
-### Running Tests
+### Secret Management
 
 ```bash
-# All tests
-make test
+# .env.example (committed to git)
+DATABASE_URL=postgresql://user:pass@host:5432/db
+API_KEY=your_api_key_here
 
-# Unit tests only
-make test-unit
-
-# Integration tests
-make test-integration
-
-# End-to-end tests
-make test-e2e
-
-# With coverage
-make coverage
+# .env (never committed, gitignored)
+DATABASE_URL=postgresql://prod:real_secret@prod:5432/mydb
+API_KEY=sk_live_actual_key
 ```
 
-**Advanced**: For running specific tests, shell into the container:
+## Troubleshooting
+
+### Container Issues
+
+**Containers won't start:**
 ```bash
+# Check Docker daemon
+docker info
+
+# Check for port conflicts
+make ps
+lsof -i :8080
+
+# View service logs
+make logs-main
+make logs
+```
+
+**Out of memory errors:**
+```bash
+# Increase memory in .env
+AGENT_MEMORY_LIMIT=16G
+
+# Restart services
+make down && make up
+```
+
+### Configuration Issues
+
+**API key not set:**
+```bash
+# Check .env file
+cat .env | grep ANTHROPIC_API_KEY
+
+# Add to .env
+echo "ANTHROPIC_API_KEY=sk-ant-your_key" >> .env
+```
+
+**Environment not loading:**
+```bash
+# Verify .env exists
+ls -la .env
+
+# Restart with clean build
+make down
+make build
+make up
+```
+
+### Build Issues
+
+**Build cache issues:**
+```bash
+# Clean build without cache
+make build-no-cache
+
+# Or prune everything
+make prune
+make clean
+```
+
+**OrbStack issues (macOS):**
+```bash
+# Verify OrbStack is running
+orb status
+
+# Restart OrbStack
+orb restart
+```
+
+### Performance Issues
+
+**Slow responses:**
+```bash
+# Check resource usage
+docker stats
+
+# Increase resources in .env
+AGENT_CPU_LIMIT=8
+AGENT_MEMORY_LIMIT=16G
+
+# Restart
+make down && make up
+```
+
+**High API costs:**
+```bash
+# Check costs in Grafana
+make metrics
+
+# Reduce session timeout
+CLAUDE_SESSION_TIMEOUT=36000  # 10 hours
+
+# Use cheaper model
+CLAUDE_MODEL=claude-haiku-3-5-20250311
+```
+
+### Monitoring Issues
+
+**Grafana not accessible:**
+```bash
+# Check Grafana is running
+make ps | grep grafana
+
+# Check logs
+docker compose logs grafana
+
+# Restart Grafana
+docker compose restart grafana
+```
+
+**Metrics not appearing:**
+```bash
+# Check Prometheus targets
+curl http://localhost:9090/api/v1/targets
+
+# Verify metrics endpoint
+docker compose exec main-agent curl http://localhost:9090/metrics
+```
+
+### Debug Mode
+
+```bash
+# Start with debug logging
+DEBUG=true LOG_LEVEL=DEBUG make dev
+
+# Access shell for debugging
 make shell
-pytest tests/unit/test_checkpoint.py::test_save_checkpoint -v
+
+# Check service health
+make health
+
+# Run diagnostics
+make doctor
 ```
 
-### Test Coverage
+## Resources
 
-Minimum coverage requirements:
-- **Overall**: 80%
-- **Critical paths**: 95%
-- **Core modules**: 90%
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Follow coding standards in `.claude/specs/` directory
-4. Write tests with 80%+ coverage
-5. Submit a pull request
-
-Development guidelines:
-- Use Python 3.12+ with type hints
-- Follow KISS and YAGNI principles
-- Document all functions with docstrings
-- Test on OrbStack for macOS development
-
-## 📝 Changelog
-
-### v0.1.0-alpha (2025-10-06)
-
-**Foundation Release**
-- ✅ Multi-agent orchestration infrastructure with Docker Compose
-- ✅ Checkpoint and recovery system (auto-save every hour)
-- ✅ Prometheus + Grafana monitoring stack
-- ✅ Agent configuration framework (main, reviewer, tester)
-- ✅ Python SDK wrapper modules (config, checkpoint, monitoring, agent)
-- ✅ Comprehensive Makefile with 60+ commands
-- ✅ Unit test framework with pytest
-- ✅ OrbStack-optimized Docker builds
-- 🚧 Claude SDK integration (in progress)
-- 📋 Example workflows (planned)
-
-See [CLAUDE.md](./CLAUDE.md) for detailed status.
-
-## 🗺️ Roadmap
-
-**Current Phase**: Enhanced Observability (Mostly Complete)
-
-### Immediate Focus
-- Complete testing of observability features
-- Commit working changes to git
-- Improve test coverage to 80%+
-- Polish core functionality
-
-### Future Features (Deferred)
-See [docs/future/](./docs/future/) for detailed proposals:
-- Configuration & extensibility
-- External repository support
-- Web frontend UI
-- Production deployment (K8s, CI/CD)
-
-For detailed status, TODOs, and progress tracking, see [CLAUDE.md](./CLAUDE.md).
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Anthropic](https://anthropic.com) for Claude Agent SDK
-- [Claude Code](https://claude.ai/code) for inspiration
-- Community contributors and testers
-
-## 📬 Contact
-
-**Andis A. Blukis**
-- Email: andis.blukis@gmail.com
-- GitHub: [@andisab](https://github.com/andisab)
-- LinkedIn: [andisab](https://linkedin.com/in/andisab)
-
-## 🔗 Links
-
+### Documentation
 - [Claude Agent SDK Documentation](https://docs.claude.com/en/api/agent-sdk/overview)
+- [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code/)
+- [Technical Documentation (CLAUDE.md)](./CLAUDE.md) - Implementation details, development guide
+
+### SDKs
 - [Python SDK](https://github.com/anthropics/claude-agent-sdk-python)
 - [TypeScript SDK](https://github.com/anthropics/claude-agent-sdk-typescript)
-- [Claude Code Docs](https://docs.claude.com/en/docs/claude-code/)
+
+### Community
 - [Example Agents Collection](https://github.com/wshobson/agents)
+- [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
+
+### Contact
+- **Author**: Andis A. Blukis
+- **Email**: andis.blukis@gmail.com
+- **GitHub**: [@andisab](https://github.com/andisab)
+- **LinkedIn**: [andisab](https://linkedin.com/in/andisab)
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
 ---
 

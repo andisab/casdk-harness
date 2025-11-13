@@ -4,6 +4,9 @@
 
 **Last updated**: October 28, 2025
 
+> For user documentation and usage instructions, see [README.md](./README.md).
+> This file contains implementation details, development workflows, and technical references for developers and Claude.
+
 ## Current Status
 
 **Phase**: Enhanced Observability (✅ Complete and Verified)
@@ -11,29 +14,33 @@
 **Last Updated**: October 28, 2025
 
 ### What's Working
+
 - ✅ Interactive conversation mode with Rich CLI (cli.py, interactive.py)
-- ✅ **Quiet mode for clean chat** (--quiet flag suppresses system logs)
+- ✅ Quiet mode for clean chat (--quiet flag suppresses system logs)
 - ✅ Action logging hooks and session metrics (infrastructure in place)
-- ✅ **Grafana dashboard with real-time metrics** (verified working with live data)
+- ✅ Grafana dashboard with real-time metrics (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
 - ✅ MCP server integration (git, docker, memory, context7, playwright, joplin)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
 ### ToDO & Next Steps
+
 - [ ] Test metrics / action logging hooks with real agent sessions
 - [ ] Increase test coverage to 70%+ (interim goal toward 80%)
 - [ ] Add integration tests for metrics collection
 - [ ] Implement configuration profiles (Phase 3) and features documented in @docs/future/
 
 ### Near-term (Polish & Stabilize)
+
 - [ ] Verify all MCP servers function correctly
-- [ ] Run integration tests with real API (record VCR cassettes if applicable)
+- [ ] Run integration tests with real API
 - [ ] Create example workflow scripts
 - [ ] Improve test coverage to 80%+ (final goal)
 - [ ] Stabilize Docker service startup and health checks
 
 ### Future (Deferred - See docs/future/)
+
 - Configuration builder system (YAML/JSON profiles)
 - Agent library with auto-discovery
 - Tool registry and custom tool development
@@ -45,36 +52,50 @@
 
 ## Project Overview
 
-The Claude Agent SDK Harness is a production-ready, enterprise-grade framework for building autonomous software development systems using Anthropic's Claude Agent SDK. This harness provides the infrastructure, tooling, and patterns needed to run long-running (20+ hour) autonomous agent sessions with full observability, fault tolerance, and recovery capabilities.
-
-### Key Features
-
-- **Multi-Agent Orchestration**: Coordinate multiple specialized agents (development, review, testing)
-- **Checkpoint & Recovery**: Automatic state persistence with configurable intervals
-- **Full Observability**: Prometheus metrics, Grafana dashboards, structured logging
-- **Resource Management**: Container-level CPU/memory limits, OrbStack optimized builds
-- **Security**: Non-root containers, secret management, network isolation
-- **Extensibility**: Plugin architecture for custom agents and MCP servers
-- **Cloud Ready**: Local Docker Compose for development, future K8s support
+The Claude Agent SDK Harness is a production-ready framework for building autonomous software development systems using Anthropic's Claude Agent SDK. This harness provides infrastructure, tooling, and patterns for running long-duration (20+ hour) agent sessions with full observability, fault tolerance, and recovery.
 
 ### Architecture Principles
 
-1. **KISS, DRY, SOLID, YAGNI**: Follow universal code standards
-2. **Separation of Concerns**: Clear boundaries between agents, infrastructure, and business logic
-3. **Fail Fast**: Comprehensive validation and error handling
-4. **Observability First**: Everything is logged, metered, and traceable
-5. **Security by Default**: Least privilege, secret rotation, audit logs
-6. **Cloud Native**: Container-first, stateless where possible, config via environment
+1. **KISS, DRY, SOLID, YAGNI** - Follow universal code standards
+2. **Separation of Concerns** - Clear boundaries between agents, infrastructure, and business logic
+3. **Fail Fast** - Comprehensive validation and error handling
+4. **Observability First** - Everything is logged, metered, and traceable
+5. **Security by Default** - Least privilege, secret rotation, audit logs
+6. **Cloud Native** - Container-first, stateless where possible, config via environment
 
-## Repository File Structure & Architecture
+See [README.md](./README.md) for key features and user-facing capabilities.
+
+## Repository Structure
 
 ```
 claudeagentsdk-harness/
-├── .claude/                    # Claude Code configuration
-│   ├── agents/                 # Agent definitions (copied from ABDotfiles)
-│   │   ├── development/        # Language-specific experts (python, typescript, go, rust, etc.)
-│   │   └── infrastructure/     # Cloud & K8s specialists (docker, k8s, terraform, aws, gcp)
-│   └── specs/                  # Coding standards (python, make, general)
+├── .claude/                    # Claude Code configuration (SDK-compliant structure)
+│   ├── agents/                 # Agent definitions - flat structure with prefixes (44 total)
+│   │   ├── build-*.md          # Build/orchestration agents (3)
+│   │   ├── data-*.md           # Data engineering agents (1)
+│   │   ├── db-*.md             # Database experts (7)
+│   │   ├── dev-*.md            # Development language experts (16)
+│   │   ├── doc-*.md            # Documentation writers (2)
+│   │   ├── infra-*.md          # Infrastructure & cloud specialists (8)
+│   │   ├── ml-*.md             # Machine learning experts (4)
+│   │   └── web-*.md            # Web/frontend specialists (3)
+│   ├── hooks/                  # Action logging hooks
+│   │   ├── hooks.json          # Hook configuration
+│   │   └── log_agent_actions.py
+│   ├── skills/                 # Skill directories with SKILL.md (12 total)
+│   │   ├── api-development/    # REST/GraphQL API patterns
+│   │   ├── code-review/        # Review workflows and standards
+│   │   ├── database-management/# Database patterns and schemas
+│   │   ├── debugging/          # Troubleshooting workflows
+│   │   ├── deployment-operations/# CI/CD and deployment
+│   │   ├── documentation/      # Documentation generation
+│   │   ├── frontend-development/# React/TypeScript patterns
+│   │   ├── git-workflow/       # Git best practices
+│   │   ├── microservices-architecture/# Distributed systems
+│   │   ├── performance-optimization/# Caching and optimization
+│   │   ├── security/           # Security hardening
+│   │   └── testing-strategies/ # Testing patterns
+│   └── specs/                  # Shared coding standards (python, make, javascript, etc.)
 │
 ├── agents/                     # Agent container configurations
 │   └── main/                   # Primary development agent
@@ -90,83 +111,118 @@ claudeagentsdk-harness/
 │   │   ├── interactive.py      # Interactive conversation loop
 │   │   ├── monitoring.py       # Prometheus metrics collector
 │   │   └── py.typed            # PEP 561 type marker
-│   └── mcp/                    # Custom MCP servers (placeholders)
+│   └── mcp/                    # Custom MCP servers
 │       ├── __init__.py
 │       ├── filesystem/
-│       ├── git/
-│       └── docker/
+│       ├── git/                # Git MCP server implementation
+│       └── docker/             # Docker MCP server implementation
 │
 ├── config/                     # Configuration files
 │   └── monitoring/             # Prometheus & Grafana configs
 │       ├── prometheus.yml      # Scrape configs for all agents
 │       ├── alerting.yml        # Alert rules (errors, latency, cost)
 │       └── dashboards/
-│           └── overview.json   # Grafana overview dashboard
+│           ├── overview.json           # Grafana overview dashboard
+│           └── interactive_sessions.json  # Interactive sessions dashboard
 │
 ├── workspace/                  # Agent working directory (gitignored)
-│   └── .gitkeep
-│
 ├── memory/                     # Persistent agent memory (gitignored)
 │   ├── checkpoints/
-│   │   └── .gitkeep
 │   └── context/
-│       └── .gitkeep
-│
 ├── logs/                       # Application logs (gitignored)
-│   ├── main/.gitkeep
-│   ├── reviewer/.gitkeep
-│   ├── tester/.gitkeep
-│   └── orchestrator/.gitkeep
+│   ├── main/
+│   ├── reviewer/
+│   ├── tester/
+│   ├── orchestrator/
+│   └── actions/                # Action log files from hooks
 │
 ├── tests/                      # Test suite
 │   ├── __init__.py
 │   ├── unit/                   # Unit tests (checkpoint, config)
 │   │   ├── test_checkpoint.py
 │   │   └── test_config.py
-│   ├── smoke/                  # Smoke tests (placeholder)
-│   ├── integration/            # Integration tests (placeholder)
+│   ├── integration/            # Integration tests
+│   │   ├── test_agent_sdk_direct.py
+│   │   ├── test_mcp_git.py
+│   │   └── test_mcp_docker.py
 │   └── e2e/                    # End-to-end tests (placeholder)
 │
-├── examples/                   # Example workflows (placeholders)
-│   ├── simple-feature/
-│   ├── bug-fix/
-│   ├── refactoring/
-│   └── full-project/
+├── examples/                   # Example workflows
+│   ├── simple_query.py         # Basic query pattern example
+│   └── interactive_basic.py    # Basic interactive mode example
 │
-├── k8s/                        # Kubernetes manifests (future)
-│   ├── base/
-│   ├── overlays/
-│   └── helm/
+├── docs/                       # Additional documentation
+│   └── future/                 # Future feature proposals
 │
-├── scripts/                    # Utility scripts (future)
-│
-├── docs/                       # Additional documentation (future)
-│
-├── docker-compose.yml          # Base compose configuration ✅
-├── docker-compose.dev.yml      # Development override with hot-reload ✅
-├── docker-compose.prod.yml     # Production override with security ✅
-├── Makefile                    # 60+ build and operation commands ✅
-├── pyproject.toml              # Python project configuration ✅
-├── .env.example                # Environment variables template ✅
-├── .dockerignore               # Docker build exclusions ✅
-├── .gitignore                  # Git exclusions ✅
+├── .mcp.json                   # MCP server configuration
+├── docker-compose.yml          # Base compose configuration
+├── docker-compose.dev.yml      # Development override with hot-reload
+├── docker-compose.prod.yml     # Production override with security
+├── Makefile                    # 60+ build and operation commands
+├── pyproject.toml              # Python project configuration
+├── .env.example                # Environment variables template
+├── .dockerignore               # Docker build exclusions
+├── .gitignore                  # Git exclusions
 ├── CLAUDE.md                   # This file
 └── README.md                   # User-facing documentation
 ```
 
-## Getting Started
+## Getting Started for Development
 
-### Prerequisites
+> Prerequisites listed in [README.md](./README.md#prerequisites). This section covers development-specific setup.
 
-- **Docker**: 24.0+ with BuildKit enabled
-- **Docker Compose**: 2.22+ (for watch mode support)
-- **Python**: 3.12 or 3.13
-- **Make**: GNU Make 4.0+
-- **API Key**: Anthropic API key with appropriate quota
-- **Git**: For version control
-- **8GB+ RAM**: Minimum for running multiple agents
-- **50GB+ Disk**: For workspace, logs, and checkpoints
-- **OrbStack** (recommended for macOS): Optimized builds with better performance
+### Additional Development Tools
+
+- **ruff** - Fast Python linter and formatter
+- **mypy** - Static type checker for Python
+- **pytest** - Testing framework
+- **uv** - Fast Python package installer
+
+### Development Setup
+
+```bash
+# 1. Follow README.md setup instructions first
+cd ~/Projects/claudeagentsdk-harness
+make init
+# Edit .env with ANTHROPIC_API_KEY
+
+# 2. Build containers
+make build
+
+# 3. Start in development mode (hot-reload enabled)
+make dev
+
+# 4. In another terminal, verify setup
+make health
+make test-unit
+
+# 5. Access development shell
+make shell
+```
+
+### Development Workflow
+
+```bash
+# Watch logs during development
+make logs
+
+# Run linting
+make lint
+make lint-fix  # Auto-fix issues
+
+# Run type checking
+make typecheck
+
+# Format code
+make format
+
+# Run tests
+make test-unit           # Fast, no API calls
+make test-integration    # Requires ANTHROPIC_API_KEY
+
+# Coverage report
+make coverage
+```
 
 ### Important: Always Use Make Commands
 
@@ -175,311 +231,316 @@ claudeagentsdk-harness/
 ✅ Correct: `make down`, `make up`, `make dev`
 ❌ Incorrect: `docker compose down`, `docker compose up -d`
 
-The Makefile uses the correct compose file combinations and environment settings for your platform.
+## Implementation Details
 
-### Initial Setup
+### Core Python Modules
 
-```bash
-# Navigate to repository
-cd ~/Projects/claudeagentsdk-harness
+#### config.py
 
-# Initialize directories and create .env file
-make init
+Pydantic-based configuration with environment variable loading:
 
-# Edit .env and add your ANTHROPIC_API_KEY
-# ANTHROPIC_API_KEY=sk-ant-your_key_here
+**Key Features:**
+- Type-safe settings with validation
+- Database and Redis URL generation
+- Directory path management
+- Feature flags
 
-# Build all containers (OrbStack optimized with BuildKit caching)
-make build
+**Usage:**
+```python
+from harness.config import get_config
 
-# Start development environment with hot-reload
-make dev
+config = get_config()
+print(config.database_url)        # postgresql+asyncpg://...
+print(config.checkpoint_dir)      # /memory/checkpoints
+print(config.claude_model)        # claude-sonnet-4-5-20250929
 ```
 
-### Quick Start Commands
+**Implementation:**
+- Uses `pydantic-settings` for .env loading
+- Validates all configuration on startup
+- Provides sensible defaults
+- Type hints for IDE support
 
-```bash
-# Development
-make dev                    # Start with hot-reload and watch mode
-make shell                  # Shell into main agent container
-make logs                   # Tail all service logs
-make logs-json              # Structured JSON logs
+#### checkpoint.py
 
-# Operations
-make up                     # Start all services
-make down                   # Stop all services
-make restart                # Restart services
-make ps                     # Show running containers
-make clean                  # Remove containers and volumes
+Automatic checkpoint management with configurable intervals:
 
-# Testing
-make test                   # Run full test suite
-make test-unit              # Unit tests only
-make test-integration       # Integration tests (when implemented)
-make test-e2e               # End-to-end tests (when implemented)
-make coverage               # Generate coverage report
+**Key Features:**
+- Auto-save every hour (configurable)
+- Auto-cleanup (keeps 5 most recent)
+- JSON-based state persistence
+- Recovery from latest checkpoint
+- Workspace and memory snapshots
 
-# Code Quality
-make lint                   # Run ruff linter
-make lint-fix               # Auto-fix linting issues
-make format                 # Format code with ruff
-make typecheck              # Run mypy type checking
+**Usage:**
+```python
+from harness.checkpoint import CheckpointManager
 
-# Monitoring
-make metrics                # Open Grafana dashboard (localhost:3000)
-make prometheus             # Open Prometheus UI (localhost:9090)
-make health                 # Check all services health
+manager = CheckpointManager(checkpoint_dir=Path("/memory/checkpoints"))
 
-# Database
-make db-shell               # PostgreSQL shell
-make db-backup              # Backup database
-make db-restore             # Restore from backup
+# Save checkpoint
+checkpoint_file = manager.save_checkpoint({
+    "agent": "main",
+    "tasks": ["task1", "task2"],
+    "timestamp": "2025-10-28T12:00:00"
+})
 
-# Maintenance
-make backup                 # Backup workspace and checkpoints
-make restore                # Restore from latest backup
-make prune                  # Clean up unused Docker resources
-make reset                  # Full reset (destructive!)
-
-# Diagnostics
-make doctor                 # Run diagnostics
-make version                # Show version information
-
-# Interactive Agent (Phase 1)
-make interactive            # Start interactive conversation session
-make chat                   # Alias for interactive mode
-make interactive-model MODEL=opus  # Use specific model (opus, sonnet, haiku)
-make interactive-quiet      # Quiet mode - suppress all system logs (clean chat only)
+# Load latest
+latest = manager.load_latest_checkpoint()
+if latest:
+    print(f"Recovered from {latest['timestamp']}")
 ```
 
-## Quick Start Examples (No Docker Required)
+**Implementation:**
+- Uses `fcntl` for file locking
+- Atomic writes via temp files
+- Automatic cleanup via `_cleanup_old_checkpoints()`
+- ISO 8601 timestamps in filenames
 
-Before diving into the full harness infrastructure, you can try these simple examples to understand the Claude Agent SDK basics. These examples run directly without Docker and are perfect for learning or quick testing.
+#### monitoring.py
 
-### Prerequisites
+Prometheus metrics collection with comprehensive tracking:
 
-```bash
-# Make sure you're in the repository root
-cd ~/Projects/claudeagentsdk-harness
+**Key Metrics Implemented:**
+- `agent_requests_total{agent, status}` - Counter
+- `agent_duration_seconds{agent}` - Histogram
+- `agent_active_sessions{agent}` - Gauge
+- `interactive_session_prompts_total{agent, session_id}` - Counter
+- `interactive_tool_calls_total{agent, tool_name, status}` - Counter
+- `interactive_cache_hit_ratio{agent}` - Gauge
+- `api_tokens_used_total{model, type}` - Counter
+- `api_cost_dollars_total{model}` - Counter
 
-# Create a virtual environment and install dependencies
-uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-uv pip install -e .
+**Usage:**
+```python
+from harness.monitoring import MetricsCollector
 
-# Ensure ANTHROPIC_API_KEY is set in .env
-echo "ANTHROPIC_API_KEY=sk-ant-your_key_here" >> .env
+metrics = MetricsCollector(port=9090)
+metrics.start()
+
+# Record request
+metrics.record_request(agent="main", status="success")
+
+# Record duration
+metrics.record_duration(agent="main", duration=1.5)
+
+# Record tool call
+metrics.record_tool_call(agent="main", tool_name="Read", status="success")
+
+# Update cache metrics
+metrics.update_cache_metrics(
+    agent="main",
+    model="claude-sonnet-4-5-20250929",
+    cache_read_tokens=1000,
+    cache_creation_tokens=500,
+    total_input_tokens=2000
+)
 ```
 
-### Example 1: Simple Query Pattern
+**Implementation:**
+- Uses `prometheus_client` library
+- Metrics exposed on port 9090
+- Thread-safe counters and gauges
+- Automatic cost calculation based on current Anthropic pricing
 
-**File**: `examples/simple_query.py`
+#### agent.py
 
-**What it demonstrates**:
-- Basic `query()` function for one-off questions (stateless)
-- `ClaudeSDKClient` for multi-turn conversations (stateful)
-- Message streaming and parsing
+Agent session wrapper with lifecycle management:
 
-**Run it**:
-```bash
-# Run with default model (haiku - cheapest)
-python examples/simple_query.py
+**Key Features:**
+- Session lifecycle management
+- Automatic checkpointing integration
+- Metrics collection integration
+- Retry logic with exponential backoff
+- Error handling and recovery
+- MCP server registration
 
-# Run with more powerful models
-python examples/simple_query.py --model sonnet
-python examples/simple_query.py --model opus
+**Usage:**
+```python
+from harness.agent import AgentSession
+
+session = AgentSession(agent_name="main")
+await session.start()
+
+async for message in session.execute("Build a FastAPI endpoint"):
+    # Process message
+    print(message)
+
+await session.shutdown()
 ```
 
-**What you'll see**:
-- Example 1: A simple query/response using `query()`
-- Example 2: Same query using `ClaudeSDKClient` (shows stateful pattern)
+**Implementation:**
+- Integrates with `ClaudeSDKClient`
+- Registers MCP servers (git, docker, memory, context7, etc.)
+- Automatic token tracking
+- Session state persistence
 
-**Cost**: ~$0.001-0.01 per run (using haiku model)
+#### cli.py
 
-### Example 2: Basic Interactive Mode
+Rich console formatting for interactive mode:
 
-**File**: `examples/interactive_basic.py`
+**Key Features:**
+- Colored panels for different message types
+- Syntax highlighting for code and JSON
+- Session statistics display
+- Structured logging integration
 
-**What it demonstrates**:
-- Continuous conversation loop
-- Rich formatted output with colored panels
-- Integration with harness CLI utilities
-- Session management with graceful exit
+**Message Types Handled:**
+- `user` - User input
+- `assistant` - Agent responses
+- `tool_use` - Tool calls
+- `tool_result` - Tool outputs
+- `system` - System messages
 
-**Run it**:
-```bash
-# Run with default model (haiku)
-python examples/interactive_basic.py
+**Usage:**
+```python
+from harness.cli import parse_and_print_message
+from rich.console import Console
 
-# Run with sonnet for better performance
-python examples/interactive_basic.py --model sonnet
+console = Console()
 
-# Show session stats on exit
-python examples/interactive_basic.py --model sonnet --stats
+# Parse and display message
+parse_and_print_message(message, console)
+
+# Display session stats
+from harness.cli import display_session_stats
+display_session_stats(stats, console)
 ```
 
-**What you'll see**:
-```
-┌──────────────────────────────────────┐
-│     Basic Interactive Mode           │
-│                                      │
-│ Selected model: haiku                │
-│                                      │
-│ Type your questions or requests      │
-│ Type 'exit' or 'quit' to end        │
-└──────────────────────────────────────┘
+#### interactive.py
 
-You: _
-```
+Interactive conversation loop with Rich UI:
 
-**Features**:
-- Type naturally and get formatted responses
-- Maintains conversation context across turns
-- Type `exit` or `quit` to end the session
-- Optional `--stats` flag shows token usage and costs
-
-**Cost**: ~$0.01-0.10 per session (depending on length and model)
-
-### Key Differences from Full Interactive Mode
-
-| Feature | Basic Examples | Full Harness (`make interactive`) |
-|---------|----------------|-----------------------------------|
-| Docker Required | ❌ No | ✅ Yes |
-| Checkpointing | ❌ No | ✅ Auto-save every hour |
-| Metrics | ❌ No | ✅ Prometheus + Grafana |
-| MCP Servers | ❌ Basic only | ✅ Git, Docker, Memory, etc. |
-| Multi-Agent | ❌ No | ✅ Orchestration support |
-| Setup Time | < 1 minute | ~5-10 minutes |
-| Best For | Learning, testing | Production, long sessions |
-
-### Next Steps
-
-Once you're comfortable with these examples:
-
-1. **Try the full interactive mode** (see next section) for production features
-2. **Explore MCP integration** - Add custom tools and servers
-3. **Build workflows** - Combine multiple agents for complex tasks
-4. **Add monitoring** - Use Grafana dashboards to track costs and performance
-
-## Phase 1: Interactive Agent Setup
-
-### Overview
-
-Phase 1 adds interactive conversation mode to the harness, allowing you to chat directly with Claude agents using a Rich console UI. This mode integrates seamlessly with the existing infrastructure (checkpointing, monitoring, MCP servers) while providing an intuitive CLI experience.
-
-### Components
-
-**CLI Module** (`src/harness/cli.py`):
-- Rich console formatting for all message types (user, assistant, tool_use, tool_result, system)
-- Message parsing for SDK messages (AssistantMessage, UserMessage, SystemMessage, ResultMessage)
-- Session statistics display (tokens, cost, duration, cache usage)
-- Structured logging integration with correlation IDs
-
-**Interactive Module** (`src/harness/interactive.py`):
+**Key Features:**
 - Conversation loop with Rich UI
-- Integration with AgentSession (automatic checkpointing, metrics)
-- Checkpoint recovery on session start
-- Graceful error handling and session shutdown
-- Support for CLI arguments (--model, --stats, --print-raw, --quiet)
+- Integration with AgentSession
+- Checkpoint recovery on startup
+- Graceful error handling
+- CLI argument support (--model, --stats, --quiet)
 
-**Makefile Targets**:
-- `make interactive` - Start interactive session with default model (sonnet)
-- `make chat` - Alias for interactive mode
-- `make interactive-model MODEL=opus` - Use specific model
-- `make interactive-quiet` - Quiet mode (suppress all system logs for clean chat)
-
-### Usage
-
-**Start an Interactive Session**:
+**Usage:**
 ```bash
-# 1. Ensure Docker is running
-make dev
+# Run interactively
+python -m harness.interactive
 
-# 2. In another terminal, start interactive mode
-make interactive
+# With options
+python -m harness.interactive --model opus --quiet --stats
 ```
 
-**What You'll See**:
+**Implementation:**
+- Uses `Rich` for UI
+- Integrates with checkpoint manager
+- Records metrics automatically
+- Handles Ctrl+C gracefully
+
+### Docker Compose Services
+
+#### Service Definitions
+
+**main-agent:**
+- **Image**: Built from `agents/main/Dockerfile`
+- **Ports**: 8080 (HTTP), 5678 (debugger in dev mode)
+- **Resources**: 4 CPU, 8GB RAM (configurable)
+- **Volumes**: workspace, memory, logs, config, src (dev mode)
+- **Health Check**: HTTP endpoint on port 8080
+- **Restart Policy**: unless-stopped
+
+**reviewer-agent:**
+- **Purpose**: Code review and security audit
+- **Access**: Read-only workspace
+- **Permission Mode**: manual (require approval)
+- **Max Turns**: 50 (focused reviews)
+
+**tester-agent:**
+- **Purpose**: Test generation and execution
+- **Access**: Full workspace access
+- **Permission Mode**: acceptAll
+- **Max Turns**: 100
+
+**postgres:**
+- **Version**: PostgreSQL 16
+- **Persistent**: Volume for data
+- **Health Check**: `pg_isready` command
+
+**redis:**
+- **Version**: Redis 7
+- **Persistence**: AOF enabled
+- **Health Check**: `redis-cli ping`
+
+**prometheus:**
+- **Retention**: 30 days (configurable)
+- **Scrape Interval**: 15 seconds
+- **Scrapes**: All agent metrics endpoints
+
+**grafana:**
+- **Admin Password**: Configurable via `GRAFANA_PASSWORD`
+- **Dashboards**: Pre-configured (overview, interactive sessions)
+- **Data Source**: Prometheus
+
+### MCP Server Configuration
+
+**In-Process SDK Servers** (custom Python implementations in `src/mcp/`):
+
+**git** (`src/mcp/git/server.py`):
+- Tools: `mcp__git__git_status`, `mcp__git__git_diff`, `mcp__git__git_log`
+- Purpose: Structured git operations
+- Implementation: Wraps git CLI commands with structured output
+
+**docker** (`src/mcp/docker/server.py`):
+- Tools: `mcp__docker__list_containers`, `mcp__docker__container_logs`, `mcp__docker__container_stats`
+- Purpose: Container management and monitoring
+- Implementation: Uses Docker SDK for Python
+
+**External MCP Servers** (subprocess via npx):
+
+**memory**:
+- Package: `@modelcontextprotocol/server-memory`
+- Purpose: Knowledge graph for agent memory persistence
+- Tools: create_entities, create_relations, search_nodes, etc.
+
+**context7**:
+- Package: `@context7/mcp-server`
+- Purpose: Library documentation lookup
+- Tools: resolve-library-id, get-library-docs
+
+**joplin**:
+- Package: `@joplin/mcp-server`
+- Purpose: Note-taking and documentation integration
+- Tools: search_notes, create_note, update_note, etc.
+
+**github**:
+- Package: `@modelcontextprotocol/server-github`
+- Purpose: GitHub operations via CLI
+- Tools: Search code, create PRs, manage issues
+
+**playwright**:
+- Package: `@modelcontextprotocol/server-playwright`
+- Purpose: Browser automation and testing
+- Tools: Navigate, screenshot, click, fill
+
+**Configuration in agent.py:**
+```python
+mcp_servers = {
+    # In-process SDK servers
+    "git": GitMCPServer(),
+    "docker": DockerMCPServer(),
+
+    # External subprocess servers (via npx)
+    "memory": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "context7": {
+        "command": "npx",
+        "args": ["-y", "@context7/mcp-server"]
+    },
+    # ... etc
+}
 ```
-┌─────────────────────────────────────────────┐
-│            🤖 Welcome                       │
-├─────────────────────────────────────────────┤
-│ Claude Agent SDK Harness                    │
-│ Production-ready autonomous framework       │
-│                                             │
-│ Agent: main                                 │
-│ Model: claude-sonnet-4-5-20250929          │
-│                                             │
-│ Type 'exit' or 'quit' to end the session   │
-└─────────────────────────────────────────────┘
 
-You: _
-```
+### Message Flow & Integration
 
-**Features**:
-- ✅ Rich formatted messages with colored panels
-- ✅ Syntax highlighting for JSON tool results
-- ✅ Real-time tool use display
-- ✅ Session statistics on exit
-- ✅ Automatic checkpoint recovery
-- ✅ Graceful error handling
-- ✅ Integration with all MCP servers
-
-**Using Different Models**:
-```bash
-# Use Opus (most capable)
-make interactive-model MODEL=opus
-
-# Use Haiku (fastest, cheapest)
-make interactive-model MODEL=haiku
-
-# Use Sonnet (default, balanced)
-make interactive
-```
-
-**Quiet Mode for Clean Chat**:
-```bash
-# Suppress all system logs (checkpoints, metrics, session info)
-make interactive-quiet
-
-# Or manually with any model
-docker compose exec -it main-agent python -m harness.interactive --quiet --model opus
-```
-
-Quiet mode suppresses:
-- ✅ Checkpoint recovery messages
-- ✅ Session initialization logs
-- ✅ Metrics collection logs
-- ✅ Internal agent operations
-
-But still shows:
-- ✅ User prompts and agent responses (the actual chat)
-- ✅ Errors and warnings (important information)
-- ✅ Tool use and results
-
-**Alternative: Use LOG_LEVEL=WARNING in .env**
-For persistent quiet-ish sessions without the --quiet flag, set `LOG_LEVEL=WARNING` in your `.env` file. This reduces verbosity while still showing some system events.
-
-**View Session Stats**:
-When you exit with "quit" or "exit", you'll see:
-```
-┌─────────────────────┬──────────────────────┐
-│      Session Stats                        │
-├─────────────────────┼──────────────────────┤
-│ Session ID          │ main_2025-10-26...  │
-│ Result              │ success             │
-│ Duration (s)        │ 125.34              │
-│ Cost (USD)          │ $0.0342             │
-│ Input Tokens        │ 12,450              │
-│ Output Tokens       │ 3,210               │
-│ Cache Read Tokens   │ 8,940               │
-│ Cache Creation ...  │ 1,200               │
-└─────────────────────┴──────────────────────┘
-```
-
-### Architecture
-
-**Message Flow**:
+**Interactive Session Flow:**
 ```
 User Input (CLI)
     ↓
@@ -496,227 +557,85 @@ cli.parse_and_print_message()
 Rich Console Display
 ```
 
-**Integration Points**:
+**Integration Points:**
 - `AgentSession` - Handles checkpointing, metrics, retry logic
 - `MetricsCollector` - Tracks tokens, cost, duration automatically
 - `CheckpointManager` - Auto-saves every hour, recovers on startup
-- `MCP Servers` - Git, Docker, Memory, Context7, Playwright, etc.
+- `MCP Servers` - Git, Docker, Memory, Context7, etc.
 - `structlog` - Structured logging with correlation IDs
 
-### Checkpoint Recovery
+## Development Workflow
 
-If your session is interrupted, the next session will automatically recover:
-
-```bash
-make interactive
-
-# Output:
-✓ Recovered from previous checkpoint
-
-You: _
-```
-
-The agent resumes with:
-- Completed tasks list
-- Session state (agent name, session ID, timestamps)
-- Workspace and memory context
-
-### Troubleshooting
-
-**Issue: "Module not found: harness.cli"**
-```bash
-# Rebuild the container
-make build
-make dev
-```
-
-**Issue: "Not running in Docker container"**
-```bash
-# Start Docker services first
-make dev
-
-# Then in another terminal:
-make interactive
-```
-
-**Issue: "Permission denied" or "No tty available"**
-```bash
-# Ensure you're using make interactive, not direct docker commands
-make interactive  # Correct
-docker compose exec main-agent python -m harness.interactive  # Wrong (missing -it)
-```
-
-**Issue: "Session stats not displayed"**
-```bash
-# Stats are enabled by default. To disable:
-make interactive-model MODEL=sonnet STATS=false
-```
-
-### Next Steps (Phase 2)
-
-Now that interactive mode is working, Phase 2 will add:
-
-1. **Configuration Builder** - Load agent configs from YAML/JSON profiles
-2. **Agent Library** - Auto-discover and load agent definitions from `.claude/agents/`
-3. **Tool Registry** - Plugin architecture for custom tools
-4. **Enhanced Observability** - Port logging hooks from intro repository
-5. **Workflow Templates** - Pre-built workflows (feature, bug-fix, refactor)
-6. **Session Management** - Save/load conversations, session analytics
-
-See [Phase 2 Roadmap](#phase-2-configuration--extensibility-roadmap) below for details.
-
-## Configuration Settings
-
-### Environment Variables
-
-All configuration is done through `.env` file (copy from `.env.example`):
+### Git Workflow
 
 ```bash
-# ============================================================================
-# Required Configuration
-# ============================================================================
-ANTHROPIC_API_KEY=sk-ant-your_api_key_here
+# Feature branch workflow
+git checkout -b feature/descriptive-name
 
-# ============================================================================
-# Agent Configuration
-# ============================================================================
-CLAUDE_MODEL=claude-sonnet-4-5-20250929
-CLAUDE_PERMISSION_MODE=acceptEdits  # manual|acceptEdits|acceptAll
-CLAUDE_MAX_TURNS=1000
-CLAUDE_SESSION_TIMEOUT=72000  # 20 hours in seconds
-CLAUDE_CHECKPOINT_INTERVAL=3600  # 1 hour
+# Make changes with TDD approach
+# Write failing test → Implement → Pass test → Refactor
 
-# ============================================================================
-# Infrastructure
-# ============================================================================
-DOCKER_BUILDKIT=1
-BUILDKIT_PROGRESS=plain
-COMPOSE_PROJECT_NAME=claude-harness
-PLATFORM=linux/arm64  # OrbStack default
+# Commit with conventional commits
+git commit -m "feat(agent): add retry logic with exponential backoff"
+git commit -m "fix(checkpoint): handle race condition in cleanup"
+git commit -m "docs(readme): update configuration examples"
 
-# ============================================================================
-# Resource Limits
-# ============================================================================
-AGENT_CPU_LIMIT=4
-AGENT_MEMORY_LIMIT=8G
-AGENT_CPU_RESERVATION=2
-AGENT_MEMORY_RESERVATION=4G
-
-# ============================================================================
-# Monitoring
-# ============================================================================
-GRAFANA_PASSWORD=changeme123
-GRAFANA_PORT=3000
-PROMETHEUS_PORT=9090
-PROMETHEUS_RETENTION=30d
-LOG_LEVEL=INFO              # DEBUG|INFO|WARNING|ERROR|CRITICAL
-LOG_FORMAT=json             # json|text
-
-# ============================================================================
-# Database Configuration
-# ============================================================================
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=claude_harness
-POSTGRES_USER=claude
-POSTGRES_PASSWORD=changeme_postgres_password
-
-# ============================================================================
-# Redis Configuration
-# ============================================================================
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_PASSWORD=changeme_redis_password
+# Push and create PR
+git push origin feature/descriptive-name
 ```
 
-### Agent Configuration
+### Conventional Commit Format
 
-Agent definitions are in `.claude/agents/` (copied from ABDotfiles):
+- `feat(scope):` - New feature
+- `fix(scope):` - Bug fix
+- `docs(scope):` - Documentation only
+- `refactor(scope):` - Code change that neither fixes a bug nor adds a feature
+- `test(scope):` - Adding or updating tests
+- `chore(scope):` - Build process or auxiliary tool changes
 
-**Development Agents**:
-- `python-expert.md` - Python with FastAPI, async, type safety
-- `typescript-expert.md` - TypeScript with modern patterns
-- `nodejs-expert.md` - Node.js backend development
-- `go-expert.md`, `rust-expert.md`, `cpp-expert.md`, etc.
+### Code Review Process
 
-**Infrastructure Agents**:
-- `docker-engineer.md` - Docker and container optimization
-- `k8s-engineer.md` - Kubernetes orchestration
-- `terraform-engineer.md` - Infrastructure as Code
-- `gcp-cloud-architect.md`, `aws-cloud-architect.md`
+**Before submitting PR:**
+1. Run `make lint` and fix all issues
+2. Run `make typecheck` and fix type errors
+3. Run `make test` and ensure all tests pass
+4. Ensure test coverage is ≥80% for new code
+5. Update documentation if needed
 
-Each agent definition includes:
-- Name and description
-- Allowed tools (Read, Write, Bash, Grep, etc.)
-- Model selection (sonnet, opus, haiku)
-- Specialized prompts and instructions
+**Review Focus:**
+1. Logic correctness - Does it solve the problem?
+2. Edge cases - Are errors handled?
+3. Performance - Any obvious bottlenecks?
+4. Security - Input validation present?
+5. Maintainability - Will others understand?
 
-## Setup, Build, & Test Settings
+## Testing Strategy
 
-### Docker Build Configuration
+### Test Structure
 
-Multi-stage Dockerfile optimized for OrbStack with BuildKit caching:
-
-**Stage 1: Base** - Common system dependencies
-**Stage 2: Dependencies** - Python packages with cache mounts
-**Stage 3: Development** - Full dev tools + Claude CLI
-**Stage 4: Builder** - Compile and prepare production assets
-**Stage 5: Production** - Minimal runtime image
-
-Build optimizations:
-- Cache mounts for `uv` package manager
-- Layer ordering from least to most frequently changing
-- Separate dependency and source code layers
-- Non-root user for security
-
-### Testing Strategy
-
-Following TDD principles with 80%+ coverage requirement:
-
-```bash
-# Unit tests (fast, isolated)
-make test-unit
-
-# Integration tests (with Docker services)
-make test-integration
-
-# E2E tests (full workflows)
-make test-e2e
-
-# Smoke tests (quick validation)
-make test-smoke
-
-# Coverage report
-make coverage
+```
+tests/
+├── unit/                   # Fast, isolated unit tests
+│   ├── test_checkpoint.py  # Checkpoint save/load/cleanup
+│   └── test_config.py      # Configuration validation
+├── integration/            # Multi-service integration tests
+│   ├── test_agent_sdk_direct.py   # Direct SDK calls (real API)
+│   ├── test_mcp_git.py            # Git MCP server tests
+│   └── test_mcp_docker.py         # Docker MCP server tests
+└── e2e/                    # Full workflow end-to-end tests (placeholder)
 ```
 
-**Current Test Coverage**:
-- ✅ `test_checkpoint.py` - Checkpoint save, load, cleanup
-- ✅ `test_config.py` - Configuration, URLs, paths
-- ✅ `test_agent_sdk_direct.py` - Direct SDK integration tests with real API
-- ✅ `test_mcp_git.py` - Git MCP server integration tests
-- ✅ `test_mcp_docker.py` - Docker MCP server integration tests
-- 🚧 E2E tests - Not yet implemented
-- **Overall**: ~61% (target: 80%+)
+### Test Coverage Requirements
 
-**Important Testing Notes**:
-- **No VCR.py**: The Claude Agent SDK uses subprocess communication (stdin/stdout), not HTTP. VCR.py cannot intercept subprocess I/O, so all integration tests make real API calls.
-- **API Costs**: Integration tests consume API tokens. Use `ANTHROPIC_API_KEY` environment variable and monitor costs.
-- **Test Markers**: Use `@pytest.mark.slow` for expensive tests that can be skipped with `-m "not slow"`
+| Type | Coverage Target | Notes |
+|------|----------------|-------|
+| Overall | 80%+ | Measured by pytest-cov |
+| Critical paths | 95%+ | Checkpointing, config, metrics |
+| Core modules | 90%+ | agent.py, monitoring.py, cli.py |
 
-### Cost Management & Testing Strategy
+**Current Coverage**: ~61% (needs improvement to 80%+)
 
-**Integration tests make real API calls** because the Claude Agent SDK uses subprocess communication (not HTTP), which VCR.py cannot intercept.
-
-#### Token Budget Tracking
-
-Tests include automatic token budget tracking to prevent runaway costs:
-
-- **Limit**: 1,000,000 tokens per test session
-- **Tracking**: Automatic via `token_budget` fixture in conftest.py
-- **Behavior**: Tests fail if budget exceeded
-
-#### Recommended Test Strategy
+### Running Tests
 
 ```bash
 # Daily development: Unit tests only (fast, free)
@@ -730,879 +649,561 @@ make test-unit && pytest tests/integration/ -m "not slow"
 
 # Full suite (costs ~$1-$5 depending on tests)
 ANTHROPIC_API_KEY=xxx make test
+
+# Coverage report
+make coverage
 ```
 
-#### Cost Optimization
+### Cost Management
 
-To minimize API costs during testing:
+**Why No VCR.py:**
+The Claude Agent SDK uses subprocess communication (stdin/stdout), not HTTP. VCR.py cannot intercept subprocess I/O, so all integration tests make real API calls.
+
+**Token Budget Tracking:**
+- **Limit**: 1,000,000 tokens per test session
+- **Tracking**: Automatic via `token_budget` fixture in conftest.py
+- **Behavior**: Tests fail if budget exceeded
+
+**Test Markers:**
+- `@pytest.mark.slow` - Expensive tests (can be skipped with `-m "not slow"`)
+- `@pytest.mark.integration` - Requires API key and makes real calls
+
+**Cost Optimization:**
 - Run unit tests frequently (free, instant)
-- Run integration tests only when needed (e.g., before commits, weekly)
-- Use `@pytest.mark.slow` for expensive tests
+- Run integration tests only when needed (before commits, weekly)
 - Mock SDK responses in unit tests when possible
 - Monitor token usage in test output
 
-## Verification Checklist
+### Test Examples
 
-Before first real use:
+**Unit Test:**
+```python
+def test_save_checkpoint(checkpoint_manager):
+    """Test checkpoint save creates file with correct structure."""
+    state = {"agent": "main", "tasks": ["task1"]}
+    checkpoint_file = checkpoint_manager.save_checkpoint(state)
 
-- [ ] Verify `ANTHROPIC_API_KEY` is set in `.env`
-- [ ] Run `make test-unit` to confirm existing tests pass
-- [ ] Run `ANTHROPIC_API_KEY=xxx make test-integration` to record cassettes
-- [ ] Run `make test-integration` again to verify replay works
-- [ ] Check Prometheus metrics are being collected at `localhost:9090`
-- [ ] Verify workspace and checkpoint directories are writable
-- [ ] Test at least one MCP server manually (filesystem recommended)
-- [ ] View Grafana dashboards at `localhost:3000` to confirm monitoring
+    assert checkpoint_file.exists()
+    loaded = checkpoint_manager.load_checkpoint(checkpoint_file)
+    assert loaded["agent"] == "main"
+    assert "tasks" in loaded
+```
 
-## Implementation Notes
+**Integration Test:**
+```python
+@pytest.mark.integration
+@pytest.mark.slow
+def test_agent_query_with_real_api(token_budget):
+    """Test real API call with token budget tracking."""
+    from harness.agent import AgentSession
 
-### Core Python Modules
+    session = AgentSession(agent_name="main")
+    response = await session.execute("What is 2+2?")
 
-#### config.py
-Pydantic-based configuration with:
-- Environment variable loading from `.env`
-- Type-safe settings with validation
-- Database and Redis URL generation
-- Directory path management
-- Feature flags
+    # Verify response
+    assert "4" in response.text
+
+    # Check token budget
+    assert token_budget.remaining > 0
+```
+
+## Build & Deployment
+
+### Docker Build Configuration
+
+**Multi-Stage Dockerfile** (`agents/main/Dockerfile`):
+
+**Stage 1: base**
+- Common system dependencies
+- Non-root user setup
+- Base Python environment
+
+**Stage 2: dependencies**
+- Python packages with cache mounts
+- Uses `uv` for fast installs
+- Separate layer for dependencies
+
+**Stage 3: development**
+- Full dev tools (ruff, mypy, pytest)
+- Claude CLI installation
+- Hot-reload support
+
+**Stage 4: builder**
+- Compile and prepare production assets
+- Remove dev dependencies
+- Optimize for size
+
+**Stage 5: production**
+- Minimal runtime image
+- Only production dependencies
+- Non-root user
+- Read-only filesystem where possible
+
+### Build Optimizations
+
+**BuildKit Caching:**
+```bash
+# Cache mounts for uv
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r requirements.txt
+```
+
+**Layer Ordering:**
+- System packages (changes rarely)
+- Python dependencies (changes occasionally)
+- Source code (changes frequently)
+
+**OrbStack Optimizations (macOS):**
+- Native ARM64 builds (2x faster than Docker Desktop)
+- Faster volume mounts
+- Better resource management
+
+### Development vs Production
+
+| Feature | Development | Production |
+|---------|-------------|------------|
+| **Hot-reload** | ✅ Yes (watch mode) | ❌ No |
+| **Debugger** | ✅ Port 5678 | ❌ Not exposed |
+| **Source mount** | ✅ `./src` mounted | ❌ Copied into image |
+| **Restart policy** | `unless-stopped` | `always` |
+| **Logging** | DEBUG level | INFO level |
+| **Health checks** | 30s interval | 10s interval |
+
+## Configuration Management
+
+### Environment Variables
+
+See [README.md](./README.md#configuration) for complete user-facing configuration reference.
+
+**Development-Specific Configuration:**
+
+```bash
+# Development mode toggles
+DEBUG=true                      # Enable debug logging
+LOG_LEVEL=DEBUG                # Verbose logging
+DOCKER_BUILDKIT=1              # Enable BuildKit
+BUILDKIT_PROGRESS=plain        # Build output format
+
+# Development resources (lower limits)
+AGENT_CPU_LIMIT=2
+AGENT_MEMORY_LIMIT=4G
+
+# Fast checkpointing (for testing)
+CLAUDE_CHECKPOINT_INTERVAL=300  # 5 minutes
+```
+
+### Docker Compose Overrides
+
+**Development** (`docker-compose.dev.yml`):
+- Hot-reload enabled
+- Source code mounted
+- Debugger port exposed
+- Relaxed security (for debugging)
+
+**Production** (`docker-compose.prod.yml`):
+- Read-only root filesystem
+- No source mounts
+- Strict security policies
+- Resource limits enforced
+
+**Usage:**
+```bash
+# Development
+make dev                        # Uses base + dev override
+
+# Production (future)
+ENVIRONMENT=production make up  # Uses base + prod override
+```
+
+## Extending the System
+
+### Adding New Agents
+
+1. **Create agent definition** in `.claude/agents/` with appropriate prefix:
+
+```markdown
+---
+name: data-analyst-expert
+description: Specialized in data analysis and visualization
+tools: Read, Write, Bash, mcp__context7
+model: sonnet
+---
+
+You are a data analysis specialist...
+```
+
+**Note**: Use consistent prefix naming (e.g., `data-analyst-expert.md` for data agents, `dev-julia-expert.md` for development agents)
+
+2. **Add agent service** in `docker-compose.yml`:
+
+```yaml
+data-analyst-agent:
+  build:
+    context: .
+    dockerfile: agents/main/Dockerfile
+    target: development
+  environment:
+    - AGENT_NAME=data-analyst
+    - CLAUDE_MODEL=claude-sonnet-4-5-20250929
+  volumes:
+    - ./workspace:/workspace:ro  # Read-only for analysts
+```
+
+3. **Update Makefile** with agent-specific commands:
+
+```makefile
+.PHONY: shell-analyst
+shell-analyst:
+	docker compose exec -it data-analyst-agent /bin/bash
+```
+
+### Adding Custom Tools
+
+1. **Create tool module** in `src/harness/tools/`:
 
 ```python
-from harness.config import get_config
+# src/harness/tools/custom_search.py
+from typing import Dict, Any
 
-config = get_config()
-print(config.database_url)  # postgresql+asyncpg://...
-print(config.checkpoint_dir)  # /memory/checkpoints
+class AdvancedSearchTool:
+    """Advanced search with filters and ranking."""
+
+    def __init__(self):
+        self.name = "advanced_search"
+        self.description = "Search with advanced filters"
+
+    def execute(self, query: str, filters: Dict[str, Any]) -> Dict[str, Any]:
+        # Implementation
+        return {"results": [...]}
 ```
 
-#### checkpoint.py
-Automatic checkpoint management:
-- Configurable checkpoint intervals (default: 1 hour)
-- Auto-cleanup of old checkpoints (keep 5 most recent)
-- JSON-based state persistence
-- Recovery from latest checkpoint
-- Workspace and memory snapshots
+2. **Register tool** in `agent.py`:
 
 ```python
-from harness.checkpoint import CheckpointManager
+from harness.tools.custom_search import AdvancedSearchTool
 
-manager = CheckpointManager(checkpoint_dir=Path("/memory/checkpoints"))
-checkpoint_file = manager.save_checkpoint({"state": "data"})
-latest = manager.load_latest_checkpoint()
+# In AgentSession.__init__
+self.tools = {
+    "advanced_search": AdvancedSearchTool(),
+    # ... other tools
+}
 ```
 
-#### monitoring.py
-Prometheus metrics collection:
-- Request counters by agent and status
-- Duration histograms for latency tracking
-- Active session gauges
-- Checkpoint size monitoring
-- API token usage and cost tracking
+### Adding MCP Servers
+
+**In-Process SDK Server:**
+
+1. **Create server module** in `src/mcp/your_server/`:
 
 ```python
-from harness.monitoring import MetricsCollector
+# src/mcp/database/server.py
+class DatabaseMCPServer:
+    def __init__(self):
+        self.tools = {
+            "mcp__database__query": self.query,
+            "mcp__database__execute": self.execute,
+        }
 
-metrics = MetricsCollector(port=9090)
-metrics.start()
-metrics.record_request(agent="main", status="success")
-metrics.record_duration(agent="main", duration=1.5)
+    def query(self, sql: str) -> Dict[str, Any]:
+        # Implementation
+        return {"rows": [...]}
 ```
 
-#### agent.py
-Agent session wrapper:
-- Session lifecycle management
-- Automatic checkpointing integration
-- Metrics collection integration
-- Retry logic with exponential backoff
-- Error handling and recovery
-
-**Note**: Currently uses placeholder execution. Needs Claude Agent SDK integration.
+2. **Register in agent.py**:
 
 ```python
-from harness.agent import AgentSession
+from mcp.database.server import DatabaseMCPServer
 
-session = AgentSession(agent_name="main")
-await session.start()
-
-async for message in session.execute("Build a FastAPI endpoint"):
-    print(message)
-
-await session.shutdown()
+mcp_servers = {
+    "database": DatabaseMCPServer(),
+    # ... other servers
+}
 ```
 
-### Docker Compose Services
+**External Subprocess Server:**
 
-**main-agent**: Primary development agent
-- Ports: 8080 (HTTP), 5678 (debugger in dev mode)
-- Resources: 4 CPU, 8GB RAM
-- Volumes: workspace, memory, logs, config
-- Health checks enabled
-
-**reviewer-agent**: Code review agent
-- Read-only workspace access
-- Manual permission mode
-- 50 max turns (focused reviews)
-
-**tester-agent**: Test generation and execution
-- Full workspace access
-- Accept-all permission mode
-- 100 max turns
-
-**postgres**: PostgreSQL 16 database
-- Persistent volume for data
-- Health checks
-
-**redis**: Redis 7 cache and pub/sub
-- AOF persistence enabled
-- Health checks
-
-**prometheus**: Metrics collection
-- 30-day retention (configurable)
-- Scrapes all agent metrics
-- Alert rules configured
-
-**grafana**: Visualization dashboards
-- Admin password configurable
-- Overview dashboard pre-configured
-- Connected to Prometheus
-
-### MCP Server Configuration
-
-The harness integrates multiple MCP (Model Context Protocol) servers to extend Claude's capabilities:
-
-**In-Process SDK Servers** (custom Python implementations):
-- **git**: Structured git operations (status, diff, log)
-  - Tools: `mcp__git__git_status`, `mcp__git__git_diff`, `mcp__git__git_log`
-  - Implementation: `src/mcp_servers/git/server.py`
-- **docker**: Container management and monitoring
-  - Tools: `mcp__docker__list_containers`, `mcp__docker__container_logs`, `mcp__docker__container_stats`
-  - Implementation: `src/mcp_servers/docker/server.py`
-
-**External MCP Servers** (subprocess via npx):
-- **memory**: Knowledge graph for agent memory persistence
-  - Package: `@modelcontextprotocol/server-memory`
-- **context7**: Library documentation lookup
-  - Package: `@context7/mcp-server`
-- **joplin**: Note-taking and documentation integration
-  - Package: `@joplin/mcp-server`
-- **github**: GitHub operations via CLI
-  - Package: `@modelcontextprotocol/server-github`
-- **playwright**: Browser automation and testing
-  - Package: `@modelcontextprotocol/server-playwright`
-
-**Configuration:**
-MCP servers are registered in `src/harness/agent.py` as a dictionary combining both in-process SDK servers and external subprocess servers. External servers are launched via `npx` (Node.js) automatically when the agent starts.
-
-**Note:** Claude Code built-in tools (Read, Write, Bash, Glob, Grep, etc.) are always available and don't require MCP server configuration.
-
-### Monitoring & Observability
-
-#### Prometheus Metrics
-
-**General Agent Metrics** (all agents, port 9090):
-- `agent_requests_total{agent, status}` - Request counts by status
-- `agent_duration_seconds{agent}` - Execution duration histogram
-- `agent_active_sessions{agent}` - Active session count
-- `checkpoint_size_bytes` - Total checkpoint storage
-- `workspace_files_total` - Files in workspace
-- `memory_usage_bytes{component}` - Memory usage by component
-- `api_tokens_used_total{model, type}` - Token consumption (input/output/cached)
-- `api_cost_dollars_total{model}` - API costs in USD
-
-**Interactive Session Metrics** (NEW):
-- `interactive_session_prompts_total{agent, session_id}` - User prompt count
-- `interactive_session_responses_total{agent, session_id}` - Agent response count
-- `interactive_session_duration_seconds{agent}` - Session duration histogram
-- `interactive_tool_calls_total{agent, tool_name, status}` - Tool usage frequency
-- `interactive_message_types_total{agent, message_type}` - Message type distribution
-- `interactive_cache_read_tokens_total{agent, model}` - Cache read tokens
-- `interactive_cache_creation_tokens_total{agent, model}` - Cache creation tokens
-- `interactive_cache_hit_ratio{agent}` - Cache hit ratio (0-1)
-
-#### Alert Rules
-
-Pre-configured alerts in `config/monitoring/alerting.yml`:
-
-**Agent Alerts**:
-- High error rate (>5% for 5min)
-- Slow response time (p95 >30s for 10min)
-- No active sessions (15min)
-
-**Resource Alerts**:
-- High memory usage (>7GB for 5min)
-- Large checkpoint size (>1GB for 10min)
-- High workspace file count (>10,000 files)
-
-**Cost Alerts**:
-- High API costs (>$10/hour)
-- High token usage (>1M tokens/hour)
-
-#### Grafana Dashboards
-
-Access at http://localhost:3000 (default: admin / changeme123)
-
-**Overview Dashboard**:
-- Active sessions count
-- Request rate by agent and status
-- Response time (p95) by agent
-- API cost per hour by model
-
-### Security Best Practices
-
-1. **Secrets Management**: All secrets in `.env` (gitignored)
-2. **Non-root Containers**: All services run as non-root users
-3. **Network Isolation**: Bridge network with isolated services
-4. **Resource Limits**: CPU and memory limits on all services
-5. **Read-only Filesystems**: Where possible
-6. **Health Checks**: All services monitored
-7. **Audit Logging**: Structured logs with correlation IDs
-
-### Performance Optimization
-
-1. **BuildKit Caching**: Cache mounts reduce build time from minutes to seconds
-2. **OrbStack**: Native ARM64 builds on macOS (2x faster than Docker Desktop)
-3. **Layer Ordering**: Dependencies change less frequently than source code
-4. **Multi-stage Builds**: Minimal production images
-5. **Async I/O**: Non-blocking operations throughout Python SDK
-6. **Connection Pooling**: Reuse database and Redis connections
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: `ANTHROPIC_API_KEY` not set
-```bash
-# Check .env file
-cat .env | grep ANTHROPIC_API_KEY
-
-# Add to .env
-echo "ANTHROPIC_API_KEY=sk-ant-your_key" >> .env
+```python
+mcp_servers = {
+    "custom_server": {
+        "command": "npx",
+        "args": ["-y", "@your-org/custom-mcp-server"]
+    }
+}
 ```
 
-**Issue**: Containers won't start
+## Code Quality Standards
+
+### Linting & Formatting
+
+**Ruff** (fast Python linter):
 ```bash
-# Check Docker daemon
-docker info
+# Check code
+make lint
 
-# Check for port conflicts
-docker compose ps
+# Auto-fix issues
+make lint-fix
 
-# View specific service logs
-make logs-main
+# Format code
+make format
 ```
 
-**Issue**: Out of memory errors
-```bash
-# Increase memory in .env
-AGENT_MEMORY_LIMIT=16G
+**Configuration** (`pyproject.toml`):
+```toml
+[tool.ruff]
+line-length = 100
+target-version = "py312"
 
-# Restart services
-make down && make up
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]  # Line too long (handled by formatter)
 ```
 
-**Issue**: Build cache issues
+### Type Checking
+
+**Mypy** (static type checker):
 ```bash
-# Clean build without cache
+# Run type checking
+make typecheck
+```
+
+**Configuration** (`pyproject.toml`):
+```toml
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+```
+
+**Type Hints Example:**
+```python
+from typing import Dict, List, Optional
+from pathlib import Path
+
+def save_checkpoint(
+    state: Dict[str, Any],
+    checkpoint_dir: Path,
+    keep_last: int = 5
+) -> Optional[Path]:
+    """Save checkpoint with type-safe parameters."""
+    # Implementation
+```
+
+### Security Implementation
+
+**Non-Root Containers:**
+```dockerfile
+# Create non-root user
+RUN useradd -m -u 1000 claude
+USER claude
+```
+
+**Read-Only Filesystem:**
+```yaml
+services:
+  agent:
+    read_only: true
+    tmpfs:
+      - /tmp
+```
+
+**Secret Management:**
+- All secrets in `.env` (gitignored)
+- No hardcoded credentials
+- Secret rotation recommended every 30 days
+- Use environment variables for sensitive data
+
+**Input Validation:**
+```python
+from pydantic import BaseModel, validator
+
+class AgentConfig(BaseModel):
+    agent_name: str
+    max_turns: int
+
+    @validator('max_turns')
+    def validate_max_turns(cls, v):
+        if v < 1 or v > 10000:
+            raise ValueError("max_turns must be between 1 and 10000")
+        return v
+```
+
+## Troubleshooting Development Issues
+
+### Build Failures
+
+**Cache issues:**
+```bash
+# Clear build cache
 make build-no-cache
 
-# Or prune everything
+# Prune all unused resources
 make prune
 ```
 
-### Debug Mode
-
+**Dependency issues:**
 ```bash
-# Start with debug logging
-DEBUG=true make dev
+# Update dependencies
+uv pip compile pyproject.toml -o requirements.txt
 
-# Access shell for debugging
-make shell
-
-# Check service health
-make health
+# Rebuild with fresh dependencies
+make clean
+make build
 ```
 
-### Performance Profiling
-
+**Platform issues (ARM vs x86):**
 ```bash
+# Check current platform
+docker info | grep Architecture
+
+# Force specific platform (if needed)
+PLATFORM=linux/amd64 make build
+```
+
+### Test Failures
+
+**Unit test failures:**
+```bash
+# Run specific test with verbose output
+pytest tests/unit/test_checkpoint.py::test_save_checkpoint -v
+
+# Run with debugging
+pytest tests/unit/test_checkpoint.py --pdb
+```
+
+**Integration test failures (API errors):**
+```bash
+# Verify API key is set
+echo $ANTHROPIC_API_KEY
+
+# Check token budget
+pytest tests/integration/ -v | grep "tokens"
+
+# Skip expensive tests
+pytest tests/integration/ -m "not slow"
+```
+
+### Performance Issues
+
+**Slow builds:**
+```bash
+# Use BuildKit caching
+export DOCKER_BUILDKIT=1
+
+# Use OrbStack (macOS)
+# Much faster than Docker Desktop
+```
+
+**Slow tests:**
+```bash
+# Profile tests
+pytest tests/ --durations=10
+
+# Run only fast tests
+pytest tests/unit/
+```
+
+### Debug Techniques
+
+**Access container shell:**
+```bash
+make shell
+
 # Inside container
+python -m pdb script.py
+```
+
+**View logs with filtering:**
+```bash
+# Structured logs
+make logs-json | jq 'select(.level == "error")'
+
+# Grep for specific errors
+make logs | grep -A 5 "ERROR"
+```
+
+**Performance profiling:**
+```bash
 make shell
 python -m cProfile -o profile.stats -m harness.agent
 
-# Analyze results
+# Analyze with snakeviz
 pip install snakeviz
 snakeviz profile.stats
 ```
 
-## Enhanced Observability & Hooks
+## Phase Roadmaps
 
-### Overview
+### Phase 2: Configuration & Extensibility
 
-The harness includes comprehensive observability for interactive sessions with real-time Prometheus metrics, Grafana dashboards, and action logging hooks. All metrics are automatically collected during interactive sessions without any additional configuration.
+**Goal**: Transform harness into full framework with configuration management and extensibility.
 
-### Action Logging Hooks
+**Features:**
+1. **Configuration Builder** - Load agent configs from YAML/JSON profiles
+2. **Agent Library** - Auto-discover agent definitions from `.claude/agents/`
+3. **Tool Registry** - Plugin architecture for custom tools
+4. **Enhanced Observability** - Real-time action logging (not just on stop)
+5. **Workflow Templates** - Pre-built workflows (feature, bug-fix, refactor)
+6. **Session Management** - Save/load conversations, session analytics
 
-**Location**: `.claude/hooks/log_agent_actions.py`
+**Timeline**: 4 weeks (see CLAUDE.md Phase 2 section in full version)
 
-**What It Does**:
-- Parses JSONL transcript files from Claude Agent SDK
-- Extracts all tool calls with timestamps, inputs, and IDs
-- Logs to `logs/actions/{timestamp}_{session_id}.log`
-- Deduplicates actions (only logs new tool calls)
-- Runs automatically on session Stop events
+### Phase 3: Production Deployment
 
-**Hook Configuration** (`.claude/settings.json`):
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/log_agent_actions.py",
-            "description": "Log all agent tool calls"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+**Features:**
+- Kubernetes manifests (GKE, EKS)
+- Helm charts for easy deployment
+- CI/CD pipeline templates
+- Production monitoring (Datadog, Honeycomb)
+- Auto-scaling configuration
+- Disaster recovery procedures
 
-**Action Log Format**:
-```
-================================================================================
-Agent Actions Log - Session: main_2025-10-26T15:30:45.123456
-================================================================================
-
-Action:
-  Timestamp: 2025-10-26T15:31:12.456789
-  Tool: Read
-  Tool ID: toolu_01ABC123
-  Input: {
-      "file_path": "/workspace/example.py"
-  }
-
-Action:
-  Timestamp: 2025-10-26T15:31:15.789012
-  Tool: Write
-  Tool ID: toolu_02DEF456
-  Input: {
-      "file_path": "/workspace/output.txt",
-      "content": "Hello World"
-  }
-```
-
-### Interactive Session Metrics
-
-**Real-time Metrics Collected**:
-
-1. **User Prompts** - Counted when user submits input
-2. **Agent Responses** - Counted for each AssistantMessage
-3. **Tool Calls** - Tracked by tool name and success/failure status
-4. **Message Types** - Distribution of text, tool_use, thinking blocks
-5. **Cache Performance** - Read/creation tokens and hit ratio
-6. **Session Duration** - Total time from start to exit
-
-**Metrics Integration in Code**:
-```python
-# In interactive.py, metrics are recorded automatically:
-
-# User input recorded
-session.metrics.record_user_prompt(agent_name, session.session_id)
-
-# Agent response recorded
-session.metrics.record_agent_response(agent_name, session.session_id)
-
-# Tool calls tracked
-session.metrics.record_tool_call(agent_name, tool_name, "success")
-
-# Message types logged
-session.metrics.record_message_type(agent_name, "tool_use")
-
-# Cache metrics updated
-session.metrics.update_cache_metrics(agent_name, model, cache_read, cache_creation, total_input)
-```
-
-### Grafana Dashboard: Interactive Sessions
-
-**Access**: http://localhost:3000 → Dashboards → Interactive Sessions
-
-**10 Real-time Panels**:
-
-1. **Active Interactive Sessions** (Stat)
-   - Shows current number of active sessions
-   - Updates every 5 seconds
-
-2. **Total User Prompts** (Stat)
-   - Cumulative count of user inputs
-   - Per session breakdown
-
-3. **Average Response Time** (Stat)
-   - Mean agent response latency
-   - Calculated from last 5 minutes
-
-4. **Cache Hit Ratio** (Gauge)
-   - Visual gauge from 0-100%
-   - Green (>60%), Orange (30-60%), Red (<30%)
-
-5. **Session Cost Over Time** (Graph)
-   - Cost per hour trend
-   - Per-model breakdown
-
-6. **Token Usage Breakdown** (Graph)
-   - Input, output, and cached tokens
-   - Tokens per minute rate
-
-7. **Tool Usage Heat Map** (Bar Gauge)
-   - Most frequently used tools
-   - Horizontal bars with gradient coloring
-
-8. **Message Type Distribution** (Pie Chart)
-   - Percentage of text vs tool_use vs thinking
-   - Donut chart with legend
-
-9. **Session Duration Distribution** (Heatmap)
-   - Duration buckets: 10s, 30s, 1m, 2m, 5m, 10m, 30m, 1h, 2h
-   - Color intensity shows frequency
-
-10. **Cache Performance Over Time** (Graph)
-    - Cache read and creation tokens per minute
-    - Stacked area chart
-
-### Prometheus Queries
-
-**Useful Queries for Ad-hoc Analysis**:
-
-```promql
-# Total prompts in last hour
-sum(increase(interactive_session_prompts_total[1h]))
-
-# Average cache hit ratio
-avg(interactive_cache_hit_ratio)
-
-# Most used tools
-topk(5, sum by (tool_name) (interactive_tool_calls_total))
-
-# Cost per session
-sum(api_cost_dollars_total) / count(interactive_session_prompts_total)
-
-# Response time p95
-histogram_quantile(0.95, sum(rate(agent_duration_seconds_bucket[5m])) by (le))
-
-# Tool failure rate
-sum(interactive_tool_calls_total{status="error"}) / sum(interactive_tool_calls_total) * 100
-```
-
-### Viewing Metrics in Real-time
-
-**During an Interactive Session**:
-
-1. Start interactive mode in one terminal:
-   ```bash
-   make interactive
-   ```
-
-2. Open Grafana in browser:
-   ```bash
-   make metrics
-   # Opens http://localhost:3000
-   ```
-
-3. Navigate to "Interactive Sessions" dashboard
-
-4. Watch metrics update in real-time as you chat:
-   - Type prompts → see prompt counter increment
-   - Agent uses tools → see tool heat map update
-   - Session runs → see cost graph climb
-   - Cache used → see cache hit ratio adjust
-
-### Structured Logging
-
-**All metrics are also logged via structlog**:
-```json
-{
-  "event": "Message displayed",
-  "message_type": "tool_use",
-  "message_length": 324,
-  "timestamp": "2025-10-26T15:31:12.456789Z",
-  "level": "info"
-}
-
-{
-  "event": "Token usage recorded",
-  "agent": "main",
-  "model": "claude-sonnet-4-5-20250929",
-  "input_tokens": 1234,
-  "output_tokens": 567,
-  "cached_tokens": 890,
-  "cost_dollars": 0.0234,
-  "timestamp": "2025-10-26T15:31:15.789012Z",
-  "level": "debug"
-}
-```
-
-**View structured logs**:
-```bash
-# JSON format with jq filtering
-make logs-json | jq 'select(.event == "Token usage recorded")'
-
-# View all interactive session events
-make logs-json | jq 'select(.session_id != null)'
-```
-
-### Action Log Directory
-
-**Location**: `logs/actions/`
-
-**Files Created**:
-- `{timestamp}_{session_id}.log` - One per session
-- Append mode - new actions added to existing file
-- Deduplication - tool IDs prevent duplicate logging
-
-**Example**:
-```
-logs/actions/
-├── 20251026_153045_main_2025-10-26T15:30:45.123456.log
-├── 20251026_161230_main_2025-10-26T16:12:30.789012.log
-└── 20251026_174512_main_2025-10-26T17:45:12.345678.log
-```
-
-### Cost Tracking
-
-**Real-time Cost Calculation**:
-- Based on Sonnet 4.5 pricing (as of Oct 2025)
-  - Input: $0.003 per 1K tokens
-  - Output: $0.015 per 1K tokens
-  - Cached: $0.0003 per 1K tokens
-
-**Cost Metrics**:
-```python
-# Automatic cost recording in agent.py
-cost = (
-    (input_tokens / 1000.0) * 0.003
-    + (output_tokens / 1000.0) * 0.015
-    + (cached_tokens / 1000.0) * 0.0003
-)
-MetricsCollector.record_api_cost(model, cost)
-```
-
-**View Costs in Grafana**:
-- "Session Cost Over Time" panel shows $/hour
-- "Token Usage Breakdown" shows which token type dominates
-- Set budget alerts in Prometheus (see alerting.yml)
-
-### Troubleshooting Observability
-
-**Issue**: Metrics not appearing in Grafana
-```bash
-# Check Prometheus is scraping
-curl http://localhost:9090/api/v1/targets
-
-# Verify metrics endpoint
-docker compose exec main-agent curl http://localhost:9090/metrics | grep interactive_session
-```
-
-**Issue**: Dashboard not loading
-```bash
-# Check Grafana logs
-make logs | grep grafana
-
-# Restart Grafana
-docker compose restart grafana
-```
-
-**Issue**: Action logs not being created
-```bash
-# Verify hooks directory exists
-ls -la .claude/hooks/
-
-# Check hook script is executable
-ls -l .claude/hooks/log_agent_actions.py
-
-# Test hook manually
-echo '{"transcript_path": "/path/to/transcript.jsonl", "session_id": "test"}' | python .claude/hooks/log_agent_actions.py
-```
-
-**Issue**: Cache hit ratio shows 0
-```bash
-# Cache metrics only update when cache is used
-# Run a few prompts in the same session to build cache
-# Check Prometheus query:
-curl -s 'http://localhost:9090/api/v1/query?query=interactive_cache_hit_ratio' | jq .
-```
-
-## Phase 2: Configuration & Extensibility Roadmap
-
-### Overview
-
-Phase 2 transforms the harness from an interactive CLI into a full framework with configuration management, extensible agent/tool libraries, and enhanced observability. The goal is to make the harness reusable across different agent runs without rebuilding infrastructure.
-
-### 2.1 Configuration Builder System
-
-**Goal**: Support YAML/JSON configuration profiles for agents
-
-**Files to Create**:
-- `src/harness/config_builder.py` - Profile loader with validation
-- `config/profiles/default.yaml` - Base configuration
-- `config/profiles/research.yaml` - Research agent profile
-- `config/profiles/coding.yaml` - Coding agent profile
-- `config/profiles/analysis.yaml` - Data analysis profile
-
-**Features**:
-- Configuration inheritance (profiles extend base configs)
-- Pydantic schema validation
-- Environment variable overrides
-- Hot-reload without container restart
-
-**Example Profile** (`config/profiles/research.yaml`):
-```yaml
-name: "Research Agent"
-base: "default"
-
-agent:
-  model: "sonnet"
-  permission_mode: "acceptEdits"
-  max_turns: 500
-
-tools:
-  allowed:
-    - Read
-    - Write
-    - WebSearch
-    - WebFetch
-  restricted:
-    - Bash
-
-mcp_servers:
-  playwright:
-    enabled: false
-  memory:
-    enabled: true
-
-monitoring:
-  checkpoint_interval: 3600
-  log_level: "INFO"
-```
-
-**Usage**:
-```bash
-make interactive PROFILE=research
-# or
-make chat PROFILE=coding
-```
-
-### 2.2 Agent & Tool Library
-
-**Agent Library** (`config/agents/library/`):
-- Port agent definitions from `claude-agent-sdk-intro/.claude/agents/`
-- Front-matter YAML parsing (name, description, tools, model)
-- Auto-discovery via glob patterns
-- Versioning for backwards compatibility
-
-**Tool Library** (`src/harness/tools/`):
-- Registry pattern with auto-discovery
-- Each tool as Python module with `@tool` decorator
-- Grouped by category (filesystem, web, data, etc.)
-- Automatic MCP server generation
-
-**Structure**:
-```
-src/harness/tools/
-├── registry.py          # Auto-discovery engine
-├── filesystem/
-│   ├── advanced_search.py
-│   └── file_watcher.py
-├── web/
-│   ├── scraper.py
-│   └── api_client.py
-└── data/
-    ├── csv_processor.py
-    └── json_validator.py
-```
-
-**Usage**:
-```python
-# Tools auto-register on import
-from harness.tools import registry
-
-# Get all available tools
-tools = registry.get_all_tools()
-
-# Load specific category
-web_tools = registry.get_tools_by_category("web")
-```
-
-### 2.3 Enhanced Observability
-
-**Port from `claude-agent-sdk-intro`**:
-- `.claude/hooks/log_agent_actions.py` - JSONL transcript parsing
-- Session hooks (Stop, Notification) with sound/logging
-- Real-time action logging (not just on stop)
-
-**New Features**:
-- Structured logging with correlation IDs across all messages
-- Export to observability platforms (Datadog, Honeycomb)
-- Cost analytics dashboard in Grafana
-- Session replay functionality
-
-**Hook Configuration** (`.claude/settings.json`):
-```json
-{
-  "hooks": {
-    "Stop": [
-      {
-        "type": "command",
-        "command": "uv run src/harness/hooks/log_actions.py"
-      },
-      {
-        "type": "command",
-        "command": "uv run src/harness/hooks/export_metrics.py"
-      }
-    ],
-    "Notification": [
-      {
-        "type": "command",
-        "command": "afplay /System/Library/Sounds/Purr.aiff"
-      }
-    ]
-  }
-}
-```
-
-### 2.4 Workflow Templates
-
-**Location**: `examples/workflows/`
-
-**Templates**:
-1. **simple-feature/** - Single file feature implementation
-2. **bug-fix/** - Debug, fix, test workflow
-3. **refactoring/** - Code improvement workflow
-4. **research-and-implement/** - Multi-agent (researcher → coder)
-5. **full-project/** - Complete project from spec
-
-**Each Template Includes**:
-- `workflow.yaml` - Workflow definition and steps
-- `agent_config.yaml` - Agent configuration
-- `README.md` - Usage instructions and examples
-- Example inputs/outputs
-
-**Example** (`examples/workflows/simple-feature/workflow.yaml`):
-```yaml
-name: "Simple Feature Implementation"
-description: "Implement a single-file feature with tests"
-
-steps:
-  - name: "Analyze requirements"
-    agent: "main"
-    tools: ["Read", "Grep", "Glob"]
-
-  - name: "Implement feature"
-    agent: "main"
-    tools: ["Read", "Write", "Edit"]
-
-  - name: "Write tests"
-    agent: "tester"
-    tools: ["Read", "Write", "Bash"]
-
-  - name: "Review code"
-    agent: "reviewer"
-    tools: ["Read", "Grep"]
-
-outputs:
-  - "Feature implementation"
-  - "Unit tests"
-  - "Code review report"
-```
-
-### 2.5 Session Management Improvements
-
-**Features**:
-- Save/load conversation history as markdown
-- Export conversations for sharing
-- Conversation branching (try different approaches)
-- Session analytics dashboard (time, cost, tasks completed)
-- Compare sessions side-by-side
-
-**CLI Commands**:
-```bash
-# Save session
-make save-session NAME=feature-implementation
-
-# Load session
-make load-session NAME=feature-implementation
-
-# Export to markdown
-make export-session NAME=feature-implementation
-
-# List all sessions
-make list-sessions
-
-# Session analytics
-make session-stats NAME=feature-implementation
-```
-
-### 2.6 Multi-Agent Orchestration UI
-
-**Advanced CLI Features**:
-- View all active agents in real-time
-- Switch between agent conversations
-- Broadcast messages to multiple agents
-- Monitor agent coordination and task delegation
-- Visual workflow progress
-
-**Example**:
-```bash
-make orchestrate
-
-# Interactive menu:
-# 1. View all agents
-# 2. Chat with main agent
-# 3. Chat with reviewer
-# 4. Broadcast to all
-# 5. View workflow status
-# 6. Exit
-```
-
-### Implementation Timeline
-
-**Week 1**: Configuration builder + YAML profiles
-**Week 2**: Agent/tool library with auto-discovery
-**Week 3**: Enhanced observability + hooks
-**Week 4**: Workflow templates + session management
-
-### Success Criteria
-
-**Phase 2 Complete When**:
-- ✅ Can load custom agent profiles via CLI
-- ✅ Can add new tools without modifying core code
-- ✅ Observability hooks capture all actions
-- ✅ At least 3 workflow templates documented
-- ✅ Configuration schema fully documented
-- ✅ Agent library has 10+ pre-built agents
-- ✅ Session save/load working
-- ✅ Multi-agent orchestration UI functional
+**Timeline**: TBD (deferred until Phase 2 complete)
 
 ## Contributing
 
-Follow coding standards from ABDotfiles:
+### Coding Standards
+
+Follow standards from `.claude/specs/`:
 - **General**: `.claude/specs/general_code_standards.md`
 - **Python**: `.claude/specs/python.md`
 - **Make/Docker**: `.claude/specs/make.md`
 
-Key requirements:
-- 80%+ test coverage
-- Type hints on all functions
+### Pull Request Process
+
+1. Fork repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Follow TDD: Write test → Implement → Pass → Refactor
+4. Ensure 80%+ test coverage
+5. Run `make lint` and `make typecheck`
+6. Update documentation if needed
+7. Submit PR with detailed description
+
+### Development Requirements
+
+- Python 3.12+ with type hints on all functions
 - Ruff for linting and formatting
 - Conventional commit messages
+- 80%+ test coverage for new code
+- Documentation for public APIs
 
 ## Resources
 
+### Documentation
 - [Claude Agent SDK Documentation](https://docs.claude.com/en/api/agent-sdk/overview)
 - [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code/)
+- [README.md](./README.md) - User-facing documentation
+
+### SDKs
 - [Python SDK](https://github.com/anthropics/claude-agent-sdk-python)
 - [TypeScript SDK](https://github.com/anthropics/claude-agent-sdk-typescript)
+
+### Development Tools
 - [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
+- [Ruff](https://docs.astral.sh/ruff/) - Fast Python linter
+- [pytest](https://docs.pytest.org/) - Testing framework
+- [mypy](https://mypy.readthedocs.io/) - Static type checker
 
 ---
 

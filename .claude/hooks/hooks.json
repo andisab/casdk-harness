@@ -1,0 +1,12 @@
+{
+  "PostToolUse": [
+    {
+      "matcher": null,
+      "script": "log_agent_actions.py",
+      "description": "Log all agent tool actions for observability"
+    }
+  ],
+  "PreToolUse": [],
+  "OnStartup": [],
+  "OnShutdown": []
+}

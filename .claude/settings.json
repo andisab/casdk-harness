@@ -23,17 +23,5 @@
         ]
       }
     ]
-  },
-  "permissions": {
-    "allow": [
-      "Read(/Users/andisblukis/Projects/claudeagentsdk-harness/**)",
-      "Write(/Users/andisblukis/Projects/claudeagentsdk-harness/workspace/**)",
-      "Write(/Users/andisblukis/Projects/claudeagentsdk-harness/logs/**)",
-      "Bash(make *)",
-      "Bash(docker *)",
-      "Bash(pytest *)"
-    ],
-    "deny": [],
-    "ask": []
   }
 }
