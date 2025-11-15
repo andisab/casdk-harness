@@ -8,7 +8,7 @@ These features are deferred until core harness functionality is complete and pol
 ## Current Focus
 
 Before implementing these proposals, we're focused on:
-- ✅ Completing Phase 1.5 (Enhanced Observability) testing
+- ✅ Completing Phase 0.7 (Enhanced Observability) testing
 - ✅ Committing working changes to git
 - ✅ Improving test coverage from 61% to 80%+
 - ✅ Polishing core Docker orchestration
@@ -16,14 +16,7 @@ Before implementing these proposals, we're focused on:
 
 ## Proposals in This Directory
 
-### 1. External Repository Support
-**File**: [external-repository-support.md](./external-repository-support.md)
-
-**Overview**: Design for working with external codebases (both local and remote repositories). Includes three approaches: git clone, volume mounting, and automated workflows.
-
-**Why Deferred**: Current workspace-only approach works for immediate needs. This adds complexity that can wait until core features are stable.
-
-### 2. Frontend Web Application
+### 1. Frontend Web Application
 **File**: [frontend-implementation.md](./frontend-implementation.md)
 
 **Overview**: Guide for building a **separate** web application (React + FastAPI) that uses the harness as a backend service.
@@ -32,17 +25,17 @@ Before implementing these proposals, we're focused on:
 
 **Why Deferred**: Harness needs to be rock-solid before building UI on top of it.
 
-### 3. Frontend Feature Roadmap
+### 2. Frontend Feature Roadmap
 **File**: [frontend-roadmap.md](./frontend-roadmap.md)
 
 **Overview**: Advanced UI features for the web frontend (artifacts, syntax highlighting, file uploads, etc.).
 
-**Why Deferred**: Depends on #2 being implemented first.
+**Why Deferred**: Depends on #1 being implemented first.
 
 ## When Will These Be Implemented?
 
 These proposals will be reconsidered after:
-- [ ] Phase 1.5 fully complete (observability testing done)
+- [ ] Phase 0.7 fully complete (observability testing done)
 - [ ] All implementation files committed to git
 - [ ] Test coverage reaches 80%+
 - [ ] Integration tests all passing
@@ -50,9 +43,10 @@ These proposals will be reconsidered after:
 
 ## Priority Order (If/When Implemented)
 
-1. **External Repository Support** - Most relevant to harness core functionality
-2. **Frontend Implementation** - Requires stable harness first
-3. **Frontend Features** - Requires #2 complete
+1. **Frontend Implementation** - Requires stable harness first
+2. **Frontend Features** - Requires #1 complete
+
+Note: External Repository Support has been promoted to **Phase 1A** as it's essential infrastructure for Mode 2. See [MODE2_PHASE_1A_REPOSITORY_SUPPORT.md](./MODE2_PHASE_1A_REPOSITORY_SUPPORT.md).
 
 ---
 
