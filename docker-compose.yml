@@ -39,6 +39,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./workspace:/workspace:delegated
+      - ./.claude:/app/.claude:ro
       - ./memory:/memory:delegated
       - ./logs/main:/logs:delegated
       - ./config:/app/config:ro

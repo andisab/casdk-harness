@@ -23,5 +23,47 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(which :*)",
+      "Bash(pwd)",
+      "Bash(ls :*)",
+      "Bash(jq :*)",
+      "Bash(test :*)",
+      "Bash(find :*)",
+      "Bash(grep :*)",
+      "Bash(sed :*)",
+      "Bash(awk :*)",
+      "Bash(curl :*)",
+      "Bash(mkdir :*)",
+      "Bash(cd :*)",
+      "Bash(cat :*)",
+      "Bash(echo :*)",
+      "Bash(git status)",
+      "Bash(git diff :*)",
+      "Bash(git log :*)",
+      "Bash(git add :*)",
+      "Bash(claude mcp:*)",
+      "Bash(docker-compose logs:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "mcp__Context7__resolve-library-id",
+      "mcp__Context7__get-library-docs",
+      "mcp__joplin__search_notes",
+      "mcp__joplin__get_note",
+      "mcp__joplin__create_note",
+      "mcp__memory__delete_entities",
+      "mcp__memory__search_nodes",
+      "mcp__memory__open_nodes",
+      "mcp__memory__add_observations"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(curl :* | bash :*)",
+      "Bash(wget :* | sh :*)",
+      "Bash(eval :*)"
+    ]
   }
 }
