@@ -1,29 +1,5 @@
 {
   "outputStyle": "default",
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/log_agent_actions.py",
-            "description": "Log all agent tool calls to structured log files"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Agent notification triggered'",
-            "description": "Simple notification handler (replace with sound if desired)"
-          }
-        ]
-      }
-    ]
-  },
   "permissions": {
     "allow": [
       "Bash(which :*)",
