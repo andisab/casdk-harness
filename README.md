@@ -153,6 +153,64 @@ make interactive
 # Output: ✓ Recovered from previous checkpoint
 ```
 
+## Working with External Repositories
+
+The harness supports working on external repositories while maintaining access to harness skills and tools.
+
+### Directory Structure
+
+```
+/workspace/
+├── .claude/              # Harness skills, agents, hooks, specs
+└── projects/             # Clone external repos here
+    └── your-repo/        # External repository
+        └── .claude/      # Repository's own .claude (optional)
+```
+
+### Cloning Repositories
+
+```bash
+# Access shell in main agent container
+make shell
+
+# Inside container
+cd /workspace/projects
+git clone https://github.com/user/your-repo.git
+cd your-repo
+```
+
+### Using Repository Context
+
+External repos can have their own `.claude/` directories for project-specific skills and configurations:
+
+```python
+from harness.agent import AgentSession
+
+# Create session
+session = AgentSession(agent_name="main")
+await session.start()
+
+# Switch to work on external repository
+session.set_working_repository("your-repo")
+# Agent now uses /workspace/projects/your-repo as cwd
+# If repo has .claude/, it will be used via setting_sources=["project"]
+
+# Do work on the repository...
+async for message in session.execute("Refactor the main module"):
+    print(message)
+
+# Switch back to harness workspace
+session.reset_to_harness()
+```
+
+### Benefits
+
+- ✅ External repos can use their own `.claude/` configurations
+- ✅ Harness skills/agents always available at `/workspace/.claude`
+- ✅ No conflicts between harness and repository configurations
+- ✅ Clean separation of concerns
+- ✅ Easy context switching between projects
+
 ## Complete Command Reference
 
 ### Development
