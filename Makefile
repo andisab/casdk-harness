@@ -214,6 +214,22 @@ coverage: ## Generate test coverage report
 test-watch: ## Run tests in watch mode
 	docker compose $(COMPOSE_FILES) exec main-agent pytest-watch
 
+.PHONY: test-buffering
+test-buffering: ## Test container stream buffering
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_container_buffering.py -v
+
+.PHONY: test-signals
+test-signals: ## Test signal handling and graceful shutdown
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_signal_handling.py -v
+
+.PHONY: test-multi-agent
+test-multi-agent: ## Test multi-agent coordination via Redis
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_multi_agent.py -v
+
+.PHONY: test-all-multiagent
+test-all-multiagent: ## Run all multi-agent implementation tests
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_container_buffering.py tests/integration/test_signal_handling.py tests/integration/test_multi_agent.py -v
+
 # =============================================================================
 # Code Quality
 # =============================================================================

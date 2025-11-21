@@ -38,6 +38,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # =============================================================================
 FROM deps AS development
 
+# Install tini for signal handling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install development dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -e ".[dev]"
@@ -60,7 +65,16 @@ COPY tests/ ./tests/
 # Set ownership
 RUN chown -R claude:claude /app
 
+# Set unbuffered output (CRITICAL for container streams)
+ENV PYTHONUNBUFFERED=1
+
 USER claude
+
+# Signal handling
+STOPSIGNAL SIGTERM
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
@@ -109,6 +123,9 @@ RUN groupadd -r claude && useradd -r -g claude -d /app -s /bin/bash claude
 # Create necessary directories
 RUN mkdir -p /workspace /memory /logs && \
     chown -R claude:claude /app /workspace /memory /logs
+
+# Set unbuffered output (CRITICAL for container streams)
+ENV PYTHONUNBUFFERED=1
 
 USER claude
 

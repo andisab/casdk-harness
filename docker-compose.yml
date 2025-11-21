@@ -30,8 +30,10 @@ services:
       - CLAUDE_CHECKPOINT_INTERVAL=${CLAUDE_CHECKPOINT_INTERVAL:-3600}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_FORMAT=${LOG_FORMAT:-json}
+      - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB:-claude_harness}
@@ -51,6 +53,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    stdin_open: true
+    tty: true
     restart: unless-stopped
     networks:
       - claude-network
@@ -88,7 +92,9 @@ services:
       - CLAUDE_PERMISSION_MODE=manual
       - CLAUDE_MAX_TURNS=50
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379
     volumes:
       - ./workspace:/workspace:ro
       - ./memory:/memory:delegated
@@ -100,6 +106,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    stdin_open: true
+    tty: true
     restart: unless-stopped
     networks:
       - claude-network
@@ -128,7 +136,9 @@ services:
       - CLAUDE_PERMISSION_MODE=acceptAll
       - CLAUDE_MAX_TURNS=100
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONUNBUFFERED=1
       - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379
     volumes:
       - ./workspace:/workspace:delegated
       - ./memory:/memory:delegated
@@ -140,6 +150,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    stdin_open: true
+    tty: true
     restart: unless-stopped
     networks:
       - claude-network

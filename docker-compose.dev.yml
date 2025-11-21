@@ -17,51 +17,30 @@ services:
     # Override command for development - keep container alive for interactive sessions
     # Use 'make interactive' to start a session
     command: tail -f /dev/null
-    # Watch mode for automatic reload (Docker Compose 2.22+)
-    # Note: Paths watched here should NOT be in volumes: section
-    develop:
-      watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-        - action: sync
-          path: ./tests
-          target: /app/tests
-        - action: rebuild
-          path: ./pyproject.toml
-        - action: sync+restart
-          path: ./config
-          target: /app/config
+    # Volume mounts for live code reload (no watch mode)
+    volumes:
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
 
   reviewer-agent:
     build:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    # Watch mode for automatic reload
-    develop:
-      watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-        - action: sync
-          path: ./tests
-          target: /app/tests
+    # Volume mounts for live code reload (no watch mode)
+    volumes:
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
 
   tester-agent:
     build:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    # Watch mode for automatic reload
-    develop:
-      watch:
-        - action: sync
-          path: ./src
-          target: /app/src
-        - action: sync
-          path: ./tests
-          target: /app/tests
+    # Volume mounts for live code reload (no watch mode)
+    volumes:
+      - ./src:/app/src:delegated
+      - ./tests:/app/tests:delegated
 
   # Development database with exposed port
   postgres:
