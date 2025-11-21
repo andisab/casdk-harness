@@ -7,9 +7,9 @@
 
 ## Overview
 
-This document contains reference material and alternative implementations for agent configuration in the Claude Agent SDK Harness. While **docs/AGENT_ARCH.md** contains the chosen implementation plan (Phases 1-3), this document preserves research, alternative approaches, and implementation options that may be useful for future development.
+This document contains reference material and alternative implementations for agent configuration in the Claude Agent SDK Harness. While **docs/IMPLEMENTATION.md** contains the chosen implementation plan (Phases 1-3), this document preserves research, alternative approaches, and implementation options that may be useful for future development. This document can be disregarded for current implementation effort and is mostly for informational and archival purposes. 
 
-### Purpose
+ ### Purpose
 
 - **Preserve research** - Document all investigated approaches
 - **Inform future decisions** - Provide context for architectural choices
@@ -18,7 +18,7 @@ This document contains reference material and alternative implementations for ag
 
 ### Quick Links
 
-- [**AGENT_ARCH.md**](./AGENT_ARCH.md) - Current implementation plan (Phases 1-3)
+- [**IMPLEMENTATION.md**](./AGENT_ARCH.md) - Current implementation plan (Phases 1-3)
 - [**Custom Agent Loader**](#custom-agent-loader-implementation) - Alternative to hard-coded agents
 - [**Alternative Approaches**](#alternative-approaches) - 5 additional implementation strategies
 - [**Comparison Matrix**](#comparison-matrix) - Tradeoff analysis
@@ -37,11 +37,6 @@ This document contains reference material and alternative implementations for ag
   - [Alternative 5: Convert Agents to Skills](#alternative-5-convert-agents-to-skills)
 - [Comparison Matrix](#comparison-matrix)
 - [Recommendations](#recommendations)
-- [Appendices](#appendices)
-  - [Appendix A: SDK Documentation References](#appendix-a-sdk-documentation-references)
-  - [Appendix B: File Locations](#appendix-b-file-locations)
-  - [Appendix C: Token Budget Analysis](#appendix-c-token-budget-analysis)
-  - [Appendix D: Testing Strategy](#appendix-d-testing-strategy)
 
 ---
 
@@ -55,7 +50,7 @@ This document contains reference material and alternative implementations for ag
 
 Create a parser to load agent definitions from `.claude/agents/*.md` files and make them available to the running agent. This enables all 44 existing agent definitions to be used with runtime selection.
 
-**Note**: This approach was considered but **not chosen** for the Phase 1-3 implementation. The hard-coded approach (Alternative 6 in AGENT_ARCH.md) was selected instead for better SDK alignment. This implementation is preserved here for reference and potential future use.
+**Note**: This approach was considered but **not chosen** for the Phase 1-3 implementation. The hard-coded approach (Alternative 6 in IMPLEMENTATION.md) was selected instead for better SDK alignment. This implementation is preserved here for reference and potential future use.
 
 ### Architecture
 
@@ -760,7 +755,7 @@ done
 **Total Time**: ~2.5 hours
 **Total Value**: Native skills + multi-agent system + SDK best practices
 
-See **docs/AGENT_ARCH.md** for the complete implementation plan.
+See **docs/IMPLEMENTATION.md** for the complete implementation plan.
 
 ### Decision Criteria
 
@@ -819,223 +814,3 @@ You are the Lead Software Architect with three capabilities:
 - ✅ 12 skills for workflow patterns (SDK native)
 - ✅ 38 reference agents for edge cases (on-demand)
 - ✅ Maximum flexibility with minimal code
-
----
-
-## Appendices
-
-### Appendix A: SDK Documentation References
-
-#### AgentDefinition Class
-
-From Context7 documentation (`/anthropics/claude-agent-sdk-python`):
-
-```python
-class AgentDefinition:
-    """Definition for a specialized agent that can be delegated to."""
-
-    description: str      # When to use this agent (shown to delegating agent)
-    tools: List[str]      # Tools this agent can use
-    prompt: str           # System prompt for this agent
-    model: str           # Model to use (sonnet, haiku, opus)
-```
-
-#### ClaudeAgentOptions Parameters
-
-- `system_prompt`: Main agent instructions
-- `allowed_tools`: Tools available to agent
-- `agents`: Dict of AgentDefinition for delegation
-- `setting_sources`: ["user", "project"] for skill loading
-- `hooks`: PreToolUse, PostToolUse callbacks
-- `mcp_servers`: MCP server configurations
-- `permission_mode`: "manual", "acceptEdits", "acceptAll", "bypassPermissions"
-- `max_turns`: Maximum conversation turns
-- `model`: Model to use
-
-#### Skills System
-
-Skills must be in `.claude/skills/*/SKILL.md` format:
-
-```yaml
----
-title: Skill Title
-description: What this skill provides
-tags: [skill, category, keywords]
-type: skill
-version: "1.0.0"
----
-
-# Skill Content
-
-Detailed instructions and examples...
-```
-
-Enabled via:
-```python
-ClaudeAgentOptions(
-    allowed_tools=["Skill"],
-    setting_sources=["project"]  # or ["user", "project"]
-)
-```
-
----
-
-### Appendix B: File Locations
-
-#### Current Repository Structure
-
-- **Agent Definitions**: `.claude/agents/*.md` (44 files)
-  - Prefixes: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`, `build-*`, `data-*`, `doc-*`
-
-- **Skills**: `.claude/skills/*/SKILL.md` (12 directories)
-  - api-development, code-review, database-management, debugging, deployment-operations,
-    documentation, frontend-development, git-workflow, microservices-architecture,
-    performance-optimization, security, testing-strategies
-
-- **Configuration**:
-  - `src/harness/agent.py` - Agent session management
-  - `src/harness/interactive.py` - Interactive CLI
-  - `src/harness/config.py` - Configuration management
-
-#### New Files (Hard-Coded Approach - Phase 2)
-
-- `src/harness/agents/definitions.py` - Hard-coded CORE_AGENTS
-- `src/harness/prompts/*.txt` - Extracted agent prompts (7 files)
-  - lead_agent.txt, python_expert.txt, typescript_expert.txt, docker_expert.txt,
-    postgres_expert.txt, code_reviewer.txt, doc_writer.txt
-
----
-
-### Appendix C: Token Budget Analysis
-
-#### Custom Loader Approach
-
-**Per Agent Switch**:
-- Load agent definition: ~500 tokens (parse markdown)
-- System prompt injection: ~500 tokens
-- Total per switch: ~1,000 tokens
-
-**Monthly Estimate** (100 switches):
-- 100,000 tokens × $0.003/1K = $0.30/month
-
-#### Alternative 3 (Mega-Prompt)
-
-**Initial Load**:
-- 44 agents × 500 tokens = 22,000 tokens
-- Cache creation: 22,000 tokens × $0.03/1K = $0.66
-- Cache reads: 22,000 tokens × $0.003/1K = $0.066/session
-
-**Monthly Estimate** (30 sessions):
-- Cache creation: $0.66 (one-time per cache period)
-- Cache reads: $0.066 × 30 = $1.98/month
-- Total: ~$2.64/month
-
-#### Hard-Coded Approach (Chosen)
-
-**Per Session**:
-- Lead agent prompt: ~1,000 tokens
-- 6 agent definitions in `agents` param: ~3,000 tokens
-- Total system prompt: ~4,000 tokens
-- Cache creation: 4,000 × $0.03/1K = $0.12
-- Cache reads: 4,000 × $0.003/1K = $0.012/session
-
-**Monthly Estimate** (30 sessions):
-- Cache creation: $0.12 (one-time)
-- Cache reads: $0.012 × 30 = $0.36/month
-- Total: ~$0.48/month
-
-**Winner**: Hard-Coded Approach - Most cost-effective
-
----
-
-### Appendix D: Testing Strategy
-
-#### Unit Tests
-
-```python
-# tests/unit/test_agent_definitions.py
-from harness.agents.definitions import CORE_AGENTS, get_lead_agent_prompt
-
-
-def test_all_agents_defined():
-    """Verify all 6 core agents are properly configured."""
-    assert len(CORE_AGENTS) == 6
-
-    required_agents = {
-        "python-expert", "typescript-expert", "docker-expert",
-        "postgres-expert", "code-reviewer", "doc-writer"
-    }
-    assert set(CORE_AGENTS.keys()) == required_agents
-
-
-def test_agent_structure():
-    """Verify each agent has required fields."""
-    for name, agent in CORE_AGENTS.items():
-        assert agent.description, f"{name} missing description"
-        assert agent.tools, f"{name} missing tools"
-        assert agent.prompt, f"{name} missing prompt"
-        assert agent.model in ["sonnet", "haiku", "opus"], f"{name} invalid model"
-
-
-def test_lead_agent_prompt():
-    """Verify lead agent prompt loads correctly."""
-    prompt = get_lead_agent_prompt()
-    assert len(prompt) > 0
-    assert "Lead Software Architect" in prompt
-    assert "Task tool" in prompt
-```
-
-#### Integration Tests
-
-```python
-# tests/integration/test_multi_agent_delegation.py
-import pytest
-from harness.agent import AgentSession
-
-
-@pytest.mark.integration
-@pytest.mark.slow
-async def test_python_delegation():
-    """Test lead agent delegates Python tasks correctly."""
-    session = AgentSession(agent_name="lead")
-    await session.start()
-
-    async for message in session.execute("Write a Python function to sort a list"):
-        # Should see delegation to python-expert
-        if "tool_use" in message:
-            if message["tool_use"]["name"] == "Task":
-                assert "python-expert" in str(message["tool_use"]["input"])
-
-    await session.shutdown()
-
-
-@pytest.mark.integration
-async def test_code_review_delegation():
-    """Test code review is delegated correctly."""
-    session = AgentSession(agent_name="lead")
-    await session.start()
-
-    async for message in session.execute("Review my code in checkpoint.py"):
-        # Should see delegation to code-reviewer
-        if "tool_use" in message:
-            if message["tool_use"]["name"] == "Task":
-                assert "code-reviewer" in str(message["tool_use"]["input"])
-
-    await session.shutdown()
-```
-
----
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2025-11-18 | Initial reference documentation - extracted from CONTEXT_NOTES.md |
-
----
-
-**Author**: Claude (AI Assistant)
-**Reviewer**: Andis A. Blukis
-**Status**: Reference Material - Not for Implementation
-
-**For implementation guidance, see [AGENT_ARCH.md](./AGENT_ARCH.md)**

@@ -1,19 +1,25 @@
 # Agent Architecture & Implementation Plan
 
-**Last Updated**: 2025-11-18 23:30 UTC
-**Overall Status**: Phase 1 Implemented ✅ (Pending Verification) | Phase 2-3 Planned
+**Last Updated**: 2025-11-21 18:00 UTC
+**Overall Status**: Phase 1 NOT Implemented ❌ | Phase 2-3 Planned
 
 ## Current Implementation Status
 
-- **Phase 1: Native Skill Support** - ✅ **IMPLEMENTED**
-  - All code changes complete
-  - Docker configuration with symlink solution
-  - Integration tests written
-  - Pending: Interactive mode verification and API testing
+- **Phase 1: Native Skill Support** - ❌ **NOT IMPLEMENTED**
+  - Documentation was updated but code was NOT changed
+  - Skills exist (12 in `.claude/skills/`) but are unreachable
+  - Docker mounts `.claude` to `/app/.claude` not `/workspace/.claude`
+  - "Skill" NOT in allowed_tools
+  - setting_sources NOT configured
+  - Integration tests do NOT exist
 
 - **Phase 2: Hard-Coded Agent Definitions** - 📋 **PLANNED** (Not Started)
 
 - **Phase 3: Documentation & Examples** - 📋 **PLANNED** (Not Started)
+
+## ⚠️ CRITICAL: Documentation Drift Identified
+
+**Issue**: Previous documentation claimed Phase 1 was "implemented" but no actual code changes were made. Only documentation was updated (commit 1fe7952). This section has been corrected to reflect actual system state.
 
 ---
 
@@ -228,43 +234,41 @@ QA Re-test → Multiple iterations until approval
 
 ## Phase 1: Enable Native Skill Support
 
-**Timeline**: 30 minutes → **Actual: 2 hours** (due to path mismatch debugging)
-**Complexity**: Low → **Medium** (required Docker symlink solution)
+**Timeline**: 30 minutes estimated
+**Complexity**: Low
 **Risk**: Minimal
-**Status**: ✅ **IMPLEMENTED** - Pending final verification
+**Status**: ❌ **NOT IMPLEMENTED**
 
 ### Implementation Status
 
-**Completed** ✅:
-1. **Code Changes** (src/harness/agent.py:207-215)
-   - Added "Skill" to allowed_tools list
-   - Added setting_sources=["user", "project"] parameter
+**What Needs to Be Done**:
 
-2. **Docker Configuration** (docker-compose.yml)
-   - Added .claude mount to reviewer-agent (line 94)
-   - Added .claude mount to tester-agent (line 135)
-   - Main-agent already had mount (line 42)
+1. **Code Changes Required** (src/harness/agent.py):
+   - [ ] Add "Skill" to allowed_tools list (line ~135)
+   - [ ] Add setting_sources=["user", "project"] parameter to ClaudeAgentOptions
+   - [ ] No other code changes needed
 
-3. **Hierarchical Workspace Structure**
-   - Direct mount: `./.claude:/workspace/.claude:ro` (no symlink)
-   - Projects directory: `/workspace/projects/` for external repos
-   - Clean separation: harness .claude vs. repo .claude
+2. **Docker Configuration Required** (docker-compose.yml):
+   - [ ] Change mount: `./.claude:/app/.claude:ro` → `./.claude:/workspace/.claude:ro`
+   - [ ] Apply to all 3 agents (main-agent, reviewer-agent, tester-agent)
+   - [ ] No symlink needed - just change mount point
 
-4. **Integration Tests** (tests/integration/test_skills.py)
-   - 4 comprehensive tests covering skill auto-discovery and invocation
-   - test_skills_auto_discovered()
-   - test_skill_invocation()
-   - test_multiple_skills_available()
-   - test_skill_tool_in_allowed_tools()
+3. **Integration Tests Required** (tests/integration/test_skills.py):
+   - [ ] Create test file
+   - [ ] Add 4 tests: auto-discovery, invocation, multiple skills, tool availability
+   - [ ] Follow pattern from other integration tests
 
-**Verified** ✅:
-- Unit tests pass with no regression (9 tests)
-- Docker build completes successfully with symlink
-- All 12 skills visible from all containers
+**Current State** ❌:
+- Skills exist (12 in `.claude/skills/`) but unreachable
+- Docker mounts to `/app/.claude` (wrong location)
+- "Skill" NOT in allowed_tools
+- setting_sources NOT configured
+- Integration tests do NOT exist
 
-**Pending** 📋:
-- Interactive mode verification (test symlink fix resolves blocking error)
-- Integration test execution with real API (costs ~$0.20-$0.45)
+**Why Not Implemented**:
+- Commit 1fe7952 updated documentation only
+- No actual code changes were committed
+- Documentation drift occurred
 
 ### Critical Issue Resolved
 
@@ -1121,14 +1125,13 @@ See README.md for complete usage examples.
 
 ### Week 1: Core Implementation
 
-**Day 1: Phase 1 - Enable Skills** ✅ **COMPLETED** (2 hours actual)
-- [x] Update `src/harness/agent.py` with `setting_sources` and "Skill" tool
-- [x] Add Docker mounts for .claude directory to all agents
-- [x] Create symlink solution to resolve path mismatch
-- [x] Create integration test suite for skill usage (4 tests)
-- [x] Verify unit tests pass with no regression
-- [ ] **PENDING**: Test interactive mode with symlink fix
-- [ ] **PENDING**: Run integration tests with real API
+**Day 1: Phase 1 - Enable Skills** ❌ **NOT STARTED**
+- [ ] Update `src/harness/agent.py` with `setting_sources` and "Skill" tool
+- [ ] Update Docker mounts for .claude directory to all agents (change /app to /workspace)
+- [ ] Create integration test suite for skill usage (4 tests)
+- [ ] Verify unit tests pass with no regression
+- [ ] Test interactive mode with skills
+- [ ] Run integration tests with real API (costs ~$0.20-$0.45)
 
 **Day 2-3: Phase 2 - Hard-Coded Agents** (2-3 hours)
 - [ ] Create `src/harness/prompts/` directory
@@ -1176,20 +1179,19 @@ See README.md for complete usage examples.
 ### Success Criteria
 
 **Phase 1 Status:**
-- ✅ Code changes implemented (src/harness/agent.py)
-- ✅ Docker mounts configured (docker-compose.yml)
-- ✅ Symlink solution implemented (agents/main/Dockerfile)
-- ✅ Integration tests created (tests/integration/test_skills.py)
-- ✅ Unit tests pass with no regression
-- ✅ Docker build completes successfully
-- 📋 **PENDING**: Interactive mode verification (test `/skill` command works)
-- 📋 **PENDING**: Integration tests execution with real API
+- ❌ Code changes NOT implemented (src/harness/agent.py)
+- ❌ Docker mounts NOT configured (docker-compose.yml)
+- ❌ Integration tests NOT created (tests/integration/test_skills.py)
+- ✅ Unit tests currently pass (unrelated to Phase 1)
+- ✅ Docker build works (but without skills support)
 
 **Phase 1 Will Be Complete When:**
-- ✅ Interactive mode tested and working without errors
-- ✅ Skills accessible via Skill tool
+- ✅ "Skill" added to allowed_tools in agent.py
+- ✅ setting_sources configured in ClaudeAgentOptions
+- ✅ Docker mounts changed to /workspace/.claude for all agents
+- ✅ Integration tests created and passing
+- ✅ Interactive mode tested and skills accessible via `/skill` command
 - ✅ All 12 skills load without errors
-- ✅ Integration tests pass with real API
 
 **Phase 2 Complete When:**
 - ✅ 6 core agents defined and loaded
