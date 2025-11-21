@@ -1,4 +1,12 @@
-"""Integration tests for Git MCP server."""
+"""Integration tests for Git MCP server.
+
+This module tests the in-process Git MCP server that provides
+version control tools to Claude agents. Tests create temporary
+git repositories to verify git operations work correctly.
+
+Cost: Free (no API calls)
+Duration: < 10 seconds total
+"""
 
 import subprocess
 import tempfile
@@ -12,7 +20,19 @@ from mcp_servers.git.server import git_diff, git_log, git_status
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_git_status():
-    """Test Git MCP git_status tool."""
+    """
+    Test Git MCP git_status tool.
+
+    Purpose: Verify MCP server can check git repository status.
+    Agents use this to understand uncommitted changes.
+
+    Expected behavior:
+    - Clean repo shows "clean" or "no changes"
+    - Untracked files are detected
+    - Returns valid content structure
+
+    Cost: Free
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         tmppath = Path(tmpdir)
 
@@ -58,7 +78,19 @@ async def test_git_status():
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_git_log():
-    """Test Git MCP git_log tool."""
+    """
+    Test Git MCP git_log tool.
+
+    Purpose: Verify MCP server can retrieve commit history.
+    Agents use this to understand project evolution.
+
+    Expected behavior:
+    - Shows commit messages
+    - Respects limit parameter
+    - Returns chronological commit history
+
+    Cost: Free
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         tmppath = Path(tmpdir)
 
@@ -107,7 +139,19 @@ async def test_git_log():
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_git_diff():
-    """Test Git MCP git_diff tool."""
+    """
+    Test Git MCP git_diff tool.
+
+    Purpose: Verify MCP server can show file changes.
+    Agents use this to understand modifications before committing.
+
+    Expected behavior:
+    - Shows unstaged changes when staged=False
+    - Shows staged changes when staged=True
+    - Returns valid diff format
+
+    Cost: Free
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         tmppath = Path(tmpdir)
 

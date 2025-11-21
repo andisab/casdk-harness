@@ -1,4 +1,14 @@
-"""Integration tests for Docker MCP server."""
+"""Integration tests for Docker MCP server.
+
+This module tests the in-process Docker MCP server that provides
+container management tools to Claude agents. Tests verify that
+Docker operations work correctly via the MCP interface.
+
+Prerequisites: Docker daemon must be running on host system.
+
+Cost: Free (no API calls)
+Duration: < 5 seconds total
+"""
 
 import pytest
 
@@ -10,9 +20,18 @@ from mcp_servers.docker.server import list_containers
 @pytest.mark.asyncio
 async def test_list_containers():
     """
-    Test Docker MCP list_containers tool.
+    Test Docker MCP list_containers tool for running containers.
 
-    Requires Docker to be running on the host system.
+    Purpose: Verify MCP server can query Docker API for running containers.
+    This tool is used by agents to inspect the containerized environment.
+
+    Expected behavior:
+    - Returns valid content structure
+    - Lists running containers (or empty if none)
+    - No errors communicating with Docker daemon
+
+    Prerequisites: Docker daemon running
+    Cost: Free
     """
     # Test listing running containers
     result = await list_containers({"all": False})
@@ -30,9 +49,18 @@ async def test_list_containers():
 @pytest.mark.asyncio
 async def test_list_all_containers():
     """
-    Test Docker MCP list_containers with all=True.
+    Test Docker MCP list_containers with all=True parameter.
 
-    Shows both running and stopped containers.
+    Purpose: Verify MCP server can list both running and stopped containers.
+    Useful for agents troubleshooting container lifecycle issues.
+
+    Expected behavior:
+    - Returns valid content structure
+    - Shows running and stopped containers
+    - Includes container status information
+
+    Prerequisites: Docker daemon running
+    Cost: Free
     """
     result = await list_containers({"all": True})
 

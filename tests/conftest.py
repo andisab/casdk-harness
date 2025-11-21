@@ -107,6 +107,18 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "requires_api_key: marks tests that require ANTHROPIC_API_KEY",
     )
+    config.addinivalue_line(
+        "markers",
+        "slow: marks tests as slow (taking >30 seconds)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "docker: marks tests that require Docker daemon to be running",
+    )
+    config.addinivalue_line(
+        "markers",
+        "redis: marks tests that require Redis server to be running",
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
