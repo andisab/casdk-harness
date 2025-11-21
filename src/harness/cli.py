@@ -229,6 +229,12 @@ def parse_and_print_message(
         print_stats: Whether to print session statistics for ResultMessage
         quiet: Whether to suppress system messages
     """
+    logger.debug(
+        "parse_and_print_message called",
+        message_type=type(message).__name__,
+        quiet=quiet,
+    )
+
     # Assistant messages include TextBlock, ToolUseBlock, ThinkingBlock
     # https://docs.claude.com/en/api/agent-sdk/python#content-block-types
     if isinstance(message, SystemMessage):

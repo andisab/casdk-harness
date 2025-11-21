@@ -47,7 +47,12 @@ async def run_interactive_session() -> None:
 
     # Override model if specified in args
     if args.model != "sonnet":
-        config.claude_model = f"claude-{args.model}-4-20250514"
+        # Map model shorthand to full model names
+        model_map = {
+            "haiku": "claude-3-5-haiku-20241022",
+            "opus": "claude-3-opus-20240229",
+        }
+        config.claude_model = model_map.get(args.model, f"claude-{args.model}-4-20250514")
         logger.info("Model override", model=config.claude_model)
 
     # Determine whether to print stats
@@ -103,6 +108,12 @@ async def run_interactive_session() -> None:
                 )
 
                 async for message in session.execute(user_input):
+                    logger.info(
+                        "Message received in interactive loop",
+                        message_type=type(message).__name__,
+                        message_repr=repr(message)[:200],
+                    )
+
                     # Print raw message if debugging
                     if args.print_raw.lower() in ("true", "1", "yes"):
                         console.print(
@@ -159,6 +170,9 @@ async def run_interactive_session() -> None:
 
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal")
+                # Flush streams on interrupt
+                sys.stdout.flush()
+                sys.stderr.flush()
                 console.print(
                     "\n[yellow]Interrupt received. Type 'exit' to quit or continue chatting.[/yellow]\n"
                 )
@@ -198,6 +212,11 @@ async def run_interactive_session() -> None:
         )
         print_goodbye_banner(console)
 
+        # Ensure streams are flushed before shutdown
+        await asyncio.sleep(0.1)
+        sys.stdout.flush()
+        sys.stderr.flush()
+
         try:
             await session.shutdown()
         except Exception as e:
@@ -209,6 +228,10 @@ async def run_interactive_session() -> None:
             console.print(
                 f"\n[yellow]Warning: Error during shutdown: {str(e)}[/yellow]\n"
             )
+
+        # Final flush after shutdown complete
+        sys.stdout.flush()
+        sys.stderr.flush()
 
 
 def main() -> None:

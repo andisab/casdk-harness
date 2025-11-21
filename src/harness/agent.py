@@ -1,6 +1,8 @@
 """Core agent session management and execution."""
 
 import asyncio
+import signal
+import sys
 from datetime import datetime
 from typing import Any, AsyncGenerator
 
@@ -10,14 +12,15 @@ from claude_agent_sdk import (
     CLIJSONDecodeError,
     CLINotFoundError,
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     ProcessError,
     ResultMessage,
-    query,
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, get_config
+from harness.messaging import RedisMessageBroker
 from harness.monitoring import MetricsCollector
 from mcp_servers.docker.server import docker_server
 from mcp_servers.git.server import git_server
@@ -55,6 +58,18 @@ class AgentSession:
             checkpoint_dir=self.config.checkpoint_dir,
         )
 
+        # Initialize Redis message broker for cross-agent communication
+        self.message_broker = RedisMessageBroker()
+        try:
+            self.message_broker.connect()
+            logger.info("Redis message broker connected", agent=agent_name)
+        except Exception as e:
+            logger.warning(
+                "Failed to connect to Redis message broker - inter-agent messaging disabled",
+                agent=agent_name,
+                error=str(e),
+            )
+
         self.session_id = f"{agent_name}_{datetime.now().isoformat()}"
         self.state: dict[str, Any] = {
             "agent_name": agent_name,
@@ -65,36 +80,39 @@ class AgentSession:
         }
 
         # Register MCP servers (both in-process SDK and external servers)
+        # NOTE: ALL MCP servers disabled during SDK debugging (2025-11-19)
+        # Previous timeout occurred during memory MCP initialization
         self.mcp_servers = {
-            # In-process SDK servers (custom Python implementations)
-            "git": git_server,
-            "docker": docker_server,
-            # External MCP servers (subprocess communication via npx)
-            "memory": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-memory"],
-            },
-            "context7": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@context7/mcp-server"],
-            },
-            "joplin": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@joplin/mcp-server"],
-            },
-            "github": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-github"],
-            },
-            "playwright": {
-                "type": "stdio",
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-playwright"],
-            },
+            # Disabled for debugging - will re-enable once SDK issue resolved
+            # # In-process SDK servers (custom Python implementations)
+            # "git": git_server,
+            # "docker": docker_server,
+            # # External MCP servers (subprocess communication via npx)
+            # "memory": {
+            #     "type": "stdio",
+            #     "command": "npx",
+            #     "args": ["-y", "@modelcontextprotocol/server-memory"],
+            # },
+            # "context7": {
+            #     "type": "stdio",
+            #     "command": "npx",
+            #     "args": ["-y", "@context7/mcp-server"],
+            # },
+            # "joplin": {
+            #     "type": "stdio",
+            #     "command": "npx",
+            #     "args": ["-y", "@joplin/mcp-server"],
+            # },
+            # "github": {
+            #     "type": "stdio",
+            #     "command": "npx",
+            #     "args": ["-y", "@modelcontextprotocol/server-github"],
+            # },
+            # "playwright": {
+            #     "type": "stdio",
+            #     "command": "npx",
+            #     "args": ["-y", "@modelcontextprotocol/server-playwright"],
+            # },
         }
 
         logger.info(
@@ -102,6 +120,27 @@ class AgentSession:
             agent=agent_name,
             session_id=self.session_id,
             mcp_servers=len(self.mcp_servers),
+        )
+
+    def _build_sdk_options(self) -> ClaudeAgentOptions:
+        """Build SDK options with MCP servers and configuration."""
+        import os
+
+        # Prepare environment variables for Claude CLI subprocess
+        # CRITICAL: Pass PYTHONUNBUFFERED=1 to ensure stdout is unbuffered
+        cli_env = os.environ.copy()
+        cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
+
+        return ClaudeAgentOptions(
+            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch"],
+            permission_mode=self.config.claude_permission_mode,
+            max_turns=self.config.claude_max_turns,
+            cwd=str(self.config.workspace_dir),
+            model=self.config.claude_model,
+            mcp_servers=self.mcp_servers,  # Register custom MCP servers
+            env=cli_env,  # Pass environment to CLI subprocess
+            stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
+            # Note: Removed invalid "debug-to-stderr" - use "debug" or nothing
         )
 
     async def start(self) -> None:
@@ -194,6 +233,11 @@ class AgentSession:
         """
         Execute agent task with automatic retry on failure.
 
+        Uses ClaudeSDKClient pattern with context manager and two-step process:
+        1. Create SDK client with context manager
+        2. Send query via client.query()
+        3. Receive messages via client.receive_response()
+
         Args:
             prompt: Task prompt
             **kwargs: Additional arguments
@@ -203,36 +247,44 @@ class AgentSession:
         """
         logger.debug("Executing agent prompt with Claude SDK", prompt_length=len(prompt))
 
-        # Configure Claude Agent SDK options
-        options = ClaudeAgentOptions(
-            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch"],
-            permission_mode=self.config.claude_permission_mode,
-            max_turns=self.config.claude_max_turns,
-            cwd=str(self.config.workspace_dir),
-            model=self.config.claude_model,
-            mcp_servers=self.mcp_servers,  # Register custom MCP servers
-        )
+        # Build SDK options
+        options = self._build_sdk_options()
 
         try:
-            # Execute with Claude Agent SDK
-            async for message in query(prompt=prompt, options=options):
-                # Track token usage from ResultMessage
-                if isinstance(message, ResultMessage) and hasattr(message, "usage"):
-                    usage = message.usage
-                    self.metrics.record_tokens(
-                        agent=self.agent_name,
-                        model=self.config.claude_model,
-                        usage=usage,
-                    )
+            # Use context manager for SDK client lifecycle
+            async with ClaudeSDKClient(options=options) as client:
+                logger.debug("SDK client initialized for query", agent=self.agent_name)
+
+                # Step 1: Send query to Claude SDK
+                await client.query(prompt)
+                logger.debug("Query sent to SDK client", agent=self.agent_name)
+
+                # Step 2: Receive response messages
+                async for message in client.receive_response():
                     logger.debug(
-                        "Token usage recorded",
+                        "Message received from SDK",
+                        message_type=type(message).__name__,
                         agent=self.agent_name,
-                        input_tokens=usage.get("input_tokens", 0),
-                        output_tokens=usage.get("output_tokens", 0),
-                        cached_tokens=usage.get("cache_read_input_tokens", 0),
                     )
 
-                yield message
+                    # Track token usage from ResultMessage
+                    if isinstance(message, ResultMessage) and hasattr(message, "usage"):
+                        usage = message.usage
+                        self.metrics.record_tokens(
+                            agent=self.agent_name,
+                            model=self.config.claude_model,
+                            usage=usage,
+                        )
+                        logger.debug(
+                            "Token usage recorded",
+                            agent=self.agent_name,
+                            input_tokens=usage.get("input_tokens", 0),
+                            output_tokens=usage.get("output_tokens", 0),
+                            cached_tokens=usage.get("cache_read_input_tokens", 0),
+                        )
+
+                    logger.debug("Yielding message to caller", message_type=type(message).__name__)
+                    yield message
 
         except CLINotFoundError as e:
             logger.error(
@@ -275,6 +327,135 @@ class AgentSession:
                 exc_info=True,
             )
             raise
+
+    def publish_task_result(self, task_id: str, result: dict[str, Any]) -> str | None:
+        """
+        Publish task result to Redis for other agents to consume.
+
+        Args:
+            task_id: Unique task identifier
+            result: Result data to publish
+
+        Returns:
+            Message ID if published successfully, None otherwise
+        """
+        if not self.message_broker.connected:
+            logger.warning(
+                "Cannot publish task result - Redis not connected",
+                agent=self.agent_name,
+                task_id=task_id,
+            )
+            return None
+
+        try:
+            message_id = self.message_broker.publish_result(
+                agent_id=self.agent_name,
+                result={"task_id": task_id, **result},
+                stream_name="agent:tasks",
+            )
+            logger.info(
+                "Published task result",
+                agent=self.agent_name,
+                task_id=task_id,
+                message_id=message_id,
+            )
+            return message_id
+        except Exception as e:
+            logger.error(
+                "Failed to publish task result",
+                agent=self.agent_name,
+                task_id=task_id,
+                error=str(e),
+                exc_info=True,
+            )
+            return None
+
+    async def wait_for_dependency(
+        self,
+        dependency_agent: str,
+        task_id: str,
+        timeout: int = 60,
+    ) -> dict[str, Any] | None:
+        """
+        Wait for a task result from another agent.
+
+        Args:
+            dependency_agent: Name of the agent to wait for
+            task_id: Task ID to wait for
+            timeout: Maximum wait time in seconds
+
+        Returns:
+            Task result if found within timeout, None otherwise
+        """
+        if not self.message_broker.connected:
+            logger.warning(
+                "Cannot wait for dependency - Redis not connected",
+                agent=self.agent_name,
+                dependency_agent=dependency_agent,
+                task_id=task_id,
+            )
+            return None
+
+        logger.info(
+            "Waiting for dependency",
+            agent=self.agent_name,
+            dependency_agent=dependency_agent,
+            task_id=task_id,
+            timeout=timeout,
+        )
+
+        start_time = datetime.now()
+        last_id = "0"
+
+        while (datetime.now() - start_time).total_seconds() < timeout:
+            try:
+                # Read messages from stream
+                messages = self.message_broker.consume_results(
+                    stream_name="agent:tasks",
+                    last_id=last_id,
+                    count=10,
+                    block=1000,  # Block for 1 second
+                )
+
+                for msg in messages:
+                    # Update last_id for next iteration
+                    last_id = msg["message_id"]
+
+                    # Check if this is the message we're waiting for
+                    if (
+                        msg["agent_id"] == dependency_agent
+                        and msg["content"].get("task_id") == task_id
+                    ):
+                        logger.info(
+                            "Dependency satisfied",
+                            agent=self.agent_name,
+                            dependency_agent=dependency_agent,
+                            task_id=task_id,
+                        )
+                        return msg["content"]
+
+                # Brief sleep before next iteration
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                logger.error(
+                    "Error while waiting for dependency",
+                    agent=self.agent_name,
+                    dependency_agent=dependency_agent,
+                    task_id=task_id,
+                    error=str(e),
+                    exc_info=True,
+                )
+                return None
+
+        logger.warning(
+            "Dependency wait timeout",
+            agent=self.agent_name,
+            dependency_agent=dependency_agent,
+            task_id=task_id,
+            timeout=timeout,
+        )
+        return None
 
     async def _get_state_async(self) -> dict[str, Any]:
         """
@@ -332,6 +513,10 @@ class AgentSession:
         # Save final checkpoint
         self.checkpoint_manager.save_checkpoint(self.state)
 
+        # Disconnect from Redis
+        if self.message_broker.connected:
+            self.message_broker.disconnect()
+
         # Update metrics
         self.metrics.set_active_sessions(self.agent_name, 0)
         self.metrics.stop()
@@ -340,7 +525,7 @@ class AgentSession:
 
 
 async def run() -> None:
-    """Run the agent as a standalone service."""
+    """Run the agent as a standalone service with graceful shutdown."""
     config = get_config()
 
     logger.info(
@@ -349,19 +534,63 @@ async def run() -> None:
         permission_mode=config.claude_permission_mode,
     )
 
+    # Track shutdown state
+    shutdown_event = asyncio.Event()
+
+    async def graceful_shutdown(signame: str) -> None:
+        """Handle SIGTERM/SIGINT gracefully."""
+        logger.info(f"Received {signame}, starting graceful shutdown...")
+
+        # Critical: Flush all output streams
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        # Cancel all pending tasks
+        current_task = asyncio.current_task()
+        for task in asyncio.all_tasks():
+            if task is not current_task and not task.done():
+                task.cancel()
+
+        # Signal shutdown to components monitoring the event
+        shutdown_event.set()
+
+        # Brief sleep to allow task cancellation
+        await asyncio.sleep(0.1)
+
+    # Register signal handlers using event loop
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(
+            sig,
+            lambda s=sig: asyncio.create_task(
+                graceful_shutdown(signal.Signals(s).name)
+            ),
+        )
+
     # Create and start agent session
     session = AgentSession(agent_name="main", config=config)
     await session.start()
 
     try:
-        # Keep running until interrupted
-        while True:
-            await asyncio.sleep(1)
+        # Keep running until shutdown event is set
+        await shutdown_event.wait()
 
     except KeyboardInterrupt:
-        logger.info("Received shutdown signal")
+        logger.info("Keyboard interrupt received")
+    except asyncio.CancelledError:
+        logger.info("Agent task cancelled during shutdown")
     finally:
+        logger.info("Agent shutdown sequence initiated")
+
+        # Ensure final streams are flushed
+        await asyncio.sleep(0.1)
+        sys.stdout.flush()
+        sys.stderr.flush()
+
+        # Shutdown session
         await session.shutdown()
+
+        logger.info("Agent shutdown complete")
 
 
 if __name__ == "__main__":

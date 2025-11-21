@@ -26,7 +26,10 @@ class HarnessConfig(BaseSettings):
     )
 
     # Agent Behavior
-    claude_permission_mode: Literal["manual", "acceptEdits", "acceptAll"] = Field(
+    # Valid modes: acceptEdits, bypassPermissions, default, dontAsk, plan
+    claude_permission_mode: Literal[
+        "acceptEdits", "bypassPermissions", "default", "dontAsk", "plan"
+    ] = Field(
         default="acceptEdits",
         description="Permission mode for agent actions",
     )
