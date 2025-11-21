@@ -24,31 +24,13 @@
 - ✅ MCP server integration (git, docker, memory, context7, playwright, joplin)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
-### ToDO & Next Steps
+### Known Limitations
 
-- [ ] Test metrics / action logging hooks with real agent sessions
-- [ ] Increase test coverage to 70%+ (interim goal toward 80%)
-- [ ] Add integration tests for metrics collection
-- [ ] Implement configuration profiles (Phase 3) and features documented in @docs/future/
+- ⚠️ **Skills NOT accessible** - `.claude/skills/` exist but Skill tool not enabled (see IMPLEMENTATION.md Phase 1)
+- ⚠️ **Agent definitions NOT loaded** - 44 agents in `.claude/agents/` are reference documentation only (see IMPLEMENTATION.md Phase 2)
+- Test coverage at ~61% (target: 80%+)
 
-### Near-term (Polish & Stabilize)
-
-- [ ] Verify all MCP servers function correctly
-- [ ] Run integration tests with real API
-- [ ] Create example workflow scripts
-- [ ] Improve test coverage to 80%+ (final goal)
-- [ ] Stabilize Docker service startup and health checks
-
-### Future (Deferred - See docs/future/)
-
-- Configuration builder system (YAML/JSON profiles)
-- Agent library with auto-discovery
-- Tool registry and custom tool development
-- External repository support (git clone, volume mounting)
-- Web frontend UI (separate project)
-- Jaeger distributed tracing
-- K8s deployment manifests
-- CI/CD pipeline templates
+> For implementation roadmap and planned features, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)
 
 ## Project Overview
 
@@ -152,7 +134,7 @@ claudeagentsdk-harness/
 │   └── interactive_basic.py    # Basic interactive mode example
 │
 ├── docs/                       # Additional documentation
-│   └── future/                 # Future feature proposals
+│   └── IMPLEMENTATION.md       # Implementation roadmap and technical specifications
 │
 ├── .mcp.json                   # MCP server configuration
 ├── docker-compose.yml          # Base compose configuration
@@ -1133,33 +1115,9 @@ pip install snakeviz
 snakeviz profile.stats
 ```
 
-## Phase Roadmaps
+## Future Development
 
-### Phase 2: Configuration & Extensibility
-
-**Goal**: Transform harness into full framework with configuration management and extensibility.
-
-**Features:**
-1. **Configuration Builder** - Load agent configs from YAML/JSON profiles
-2. **Agent Library** - Auto-discover agent definitions from `.claude/agents/`
-3. **Tool Registry** - Plugin architecture for custom tools
-4. **Enhanced Observability** - Real-time action logging (not just on stop)
-5. **Workflow Templates** - Pre-built workflows (feature, bug-fix, refactor)
-6. **Session Management** - Save/load conversations, session analytics
-
-**Timeline**: 4 weeks (see CLAUDE.md Phase 2 section in full version)
-
-### Phase 3: Production Deployment
-
-**Features:**
-- Kubernetes manifests (GKE, EKS)
-- Helm charts for easy deployment
-- CI/CD pipeline templates
-- Production monitoring (Datadog, Honeycomb)
-- Auto-scaling configuration
-- Disaster recovery procedures
-
-**Timeline**: TBD (deferred until Phase 2 complete)
+For detailed implementation roadmap, planned features, and technical specifications, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
 
 ## Contributing
 
@@ -1212,21 +1170,29 @@ Follow standards from `.claude/specs/`:
 You are running within the Claude Agent SDK Harness, a production-ready framework for autonomous software development.
 
 ### Directory Structure
-- **Workspace**: `/workspace` - Harness workspace with .claude directory
-  - `.claude/` - Harness skills, agents, hooks, and specs (mounted from host)
-  - `projects/` - Clone external repositories here
+- **App**: `/app` - System configuration (READ-ONLY)
+  - `.claude/` - Agent definitions, skills, hooks, and specs (mounted from host)
+    - `skills/` - 12 skills accessible via Skill tool
+    - `agents/` - 44 agent definitions (reference documentation)
+    - `specs/` - Coding standards (python, make, javascript, etc.)
+- **Workspace**: `/workspace` - Clean canvas for development work
+  - `/workspace/projects/` - Clone external repositories here
+  - `/workspace/` - Scratch space for agent operations
 - **Memory**: `/memory` - Persistent state storage (checkpoints, context)
 - **Logs**: `/logs` - Structured application and action logs
 - **Config**: `/config` - System configuration files
+
+**Important**: Agent cwd is `/app` for SDK configuration, but ALL development work must use `/workspace` with absolute paths.
 
 ### Working with External Repositories
 
 When working on external repositories:
 1. Clone repos to `/workspace/projects/{repo-name}/`
-2. External repos can have their own `.claude/` directories
-3. Use `session.set_working_repository("repo-name")` to switch context
-4. Agent will use repo's `.claude/` via `setting_sources=["project"]`
-5. Use `session.reset_to_harness()` to return to harness workspace
+2. Access container shell: `make shell`
+3. Change directory: `cd /workspace/projects/{repo-name}/`
+4. Run commands directly in that directory
+
+**Note**: External repos can have their own `.claude/` directories, but repository context switching is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 1 for planned API.
 
 ### Available MCP Servers
 The following MCP servers are registered and available for use:
@@ -1257,20 +1223,19 @@ The following MCP servers are registered and available for use:
 - Mark as completed immediately when done
 - Break complex tasks into smaller steps
 
-### Agent Delegation
-- 44 specialized agents are available in `.claude/agents/`
-- SDK will auto-discover and delegate to appropriate agents
-- Each agent has specific tools and expertise areas
-- Agents are organized by prefix: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`
+### Agent Definitions (Not Yet Loaded)
+- 44 agent definition files exist in `.claude/agents/` as reference documentation
+- ⚠️ **Agent auto-discovery NOT implemented** - agents are not currently loaded by the SDK
+- Agent definitions are organized by prefix: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`
+- For implementation roadmap, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 2
 
 ### Best Practices
 1. Check memory for existing project context before starting
 2. Log important decisions and findings to memory
-3. Use appropriate specialized agents for domain-specific tasks
-4. Provide progress updates for long-running operations
-5. Follow the coding standards in `.claude/specs/`
-6. Test code changes before committing
-7. Use structured logging for better observability
+3. Provide progress updates for long-running operations
+4. Follow the coding standards in `.claude/specs/`
+5. Test code changes before committing
+6. Use structured logging for better observability
 
 ### Security & Permissions
 - Permission mode can be `manual`, `acceptAll`, or `acceptNone`
@@ -1284,13 +1249,14 @@ This harness supports two primary modes:
 1. **Interactive Mode**: Direct conversation with immediate feedback
 2. **Service Mode**: Long-running autonomous development sessions
 
-The SDK will automatically discover and load:
+The SDK currently loads:
 - This CLAUDE.md file for runtime context
-- All agent definitions from `.claude/agents/`
-- Skills from `.claude/skills/`
-- Coding standards from `.claude/specs/`
+- MCP servers (git, docker, memory, context7, joplin, github, playwright)
 
-Remember: You have access to the full agent library. The SDK will handle progressive disclosure and context management automatically.
+**Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
+- Agent definitions from `.claude/agents/` (Phase 2)
+- Skills from `.claude/skills/` (Phase 1)
+- Coding standards from `.claude/specs/`
 
 ---
 

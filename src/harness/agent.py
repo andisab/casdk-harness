@@ -132,12 +132,42 @@ class AgentSession:
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
         return ClaudeAgentOptions(
-            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch"],
+            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
             permission_mode=self.config.claude_permission_mode,
             max_turns=self.config.claude_max_turns,
-            cwd=str(self.config.workspace_dir),
+            cwd="/app",  # SDK needs /app to find .claude/skills/
             model=self.config.claude_model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
+            setting_sources=["user", "project"],  # Enable skills from .claude/skills/
+            system_prompt="""IMPORTANT: Working Directory Instructions
+
+Your current working directory (cwd) is /app for system configuration access.
+ALL development work MUST be done in the /workspace directory.
+
+Directory Structure:
+- /app/.claude/ - System configuration (skills, agents, specs) - READ-ONLY
+- /workspace/ - Your blank canvas for development work
+
+When performing operations:
+
+File Operations - Use ABSOLUTE paths starting with /workspace/:
+  ✓ Read("/workspace/myfile.txt")
+  ✓ Write("/workspace/output.txt", content)
+  ✓ Glob("/workspace/**/*.py")
+  ✗ Read("myfile.txt")  # Would look in /app, not /workspace
+
+Shell Commands - cd to /workspace first:
+  ✓ Bash("cd /workspace && git clone https://github.com/user/repo")
+  ✓ Bash("cd /workspace/projects/myrepo && npm install")
+  ✓ Bash("ls /workspace")
+
+Repository Cloning - Always to /workspace/projects/:
+  ✓ Clone to: /workspace/projects/{repo-name}/
+  ✓ Example: cd /workspace/projects && git clone repo
+
+The /workspace directory is your blank canvas for development.
+NEVER write files to /app (read-only system configuration).
+""",
             env=cli_env,  # Pass environment to CLI subprocess
             stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
             # Note: Removed invalid "debug-to-stderr" - use "debug" or nothing

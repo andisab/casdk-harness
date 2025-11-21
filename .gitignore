@@ -50,9 +50,8 @@ htmlcov/
 # Docker
 .dockerignore
 
-# Workspace (gitignored, contains agent work)
-workspace/*
-!workspace/.gitkeep
+# Workspace (directory tracked, contents ignored - agent's blank canvas)
+/workspace/*
 
 # Memory and checkpoints (gitignored, contains state)
 memory/checkpoints/*

@@ -155,61 +155,42 @@ make interactive
 
 ## Working with External Repositories
 
-The harness supports working on external repositories while maintaining access to harness skills and tools.
+The harness supports working on external repositories. Clone them to `/workspace/projects/` and work with them directly.
 
 ### Directory Structure
 
 ```
-/workspace/
-├── .claude/              # Harness skills, agents, hooks, specs
+/app/
+└── .claude/              # System configuration (READ-ONLY)
+    ├── skills/           # 12 skills accessible via Skill tool
+    ├── agents/           # 44 agent definitions (reference)
+    ├── hooks/            # Action logging hooks
+    └── specs/            # Coding standards
+
+/workspace/               # Clean canvas for development
 └── projects/             # Clone external repos here
     └── your-repo/        # External repository
         └── .claude/      # Repository's own .claude (optional)
 ```
 
-### Cloning Repositories
+**Note**: Agent cwd is `/app` but ALL file operations must use `/workspace` paths.
+
+### Working with Cloned Repositories
 
 ```bash
 # Access shell in main agent container
 make shell
 
-# Inside container
+# Inside container - clone and work on external repo
 cd /workspace/projects
 git clone https://github.com/user/your-repo.git
 cd your-repo
+
+# Run commands directly in the repo directory
+# All standard tools (Read, Write, Bash, etc.) work here
 ```
 
-### Using Repository Context
-
-External repos can have their own `.claude/` directories for project-specific skills and configurations:
-
-```python
-from harness.agent import AgentSession
-
-# Create session
-session = AgentSession(agent_name="main")
-await session.start()
-
-# Switch to work on external repository
-session.set_working_repository("your-repo")
-# Agent now uses /workspace/projects/your-repo as cwd
-# If repo has .claude/, it will be used via setting_sources=["project"]
-
-# Do work on the repository...
-async for message in session.execute("Refactor the main module"):
-    print(message)
-
-# Switch back to harness workspace
-session.reset_to_harness()
-```
-
-### Benefits
-
-- ✅ External repos can use their own `.claude/` configurations
-- ✅ Harness skills/agents always available at `/workspace/.claude`
-- ✅ No conflicts between harness and repository configurations
-- ✅ Clean separation of concerns
-- ✅ Easy context switching between projects
+**Note**: Automatic repository context switching is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) for planned features.
 
 ## Complete Command Reference
 
@@ -341,38 +322,20 @@ Configuration is done through `.env` file (copy from `.env.example`):
 
 See [`.env.example`](./.env.example) for complete configuration template.
 
-### Agent Configuration
+### Agent Definitions (Reference Only)
 
-Customize agent behavior in `.claude/agents/` (44 total agents with prefix naming):
+The harness includes 44 agent definition files in `.claude/agents/` organized by specialty:
 
-**Development Agents (dev-*):**
-- `dev-python-expert.md` - Python with FastAPI, async, type safety
-- `dev-typescript-expert.md` - TypeScript with modern patterns
-- `dev-nodejs-expert.md` - Node.js backend development
-- `dev-go-expert.md`, `dev-rust-expert.md`, `dev-cpp-expert.md` - Language specialists
-- And 10 more: React, Vue, Next.js, JavaScript, PHP, Perl, Lua, HTML, Kotlin, refactoring
+- **Development (dev-\*)**: Python, TypeScript, Node.js, Go, Rust, C++, React, Vue, Next.js, JavaScript, PHP, Perl, Lua, HTML, Kotlin, refactoring (16 total)
+- **Database (db-\*)**: PostgreSQL, MongoDB, Neo4j, Cassandra, SQL, Vector DB, MariaDB (7 total)
+- **Infrastructure (infra-\*)**: Docker, Kubernetes, Terraform, GCP, AWS, GitHub Actions, GitLab CI, security (8 total)
+- **ML/AI (ml-\*)**: PyTorch, TensorFlow, LangChain, scikit-learn (4 total)
+- **Build (build-\*)**: Orchestrator, project planner, context (3 total)
+- **Documentation (doc-\*)**: Content writer, PRD writer (2 total)
+- **Web (web-\*)**: Frontend designer, FastAPI architect, Next.js (3 total)
+- **Data (data-\*)**: Python data engineer (1 total)
 
-**Database Agents (db-*):**
-- `db-postgres-expert.md`, `db-mongodb-expert.md` - Traditional and NoSQL
-- `db-neo4j-expert.md`, `db-cassandra-expert.md` - Graph and distributed
-- `db-sql-expert.md`, `db-vector-expert.md` - Query and embedding specialists
-
-**Infrastructure Agents (infra-*):**
-- `infra-docker-engineer.md` - Docker and container optimization
-- `infra-k8s-engineer.md` - Kubernetes orchestration
-- `infra-terraform-engineer.md` - Infrastructure as Code
-- `infra-gcp-architect.md`, `infra-aws-architect.md` - Cloud specialists
-- `infra-github-actions-expert.md`, `infra-gitlab-ci-expert.md` - CI/CD pipelines
-
-**ML/AI Agents (ml-*):**
-- `ml-pytorch-expert.md`, `ml-tensorflow-expert.md` - Deep learning
-- `ml-langchain-expert.md`, `ml-scikit-learn-expert.md` - LLMs and classical ML
-
-**Other Specialists:**
-- **Build (build-*)**: `build-orchestrator.md`, `build-project-planner.md`
-- **Documentation (doc-*)**: `doc-content-writer.md`, `doc-prd-writer.md`
-- **Web (web-*)**: `web-frontend-designer.md`, `web-fastapi-architect.md`
-- **Data (data-*)**: `data-python-engineer.md`
+⚠️ **Note**: These agent definitions are currently reference documentation only. Agent auto-discovery is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) for implementation roadmap.
 
 ## Monitoring & Observability
 
