@@ -49,6 +49,16 @@ class AgentSession:
         """
         self.agent_name = agent_name
         self.config = config or get_config()
+
+        # Plugin configuration (Phase 1B)
+        from pathlib import Path
+        plugin_base = Path(__file__).parent.parent.parent / ".claude" / "plugins"
+        self.plugins = [
+            {"type": "local", "path": str(plugin_base / "arch")},
+            {"type": "local", "path": str(plugin_base / "context-engineering")},
+            {"type": "local", "path": str(plugin_base / "research-team")},
+        ]
+
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
             interval=self.config.claude_checkpoint_interval,
@@ -139,6 +149,7 @@ class AgentSession:
             model=self.config.claude_model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
             setting_sources=["user", "project"],  # Enable skills from .claude/skills/
+            plugins=self.plugins,  # Phase 1B: Enable plugin loading
             system_prompt="""IMPORTANT: Working Directory Instructions
 
 Your current working directory (cwd) is /app for system configuration access.

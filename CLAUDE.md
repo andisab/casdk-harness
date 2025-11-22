@@ -1236,6 +1236,52 @@ To re-enable MCP servers, uncomment the server registrations in `src/harness/age
 - Agent definitions are organized by prefix: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`
 - For implementation roadmap, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 2
 
+### Plugins (Phase 1B Complete ✅)
+
+The harness loads 3 plugins from `.claude/plugins/` via the SDK's native `plugins` parameter:
+
+**1. arch** - Architecture and build orchestration
+- **Agents**: build-orchestrator, arch-context-agent
+- **Purpose**: System design, multi-agent coordination, context management
+- **Location**: `/app/.claude/plugins/arch/`
+
+**2. context-engineering** - Agent/skill/plugin creation toolkit
+- **Agents**: context-engineer
+- **Skills**: agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration
+- **Purpose**: Create production-ready Claude Code resources
+- **Location**: `/app/.claude/plugins/context-engineering/`
+
+**3. research-team** - Multi-agent research system
+- **Agents**: lead-research-coordinator, research-specialist, research-report-writer
+- **Skills**: joplin-research
+- **Purpose**: Comprehensive topic investigation with parallel execution
+- **Location**: `/app/.claude/plugins/research-team/`
+
+**Plugin Discovery**:
+- Plugins are auto-discovered by the SDK when specified in the `plugins` parameter
+- Each plugin has a `.claude-plugin/plugin.json` manifest file
+- SDK automatically loads agents, skills, commands, and hooks from plugin directories
+- Plugin resources are available alongside base resources (12 base skills + 6 plugin skills = 18 total)
+
+**Adding New Plugins**:
+1. Install plugin to `.claude/plugins/{plugin-name}/`
+2. Create `.claude-plugin/plugin.json` manifest with required fields
+3. Add to `plugins` array in `src/harness/agent.py`
+4. Restart agent session to load new plugin
+
+**Plugin Structure**:
+```
+.claude/plugins/{plugin-name}/
+├── .claude-plugin/
+│   └── plugin.json          # Required manifest
+├── agents/                   # Optional
+├── skills/                   # Optional
+├── commands/                 # Optional
+└── hooks/                    # Optional
+```
+
+For detailed implementation, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 1B.
+
 ### Best Practices
 1. Check memory for existing project context before starting
 2. Log important decisions and findings to memory
@@ -1259,11 +1305,13 @@ This harness supports two primary modes:
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
 - MCP servers (⚠️ currently disabled - see "Available MCP Servers" section above)
+- ~~Plugins from `.claude/plugins/`~~ ✅ Phase 1B Complete (3 plugins loaded)
+- ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base + 6 plugin skills)
 
 **Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
 - Agent definitions from `.claude/agents/` (Phase 2)
-- ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete
 - Coding standards from `.claude/specs/`
+- MCP server re-enablement with timeout protection (Phase 1C)
 
 ---
 

@@ -162,7 +162,11 @@ The harness supports working on external repositories. Clone them to `/workspace
 ```
 /app/
 └── .claude/              # System configuration (READ-ONLY)
-    ├── skills/           # 12 skills accessible via Skill tool
+    ├── skills/           # 12 base skills accessible via Skill tool
+    ├── plugins/          # 3 plugins (arch, context-engineering, research-team)
+    │   ├── arch/         # 2 agents for orchestration
+    │   ├── context-engineering/  # 1 agent + 5 skills for resource creation
+    │   └── research-team/        # 3 agents + 1 skill for research
     ├── agents/           # 44 agent definitions (reference)
     ├── hooks/            # Action logging hooks
     └── specs/            # Coding standards
@@ -172,6 +176,11 @@ The harness supports working on external repositories. Clone them to `/workspace
     └── your-repo/        # External repository
         └── .claude/      # Repository's own .claude (optional)
 ```
+
+**Plugin Resources (Phase 1B)**:
+- **Total Skills**: 18 (12 base + 6 from plugins)
+- **Plugin Agents**: 6 agents from 3 plugins (auto-discovered by SDK)
+- **Plugins Loaded**: arch, context-engineering, research-team
 
 **Note**: Agent cwd is `/app` but ALL file operations must use `/workspace` paths.
 
