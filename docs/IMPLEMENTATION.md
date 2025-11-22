@@ -1,7 +1,7 @@
 # Agent Architecture & Implementation Plan
 
-**Last Updated**: 2025-11-21 22:00 UTC
-**Overall Status**: Phase 1 ✅ IMPLEMENTED | Phase 2-3 Planned
+**Last Updated**: 2025-11-21 23:30 UTC
+**Overall Status**: Phase 1 ✅ IMPLEMENTED | Phase 1B, 2-3 Planned
 
 ## Current Implementation Status
 
@@ -13,6 +13,18 @@
   - Integration tests created and passing (4 tests)
   - Clean workspace architecture: /app for config, /workspace for development
 
+- **Phase 1B: Plugin Loading via SDK** - 📋 **PLANNED** (Not Started)
+  - Create plugin manifests (.claude-plugin/plugin.json)
+  - Add plugins parameter to ClaudeAgentOptions
+  - SDK auto-discovers plugin agents, skills, commands, hooks
+  - Timeline: ~3 days
+
+- **Phase 1C: MCP Server Configuration & Loading** - 📋 **PLANNED** (Not Started)
+  - MCP configuration loader system (unified merge)
+  - Re-enable MCP servers with timeout protection
+  - Tiered loading with health checks
+  - Timeline: ~4 days
+
 - **Phase 2: Hard-Coded Agent Definitions** - 📋 **PLANNED** (Not Started)
 
 - **Phase 3: Documentation & Examples** - 📋 **PLANNED** (Not Started)
@@ -23,6 +35,7 @@
 
 - [Overview: Simplified 3-Agent Starter Architecture](#overview-simplified-3-agent-starter-architecture)
 - [Phase 1: Enable Native Skill Support](#phase-1-enable-native-skill-support)
+- [Phase 1B: MCP Tools & Plugin Marketplace](#phase-1b-mcp-tools--plugin-marketplace)
 - [Phase 2: Hard-Coded Agent Definitions](#phase-2-hard-coded-agent-definitions)
 - [Phase 3: Documentation & Examples](#phase-3-documentation--examples)
 - [Implementation Roadmap](#implementation-roadmap)
@@ -475,6 +488,373 @@ async for msg in client.receive_response():
 - ✅ ROLLBACK.md provided for safety
 
 ---
+
+## Phase 1B: Plugin Loading via SDK
+
+**Timeline**: ~3 days
+**Complexity**: Low-Medium
+**Risk**: Low
+**Status**: 📋 **PLANNED** (Not Started)
+
+### Overview
+
+Phase 1B enables the Claude Agent SDK to discover and load plugins (agents, skills, commands, hooks) using the SDK's native plugin system.
+
+**Key Discovery**: Research of the official Claude Agent SDK documentation revealed that plugins are **NOT auto-discovered** from `.claude/plugins/`. They must be explicitly loaded via the `plugins` parameter in `ClaudeAgentOptions`.
+
+**Required Plugin Structure**:
+- Each plugin MUST have a `.claude-plugin/plugin.json` manifest file
+- The SDK auto-discovers: `agents/`, `skills/`, `commands/`, `hooks/`, `.mcp.json`
+- Plugins are specified programmatically: `plugins=[{"type": "local", "path": "/path/to/plugin"}]`
+
+### Current State & Issues
+
+**Plugins Installed but Not Loaded**:
+- ✅ 3 plugins exist in `.claude/plugins/`: arch, context-engineering, research-team
+- ✅ Plugins have proper resource structure (agents/, skills/ directories)
+- ❌ Plugins lack required `.claude-plugin/plugin.json` manifest files
+- ❌ SDK's `setting_sources=["user", "project"]` does NOT discover plugins from `.claude/plugins/`
+- ❌ Test confirmed: SDK sees no plugins, reports "Plugin Skills: None found"
+
+**Test Results** (from test_plugin_discovery_simple.py):
+```
+SystemMessage shows:
+'skills': [12 base skills only]  # No plugin skills
+'plugins': []                     # Empty!
+'agents': [44 agents]            # Only base agents
+
+Agent Glob search for '/app/.claude/plugins/**/skills/*.md':
+Result: "No files found"  # Despite 6 plugin skills existing
+
+Conclusion: "Plugin Skills: None found (no plugins are currently installed)"
+```
+
+**Root Cause**:
+The SDK requires explicit plugin configuration via the `plugins` parameter. The `setting_sources` mechanism only loads from `.claude/` base directory, not `.claude/plugins/` subdirectories.
+
+### Solution: SDK Native Plugin Loading
+
+**Approach**: Use the SDK's built-in `plugins` parameter to load plugins programmatically.
+
+**Key Components**:
+1. Create `.claude-plugin/plugin.json` manifest for each plugin
+2. Add `plugins` parameter to `ClaudeAgentOptions` in `agent.py`
+3. SDK auto-discovers all plugin resources (agents, skills, commands, hooks, MCP servers)
+
+**Python SDK Plugin Configuration**:
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from typing import TypedDict, Literal
+
+class SdkPluginConfig(TypedDict):
+    type: Literal["local"]  # Only "local" currently supported
+    path: str               # Absolute or relative path to plugin directory
+
+options = ClaudeAgentOptions(
+    plugins=[
+        {"type": "local", "path": "/app/.claude/plugins/arch"},
+        {"type": "local", "path": "/app/.claude/plugins/context-engineering"},
+        {"type": "local", "path": "/app/.claude/plugins/research-team"},
+    ],
+    setting_sources=["user", "project"],
+    # ... other options
+)
+```
+
+### Plugin Manifest Structure
+
+Each plugin MUST have `.claude-plugin/plugin.json`:
+
+```json
+{
+  "name": "plugin-name",
+  "version": "1.0.0",
+  "description": "Plugin description",
+  "author": "Author Name",
+  "agents": ["./agents"],
+  "skills": ["./skills"],
+  "commands": ["./commands"],
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}
+```
+
+**Optional Fields**:
+- `agents`: Array of paths to agent directories
+- `skills`: Array of paths to skill directories
+- `commands`: Array of paths to command files
+- `hooks`: Path to hooks.json file
+- `mcpServers`: Path to .mcp.json file (loaded by SDK, merged in Phase 1C)
+
+### Implementation Plan
+
+#### Task 1: Create Plugin Manifests (2 hours)
+
+Create `.claude-plugin/plugin.json` for each installed plugin.
+
+**arch plugin** (`.claude/plugins/arch/.claude-plugin/plugin.json`):
+```json
+{
+  "name": "arch",
+  "version": "1.0.0",
+  "description": "Architecture and build orchestration agents for system design, multi-agent coordination, and context management",
+  "author": "Andis A. Blukis",
+  "license": "MIT",
+  "agents": ["./agents"]
+}
+```
+
+**context-engineering plugin** (`.claude/plugins/context-engineering/.claude-plugin/plugin.json`):
+```json
+{
+  "name": "context-engineering",
+  "version": "1.0.0",
+  "description": "Comprehensive toolkit for creating production-ready Claude Code resources",
+  "author": "Andis A. Blukis",
+  "license": "MIT",
+  "agents": ["./agents"],
+  "skills": ["./skills"]
+}
+```
+
+**research-team plugin** (`.claude/plugins/research-team/.claude-plugin/plugin.json`):
+```json
+{
+  "name": "research-team",
+  "version": "1.0.0",
+  "description": "Multi-agent research system for comprehensive topic investigation",
+  "author": "Andis A. Blukis",
+  "license": "MIT",
+  "agents": ["./agents"],
+  "skills": ["./skills"]
+}
+```
+
+**Implementation**:
+```bash
+# For each plugin
+mkdir -p .claude/plugins/{plugin-name}/.claude-plugin
+cat > .claude/plugins/{plugin-name}/.claude-plugin/plugin.json << 'EOF'
+{
+  "name": "{plugin-name}",
+  "version": "1.0.0",
+  ...
+}
+EOF
+```
+
+#### Task 2: Update agent.py with plugins Parameter (1 hour)
+
+**File**: `src/harness/agent.py`
+
+**Change**:
+```python
+# Current (lines ~70-80)
+options = ClaudeAgentOptions(
+    allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill", ...],
+    cwd="/app",
+    setting_sources=["user", "project"],
+    # ... other options
+)
+
+# New
+options = ClaudeAgentOptions(
+    allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill", ...],
+    cwd="/app",
+    setting_sources=["user", "project"],
+    plugins=[
+        {"type": "local", "path": "/app/.claude/plugins/arch"},
+        {"type": "local", "path": "/app/.claude/plugins/context-engineering"},
+        {"type": "local", "path": "/app/.claude/plugins/research-team"},
+    ],
+    # ... other options
+)
+```
+
+**Location**: Around line 70-85 in `src/harness/agent.py`
+
+#### Task 3: Test Plugin Discovery (1 hour)
+
+**Verification Steps**:
+
+1. **Run existing test**:
+```bash
+docker compose exec main-agent python tests/test_plugin_discovery_simple.py
+```
+
+2. **Expected Output** (should now show plugin resources):
+```
+SystemMessage shows:
+'skills': [12 base + 6 plugin skills = 18 total]
+'plugins': [
+  {
+    "name": "arch",
+    "version": "1.0.0",
+    "agents": [...],
+  },
+  {
+    "name": "context-engineering",
+    "version": "1.0.0",
+    "agents": [...],
+    "skills": [...],
+  },
+  {
+    "name": "research-team",
+    "version": "1.0.0",
+    "agents": [...],
+    "skills": [...],
+  }
+]
+
+Agent Glob search for plugin skills:
+Result: "Found 6 plugin skills: hook-configuration, skill-creation, ..."
+```
+
+3. **Interactive test**:
+```bash
+make interactive
+> List all available skills and agents
+> Use the context-engineer agent to help me create a new skill
+```
+
+#### Task 4: Documentation Updates (1 hour)
+
+**Update CLAUDE.md**:
+```markdown
+### Available Plugins
+
+The harness loads plugins from `.claude/plugins/` via the SDK's `plugins` parameter:
+
+1. **arch** - Architecture and orchestration agents
+   - Agents: build-orchestrator, arch-context-agent
+
+2. **context-engineering** - Agent/skill/plugin creation toolkit
+   - Agents: context-engineer
+   - Skills: agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration
+
+3. **research-team** - Multi-agent research system
+   - Agents: lead-research-coordinator, research-specialist, research-report-writer
+   - Skills: joplin-research
+
+**Adding New Plugins**:
+1. Install plugin to `.claude/plugins/{plugin-name}/`
+2. Create `.claude-plugin/plugin.json` manifest
+3. Add to `plugins` array in `src/harness/agent.py`
+4. Restart agent session
+```
+
+**Update README.md**:
+Add plugin management section with examples of using plugin agents and skills.
+
+### Implementation Timeline
+
+| Day | Task | Duration | Outcome |
+|-----|------|----------|---------|
+| 1 | Create plugin manifests | 2 hours | All plugins have required .claude-plugin/plugin.json |
+| 1 | Update agent.py | 1 hour | plugins parameter added to ClaudeAgentOptions |
+| 2 | Test plugin discovery | 1 hour | Verify SDK loads all plugin resources |
+| 2 | Documentation | 1 hour | CLAUDE.md and README.md updated |
+| 3 | Integration testing | 2 hours | Test plugin agents/skills in interactive mode |
+
+**Total: 3 days (~7 hours actual work)**
+
+### Success Criteria
+
+- ✅ All 3 plugins have `.claude-plugin/plugin.json` manifest files
+- ✅ `plugins` parameter configured in `agent.py`
+- ✅ SDK SystemMessage shows `'plugins': [...]` with 3 plugins loaded
+- ✅ Test shows 18 total skills (12 base + 6 plugin)
+- ✅ Test shows all plugin agents available
+- ✅ Can invoke plugin agents via Task tool (e.g., `context-engineer` agent)
+- ✅ Can use plugin skills via Skill tool (e.g., `joplin-research` skill)
+- ✅ Documentation updated with plugin usage examples
+
+### Rollback Plan
+
+If plugin loading fails or causes issues:
+
+1. **Remove plugins parameter**:
+```python
+# In src/harness/agent.py
+options = ClaudeAgentOptions(
+    # plugins=[...],  # Comment out
+    # ... other options
+)
+```
+
+2. **Restart agent**: `make dev`
+3. **Verify base functionality**: Base skills and agents still work
+4. **Debug**: Check SDK logs for plugin loading errors
+
+**No data loss risk** - plugins exist independently of whether SDK loads them.
+
+### Notes
+
+**Plugin vs. MCP Separation**:
+- This phase handles: agents, skills, commands, hooks
+- MCP servers from plugins handled in Phase 1C
+- SDK loads plugin `.mcp.json` files but merging/timeout handling is separate
+
+**Hot Reload**:
+- Skills/commands/agents from plugins hot-reload via `setting_sources` once loaded
+- Adding new plugins requires restart (must update `plugins` parameter)
+- Changing existing plugin resources hot-reloads automatically
+
+**Plugin Discovery Limitation**:
+- SDK does NOT scan `.claude/plugins/` automatically
+- Each plugin must be explicitly listed in `plugins` parameter
+- Future: Could add helper to auto-discover installed plugins
+
+---
+
+## Phase 1C: MCP Server Configuration & Loading
+
+**Timeline**: ~4 days
+**Complexity**: Medium-High
+**Risk**: Medium
+**Status**: 📋 **PLANNED** (Not Started)
+
+### Overview
+
+Phase 1C addresses MCP server configuration management and timeout handling. This is separate from Phase 1B because:
+- Plugin loading (1B) handles agents, skills, commands, hooks
+- MCP configuration (1C) handles tool integration and timeout issues
+- SDK loads plugin `.mcp.json` files, but we need unified merging and timeout protection
+
+**Current Issues**:
+1. MCP servers disabled due to timeout (Memory MCP >60s startup time)
+2. No `.mcp.json` file loading (hardcoded in agent.py, all commented out)
+3. Plugin `.mcp.json` files need to be merged with base configuration
+
+### Solution: MCP Configuration Loader + Tiered Loading
+
+**Components**:
+1. **MCPConfigLoader** - Merges `.mcp.json` from base + plugins + user
+2. **Tiered Loading** - Different timeouts for different server types
+3. **Health Checks** - Verify servers start successfully
+4. **Metrics** - Track which MCP servers are available
+
+### Implementation (Detailed Plan - TBD)
+
+_This section will be expanded with full implementation details after Phase 1B is complete. Key tasks include:_
+
+1. Create `src/harness/mcp_loader.py` with unified merge logic
+2. Implement tiered loading with configurable timeouts:
+   - Tier 1: In-process (git, docker) - no timeout risk
+   - Tier 2: Fast external (context7, github, playwright) - 30s timeout
+   - Tier 3: Slow external (memory, joplin) - 120s timeout, optional
+3. Update `agent.py` to use MCPConfigLoader
+4. Add Prometheus metrics for MCP server availability
+5. Integration testing with all MCP server tiers
+6. Documentation updates
+
+**Dependencies**: Requires Phase 1B complete (plugins loaded) to merge plugin `.mcp.json` files.
+
+**Timeline**: 4 days after Phase 1B completion
+
+
+---
+
 
 ## Phase 2: Hard-Coded Agent Definitions
 
@@ -1057,169 +1437,3 @@ The harness uses a hybrid multi-agent system:
 
 See README.md for complete usage examples.
 ```
-
----
-
-## Implementation Roadmap
-
-### Week 1: Core Implementation
-
-**Day 1: Phase 1 - Enable Skills** ✅ **COMPLETED** (2025-11-21)
-- [x] Update `src/harness/agent.py` with `setting_sources` and "Skill" tool
-- [x] Update Docker mounts for .claude directory to all agents (mounted to /app)
-- [x] Create integration test suite for skill usage (4 tests)
-- [x] Verify unit tests pass with no regression (9 passed)
-- [x] Test integration tests with real API (4 passed, ~$0.20 cost)
-- [x] Implement clean workspace architecture (/app vs /workspace separation)
-- [x] Add comprehensive system_prompt for agent guidance
-- [x] Update .gitignore for /workspace/* pattern
-- [x] Create ROLLBACK.md for safety
-
-**Day 2-3: Phase 2 - Hard-Coded Agents** (2-3 hours)
-- [ ] Create `src/harness/prompts/` directory
-- [ ] Extract prompts from 6 core agent files to `.txt` files
-- [ ] Create `src/harness/agents/definitions.py` with CORE_AGENTS
-- [ ] Write `lead_agent.txt` orchestrator prompt
-- [ ] Update `agent.py` to use CORE_AGENTS and lead agent
-- [ ] Update `interactive.py` welcome banner with agent list
-- [ ] Test multi-agent delegation manually
-
-**Day 4: Testing & Validation**
-- [ ] Write integration tests for multi-agent delegation
-- [ ] Test all 6 agents can be delegated to successfully
-- [ ] Verify lead agent follows delegation strategy
-- [ ] Test hybrid approach (6 core + 38 reference agents)
-- [ ] Validate skills work alongside agent delegation
-
-**Day 5: Phase 3 - Documentation** (30 minutes)
-- [ ] Update README.md with skills and agents sections
-- [ ] Create `examples/skill_usage.py` workflow
-- [ ] Create `examples/multi_agent_workflow.py` workflow
-- [ ] Update CLAUDE.md with agent system overview
-- [ ] Document hybrid approach in project docs
-
-### Week 2: Polish & Optimization
-
-**Refinement**
-- [ ] Optimize lead agent delegation prompts based on testing
-- [ ] Add more specific delegation examples
-- [ ] Fine-tune agent tool assignments
-- [ ] Add performance metrics for delegation patterns
-
-**Extended Testing**
-- [ ] Create test suite for each specialist agent
-- [ ] Test edge cases (agent fallback, error handling)
-- [ ] Validate read-only constraints on code-reviewer
-- [ ] Test skill + agent combination workflows
-
-**Documentation Polish**
-- [ ] Create delegation pattern guide
-- [ ] Document common workflows (feature, bugfix, refactor)
-- [ ] Add troubleshooting section for multi-agent issues
-- [ ] Create video walkthrough or demo script
-
-### Success Criteria
-
-**Phase 1 Status:** ✅ **COMPLETE**
-- ✅ Code changes implemented (src/harness/agent.py:134-174)
-- ✅ Docker mounts configured (docker-compose.yml - all 3 agents)
-- ✅ Integration tests created and passing (tests/integration/test_skills.py)
-- ✅ Unit tests pass with no regression (9 passed in 1.94s)
-- ✅ Integration tests pass (4 passed in 24.07s)
-- ✅ Clean workspace architecture implemented
-
-**Phase 1 Completion Checklist:**
-- ✅ "Skill" added to allowed_tools in agent.py
-- ✅ setting_sources configured in ClaudeAgentOptions
-- ✅ Docker mounts configured to /app/.claude for all agents
-- ✅ SDK cwd set to /app for path resolution
-- ✅ System prompt added to guide agent to /workspace
-- ✅ Integration tests created and passing (4 tests)
-- ✅ Skills accessible via Skill tool
-- ✅ All 12 skills load without errors
-- ✅ Documentation updated (CLAUDE.md, README.md)
-- ✅ ROLLBACK.md created for safety
-- ✅ .gitignore updated for /workspace/* pattern
-
-**Phase 2 Complete When:**
-- ✅ 6 core agents defined and loaded
-- ✅ Lead agent successfully delegates tasks
-- ✅ All specialist agents execute within their domains
-- ✅ Code reviewer enforces read-only constraints
-- ✅ Integration tests pass for delegation
-
-**Phase 3 Complete When:**
-- ✅ README.md updated with usage examples
-- ✅ Example workflows created and tested
-- ✅ CLAUDE.md documents agent system
-- ✅ All documentation accurate and complete
-
-### Timeline Summary
-
-| Phase | Duration | Effort | Priority |
-|-------|----------|--------|----------|
-| Phase 1: Skills | 30 min | Low | High |
-| Phase 2: Agents | 2-3 hours | Medium | High |
-| Phase 3: Docs | 30 min | Low | Medium |
-| **Total** | **3-4 hours** | **Medium** | **High** |
-
-### Next Steps After Completion
-
-Once Phases 1-3 are complete, consider:
-
-1. **Monitor usage patterns** - Track which agents are delegated to most frequently
-2. **Optimize based on data** - Adjust agent capabilities based on real usage
-3. **Expand core agents** - Promote frequently-used reference agents to hard-coded status
-4. **Enhanced observability** - Add Grafana dashboard for multi-agent metrics
-5. **Advanced workflows** - Create complex multi-agent collaboration patterns
-
-For alternative implementations and future development options, see **docs/AGENT_NOTES.md**.
-
----
-
-**Author**: Claude (AI Assistant)
-**Reviewer**: Andis A. Blukis
-**Status**: Implementation Plan - Ready to Execute
-
-
-# Lost Changes - 2025-11-18
-
-**Context**: During debugging of interactive mode failure, changes were lost via `git checkout` without being stashed or committed.
-
-## What Was Lost
-
-### 1. src/harness/agent.py
-
-Repository context switching code (can be reconstructed):
-
-- Instance variables: `self.current_repo`, `self.current_cwd`
-- Method: `set_working_repository(repo_name)` 
-- Method: `reset_to_harness()`
-- Changed `cwd` parameter to use dynamic `self.current_cwd`
-- Added "Skill" to allowed_tools
-- **(POSSIBLY BREAKING)** Added `setting_sources=["user", "project"]`
-
-### 2. docker-compose.yml  
-
-Mount location changes:
-- Changed `./.claude:/app/.claude:ro` → `./.claude:/workspace/.claude:ro` for all agents
-
-### 3. agents/main/Dockerfile
-
-- Removed symlink: `ln -s /app/.claude /workspace/.claude`  
-- Added: `mkdir -p /workspace/projects`
-
-## Recovery Plan
-
-1. Test if original configuration works
-2. If yes, our changes broke it - find minimal breaking change
-3. Reconstruct changes carefully with testing at each step
-
-## Changes Still Preserved
-
-These were NOT lost:
-- `src/harness/config.py` - projects_dir field ✓
-- `.claude/CLAUDE.md` - documentation ✓
-- `README.md` - documentation ✓  
-- `.claude/settings.json` - permission patterns (may need revert)
-- `.claude/hooks/hooks.json` - disabled hooks (may need revert)

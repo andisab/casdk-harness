@@ -42,6 +42,7 @@ services:
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude:/app/.claude:ro
+      - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/main:/logs:delegated
       - ./config:/app/config:ro
@@ -98,6 +99,7 @@ services:
     volumes:
       - ./workspace:/workspace:ro
       - ./.claude:/app/.claude:ro
+      - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/reviewer:/logs:delegated
       - ./config:/app/config:ro
@@ -143,6 +145,7 @@ services:
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude:/app/.claude:ro
+      - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/tester:/logs:delegated
       - ./config:/app/config:ro

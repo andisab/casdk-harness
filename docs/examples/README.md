@@ -94,8 +94,8 @@ python examples/interactive_basic.py --stats         # Show session stats
 | Docker Required | ❌ No | ✅ Yes |
 | Checkpointing | ❌ No | ✅ Auto-save every hour |
 | Metrics/Monitoring | ❌ No | ✅ Prometheus + Grafana dashboards |
-| MCP Servers | ❌ Basic only | ✅ Git, Docker, Memory, Context7, Playwright, Joplin |
-| Multi-Agent Orchestration | ❌ No | ✅ Yes |
+| MCP Servers | ❌ Basic only | ⚠️ Infrastructure exists (currently disabled) |
+| Multi-Agent Orchestration | ❌ No | ✅ Yes (Phase 2 - planned) |
 | Production Ready | ❌ No | ✅ Yes |
 | Best For | Learning, quick tests | Production, long sessions (20+ hours) |
 

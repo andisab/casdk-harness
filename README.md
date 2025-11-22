@@ -123,7 +123,7 @@ You: _
 - ✅ Real-time tool use display
 - ✅ Session statistics on exit (tokens, cost, duration)
 - ✅ Automatic checkpoint recovery if interrupted
-- ✅ Integration with all MCP servers (git, docker, memory, etc.)
+- ⚠️ MCP servers (infrastructure exists but currently disabled for debugging)
 
 ### Session Stats
 

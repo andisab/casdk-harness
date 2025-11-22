@@ -21,12 +21,12 @@
 - ✅ Grafana dashboard with real-time metrics (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
-- ✅ MCP server integration (git, docker, memory, context7, playwright, joplin)
+- ⚠️ MCP server integration (currently disabled for SDK debugging - see src/harness/agent.py:83-116)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
 ### Known Limitations
 
-- ⚠️ **Skills NOT accessible** - `.claude/skills/` exist but Skill tool not enabled (see IMPLEMENTATION.md Phase 1)
+- ⚠️ **MCP servers disabled** - Infrastructure exists but currently disabled for SDK debugging (see agent.py:83-116)
 - ⚠️ **Agent definitions NOT loaded** - 44 agents in `.claude/agents/` are reference documentation only (see IMPLEMENTATION.md Phase 2)
 - Test coverage at ~61% (target: 80%+)
 
@@ -353,7 +353,7 @@ await session.shutdown()
 
 **Implementation:**
 - Integrates with `ClaudeSDKClient`
-- Registers MCP servers (git, docker, memory, context7, etc.)
+- MCP server infrastructure (currently disabled - see lines 83-116)
 - Automatic token tracking
 - Session state persistence
 
@@ -1195,14 +1195,21 @@ When working on external repositories:
 **Note**: External repos can have their own `.claude/` directories, but repository context switching is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 1 for planned API.
 
 ### Available MCP Servers
-The following MCP servers are registered and available for use:
-- **git**: Git operations and version control
-- **docker**: Container management and orchestration
-- **memory**: Knowledge graph for persistent memory
-- **context7**: Library documentation lookup
-- **joplin**: Note-taking and documentation
-- **github**: GitHub API operations
-- **playwright**: Browser automation and testing
+
+**⚠️ STATUS: Currently Disabled**
+
+All MCP servers are currently disabled in `src/harness/agent.py` (lines 83-116) due to SDK debugging. Previous timeout issues occurred during memory MCP initialization.
+
+The following MCP server infrastructure exists but is not active:
+- **git**: Git operations and version control (implemented in src/mcp/git/)
+- **docker**: Container management and orchestration (implemented in src/mcp/docker/)
+- **memory**: Knowledge graph for persistent memory (external via npx)
+- **context7**: Library documentation lookup (external via npx)
+- **joplin**: Note-taking and documentation (external via npx)
+- **github**: GitHub API operations (external via npx)
+- **playwright**: Browser automation and testing (external via npx)
+
+To re-enable MCP servers, uncomment the server registrations in `src/harness/agent.py` after SDK issues are resolved.
 
 ### Monitoring & Observability
 - Prometheus metrics are collected on port 9090
@@ -1251,11 +1258,11 @@ This harness supports two primary modes:
 
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
-- MCP servers (git, docker, memory, context7, joplin, github, playwright)
+- MCP servers (⚠️ currently disabled - see "Available MCP Servers" section above)
 
 **Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
 - Agent definitions from `.claude/agents/` (Phase 2)
-- Skills from `.claude/skills/` (Phase 1)
+- ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete
 - Coding standards from `.claude/specs/`
 
 ---

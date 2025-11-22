@@ -1,0 +1,21 @@
+{
+  "name": "arch",
+  "version": "1.0.0",
+  "description": "Architecture and build orchestration agents for system design, multi-agent coordination, and context management",
+  "author": {
+    "name": "Andis A. Blukis",
+    "email": "andis.blukis@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andisab/ab-casdk-harness"
+  },
+  "license": "MIT",
+  "keywords": [
+    "architecture",
+    "orchestration",
+    "system-design",
+    "coordination",
+    "planning"
+  ]
+}

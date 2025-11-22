@@ -5,25 +5,22 @@
       "args": ["-m", "src.mcp.git.server"],
       "env": {}
     },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "env": {}
+    },
     "docker": {
       "command": "python",
       "args": ["-m", "src.mcp.docker.server"],
       "env": {}
     },
-    "filesystem": {
-      "command": "python",
-      "args": ["-m", "src.mcp.filesystem.server"],
-      "env": {}
-    },
-    "memory": {
+    "github": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-memory"],
-      "env": {}
-    },
-    "context7": {
-      "command": "npx",
-      "args": ["-y", "@context7/mcp-server"],
-      "env": {}
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
     },
     "joplin": {
       "command": "npx",
@@ -31,13 +28,6 @@
       "env": {
         "JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}",
         "JOPLIN_BASE_URL": "http://localhost:41184"
-      }
-    },
-    "github": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
     },
     "playwright": {

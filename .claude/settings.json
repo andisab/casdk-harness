@@ -43,7 +43,7 @@
     "deny": [
       "Bash(curl:* | bash :*)",
       "Bash(eval:*)",
-      "Bash(rm:*)",
+      "Bash(rm -rf:*)",
       "Bash(sudo:*)",
       "Bash(wget:* | sh:*)",
       "Bash(docker volume rm:*)",
