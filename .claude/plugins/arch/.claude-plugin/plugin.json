@@ -17,5 +17,6 @@
     "system-design",
     "coordination",
     "planning"
-  ]
+  ],
+  "agents": ["./agents"]
 }

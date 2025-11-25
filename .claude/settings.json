@@ -21,6 +21,7 @@
       "Bash(make:*)",
       "Bash(mkdir:*)",
       "Bash(pwd)",
+      "Bash(python:*)",
       "Bash(sed:*)",
       "Bash(test:*)",
       "Bash(which :*)",
@@ -51,5 +52,16 @@
       "Bash(docker-compose down -v:*)",
       "Bash(docker-compose down --volumes:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "git",
+    "docker",
+    "filesystem",
+    "memory",
+    "context7",
+    "joplin",
+    "github",
+    "playwright"
+  ]
 }

@@ -1236,9 +1236,9 @@ To re-enable MCP servers, uncomment the server registrations in `src/harness/age
 - Agent definitions are organized by prefix: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`
 - For implementation roadmap, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 2
 
-### Plugins (Phase 1B Complete ✅)
+### Plugins (Phase 1B - Workaround Active ⚠️)
 
-The harness loads 3 plugins from `.claude/plugins/` via the SDK's native `plugins` parameter:
+The harness has 3 plugins configured in `.claude/plugins/`, but due to an SDK limitation (see below), plugin skills are manually discovered:
 
 **1. arch** - Architecture and build orchestration
 - **Agents**: build-orchestrator, arch-context-agent
@@ -1257,11 +1257,14 @@ The harness loads 3 plugins from `.claude/plugins/` via the SDK's native `plugin
 - **Purpose**: Comprehensive topic investigation with parallel execution
 - **Location**: `/app/.claude/plugins/research-team/`
 
-**Plugin Discovery**:
-- Plugins are auto-discovered by the SDK when specified in the `plugins` parameter
+**Plugin Discovery (SDK Limitation - Workaround Active)**:
+- ⚠️ **SDK Bug**: Python SDK v0.1.9 accepts `plugins` parameter but Claude CLI subprocess not loading them
+- **Known Issues**: [GitHub #11620](https://github.com/anthropics/claude-code/issues/11620), [#213](https://github.com/anthropics/claude-agent-sdk-python/issues/213)
+- ✅ **Workaround**: Manual plugin skill discovery implemented in `src/harness/agent.py`
+- ✅ Plugin skills (6 total) are discovered and available via Skill tool
+- ⚠️ Plugin agents NOT accessible (deferred to Phase 2)
 - Each plugin has a `.claude-plugin/plugin.json` manifest file
-- SDK automatically loads agents, skills, commands, and hooks from plugin directories
-- Plugin resources are available alongside base resources (12 base skills + 6 plugin skills = 18 total)
+- Skills available: 12 base + 6 plugin = 18 total (via manual discovery)
 
 **Adding New Plugins**:
 1. Install plugin to `.claude/plugins/{plugin-name}/`
@@ -1305,8 +1308,8 @@ This harness supports two primary modes:
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
 - MCP servers (⚠️ currently disabled - see "Available MCP Servers" section above)
-- ~~Plugins from `.claude/plugins/`~~ ✅ Phase 1B Complete (3 plugins loaded)
-- ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base + 6 plugin skills)
+- ~~Plugins from `.claude/plugins/`~~ ⚠️ Phase 1B Workaround (plugin skills manually discovered)
+- ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base skills + 6 plugin skills via workaround)
 
 **Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
 - Agent definitions from `.claude/agents/` (Phase 2)

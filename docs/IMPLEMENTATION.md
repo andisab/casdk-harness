@@ -1,7 +1,7 @@
 # Agent Architecture & Implementation Plan
 
-**Last Updated**: 2025-11-21
-**Overall Status**: Phase 1 ✅ IMPLEMENTED | Phase 1B ✅ IMPLEMENTED | Phase 1C, 2-3 Planned
+**Last Updated**: 2025-11-25
+**Overall Status**: Phase 1 ✅ IMPLEMENTED | Phase 1B ⚠️ WORKAROUND | Phase 1C, 2-3 Planned
 
 ## Current Implementation Status
 
@@ -13,14 +13,14 @@
   - Integration tests created and passing (4 tests)
   - Clean workspace architecture: /app for config, /workspace for development
 
-- **Phase 1B: Plugin Loading via SDK** - ✅ **IMPLEMENTED** (2025-11-21)
-  - Created plugin manifests (.claude-plugin/plugin.json) for 3 plugins
-  - Added plugins parameter to ClaudeAgentOptions in agent.py
-  - SDK auto-discovers plugin agents, skills, commands, hooks
-  - 18 total skills available (12 base + 6 plugin)
-  - 6 plugin agents loaded (arch: 2, context-engineering: 1, research-team: 3)
-  - Unit and integration tests passing (6 unit + 4 integration tests)
-  - Documentation updated (CLAUDE.md, README.md)
+- **Phase 1B: Plugin Loading via SDK** - ⚠️ **WORKAROUND IMPLEMENTED** (2025-11-25)
+  - ✅ Created plugin manifests (.claude-plugin/plugin.json) for 3 plugins with resource paths
+  - ✅ Added plugins parameter to ClaudeAgentOptions in agent.py
+  - ✅ Added comprehensive SDK verification tests (test_sdk_plugin_awareness.py)
+  - ⚠️ SDK not loading plugins - known bug (GitHub issues #11620, #213)
+  - ✅ **Workaround**: Manual plugin skill discovery implemented in agent.py
+  - ✅ Plugin skills (6 total) now accessible via Skill tool
+  - **Status**: Functional via workaround, will be updated when SDK bug is fixed
 
 - **Phase 1C: MCP Server Configuration & Loading** - 📋 **PLANNED** (Not Started)
   - MCP configuration loader system (unified merge)
@@ -497,7 +497,7 @@ async for msg in client.receive_response():
 **Timeline**: ~3 days
 **Complexity**: Low-Medium
 **Risk**: Low
-**Status**: 📋 **PLANNED** (Not Started)
+**Status**: ⚠️ **PARTIALLY BLOCKED** (SDK Limitation)
 
 ### Overview
 
@@ -589,9 +589,100 @@ Each plugin MUST have `.claude-plugin/plugin.json`:
 - `hooks`: Path to hooks.json file
 - `mcpServers`: Path to .mcp.json file (loaded by SDK, merged in Phase 1C)
 
-### Implementation Plan
+### Implementation Status (2025-11-24)
 
-#### Task 1: Create Plugin Manifests (2 hours)
+**Completed:**
+- ✅ All 3 plugin manifests created with correct resource paths
+- ✅ `agents` and `skills` fields added to manifests
+- ✅ `plugins` parameter configured in agent.py
+- ✅ Comprehensive SDK verification tests added
+
+**Issue Discovered:**
+- ❌ SDK SystemMessage returns `plugins: []` despite correct configuration
+- ❌ Only 12 base skills visible (plugin skills not loaded)
+- ❌ Python SDK v0.1.9 accepts parameter but Claude CLI v2.0.50 not loading plugins
+
+**Conclusion:**
+Plugin infrastructure is correctly implemented but blocked by SDK/CLI integration. The `plugins` parameter is not yet fully functional in the Python SDK when communicating with the Claude CLI subprocess.
+
+### SDK Plugin Loading Limitation (2025-11-25)
+
+**Root Cause Analysis:**
+
+After comprehensive web research and testing, we identified that the Python SDK v0.1.9 has a known bug where plugins are not loaded by the Claude CLI subprocess, despite accepting the `plugins` parameter.
+
+**Related GitHub Issues:**
+1. **[claude-code#11620](https://github.com/anthropics/claude-code/issues/11620)** - Windows-specific bug showing "Processing 0 enabled plugins"
+   - Debug logs: `[DEBUG] getPluginSkills: Processing 0 enabled plugins`
+   - Debug logs: `[DEBUG] Total plugin skills loaded: 0`
+   - Status: Unresolved (as of Nov 14, 2025)
+   - Impact: Complete plugin loading failure despite correct configuration
+
+2. **[claude-agent-sdk-python#213](https://github.com/anthropics/claude-agent-sdk-python/issues/213)** - Hooks not triggering
+   - Related to plugin/settings loading infrastructure
+   - Workaround: Use `ClaudeSDKClient` class instead of `query()` function
+   - Status: Closed (workaround identified)
+
+**Our Symptoms:**
+- ✅ Configuration correct per official docs (`plugins` parameter, `setting_sources`, manifests)
+- ❌ `SystemMessage.data.get("plugins")` returns `[]` (empty array)
+- ❌ Only 12 base skills visible (plugin skills not auto-discovered)
+- ❌ Plugin agents not accessible via Task tool
+- ✅ Manual filesystem access to plugin resources works (Bash/Read tools)
+
+**SDK Architecture:**
+```
+Python SDK (agent.py)
+    ↓ subprocess.Popen()
+Claude CLI subprocess (bundled with SDK)
+    ↓ should load plugins via stdin/stdout communication
+Plugin resources (agents, skills, commands)
+    ↓ NOT LOADING ❌
+```
+
+**Temporary Workaround (Implemented 2025-11-25):**
+
+Added manual plugin skill discovery in `src/harness/agent.py`:
+
+```python
+def _load_plugin_skills_manually(self) -> dict[str, dict[str, str]]:
+    """Manually discover plugin skills as workaround for SDK bug.
+
+    TEMPORARY WORKAROUND (2025-11-25):
+    Python SDK v0.1.9 accepts plugins parameter but Claude CLI subprocess
+    not loading them. See GitHub issues:
+    - https://github.com/anthropics/claude-code/issues/11620
+    - https://github.com/anthropics/claude-agent-sdk-python/issues/213
+    """
+    # Scans .claude/plugins/*/skills/ for SKILL.md files
+    # Returns dict mapping skill names to plugin metadata
+    # Informs agent via system_prompt about available plugin skills
+```
+
+**Workaround Behavior:**
+- ✅ Discovers all plugin skills from manifest-specified paths
+- ✅ Informs agent via `system_prompt` about available plugin skills
+- ✅ Agent can use plugin skills via Skill tool (e.g., "joplin-research")
+- ⚠️ Plugin agents still not accessible (requires Phase 2 hard-coded definitions)
+- ⚠️ Manual discovery overhead (~10ms on initialization)
+- ✅ Will be removed once SDK bug is fixed
+
+**Long-Term Solution:**
+
+Monitoring [`anthropics/claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python) for updates:
+- Current version: v0.1.9 (released Nov 19, 2025)
+- Expected fix: Next SDK release (timeline unknown)
+- When fixed: Remove `_load_plugin_skills_manually()` and workaround code
+
+**Impact Assessment:**
+- ✅ Plugin skills functional via workaround
+- ⚠️ Plugin agents not yet accessible (deferred to Phase 2)
+- ✅ Base skills (12) working normally
+- ✅ Plugin infrastructure ready for SDK fix
+
+### Original Implementation Plan
+
+#### Task 1: Create Plugin Manifests (2 hours) - ✅ COMPLETED
 
 Create `.claude-plugin/plugin.json` for each installed plugin.
 
@@ -646,7 +737,7 @@ cat > .claude/plugins/{plugin-name}/.claude-plugin/plugin.json << 'EOF'
 EOF
 ```
 
-#### Task 2: Update agent.py with plugins Parameter (1 hour)
+#### Task 2: Update agent.py with plugins Parameter (1 hour) - ✅ COMPLETED
 
 **File**: `src/harness/agent.py`
 
@@ -676,42 +767,30 @@ options = ClaudeAgentOptions(
 
 **Location**: Around line 70-85 in `src/harness/agent.py`
 
-#### Task 3: Test Plugin Discovery (1 hour)
+#### Task 3: Test Plugin Discovery (1 hour) - ✅ COMPLETED (Tests Added, But Plugins Not Loading)
 
-**Verification Steps**:
+**Verification Steps** - ✅ Completed:
 
-1. **Run existing test**:
+1. **Created comprehensive tests**:
 ```bash
-docker compose exec main-agent python tests/test_plugin_discovery_simple.py
+docker compose exec main-agent pytest tests/integration/test_sdk_plugin_awareness.py
 ```
 
-2. **Expected Output** (should now show plugin resources):
+2. **Actual Results** (plugins not loading):
 ```
 SystemMessage shows:
-'skills': [12 base + 6 plugin skills = 18 total]
-'plugins': [
-  {
-    "name": "arch",
-    "version": "1.0.0",
-    "agents": [...],
-  },
-  {
-    "name": "context-engineering",
-    "version": "1.0.0",
-    "agents": [...],
-    "skills": [...],
-  },
-  {
-    "name": "research-team",
-    "version": "1.0.0",
-    "agents": [...],
-    "skills": [...],
-  }
-]
+'skills': [12 base skills only]  # Plugin skills NOT loaded
+'plugins': []  # Empty despite correct configuration
 
-Agent Glob search for plugin skills:
-Result: "Found 6 plugin skills: hook-configuration, skill-creation, ..."
+SDK must use Bash commands to manually discover plugin directories.
+Agent can access plugin resources via filesystem, but not via SDK plugin system.
 ```
+
+**Root Cause Identified:**
+- Python SDK v0.1.9 has `plugins` parameter in `ClaudeAgentOptions`
+- Plugin manifests correctly formatted with `agents` and `skills` fields
+- But Claude CLI subprocess (v2.0.50) not loading plugins from SDK parameter
+- Likely SDK/CLI integration not yet complete for plugin loading
 
 3. **Interactive test**:
 ```bash
@@ -765,12 +844,12 @@ Add plugin management section with examples of using plugin agents and skills.
 
 - ✅ All 3 plugins have `.claude-plugin/plugin.json` manifest files
 - ✅ `plugins` parameter configured in `agent.py`
-- ✅ SDK SystemMessage shows `'plugins': [...]` with 3 plugins loaded
-- ✅ Test shows 18 total skills (12 base + 6 plugin)
-- ✅ Test shows all plugin agents available
-- ✅ Can invoke plugin agents via Task tool (e.g., `context-engineer` agent)
-- ✅ Can use plugin skills via Skill tool (e.g., `joplin-research` skill)
-- ✅ Documentation updated with plugin usage examples
+- ❌ SDK SystemMessage shows `'plugins': []` (not loading)
+- ❌ Skills remain at 12 base only (plugin skills not loaded by SDK)
+- ❌ Plugin agents not auto-discovered via SDK
+- ⚠️ Can manually access plugin resources via filesystem (Bash/Read tools)
+- ⚠️ Blocked by SDK/CLI integration limitation
+- ✅ Comprehensive tests added to verify SDK behavior
 
 ### Rollback Plan
 

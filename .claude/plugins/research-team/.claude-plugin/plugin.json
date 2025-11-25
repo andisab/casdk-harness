@@ -1,7 +1,7 @@
 {
   "name": "research-team",
   "version": "1.0.0",
-  "description": "Multi-agent research system for comprehensive topic investigation with parallel execution and synthesis",
+  "description": "Multi-agent research system for comprehensive topic investigation with parallel execution and Joplin integration",
   "author": {
     "name": "Andis A. Blukis",
     "email": "andis.blukis@gmail.com"
@@ -13,10 +13,11 @@
   "license": "MIT",
   "keywords": [
     "research",
-    "multi-agent",
-    "parallel-execution",
-    "web-search",
+    "investigation",
     "joplin",
-    "synthesis"
-  ]
+    "multi-agent",
+    "documentation"
+  ],
+  "agents": ["./agents"],
+  "skills": ["./skills"]
 }
