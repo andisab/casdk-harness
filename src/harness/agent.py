@@ -58,6 +58,7 @@ class AgentSession:
             {"type": "local", "path": str(plugin_base / "context-engineering")},
             {"type": "local", "path": str(plugin_base / "research-team")},
         ]
+        self.plugin_base = plugin_base  # Store for manual loading workaround
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
@@ -80,10 +81,16 @@ class AgentSession:
                 error=str(e),
             )
 
-        self.session_id = f"{agent_name}_{datetime.now().isoformat()}"
+        # SDK client and session management (persistent across execute() calls)
+        self.client: ClaudeSDKClient | None = None  # Persistent SDK client
+        self.session_id: str | None = None  # SDK session ID (set on connect)
+
+        # Temporary local session ID until SDK connects
+        self._local_session_id = f"{agent_name}_{datetime.now().isoformat()}"
+
         self.state: dict[str, Any] = {
             "agent_name": agent_name,
-            "session_id": self.session_id,
+            "session_id": self._local_session_id,  # Will be updated with SDK session_id
             "started_at": datetime.now().isoformat(),
             "completed_tasks": [],
             "current_task": None,
@@ -125,12 +132,91 @@ class AgentSession:
             # },
         }
 
+        # TEMPORARY: Manually discover plugin skills (SDK workaround)
+        self.plugin_skills = self._load_plugin_skills_manually()
+
         logger.info(
             "Agent session initialized",
             agent=agent_name,
             session_id=self.session_id,
             mcp_servers=len(self.mcp_servers),
+            plugin_skills=len(self.plugin_skills),
         )
+
+    def _load_plugin_skills_manually(self) -> dict[str, dict[str, str]]:
+        """Manually discover plugin skills as workaround for SDK bug.
+
+        TEMPORARY WORKAROUND (2025-11-25):
+        Python SDK v0.1.9 accepts plugins parameter but Claude CLI subprocess
+        not loading them. See GitHub issues:
+        - https://github.com/anthropics/claude-code/issues/11620
+        - https://github.com/anthropics/claude-agent-sdk-python/issues/213
+
+        This function manually discovers plugin skills until SDK bug is fixed.
+
+        Returns:
+            Dict mapping skill names to metadata (plugin, path)
+        """
+        import json
+
+        plugin_skills = {}
+
+        # Scan each plugin directory for skills
+        for plugin_path in self.plugin_base.glob("*/"):
+            if not plugin_path.is_dir():
+                continue
+
+            plugin_name = plugin_path.name
+            manifest_path = plugin_path / ".claude-plugin" / "plugin.json"
+
+            # Skip if no manifest
+            if not manifest_path.exists():
+                logger.warning(
+                    "Plugin missing manifest, skipping",
+                    plugin=plugin_name,
+                    expected_path=str(manifest_path)
+                )
+                continue
+
+            # Load manifest to check for skills paths
+            try:
+                manifest = json.loads(manifest_path.read_text())
+                skill_paths = manifest.get("skills", [])
+
+                if not skill_paths:
+                    continue
+
+                # Discover skills in each specified path
+                for skill_rel_path in skill_paths:
+                    skills_dir = plugin_path / skill_rel_path.lstrip("./")
+
+                    if not skills_dir.exists():
+                        continue
+
+                    # Find all SKILL.md files
+                    for skill_path in skills_dir.glob("*/SKILL.md"):
+                        skill_name = skill_path.parent.name
+                        plugin_skills[skill_name] = {
+                            "plugin": plugin_name,
+                            "path": str(skill_path),
+                            "source": "plugin-manual-discovery"
+                        }
+
+            except Exception as e:
+                logger.warning(
+                    "Failed to load plugin manifest",
+                    plugin=plugin_name,
+                    error=str(e)
+                )
+
+        if plugin_skills:
+            logger.info(
+                "Manually discovered plugin skills (SDK workaround)",
+                count=len(plugin_skills),
+                skills=list(plugin_skills.keys())
+            )
+
+        return plugin_skills
 
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
@@ -141,16 +227,23 @@ class AgentSession:
         cli_env = os.environ.copy()
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
-        return ClaudeAgentOptions(
-            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
-            permission_mode=self.config.claude_permission_mode,
-            max_turns=self.config.claude_max_turns,
-            cwd="/app",  # SDK needs /app to find .claude/skills/
-            model=self.config.claude_model,
-            mcp_servers=self.mcp_servers,  # Register custom MCP servers
-            setting_sources=["user", "project"],  # Enable skills from .claude/skills/
-            plugins=self.plugins,  # Phase 1B: Enable plugin loading
-            system_prompt="""IMPORTANT: Working Directory Instructions
+        # Build system prompt with plugin skills info
+        plugin_skills_info = ""
+        if self.plugin_skills:
+            skills_list = "\n".join([
+                f"  - {name} (from {info['plugin']} plugin)"
+                for name, info in self.plugin_skills.items()
+            ])
+            plugin_skills_info = f"""
+
+Available Plugin Skills (via manual discovery workaround):
+{skills_list}
+
+Note: These skills are manually discovered due to SDK limitation.
+Use them via: Skill tool with skill name (e.g., "joplin-research")
+"""
+
+        system_prompt = f"""IMPORTANT: Working Directory Instructions
 
 Your current working directory (cwd) is /app for system configuration access.
 ALL development work MUST be done in the /workspace directory.
@@ -173,12 +266,23 @@ Shell Commands - cd to /workspace first:
   ✓ Bash("ls /workspace")
 
 Repository Cloning - Always to /workspace/projects/:
-  ✓ Clone to: /workspace/projects/{repo-name}/
+  ✓ Clone to: /workspace/projects/{{repo-name}}/
   ✓ Example: cd /workspace/projects && git clone repo
 
 The /workspace directory is your blank canvas for development.
 NEVER write files to /app (read-only system configuration).
-""",
+{plugin_skills_info}"""
+
+        return ClaudeAgentOptions(
+            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
+            permission_mode=self.config.claude_permission_mode,
+            max_turns=self.config.claude_max_turns,
+            cwd="/app",  # SDK needs /app to find .claude/skills/
+            model=self.config.claude_model,
+            mcp_servers=self.mcp_servers,  # Register custom MCP servers
+            setting_sources=["user", "project"],  # Enable skills from .claude/skills/
+            plugins=self.plugins,  # Phase 1B: Enable plugin loading
+            system_prompt=system_prompt,
             env=cli_env,  # Pass environment to CLI subprocess
             stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
             # Note: Removed invalid "debug-to-stderr" - use "debug" or nothing
@@ -187,6 +291,30 @@ NEVER write files to /app (read-only system configuration).
     async def start(self) -> None:
         """Start the agent session and background tasks."""
         logger.info("Starting agent session", agent=self.agent_name)
+
+        # Create and connect persistent SDK client
+        options = self._build_sdk_options()
+        self.client = ClaudeSDKClient(options=options)
+
+        try:
+            await self.client.connect()
+            logger.info(
+                "SDK client connected",
+                agent=self.agent_name,
+            )
+
+            # Capture session ID from first SystemMessage
+            # Note: SDK automatically sends SystemMessage on connect
+            # We'll capture it in the first execute() call
+            # For now, session_id remains None until first query
+
+        except Exception as e:
+            logger.error(
+                "Failed to connect SDK client",
+                agent=self.agent_name,
+                error=str(e),
+            )
+            raise
 
         # Start metrics collection
         self.metrics.start()
@@ -272,60 +400,71 @@ NEVER write files to /app (read-only system configuration).
         **kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
-        Execute agent task with automatic retry on failure.
+        Execute using persistent SDK client (maintains conversation history).
 
-        Uses ClaudeSDKClient pattern with context manager and two-step process:
-        1. Create SDK client with context manager
-        2. Send query via client.query()
-        3. Receive messages via client.receive_response()
+        The client is created once in start() and reused for all queries,
+        which allows the SDK to maintain conversation context across messages.
 
         Args:
             prompt: Task prompt
-            **kwargs: Additional arguments
+            **kwargs: Additional arguments (unused, kept for compatibility)
 
         Yields:
             Agent response messages
-        """
-        logger.debug("Executing agent prompt with Claude SDK", prompt_length=len(prompt))
 
-        # Build SDK options
-        options = self._build_sdk_options()
+        Raises:
+            RuntimeError: If SDK client not connected (call start() first)
+        """
+        if not self.client:
+            raise RuntimeError("SDK client not connected. Call start() first.")
+
+        logger.debug("Sending query to persistent SDK client", prompt_length=len(prompt))
 
         try:
-            # Use context manager for SDK client lifecycle
-            async with ClaudeSDKClient(options=options) as client:
-                logger.debug("SDK client initialized for query", agent=self.agent_name)
+            # Send query to persistent client (maintains conversation context)
+            await self.client.query(prompt)
+            logger.debug("Query sent to SDK client", agent=self.agent_name)
 
-                # Step 1: Send query to Claude SDK
-                await client.query(prompt)
-                logger.debug("Query sent to SDK client", agent=self.agent_name)
+            # Receive messages from persistent client
+            first_message = True
+            async for message in self.client.receive_response():
+                logger.debug(
+                    "Message received from SDK",
+                    message_type=type(message).__name__,
+                    agent=self.agent_name,
+                )
 
-                # Step 2: Receive response messages
-                async for message in client.receive_response():
-                    logger.debug(
-                        "Message received from SDK",
-                        message_type=type(message).__name__,
+                # Capture session ID from first SystemMessage
+                if first_message and message.__class__.__name__ == "SystemMessage":
+                    if hasattr(message, "data"):
+                        sdk_session_id = message.data.get("session_id")
+                        if sdk_session_id:
+                            self.session_id = sdk_session_id
+                            self.state["session_id"] = sdk_session_id  # Update state too
+                            logger.info(
+                                "Captured SDK session ID",
+                                session_id=self.session_id,
+                                agent=self.agent_name,
+                            )
+                    first_message = False
+
+                # Track token usage from ResultMessage
+                if isinstance(message, ResultMessage) and hasattr(message, "usage"):
+                    usage = message.usage
+                    self.metrics.record_tokens(
                         agent=self.agent_name,
+                        model=self.config.claude_model,
+                        usage=usage,
+                    )
+                    logger.debug(
+                        "Token usage recorded",
+                        agent=self.agent_name,
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                        cached_tokens=usage.get("cache_read_input_tokens", 0),
                     )
 
-                    # Track token usage from ResultMessage
-                    if isinstance(message, ResultMessage) and hasattr(message, "usage"):
-                        usage = message.usage
-                        self.metrics.record_tokens(
-                            agent=self.agent_name,
-                            model=self.config.claude_model,
-                            usage=usage,
-                        )
-                        logger.debug(
-                            "Token usage recorded",
-                            agent=self.agent_name,
-                            input_tokens=usage.get("input_tokens", 0),
-                            output_tokens=usage.get("output_tokens", 0),
-                            cached_tokens=usage.get("cache_read_input_tokens", 0),
-                        )
-
-                    logger.debug("Yielding message to caller", message_type=type(message).__name__)
-                    yield message
+                yield message
 
         except CLINotFoundError as e:
             logger.error(
@@ -337,10 +476,11 @@ NEVER write files to /app (read-only system configuration).
 
         except CLIConnectionError as e:
             logger.error(
-                "Failed to connect to Claude CLI",
+                "SDK client connection error",
                 error=str(e),
                 exc_info=True,
             )
+            # Let retry decorator handle reconnection
             raise
 
         except ProcessError as e:
@@ -500,12 +640,16 @@ NEVER write files to /app (read-only system configuration).
 
     async def _get_state_async(self) -> dict[str, Any]:
         """
-        Get current agent state (async version for checkpoint manager).
+        Get current agent state for checkpointing (async version).
 
         Returns:
-            Current state dictionary
+            Current state dictionary with SDK session ID for resume capability
         """
-        return self.state.copy()
+        state = self.state.copy()
+        # Explicitly include SDK session ID for checkpoint resume
+        state["sdk_session_id"] = self.session_id
+        state["timestamp"] = datetime.now().isoformat()
+        return state
 
     def get_state(self) -> dict[str, Any]:
         """
@@ -518,7 +662,10 @@ NEVER write files to /app (read-only system configuration).
 
     async def recover_from_checkpoint(self) -> bool:
         """
-        Attempt to recover from latest checkpoint.
+        Attempt to recover from latest checkpoint and resume conversation.
+
+        If the checkpoint contains an SDK session ID, attempts to resume
+        the conversation from that session to maintain conversation context.
 
         Returns:
             True if recovery successful, False otherwise
@@ -537,6 +684,21 @@ NEVER write files to /app (read-only system configuration).
                 "Successfully recovered from checkpoint",
                 checkpoint_time=checkpoint.get("timestamp"),
             )
+
+            # Resume SDK session if session_id exists in checkpoint
+            if "sdk_session_id" in recovered_state and recovered_state["sdk_session_id"]:
+                try:
+                    await self.resume_from_session_id(recovered_state["sdk_session_id"])
+                    logger.info(
+                        "Resumed SDK conversation from checkpoint",
+                        session_id=recovered_state["sdk_session_id"],
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Could not resume SDK session, starting fresh conversation",
+                        error=str(e),
+                    )
+
             return True
 
         except Exception as e:
@@ -548,8 +710,19 @@ NEVER write files to /app (read-only system configuration).
             return False
 
     async def shutdown(self) -> None:
-        """Gracefully shutdown the agent session."""
+        """Gracefully shutdown the agent session and cleanup SDK client."""
         logger.info("Shutting down agent session", agent=self.agent_name)
+
+        # Disconnect SDK client
+        if self.client:
+            try:
+                await self.client.disconnect()
+                logger.info("SDK client disconnected", agent=self.agent_name)
+            except Exception as e:
+                logger.warning("Error disconnecting SDK client", error=str(e))
+            finally:
+                self.client = None
+                self.session_id = None
 
         # Save final checkpoint
         self.checkpoint_manager.save_checkpoint(self.state)
@@ -563,6 +736,33 @@ NEVER write files to /app (read-only system configuration).
         self.metrics.stop()
 
         logger.info("Agent session shutdown complete", agent=self.agent_name)
+
+    async def resume_from_session_id(self, session_id: str) -> None:
+        """
+        Resume conversation from a previous session ID.
+
+        This allows continuing a conversation from a checkpoint or previous session.
+        The SDK automatically maintains conversation history when resuming.
+
+        Args:
+            session_id: SDK session ID to resume from
+
+        Raises:
+            RuntimeError: If SDK client not connected (call start() first)
+
+        Note:
+            Call this BEFORE the first execute() after start() to resume
+            a previous conversation. The SDK handles the actual resume logic.
+        """
+        if not self.client:
+            raise RuntimeError("SDK client not connected. Call start() first.")
+
+        logger.info("Resuming from session", session_id=session_id, agent=self.agent_name)
+        self.session_id = session_id
+        self.state["session_id"] = session_id
+
+        # Note: SDK handles resume automatically when we have session_id
+        # The next query() will continue from this session's conversation history
 
 
 async def run() -> None:
