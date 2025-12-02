@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-playwright"],
+      "env": {}
+    },
+    "joplin": {
+      "command": "npx",
+      "args": ["-y", "@joplin/mcp-server"],
+      "env": {
+        "JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}",
+        "JOPLIN_BASE_URL": "http://localhost:41184"
+      }
+    }
+  }
+}
