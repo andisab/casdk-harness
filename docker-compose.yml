@@ -21,6 +21,8 @@ services:
     image: ${REGISTRY:-claudeagentsdk-harness}/main:${IMAGE_TAG:-latest}
     container_name: claude-main-agent
     hostname: main-agent
+    env_file:
+      - .env.mcp  # Auto-load MCP API keys
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
@@ -46,6 +48,7 @@ services:
       - ./memory:/memory:delegated
       - ./logs/main:/logs:delegated
       - ./config:/app/config:ro
+      - ./.ssh:/home/claude/.ssh:ro
     ports:
       - "${MAIN_AGENT_PORT:-8080}:8080"
       - "${MAIN_METRICS_PORT:-9091}:9090"  # Prometheus metrics
@@ -87,6 +90,8 @@ services:
     image: ${REGISTRY:-claudeagentsdk-harness}/reviewer:${IMAGE_TAG:-latest}
     container_name: claude-reviewer-agent
     hostname: reviewer-agent
+    env_file:
+      - .env.mcp  # Auto-load MCP API keys
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
@@ -103,6 +108,7 @@ services:
       - ./memory:/memory:delegated
       - ./logs/reviewer:/logs:delegated
       - ./config:/app/config:ro
+      - ./.ssh:/home/claude/.ssh:ro
     ports:
       - "${REVIEWER_AGENT_PORT:-8081}:8080"
       - "${REVIEWER_METRICS_PORT:-9092}:9090"  # Prometheus metrics
@@ -133,6 +139,8 @@ services:
     image: ${REGISTRY:-claudeagentsdk-harness}/tester:${IMAGE_TAG:-latest}
     container_name: claude-tester-agent
     hostname: tester-agent
+    env_file:
+      - .env.mcp  # Auto-load MCP API keys
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
@@ -149,6 +157,7 @@ services:
       - ./memory:/memory:delegated
       - ./logs/tester:/logs:delegated
       - ./config:/app/config:ro
+      - ./.ssh:/home/claude/.ssh:ro
     ports:
       - "${TESTER_AGENT_PORT:-8082}:8080"
       - "${TESTER_METRICS_PORT:-9093}:9090"  # Prometheus metrics

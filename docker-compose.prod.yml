@@ -19,6 +19,7 @@ services:
       - ./memory:/memory
       - ./logs/main:/logs
       - ./config:/app/config:ro
+      - ./.ssh:/home/claude/.ssh:ro
     # Remove debug port
     ports:
       - "8080:8080"

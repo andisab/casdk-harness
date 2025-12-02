@@ -10,6 +10,7 @@
       "Bash(docker:*)",
       "Bash(docker-compose:*)",
       "Bash(echo:*)",
+      "Bash(eza:*)",
       "Bash(find:*)",
       "Bash(git add:*)",
       "Bash(git diff:*)",

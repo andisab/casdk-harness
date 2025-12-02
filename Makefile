@@ -391,6 +391,46 @@ install-deps: ## Install Python dependencies locally
 	uv pip install --system -e ".[dev]"
 
 # =============================================================================
+# SSH Setup (for private repositories)
+# =============================================================================
+.PHONY: ssh-init
+ssh-init: ## Initialize SSH directory structure
+	@mkdir -p .ssh
+	@chmod 700 .ssh
+	@[ -f .ssh/config ] || cp .ssh/config.example .ssh/config 2>/dev/null || touch .ssh/config
+	@chmod 600 .ssh/config
+	@echo "$(GREEN)SSH directory initialized.$(NC)"
+	@echo "$(YELLOW)Run 'make ssh-keygen-github' and 'make ssh-keygen-gitlab' to generate keys.$(NC)"
+
+.PHONY: ssh-keygen-github
+ssh-keygen-github: ## Generate dedicated GitHub SSH key
+	@ssh-keygen -t ed25519 -C "harness-github" -f .ssh/id_ed25519_github -N ""
+	@chmod 600 .ssh/id_ed25519_github
+	@echo "$(GREEN)GitHub key generated. Add this public key to GitHub:$(NC)"
+	@cat .ssh/id_ed25519_github.pub
+
+.PHONY: ssh-keygen-gitlab
+ssh-keygen-gitlab: ## Generate dedicated GitLab SSH key
+	@ssh-keygen -t ed25519 -C "harness-gitlab" -f .ssh/id_ed25519_gitlab -N ""
+	@chmod 600 .ssh/id_ed25519_gitlab
+	@echo "$(GREEN)GitLab key generated. Add this public key to GitLab:$(NC)"
+	@cat .ssh/id_ed25519_gitlab.pub
+
+.PHONY: ssh-test
+ssh-test: ## Test SSH connections to GitHub and GitLab
+	@echo "$(GREEN)Testing GitHub SSH...$(NC)"
+	@ssh -i .ssh/id_ed25519_github -T git@github.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+	@echo ""
+	@echo "$(GREEN)Testing GitLab SSH...$(NC)"
+	@ssh -i .ssh/id_ed25519_gitlab -T git@gitlab.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+
+.PHONY: ssh-test-container
+ssh-test-container: ## Test SSH connections from inside container
+	@echo "$(GREEN)Testing SSH from container...$(NC)"
+	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@github.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@gitlab.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+
+# =============================================================================
 # OrbStack Specific
 # =============================================================================
 .PHONY: orbstack-info
