@@ -2,16 +2,16 @@
 
 # Claude Agent SDK Harness - Technical Documentation
 
-**Last updated**: October 28, 2025
+**Last updated**: December 2, 2025
 
 > For user documentation and usage instructions, see [README.md](./README.md).
 > This file contains implementation details, development workflows, and technical references for developers and Claude.
 
 ## Current Status
 
-**Phase**: Enhanced Observability (✅ Complete and Verified)
+**Phase**: Phase 1C Complete (MCP Servers Active)
 **Test Coverage**: ~61% (Target: 80%+)
-**Last Updated**: October 28, 2025
+**Last Updated**: December 2, 2025
 
 ### What's Working
 
@@ -21,12 +21,11 @@
 - ✅ Grafana dashboard with real-time metrics (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
-- ⚠️ MCP server integration (currently disabled for SDK debugging - see src/harness/agent.py:83-116)
+- ✅ MCP servers (8 total: 6 in-process + 2 subprocess)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
 ### Known Limitations
 
-- ⚠️ **MCP servers disabled** - Infrastructure exists but currently disabled for SDK debugging (see agent.py:83-116)
 - ⚠️ **Agent definitions NOT loaded** - 44 agents in `.claude/agents/` are reference documentation only (see IMPLEMENTATION.md Phase 2)
 - Test coverage at ~61% (target: 80%+)
 
@@ -353,7 +352,7 @@ await session.shutdown()
 
 **Implementation:**
 - Integrates with `ClaudeSDKClient`
-- MCP server infrastructure (currently disabled - see lines 83-116)
+- MCP server registration (8 servers: 6 in-process + 2 subprocess)
 - Automatic token tracking
 - Session state persistence
 
@@ -1184,6 +1183,13 @@ You are running within the Claude Agent SDK Harness, a production-ready framewor
 
 **Important**: Agent cwd is `/app` for SDK configuration, but ALL development work must use `/workspace` with absolute paths.
 
+### Configuration Files
+- **`.env`** - Core infrastructure secrets (ANTHROPIC_API_KEY, database credentials, etc.)
+- **`.env.mcp`** - MCP server API keys (GitHub, Joplin, etc.) - loaded automatically via docker-compose env_file directive
+- **`.env.mcp.example`** - Template showing available MCP servers and required keys
+
+MCP API keys are managed separately in `.env.mcp` to allow adding new MCP servers without modifying docker-compose.yml.
+
 ### Working with External Repositories
 
 When working on external repositories:
@@ -1196,20 +1202,45 @@ When working on external repositories:
 
 ### Available MCP Servers
 
-**⚠️ STATUS: Currently Disabled**
+**In-Process MCP Servers** (Method A - loaded via `_load_inprocess_servers()`):
+- **git**: Git operations and version control (always available)
+- **docker**: Container management and orchestration (always available)
+- **context7**: Library documentation lookup (always available)
+- **memory**: Knowledge graph for persistent memory (always available)
+- **github**: GitHub API operations (requires `GITHUB_PERSONAL_ACCESS_TOKEN`)
+- **gitlab**: GitLab API operations (requires `GITLAB_PERSONAL_ACCESS_TOKEN`)
 
-All MCP servers are currently disabled in `src/harness/agent.py` (lines 83-116) due to SDK debugging. Previous timeout issues occurred during memory MCP initialization.
+**Subprocess MCP Servers** (Method B - loaded via `.claude/.mcp.json`):
+- **joplin**: Note-taking and documentation (requires `JOPLIN_API_TOKEN`)
+- **playwright**: Browser automation and testing
 
-The following MCP server infrastructure exists but is not active:
-- **git**: Git operations and version control (implemented in src/mcp/git/)
-- **docker**: Container management and orchestration (implemented in src/mcp/docker/)
-- **memory**: Knowledge graph for persistent memory (external via npx)
-- **context7**: Library documentation lookup (external via npx)
-- **joplin**: Note-taking and documentation (external via npx)
-- **github**: GitHub API operations (external via npx)
-- **playwright**: Browser automation and testing (external via npx)
+**API Token Setup**:
+- GitHub: https://github.com/settings/tokens (scopes: repo, read:user)
+- GitLab: https://gitlab.com/-/user_settings/personal_access_tokens (scopes: api, read_user, read_repository, write_repository)
+- Configure in `.env.mcp` (see `.env.mcp.example` for template)
 
-To re-enable MCP servers, uncomment the server registrations in `src/harness/agent.py` after SDK issues are resolved.
+### SSH Keys (for Git Authentication)
+
+SSH keys are configured for authenticating with GitHub and GitLab from within containers:
+
+**Directory**: `.ssh/` (gitignored, read-only mount at `/home/claude/.ssh`)
+
+**Configuration**: `.ssh/config` defines host entries for:
+- `github.com` → uses `id_ed25519_github`
+- `gitlab.com` → uses `id_ed25519_gitlab`
+
+**Setup Commands**:
+```bash
+make ssh-init           # Initialize directory structure
+make ssh-keygen-github  # Generate GitHub key
+make ssh-keygen-gitlab  # Generate GitLab key
+make ssh-test           # Test from host
+make ssh-test-container # Test from inside container
+```
+
+**Security**: Keys are dedicated to this project, mounted read-only, and easily revocable.
+
+See `.ssh/README.md` for detailed setup instructions.
 
 ### Monitoring & Observability
 - Prometheus metrics are collected on port 9090
@@ -1307,14 +1338,13 @@ This harness supports two primary modes:
 
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
-- MCP servers (⚠️ currently disabled - see "Available MCP Servers" section above)
+- ✅ MCP servers (8 total: 6 in-process + 2 subprocess) - see "Available MCP Servers" section
 - ~~Plugins from `.claude/plugins/`~~ ⚠️ Phase 1B Workaround (plugin skills manually discovered)
 - ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base skills + 6 plugin skills via workaround)
 
 **Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
 - Agent definitions from `.claude/agents/` (Phase 2)
 - Coding standards from `.claude/specs/`
-- MCP server re-enablement with timeout protection (Phase 1C)
 
 ---
 

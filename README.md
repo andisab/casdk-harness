@@ -51,10 +51,16 @@ make init
 # 3. Edit .env and add your ANTHROPIC_API_KEY
 # ANTHROPIC_API_KEY=sk-ant-your_key_here
 
-# 4. Build containers
+# 4. (Optional) Edit .env.mcp and add MCP server API keys
+#    - Copy .env.mcp.example to see available servers
+#    - GitHub: GITHUB_PERSONAL_ACCESS_TOKEN
+#    - GitLab: GITLAB_PERSONAL_ACCESS_TOKEN
+#    - Joplin: JOPLIN_API_TOKEN
+
+# 5. Build containers
 make build
 
-# 5. Start development environment
+# 6. Start development environment
 make dev
 ```
 
@@ -62,6 +68,18 @@ That's it! Your environment is running at:
 - **Main Agent**: http://localhost:8080
 - **Grafana**: http://localhost:3000
 - **Prometheus**: http://localhost:9090
+
+### Authentication: SSH Keys vs Personal Access Tokens
+
+| Method | Protocol | Use Case |
+|--------|----------|----------|
+| **SSH Keys** | Git over SSH | `git clone`, `push`, `pull`, `fetch` |
+| **Personal Access Tokens** | REST API over HTTPS | Search, issues, PRs, repo metadata |
+
+- **SSH Keys** (`.ssh/`): Authenticate Git CLI operations
+- **PATs** (`.env.mcp`): Authenticate MCP server API calls
+
+If you only need Git operations, SSH keys are sufficient. PATs are required for MCP tools like `search_projects`, `list_issues`, etc.
 
 ## Quick Start Commands
 
@@ -123,7 +141,7 @@ You: _
 - ✅ Real-time tool use display
 - ✅ Session statistics on exit (tokens, cost, duration)
 - ✅ Automatic checkpoint recovery if interrupted
-- ⚠️ MCP servers (infrastructure exists but currently disabled for debugging)
+- ✅ MCP servers (8 total: git, docker, context7, memory, github, gitlab, playwright, joplin)
 
 ### Session Stats
 
@@ -329,6 +347,39 @@ Configuration is done through `.env` file (copy from `.env.example`):
 | `REDIS_PORT` | Redis port | `6379` |
 | `REDIS_PASSWORD` | Redis password | (set in .env) |
 
+### SSH Keys (for private repositories)
+
+To clone private repositories from GitHub or GitLab inside containers:
+
+```bash
+# 1. Initialize SSH directory
+make ssh-init
+
+# 2. Generate dedicated keys
+make ssh-keygen-github
+make ssh-keygen-gitlab
+
+# 3. Add the public keys to your GitHub/GitLab accounts
+#    Output will show the public key to copy
+
+# 4. Test connections
+make ssh-test
+
+# 5. Rebuild containers (to pick up the new volume mount)
+make build
+make dev
+
+# 6. Test from inside container
+make ssh-test-container
+```
+
+**Security Notes:**
+- SSH keys are stored in `.ssh/` (gitignored)
+- Keys are mounted read-only into containers
+- Dedicated keys are revocable without affecting your host SSH identity
+
+See [`.ssh/README.md`](.ssh/README.md) for alternative setup options.
+
 See [`.env.example`](./.env.example) for complete configuration template.
 
 ### Agent Definitions (Reference Only)
@@ -485,6 +536,27 @@ View costs in Grafana:
 | `./logs` | Application logs | Yes (gitignored) |
 | `./config` | Configuration files | Yes (committed) |
 | `./src` | Source code (dev mode) | Yes (committed) |
+
+### MCP Server Loading Methods
+
+The SDK supports three methods for loading MCP servers:
+
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| **A: In-Process** | `create_sdk_mcp_server()` with `@tool` decorator | Custom tools with tight integration |
+| **B: Stdio/Subprocess** | External process via `command` + `args` | Existing MCP servers, process isolation |
+| **C: HTTP/SSE** | Remote servers via HTTP or SSE transport | Shared services, cloud-hosted tools |
+
+Methods can be mixed in a single `ClaudeAgentOptions.mcp_servers` configuration.
+
+### Agent Architecture Model
+
+The SDK follows a **main agent + subagents** architecture:
+- One primary `ClaudeSDKClient` session runs the main agent
+- Main agent orchestrates specialized **subagents** via the `agents` parameter
+- Subagents are invoked automatically (by context) or explicitly (by prompt)
+- Parallelization happens at the subagent level, not via multi-threaded agents
+- For true parallel execution, orchestrate multiple SDK client instances externally
 
 ## Long-Running Sessions (20+ Hours)
 

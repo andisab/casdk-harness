@@ -107,9 +107,9 @@ project-root/
 │   ├── skills/              # Reusable skill sets (SKILL.md files)
 │   ├── settings.json        # Hook configurations
 │   ├── commands/            # Custom slash commands
-│   └── specs/               # Coding standards
-├── CLAUDE.md                # Project context & memory
-└── .mcp.json                # MCP server configurations
+│   ├── specs/               # Coding standards
+│   └── .mcp.json            # MCP server configurations (subprocess servers)
+└── CLAUDE.md                # Project context & memory
 ```
 
 **Loading Behavior**: Set `setting_sources` in `ClaudeAgentOptions`:

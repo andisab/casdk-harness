@@ -1,7 +1,7 @@
 # Agent Architecture & Implementation Plan
 
-**Last Updated**: 2025-11-25
-**Overall Status**: Phase 1 ✅ IMPLEMENTED | Phase 1B ⚠️ WORKAROUND | Phase 1C, 2-3 Planned
+**Last Updated**: 2025-12-02
+**Overall Status**: Phase 1 ✅ | Phase 1B ⚠️ WORKAROUND | Phase 1C ✅ | Phase 2-3 Planned
 
 ## Current Implementation Status
 
@@ -22,11 +22,10 @@
   - ✅ Plugin skills (6 total) now accessible via Skill tool
   - **Status**: Functional via workaround, will be updated when SDK bug is fixed
 
-- **Phase 1C: MCP Server Configuration & Loading** - 📋 **PLANNED** (Not Started)
-  - MCP configuration loader system (unified merge)
-  - Re-enable MCP servers with timeout protection
-  - Tiered loading with health checks
-  - Timeline: ~4 days
+- **Phase 1C: MCP Server Configuration & Loading** - ✅ **COMPLETED** (2025-12-02)
+  - Hybrid architecture: 6 in-process + 2 subprocess servers
+  - API key validation with graceful degradation
+  - GitLab MCP server added (not in original plan)
 
 - **Phase 2: Hard-Coded Agent Definitions** - 📋 **PLANNED** (Not Started)
 
@@ -891,48 +890,29 @@ options = ClaudeAgentOptions(
 
 ## Phase 1C: MCP Server Configuration & Loading
 
-**Timeline**: ~4 days
-**Complexity**: Medium-High
-**Risk**: Medium
-**Status**: 📋 **PLANNED** (Not Started)
+**Status**: ✅ **COMPLETED** (2025-12-02)
 
-### Overview
+### What Was Implemented
 
-Phase 1C addresses MCP server configuration management and timeout handling. This is separate from Phase 1B because:
-- Plugin loading (1B) handles agents, skills, commands, hooks
-- MCP configuration (1C) handles tool integration and timeout issues
-- SDK loads plugin `.mcp.json` files, but we need unified merging and timeout protection
+- **Hybrid MCP Architecture**: 6 in-process + 2 subprocess servers
+- **In-Process Servers (Method A)**: git, docker, context7, memory, github, gitlab
+- **Subprocess Servers (Method B)**: playwright, joplin (Tier 2, 120s timeout)
+- **API Key Validation**: Graceful skipping for github, gitlab, joplin when tokens missing
+- **Configuration**: `.claude/.mcp.json` for subprocess servers
+- **GitLab MCP**: Added as new in-process server (not in original plan)
 
-**Current Issues**:
-1. MCP servers disabled due to timeout (Memory MCP >60s startup time)
-2. No `.mcp.json` file loading (hardcoded in agent.py, all commented out)
-3. Plugin `.mcp.json` files need to be merged with base configuration
+### Key Files
 
-### Solution: MCP Configuration Loader + Tiered Loading
+| File | Purpose |
+|------|---------|
+| `src/harness/agent.py` | `_load_inprocess_servers()`, `_load_mcp_servers()` |
+| `src/harness/mcp_loader.py` | Tier definitions, API key validation |
+| `src/mcp_servers/*/server.py` | In-process server implementations |
+| `.claude/.mcp.json` | Subprocess server configuration |
 
-**Components**:
-1. **MCPConfigLoader** - Merges `.mcp.json` from base + plugins + user
-2. **Tiered Loading** - Different timeouts for different server types
-3. **Health Checks** - Verify servers start successfully
-4. **Metrics** - Track which MCP servers are available
+### Architecture Change from Plan
 
-### Implementation (Detailed Plan - TBD)
-
-_This section will be expanded with full implementation details after Phase 1B is complete. Key tasks include:_
-
-1. Create `src/harness/mcp_loader.py` with unified merge logic
-2. Implement tiered loading with configurable timeouts:
-   - Tier 1: In-process (git, docker) - no timeout risk
-   - Tier 2: Fast external (context7, github, playwright) - 30s timeout
-   - Tier 3: Slow external (memory, joplin) - 120s timeout, optional
-3. Update `agent.py` to use MCPConfigLoader
-4. Add Prometheus metrics for MCP server availability
-5. Integration testing with all MCP server tiers
-6. Documentation updates
-
-**Dependencies**: Requires Phase 1B complete (plugins loaded) to merge plugin `.mcp.json` files.
-
-**Timeline**: 4 days after Phase 1B completion
+Original plan called for all servers as subprocess with 2-tier timeout system. Actual implementation uses hybrid approach where most servers are in-process (Method A) for better performance and tighter integration. Only playwright and joplin remain as subprocess servers (Method B).
 
 
 ---
