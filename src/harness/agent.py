@@ -20,10 +20,17 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, get_config
+from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import RedisMessageBroker
 from harness.monitoring import MetricsCollector
-from mcp_servers.docker.server import docker_server
-from mcp_servers.git.server import git_server
+
+# In-process MCP servers (Method A)
+from mcp_servers.context7 import context7_server
+from mcp_servers.docker import docker_server
+from mcp_servers.git import git_server
+from mcp_servers.github import github_server
+from mcp_servers.gitlab import gitlab_server
+from mcp_servers.memory import memory_server
 
 logger = structlog.get_logger(__name__)
 
@@ -96,41 +103,13 @@ class AgentSession:
             "current_task": None,
         }
 
-        # Register MCP servers (both in-process SDK and external servers)
-        # NOTE: ALL MCP servers disabled during SDK debugging (2025-11-19)
-        # Previous timeout occurred during memory MCP initialization
-        self.mcp_servers = {
-            # Disabled for debugging - will re-enable once SDK issue resolved
-            # # In-process SDK servers (custom Python implementations)
-            # "git": git_server,
-            # "docker": docker_server,
-            # # External MCP servers (subprocess communication via npx)
-            # "memory": {
-            #     "type": "stdio",
-            #     "command": "npx",
-            #     "args": ["-y", "@modelcontextprotocol/server-memory"],
-            # },
-            # "context7": {
-            #     "type": "stdio",
-            #     "command": "npx",
-            #     "args": ["-y", "@context7/mcp-server"],
-            # },
-            # "joplin": {
-            #     "type": "stdio",
-            #     "command": "npx",
-            #     "args": ["-y", "@joplin/mcp-server"],
-            # },
-            # "github": {
-            #     "type": "stdio",
-            #     "command": "npx",
-            #     "args": ["-y", "@modelcontextprotocol/server-github"],
-            # },
-            # "playwright": {
-            #     "type": "stdio",
-            #     "command": "npx",
-            #     "args": ["-y", "@modelcontextprotocol/server-playwright"],
-            # },
-        }
+        # Load MCP servers (Phase 1C - Method A + Method B)
+        # 1. Load in-process servers (Method A) - context7, github
+        self.inprocess_servers = self._load_inprocess_servers()
+        # 2. Load subprocess servers (Method B) - git, docker, memory, playwright, joplin
+        subprocess_servers = self._load_mcp_servers(tiers=[1, 2])
+        # 3. Merge: in-process takes precedence over subprocess
+        self.mcp_servers = {**subprocess_servers, **self.inprocess_servers}
 
         # TEMPORARY: Manually discover plugin skills (SDK workaround)
         self.plugin_skills = self._load_plugin_skills_manually()
@@ -217,6 +196,193 @@ class AgentSession:
             )
 
         return plugin_skills
+
+    def _load_inprocess_servers(self) -> dict[str, Any]:
+        """Load in-process MCP servers (Method A).
+
+        In-process servers run in the same process as the agent, providing:
+        - Faster startup (no subprocess spawn)
+        - Easier debugging (same process)
+        - Python exception handling instead of process exit codes
+
+        Currently loads:
+        - git: Git repository operations (CLI wrapper, always available)
+        - docker: Docker container management (Docker SDK, always available)
+        - context7: Library documentation lookup (no API key required)
+        - github: Repository operations (requires GITHUB_PERSONAL_ACCESS_TOKEN)
+        - gitlab: Repository operations (requires GITLAB_PERSONAL_ACCESS_TOKEN)
+        - memory: Knowledge graph for persistent memory (always available)
+
+        Returns:
+            Dict mapping server names to SDK server objects
+        """
+        import os
+
+        servers: dict[str, Any] = {}
+
+        # Git - always available (uses local git CLI)
+        servers["git"] = git_server
+        logger.info(
+            "Loaded in-process MCP server",
+            server="git",
+            method="A (in-process)",
+        )
+
+        # Docker - always available (uses Docker SDK)
+        servers["docker"] = docker_server
+        logger.info(
+            "Loaded in-process MCP server",
+            server="docker",
+            method="A (in-process)",
+        )
+
+        # Context7 - always available (no API key required, works with rate limits)
+        servers["context7"] = context7_server
+        logger.info(
+            "Loaded in-process MCP server",
+            server="context7",
+            method="A (in-process)",
+        )
+
+        # Memory - always available (knowledge graph for persistent memory)
+        servers["memory"] = memory_server
+        logger.info(
+            "Loaded in-process MCP server",
+            server="memory",
+            method="A (in-process)",
+        )
+
+        # GitHub - requires API token
+        if os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"):
+            servers["github"] = github_server
+            logger.info(
+                "Loaded in-process MCP server",
+                server="github",
+                method="A (in-process)",
+            )
+        else:
+            logger.warning(
+                "GitHub MCP server disabled - GITHUB_PERSONAL_ACCESS_TOKEN not set"
+            )
+
+        # GitLab - requires API token
+        if os.getenv("GITLAB_PERSONAL_ACCESS_TOKEN"):
+            servers["gitlab"] = gitlab_server
+            logger.info(
+                "Loaded in-process MCP server",
+                server="gitlab",
+                method="A (in-process)",
+            )
+        else:
+            logger.warning(
+                "GitLab MCP server disabled - GITLAB_PERSONAL_ACCESS_TOKEN not set"
+            )
+
+        logger.info(
+            "In-process MCP servers loaded",
+            count=len(servers),
+            servers=list(servers.keys()),
+        )
+
+        return servers
+
+    def _load_mcp_servers(self, tiers: list[int] = [1]) -> dict[str, Any]:
+        """Load subprocess MCP servers (Method B) for specified tiers.
+
+        Phase 1C Architecture: Subprocess servers for external dependencies.
+        - Tier 1: Empty (all fast servers now in-process)
+        - Tier 2: External servers (memory, playwright, joplin) - 120s timeout
+
+        Note: git, docker, context7, and github are now loaded as in-process
+        servers (Method A). See _load_inprocess_servers() for those.
+
+        All servers here are subprocess servers using stdio protocol.
+
+        Args:
+            tiers: List of tier numbers to load (default: [1])
+
+        Returns:
+            Dict mapping server names to stdio server configurations
+        """
+        from pathlib import Path
+
+        # Get plugin paths for merging plugin .mcp.json files
+        plugin_paths = [Path(p["path"]) for p in self.plugins]
+
+        loader = MCPConfigLoader()
+        base_mcp_path = Path(__file__).parent.parent.parent / ".claude" / ".mcp.json"
+
+        all_mcp_servers = {}
+        loaded_tiers = []
+
+        for tier in tiers:
+            try:
+                tier_config = loader.load_tier(
+                    base_path=base_mcp_path,
+                    plugin_paths=plugin_paths,
+                    tier=tier,
+                    check_keys=True  # Check API keys and skip servers with missing keys
+                )
+
+                # Map all servers uniformly as subprocess servers (stdio protocol)
+                for server_name, server_config in tier_config["mcpServers"].items():
+                    # Format for SDK: {"type": "stdio", "command": "...", "args": [...]}
+                    all_mcp_servers[server_name] = {
+                        "type": "stdio",
+                        "command": server_config["command"],
+                        "args": server_config["args"],
+                        **({"env": server_config["env"]} if server_config.get("env") else {})
+                    }
+                    logger.info(
+                        "Loaded MCP server",
+                        server=server_name,
+                        tier=tier,
+                        command=server_config["command"],
+                        transport="stdio"
+                    )
+
+                loaded_tiers.append(tier)
+                logger.info(
+                    "MCP tier loaded successfully",
+                    tier=tier,
+                    server_count=len(tier_config["mcpServers"]),
+                    servers=list(tier_config["mcpServers"].keys())
+                )
+
+            except FileNotFoundError as e:
+                if tier == 1:
+                    # Only warn for Tier 1 (base config missing)
+                    logger.warning(
+                        "Base .mcp.json not found, MCP servers disabled",
+                        error=str(e),
+                        expected_path=str(base_mcp_path)
+                    )
+                    return {}  # If base config missing, can't load anything
+                else:
+                    logger.debug(
+                        "No servers found for tier (expected if no servers in tier)",
+                        tier=tier
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "Failed to load MCP tier, continuing with other tiers",
+                    error=str(e),
+                    tier=tier
+                )
+                # Continue loading other tiers
+
+        if all_mcp_servers:
+            logger.info(
+                "MCP servers loaded successfully",
+                tiers=loaded_tiers,
+                total_servers=len(all_mcp_servers),
+                servers=list(all_mcp_servers.keys())
+            )
+        else:
+            logger.warning("No MCP servers loaded", requested_tiers=tiers)
+
+        return all_mcp_servers
 
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
