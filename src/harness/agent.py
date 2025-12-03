@@ -27,9 +27,6 @@ from harness.monitoring import MetricsCollector
 # In-process MCP servers (Method A)
 from mcp_servers.context7 import context7_server
 from mcp_servers.docker import docker_server
-from mcp_servers.git import git_server
-from mcp_servers.github import github_server
-from mcp_servers.gitlab import gitlab_server
 from mcp_servers.memory import memory_server
 
 logger = structlog.get_logger(__name__)
@@ -104,9 +101,9 @@ class AgentSession:
         }
 
         # Load MCP servers (Phase 1C - Method A + Method B)
-        # 1. Load in-process servers (Method A) - context7, github
+        # 1. Load in-process servers (Method A) - docker, context7, memory
         self.inprocess_servers = self._load_inprocess_servers()
-        # 2. Load subprocess servers (Method B) - git, docker, memory, playwright, joplin
+        # 2. Load subprocess servers (Method B) - playwright, joplin, excel
         subprocess_servers = self._load_mcp_servers(tiers=[1, 2])
         # 3. Merge: in-process takes precedence over subprocess
         self.mcp_servers = {**subprocess_servers, **self.inprocess_servers}
@@ -206,27 +203,17 @@ class AgentSession:
         - Python exception handling instead of process exit codes
 
         Currently loads:
-        - git: Git repository operations (CLI wrapper, always available)
         - docker: Docker container management (Docker SDK, always available)
         - context7: Library documentation lookup (no API key required)
-        - github: Repository operations (requires GITHUB_PERSONAL_ACCESS_TOKEN)
-        - gitlab: Repository operations (requires GITLAB_PERSONAL_ACCESS_TOKEN)
         - memory: Knowledge graph for persistent memory (always available)
+
+        Note: Git, GitHub, and GitLab operations use CLI tools (git, gh, glab)
+        via the Bash tool instead of MCP servers.
 
         Returns:
             Dict mapping server names to SDK server objects
         """
-        import os
-
         servers: dict[str, Any] = {}
-
-        # Git - always available (uses local git CLI)
-        servers["git"] = git_server
-        logger.info(
-            "Loaded in-process MCP server",
-            server="git",
-            method="A (in-process)",
-        )
 
         # Docker - always available (uses Docker SDK)
         servers["docker"] = docker_server
@@ -251,32 +238,6 @@ class AgentSession:
             server="memory",
             method="A (in-process)",
         )
-
-        # GitHub - requires API token
-        if os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN"):
-            servers["github"] = github_server
-            logger.info(
-                "Loaded in-process MCP server",
-                server="github",
-                method="A (in-process)",
-            )
-        else:
-            logger.warning(
-                "GitHub MCP server disabled - GITHUB_PERSONAL_ACCESS_TOKEN not set"
-            )
-
-        # GitLab - requires API token
-        if os.getenv("GITLAB_PERSONAL_ACCESS_TOKEN"):
-            servers["gitlab"] = gitlab_server
-            logger.info(
-                "Loaded in-process MCP server",
-                server="gitlab",
-                method="A (in-process)",
-            )
-        else:
-            logger.warning(
-                "GitLab MCP server disabled - GITLAB_PERSONAL_ACCESS_TOKEN not set"
-            )
 
         logger.info(
             "In-process MCP servers loaded",
@@ -384,6 +345,47 @@ class AgentSession:
 
         return all_mcp_servers
 
+    def _load_system_prompt(self) -> str:
+        """Load system prompt from .claude/CLAUDE.md file.
+
+        Returns:
+            System prompt content with plugin skills appended if any.
+        """
+        from pathlib import Path
+
+        # Load base system prompt from .claude/CLAUDE.md
+        prompt_file = Path(__file__).parent.parent.parent / ".claude" / "CLAUDE.md"
+
+        if prompt_file.exists():
+            system_prompt = prompt_file.read_text()
+            logger.debug("Loaded system prompt from file", path=str(prompt_file))
+        else:
+            logger.warning(
+                "System prompt file not found, using minimal prompt",
+                expected_path=str(prompt_file)
+            )
+            system_prompt = "Work in /workspace directory. Use absolute paths."
+
+        # Append plugin skills info if any
+        if self.plugin_skills:
+            skills_list = "\n".join([
+                f"  - {name} (from {info['plugin']} plugin)"
+                for name, info in self.plugin_skills.items()
+            ])
+            system_prompt += f"""
+
+---
+
+## Available Plugin Skills
+
+Plugin skills discovered (via manual SDK workaround):
+{skills_list}
+
+Use them via: Skill tool with skill name (e.g., "joplin-research")
+"""
+
+        return system_prompt
+
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
         import os
@@ -393,51 +395,8 @@ class AgentSession:
         cli_env = os.environ.copy()
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
-        # Build system prompt with plugin skills info
-        plugin_skills_info = ""
-        if self.plugin_skills:
-            skills_list = "\n".join([
-                f"  - {name} (from {info['plugin']} plugin)"
-                for name, info in self.plugin_skills.items()
-            ])
-            plugin_skills_info = f"""
-
-Available Plugin Skills (via manual discovery workaround):
-{skills_list}
-
-Note: These skills are manually discovered due to SDK limitation.
-Use them via: Skill tool with skill name (e.g., "joplin-research")
-"""
-
-        system_prompt = f"""IMPORTANT: Working Directory Instructions
-
-Your current working directory (cwd) is /app for system configuration access.
-ALL development work MUST be done in the /workspace directory.
-
-Directory Structure:
-- /app/.claude/ - System configuration (skills, agents, specs) - READ-ONLY
-- /workspace/ - Your blank canvas for development work
-
-When performing operations:
-
-File Operations - Use ABSOLUTE paths starting with /workspace/:
-  ✓ Read("/workspace/myfile.txt")
-  ✓ Write("/workspace/output.txt", content)
-  ✓ Glob("/workspace/**/*.py")
-  ✗ Read("myfile.txt")  # Would look in /app, not /workspace
-
-Shell Commands - cd to /workspace first:
-  ✓ Bash("cd /workspace && git clone https://github.com/user/repo")
-  ✓ Bash("cd /workspace/projects/myrepo && npm install")
-  ✓ Bash("ls /workspace")
-
-Repository Cloning - Always to /workspace/projects/:
-  ✓ Clone to: /workspace/projects/{{repo-name}}/
-  ✓ Example: cd /workspace/projects && git clone repo
-
-The /workspace directory is your blank canvas for development.
-NEVER write files to /app (read-only system configuration).
-{plugin_skills_info}"""
+        # Load system prompt from external file
+        system_prompt = self._load_system_prompt()
 
         return ClaudeAgentOptions(
             allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
