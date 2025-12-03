@@ -51,11 +51,9 @@ make init
 # 3. Edit .env and add your ANTHROPIC_API_KEY
 # ANTHROPIC_API_KEY=sk-ant-your_key_here
 
-# 4. (Optional) Edit .env.mcp and add MCP server API keys
-#    - Copy .env.mcp.example to see available servers
-#    - GitHub: GITHUB_PERSONAL_ACCESS_TOKEN
-#    - GitLab: GITLAB_PERSONAL_ACCESS_TOKEN
-#    - Joplin: JOPLIN_API_TOKEN
+# 4. (Optional) Add MCP server API keys to .env
+#    - Joplin: JOPLIN_API_TOKEN (see .env.example for details)
+#    - GitHub/GitLab: Run `gh auth login` or `glab auth login` inside container
 
 # 5. Build containers
 make build
@@ -69,17 +67,20 @@ That's it! Your environment is running at:
 - **Grafana**: http://localhost:3000
 - **Prometheus**: http://localhost:9090
 
-### Authentication: SSH Keys vs Personal Access Tokens
+### Authentication: SSH Keys vs CLI Login
 
-| Method | Protocol | Use Case |
-|--------|----------|----------|
-| **SSH Keys** | Git over SSH | `git clone`, `push`, `pull`, `fetch` |
-| **Personal Access Tokens** | REST API over HTTPS | Search, issues, PRs, repo metadata |
+| Method | Use Case |
+|--------|----------|
+| **SSH Keys** (`.ssh/`) | Git over SSH: `git clone`, `push`, `pull`, `fetch` |
+| **gh auth login** | GitHub CLI: repos, issues, PRs, search |
+| **glab auth login** | GitLab CLI: projects, issues, MRs, search |
 
-- **SSH Keys** (`.ssh/`): Authenticate Git CLI operations
-- **PATs** (`.env.mcp`): Authenticate MCP server API calls
-
-If you only need Git operations, SSH keys are sufficient. PATs are required for MCP tools like `search_projects`, `list_issues`, etc.
+SSH keys are pre-configured for Git operations. For GitHub/GitLab CLI features (issues, PRs, search), authenticate inside the container:
+```bash
+make shell
+gh auth login     # GitHub CLI
+glab auth login   # GitLab CLI
+```
 
 ## Quick Start Commands
 
@@ -141,7 +142,8 @@ You: _
 - ✅ Real-time tool use display
 - ✅ Session statistics on exit (tokens, cost, duration)
 - ✅ Automatic checkpoint recovery if interrupted
-- ✅ MCP servers (9 total: git, docker, context7, memory, github, gitlab, playwright, joplin, excel-haris-musa)
+- ✅ MCP servers (6 total: docker, context7, memory, playwright, joplin, excel)
+- ✅ CLI tools for git/GitHub/GitLab (git, gh, glab)
 
 ### Session Stats
 

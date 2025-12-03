@@ -11,7 +11,8 @@
 |-----------|--------|---------|
 | **Skills** | ✅ Complete | 12 base + 6 plugin skills accessible via Skill tool |
 | **Plugins** | ⚠️ Workaround | SDK bug prevents native loading; manual discovery active |
-| **MCP Servers** | ✅ Complete | 9 servers (6 in-process + 3 subprocess) |
+| **MCP Servers** | ✅ Complete | 6 servers (3 in-process + 3 subprocess) |
+| **CLI Tools** | ✅ Complete | git, gh (GitHub CLI), glab (GitLab CLI) |
 
 **Key Files**: `src/harness/agent.py`, `src/harness/mcp_loader.py`, `.claude/.mcp.json`
 
@@ -59,15 +60,22 @@ All skills accessible via Skill tool from `/app/.claude/skills/`.
 2. Remove `_load_plugin_skills_manually()` from `agent.py`
 3. Test: `tests/integration/test_sdk_plugin_awareness.py`
 
-### MCP Servers (9 total)
+### MCP Servers (6 total)
 
 | Type | Servers |
 |------|---------|
-| **In-Process** | git, docker, context7, memory, github, gitlab |
+| **In-Process** | docker, context7, memory |
 | **Subprocess (npx)** | playwright, joplin |
 | **Subprocess (uvx)** | excel-haris-musa |
 
-API key validation with graceful degradation for github, gitlab, joplin.
+API key validation with graceful degradation for joplin.
+
+### CLI Tools (git, gh, glab)
+
+Git, GitHub, and GitLab operations use CLI tools instead of MCP servers:
+- **git**: Version control (always available, SSH keys in `.ssh/`)
+- **gh**: GitHub CLI for repos, issues, PRs (requires `gh auth login` or GITHUB_PERSONAL_ACCESS_TOKEN)
+- **glab**: GitLab CLI for projects, issues, MRs (requires `glab auth login` or GITLAB_PERSONAL_ACCESS_TOKEN)
 
 ### Architecture: Clean Workspace Separation
 

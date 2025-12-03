@@ -21,7 +21,8 @@
 - ✅ Grafana dashboard with real-time metrics (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
-- ✅ MCP servers (9 total: 6 in-process + 3 subprocess)
+- ✅ MCP servers (6 total: 3 in-process + 3 subprocess)
+- ✅ CLI tools for git/GitHub/GitLab (git, gh, glab)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
 ### Known Limitations
@@ -92,11 +93,11 @@ claudeagentsdk-harness/
 │   │   ├── interactive.py      # Interactive conversation loop
 │   │   ├── monitoring.py       # Prometheus metrics collector
 │   │   └── py.typed            # PEP 561 type marker
-│   └── mcp/                    # Custom MCP servers
+│   └── mcp_servers/            # Custom MCP servers
 │       ├── __init__.py
-│       ├── filesystem/
-│       ├── git/                # Git MCP server implementation
-│       └── docker/             # Docker MCP server implementation
+│       ├── context7/           # Library documentation lookup
+│       ├── docker/             # Docker container management
+│       └── memory/             # Knowledge graph for persistent memory
 │
 ├── config/                     # Configuration files
 │   └── monitoring/             # Prometheus & Grafana configs
@@ -352,7 +353,7 @@ await session.shutdown()
 
 **Implementation:**
 - Integrates with `ClaudeSDKClient`
-- MCP server registration (9 servers: 6 in-process + 3 subprocess)
+- MCP server registration (6 servers: 3 in-process + 3 subprocess)
 - Automatic token tracking
 - Session state persistence
 
@@ -460,64 +461,46 @@ python -m harness.interactive --model opus --quiet --stats
 
 ### MCP Server Configuration
 
-**In-Process SDK Servers** (custom Python implementations in `src/mcp/`):
+**In-Process SDK Servers** (custom Python implementations in `src/mcp_servers/`):
 
-**git** (`src/mcp/git/server.py`):
-- Tools: `mcp__git__git_status`, `mcp__git__git_diff`, `mcp__git__git_log`
-- Purpose: Structured git operations
-- Implementation: Wraps git CLI commands with structured output
-
-**docker** (`src/mcp/docker/server.py`):
+**docker** (`src/mcp_servers/docker/server.py`):
 - Tools: `mcp__docker__list_containers`, `mcp__docker__container_logs`, `mcp__docker__container_stats`
 - Purpose: Container management and monitoring
 - Implementation: Uses Docker SDK for Python
 
-**External MCP Servers** (subprocess via npx):
-
-**memory**:
-- Package: `@modelcontextprotocol/server-memory`
-- Purpose: Knowledge graph for agent memory persistence
-- Tools: create_entities, create_relations, search_nodes, etc.
-
-**context7**:
-- Package: `@context7/mcp-server`
+**context7** (`src/mcp_servers/context7/server.py`):
+- Tools: `mcp__context7__resolve_library_id`, `mcp__context7__get_library_docs`
 - Purpose: Library documentation lookup
-- Tools: resolve-library-id, get-library-docs
+- Implementation: Uses Context7 API
+
+**memory** (`src/mcp_servers/memory/server.py`):
+- Tools: `mcp__memory__create_entities`, `mcp__memory__search_nodes`, etc.
+- Purpose: Knowledge graph for persistent memory
+- Implementation: In-process knowledge graph
+
+**Subprocess MCP Servers** (via npx/uvx):
 
 **joplin**:
 - Package: `@joplin/mcp-server`
 - Purpose: Note-taking and documentation integration
 - Tools: search_notes, create_note, update_note, etc.
 
-**github**:
-- Package: `@modelcontextprotocol/server-github`
-- Purpose: GitHub operations via CLI
-- Tools: Search code, create PRs, manage issues
-
 **playwright**:
 - Package: `@modelcontextprotocol/server-playwright`
 - Purpose: Browser automation and testing
 - Tools: Navigate, screenshot, click, fill
 
-**Configuration in agent.py:**
-```python
-mcp_servers = {
-    # In-process SDK servers
-    "git": GitMCPServer(),
-    "docker": DockerMCPServer(),
+**excel-haris-musa**:
+- Package: `excel-mcp-server` (via uvx)
+- Purpose: Excel file manipulation
+- Tools: read_data, write_data, create_chart, etc.
 
-    # External subprocess servers (via npx)
-    "memory": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-memory"]
-    },
-    "context7": {
-        "command": "npx",
-        "args": ["-y", "@context7/mcp-server"]
-    },
-    # ... etc
-}
-```
+**CLI Tools** (use via Bash tool - NOT MCP):
+
+Git, GitHub, and GitLab operations use CLI tools instead of MCP servers:
+- **git**: Version control (always available, SSH keys in .ssh/)
+- **gh**: GitHub CLI for repos, issues, PRs (requires `gh auth login` or GITHUB_PERSONAL_ACCESS_TOKEN)
+- **glab**: GitLab CLI for projects, issues, MRs (requires `glab auth login` or GITLAB_PERSONAL_ACCESS_TOKEN)
 
 ### Message Flow & Integration
 
@@ -542,7 +525,8 @@ Rich Console Display
 - `AgentSession` - Handles checkpointing, metrics, retry logic
 - `MetricsCollector` - Tracks tokens, cost, duration automatically
 - `CheckpointManager` - Auto-saves every hour, recovers on startup
-- `MCP Servers` - Git, Docker, Memory, Context7, etc.
+- `MCP Servers` - Docker, Context7, Memory, Joplin, etc.
+- `CLI Tools` - git, gh, glab for version control and platform operations
 - `structlog` - Structured logging with correlation IDs
 
 ## Development Workflow
@@ -601,7 +585,6 @@ tests/
 │   └── test_config.py      # Configuration validation
 ├── integration/            # Multi-service integration tests
 │   ├── test_agent_sdk_direct.py   # Direct SDK calls (real API)
-│   ├── test_mcp_git.py            # Git MCP server tests
 │   └── test_mcp_docker.py         # Docker MCP server tests
 └── e2e/                    # Full workflow end-to-end tests (placeholder)
 ```
@@ -874,10 +857,10 @@ self.tools = {
 
 **In-Process SDK Server:**
 
-1. **Create server module** in `src/mcp/your_server/`:
+1. **Create server module** in `src/mcp_servers/your_server/`:
 
 ```python
-# src/mcp/database/server.py
+# src/mcp_servers/database/server.py
 class DatabaseMCPServer:
     def __init__(self):
         self.tools = {
@@ -893,7 +876,7 @@ class DatabaseMCPServer:
 2. **Register in agent.py**:
 
 ```python
-from mcp.database.server import DatabaseMCPServer
+from mcp_servers.database.server import DatabaseMCPServer
 
 mcp_servers = {
     "database": DatabaseMCPServer(),
@@ -1184,11 +1167,8 @@ You are running within the Claude Agent SDK Harness, a production-ready framewor
 **Important**: Agent cwd is `/app` for SDK configuration, but ALL development work must use `/workspace` with absolute paths.
 
 ### Configuration Files
-- **`.env`** - Core infrastructure secrets (ANTHROPIC_API_KEY, database credentials, etc.)
-- **`.env.mcp`** - MCP server API keys (GitHub, Joplin, etc.) - loaded automatically via docker-compose env_file directive
-- **`.env.mcp.example`** - Template showing available MCP servers and required keys
-
-MCP API keys are managed separately in `.env.mcp` to allow adding new MCP servers without modifying docker-compose.yml.
+- **`.env`** - All secrets and configuration (ANTHROPIC_API_KEY, MCP tokens, database credentials, etc.)
+- **`.env.example`** - Template showing all available configuration options
 
 ### Working with External Repositories
 
@@ -1203,22 +1183,62 @@ When working on external repositories:
 ### Available MCP Servers
 
 **In-Process MCP Servers** (Method A - loaded via `_load_inprocess_servers()`):
-- **git**: Git operations and version control (always available)
 - **docker**: Container management and orchestration (always available)
 - **context7**: Library documentation lookup (always available)
 - **memory**: Knowledge graph for persistent memory (always available)
-- **github**: GitHub API operations (requires `GITHUB_PERSONAL_ACCESS_TOKEN`)
-- **gitlab**: GitLab API operations (requires `GITLAB_PERSONAL_ACCESS_TOKEN`)
 
 **Subprocess MCP Servers** (Method B - loaded via `.claude/.mcp.json`):
 - **joplin**: Note-taking and documentation via npx (requires `JOPLIN_API_TOKEN`)
 - **playwright**: Browser automation and testing via npx
 - **excel-haris-musa**: Excel file manipulation via uvx (Python)
 
-**API Token Setup**:
-- GitHub: https://github.com/settings/tokens (scopes: repo, read:user)
-- GitLab: https://gitlab.com/-/user_settings/personal_access_tokens (scopes: api, read_user, read_repository, write_repository)
-- Configure in `.env.mcp` (see `.env.mcp.example` for template)
+**CLI Tools** (use via Bash tool - NOT MCP):
+- **git**: Version control (always available, SSH keys in `.ssh/`)
+- **gh**: GitHub CLI for repos, issues, PRs (requires `gh auth login` or GITHUB_PERSONAL_ACCESS_TOKEN)
+- **glab**: GitLab CLI for projects, issues, MRs (requires `glab auth login` or GITLAB_PERSONAL_ACCESS_TOKEN)
+
+### Git, GitHub & GitLab CLI Reference
+
+Use these CLI tools via the Bash tool for version control and platform operations.
+
+#### Git (always available)
+```bash
+git status                          # Check working tree status
+git diff                            # Show unstaged changes
+git add . && git commit -m "msg"    # Stage and commit
+git log --oneline -10               # Recent commit history
+git checkout -b feature/name        # Create feature branch
+git clone git@github.com:user/repo  # Clone via SSH
+```
+
+#### GitHub CLI (gh)
+```bash
+# Authentication (run once per container)
+gh auth login                       # Interactive login
+# Or set GITHUB_PERSONAL_ACCESS_TOKEN environment variable
+
+# Common operations
+gh repo view owner/repo             # View repo details
+gh issue list                       # List issues
+gh issue create --title "T" --body "B"
+gh pr list                          # List pull requests
+gh pr create --title "T" --body "B"
+gh search code "pattern" --repo owner/repo
+```
+
+#### GitLab CLI (glab)
+```bash
+# Authentication (run once per container)
+glab auth login                     # Interactive login
+# Or set GITLAB_PERSONAL_ACCESS_TOKEN environment variable
+
+# Common operations
+glab repo view owner/project        # View project details
+glab issue list                     # List issues
+glab issue create --title "T" --description "B"
+glab mr list                        # List merge requests
+glab mr create --title "T" --description "B"
+```
 
 ### SSH Keys (for Git Authentication)
 
@@ -1339,7 +1359,8 @@ This harness supports two primary modes:
 
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
-- ✅ MCP servers (9 total: 6 in-process + 3 subprocess) - see "Available MCP Servers" section
+- ✅ MCP servers (6 total: 3 in-process + 3 subprocess) - see "Available MCP Servers" section
+- ✅ CLI tools (git, gh, glab) for version control and platform operations
 - ~~Plugins from `.claude/plugins/`~~ ⚠️ Phase 1B Workaround (plugin skills manually discovered)
 - ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base skills + 6 plugin skills via workaround)
 
