@@ -402,6 +402,17 @@ ssh-init: ## Initialize SSH directory structure
 	@echo "$(GREEN)SSH directory initialized.$(NC)"
 	@echo "$(YELLOW)Run 'make ssh-keygen-github' and 'make ssh-keygen-gitlab' to generate keys.$(NC)"
 
+.PHONY: ssh-known-hosts
+ssh-known-hosts: ## Pre-populate known_hosts with GitHub/GitLab host keys (required for containers)
+	@echo "$(GREEN)Fetching host keys for GitHub and GitLab...$(NC)"
+	@ssh-keyscan -t ed25519,rsa github.com >> .ssh/known_hosts 2>/dev/null
+	@ssh-keyscan -t ed25519,rsa gitlab.com >> .ssh/known_hosts 2>/dev/null
+	@sort -u .ssh/known_hosts -o .ssh/known_hosts
+	@chmod 644 .ssh/known_hosts
+	@echo "$(GREEN)known_hosts updated. Host keys added for:$(NC)"
+	@grep -c "github.com" .ssh/known_hosts | xargs -I{} echo "  - github.com ({} keys)"
+	@grep -c "gitlab.com" .ssh/known_hosts | xargs -I{} echo "  - gitlab.com ({} keys)"
+
 .PHONY: ssh-keygen-github
 ssh-keygen-github: ## Generate dedicated GitHub SSH key
 	@ssh-keygen -t ed25519 -C "harness-github" -f .ssh/id_ed25519_github -N ""
@@ -417,18 +428,19 @@ ssh-keygen-gitlab: ## Generate dedicated GitLab SSH key
 	@cat .ssh/id_ed25519_gitlab.pub
 
 .PHONY: ssh-test
-ssh-test: ## Test SSH connections to GitHub and GitLab
+ssh-test: ssh-known-hosts ## Test SSH connections to GitHub and GitLab (also updates known_hosts)
 	@echo "$(GREEN)Testing GitHub SSH...$(NC)"
-	@ssh -i .ssh/id_ed25519_github -T git@github.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+	@ssh -i .ssh/id_ed25519_github -T git@github.com 2>&1 || true
 	@echo ""
 	@echo "$(GREEN)Testing GitLab SSH...$(NC)"
-	@ssh -i .ssh/id_ed25519_gitlab -T git@gitlab.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+	@ssh -i .ssh/id_ed25519_gitlab -T git@gitlab.com 2>&1 || true
 
 .PHONY: ssh-test-container
-ssh-test-container: ## Test SSH connections from inside container
+ssh-test-container: ## Test SSH connections from inside container (requires ssh-known-hosts first)
 	@echo "$(GREEN)Testing SSH from container...$(NC)"
-	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@github.com -o StrictHostKeyChecking=accept-new 2>&1 || true
-	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@gitlab.com -o StrictHostKeyChecking=accept-new 2>&1 || true
+	@echo "$(YELLOW)Note: Run 'make ssh-known-hosts' first if you see host key verification errors.$(NC)"
+	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@github.com 2>&1 || true
+	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@gitlab.com 2>&1 || true
 
 # =============================================================================
 # OrbStack Specific

@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     nodejs \
     npm \
+    openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -51,6 +52,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
     cp /root/.local/bin/claude /usr/local/bin/claude && \
     chmod +x /usr/local/bin/claude
+
+# Install standalone uv/uvx for running Python MCP servers
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    cp /root/.local/bin/uv /usr/local/bin/uv && \
+    cp /root/.local/bin/uvx /usr/local/bin/uvx && \
+    chmod +x /usr/local/bin/uv /usr/local/bin/uvx
 
 # Create non-root user for development with home directory
 RUN groupadd -r claude && \

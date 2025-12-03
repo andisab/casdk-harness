@@ -86,8 +86,12 @@ secrets/
 *.crt
 credentials.json
 
-# SSH Keys (project-specific)
-.ssh/
+# SSH directory - ignore secrets, keep structure and examples
+.ssh/*
+!.ssh/.gitkeep
+!.ssh/README.md
+!.ssh/config
+!.ssh/*.example
 
 # Mac
 .DS_Store

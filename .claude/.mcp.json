@@ -12,6 +12,11 @@
         "JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}",
         "JOPLIN_BASE_URL": "http://localhost:41184"
       }
+    },
+    "excel-haris-musa": {
+      "command": "uvx",
+      "args": ["excel-mcp-server", "stdio"],
+      "env": {}
     }
   }
 }

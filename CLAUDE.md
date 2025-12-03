@@ -21,7 +21,7 @@
 - ✅ Grafana dashboard with real-time metrics (verified working with live data)
 - ✅ Docker orchestration with Prometheus + Grafana monitoring
 - ✅ Checkpoint & recovery system with auto-save
-- ✅ MCP servers (8 total: 6 in-process + 2 subprocess)
+- ✅ MCP servers (9 total: 6 in-process + 3 subprocess)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
 ### Known Limitations
@@ -352,7 +352,7 @@ await session.shutdown()
 
 **Implementation:**
 - Integrates with `ClaudeSDKClient`
-- MCP server registration (8 servers: 6 in-process + 2 subprocess)
+- MCP server registration (9 servers: 6 in-process + 3 subprocess)
 - Automatic token tracking
 - Session state persistence
 
@@ -1211,8 +1211,9 @@ When working on external repositories:
 - **gitlab**: GitLab API operations (requires `GITLAB_PERSONAL_ACCESS_TOKEN`)
 
 **Subprocess MCP Servers** (Method B - loaded via `.claude/.mcp.json`):
-- **joplin**: Note-taking and documentation (requires `JOPLIN_API_TOKEN`)
-- **playwright**: Browser automation and testing
+- **joplin**: Note-taking and documentation via npx (requires `JOPLIN_API_TOKEN`)
+- **playwright**: Browser automation and testing via npx
+- **excel-haris-musa**: Excel file manipulation via uvx (Python)
 
 **API Token Setup**:
 - GitHub: https://github.com/settings/tokens (scopes: repo, read:user)
@@ -1338,7 +1339,7 @@ This harness supports two primary modes:
 
 The SDK currently loads:
 - This CLAUDE.md file for runtime context
-- ✅ MCP servers (8 total: 6 in-process + 2 subprocess) - see "Available MCP Servers" section
+- ✅ MCP servers (9 total: 6 in-process + 3 subprocess) - see "Available MCP Servers" section
 - ~~Plugins from `.claude/plugins/`~~ ⚠️ Phase 1B Workaround (plugin skills manually discovered)
 - ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base skills + 6 plugin skills via workaround)
 

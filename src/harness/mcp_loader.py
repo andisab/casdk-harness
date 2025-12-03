@@ -22,7 +22,7 @@ class MCPConfigLoader:
     # All fast servers (git, docker, context7, github, memory) are now loaded as in-process
     # servers (Method A). See agent.py _load_inprocess_servers() for those servers.
     TIER_1_SERVERS: set[str] = set()  # Empty - all fast servers now in-process (Method A)
-    TIER_2_SERVERS = {"playwright", "joplin"}  # Subprocess servers, 120s timeout
+    TIER_2_SERVERS = {"playwright", "joplin", "excel-haris-musa"}  # Subprocess servers (npx/uvx), 120s timeout
 
     def __init__(self):
         """Initialize the MCP configuration loader."""

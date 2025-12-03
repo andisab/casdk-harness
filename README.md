@@ -141,7 +141,7 @@ You: _
 - ✅ Real-time tool use display
 - ✅ Session statistics on exit (tokens, cost, duration)
 - ✅ Automatic checkpoint recovery if interrupted
-- ✅ MCP servers (8 total: git, docker, context7, memory, github, gitlab, playwright, joplin)
+- ✅ MCP servers (9 total: git, docker, context7, memory, github, gitlab, playwright, joplin, excel-haris-musa)
 
 ### Session Stats
 
@@ -362,14 +362,17 @@ make ssh-keygen-gitlab
 # 3. Add the public keys to your GitHub/GitLab accounts
 #    Output will show the public key to copy
 
-# 4. Test connections
+# 4. Pre-populate known_hosts (required for containers)
+make ssh-known-hosts
+
+# 5. Test connections (from host)
 make ssh-test
 
-# 5. Rebuild containers (to pick up the new volume mount)
+# 6. Rebuild containers (to pick up the new volume mount)
 make build
 make dev
 
-# 6. Test from inside container
+# 7. Test from inside container
 make ssh-test-container
 ```
 
@@ -378,7 +381,14 @@ make ssh-test-container
 - Keys are mounted read-only into containers
 - Dedicated keys are revocable without affecting your host SSH identity
 
-See [`.ssh/README.md`](.ssh/README.md) for alternative setup options.
+**HTTPS Authentication (for corporate GitLab):**
+If SSH port 22 is blocked, use HTTPS with `.netrc`:
+```bash
+cp .ssh/netrc.example .ssh/netrc
+# Edit .ssh/netrc with your GitLab username and Personal Access Token
+```
+
+See [`.ssh/README.md`](.ssh/README.md) for detailed setup options.
 
 See [`.env.example`](./.env.example) for complete configuration template.
 
