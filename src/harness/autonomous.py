@@ -32,7 +32,7 @@ from harness.config import get_config
 from harness.progress import ProgressManager, ProgressState, QASession, SessionEntry
 
 # Delay between autonomous sessions (seconds)
-AUTO_CONTINUE_DELAY_SECONDS = 3
+AUTO_CONTINUE_DELAY_SECONDS = 5
 
 # Load prompts from files
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -805,8 +805,17 @@ Resume with the next question in the sequence.
             if self._shutdown_requested:
                 break
 
-            # Delay before next session
-            logger.info(f"Waiting {AUTO_CONTINUE_DELAY_SECONDS}s before next session...")
+            # Delay before next session with visible countdown
+            self.console.print(
+                "\n[dim]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/dim]"
+            )
+            self.console.print(
+                f"[yellow]Session complete. Starting next session in {AUTO_CONTINUE_DELAY_SECONDS} seconds...[/yellow]"
+            )
+            self.console.print(
+                "[dim]Press Ctrl+C to exit[/dim]"
+            )
+            logger.debug(f"Waiting {AUTO_CONTINUE_DELAY_SECONDS}s before next session...")
             await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
 
         logger.info("Autonomous runner stopped")
