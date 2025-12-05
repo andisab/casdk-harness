@@ -24,7 +24,7 @@
 |-----------|--------|---------|
 | **Interactive Mode** | ✅ Complete | `make interactive` - Human-guided conversation |
 | **Autonomous Mode** | ✅ Complete | `make autonomous` - Long-running development |
-| **Progress Tracking** | ✅ Complete | task_list.json, progress.json, SESSION_n.md |
+| **Progress Tracking** | ✅ Complete | task_list.json (with status), sessions/session_N.json |
 | **Security** | ✅ Complete | Bash command allowlist/blocklist |
 | **Agent Definitions** | ✅ Complete | 8 subagent definitions for Task tool |
 
@@ -127,9 +127,8 @@ Container Filesystem:
 
 | File | Purpose | Mutability |
 |------|---------|------------|
-| `task_list.json` | Task definitions with acceptance criteria | Immutable after creation |
-| `progress.json` | Compact progress state (max 10 sessions) | Updated each session |
-| `sessions/SESSION_n.md` | Detailed session logs | Append-only |
+| `task_list.json` | Task definitions with status (PASS/FAIL/null) | Status field mutable |
+| `sessions/session_N.json` | Session metadata + transcript | One per session |
 
 ### Agent Definitions (8 subagents)
 

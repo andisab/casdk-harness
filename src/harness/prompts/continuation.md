@@ -30,8 +30,8 @@ cat /workspace/SPEC.md
 # 4. Read the task list
 cat /workspace/task_list.json
 
-# 5. Read progress from previous sessions
-cat /workspace/progress.json
+# 5. Read session history
+ls /workspace/sessions/
 
 # 6. Read context files from previous sessions
 cat /workspace/context/architecture.md  # System design
@@ -57,9 +57,10 @@ Previous sessions may have introduced bugs. Before implementing anything new:
 
 ## Step 3: Choose Your Current Task
 
-Look at `progress.json` to find:
-- `current_task_id` - If set, continue this task
-- If not set, choose highest priority task not in `completed_task_ids` or `blocked_task_ids`
+Look at `task_list.json` to find the next task:
+- Find the highest priority task where `status` is `null`
+- Tasks with `status: "PASS"` are complete
+- Tasks with `status: "FAIL"` are blocked
 
 Focus on completing ONE task perfectly before moving on.
 
@@ -126,8 +127,8 @@ Before context fills up:
 - `next-steps.md`: Max 30 lines (immediate priorities)
 
 **Avoid Redundancy:**
-- Task details go in `task_list.json`
-- Task status goes in `progress.json`
+- Task details and status go in `task_list.json`
+- Session data goes in `sessions/session_N.json`
 - Context files are for HOW/WHY not captured elsewhere
 
 ## Signals

@@ -87,7 +87,7 @@ dev-detached: check-env ## Start development environment in background
 # Build Targets
 # =============================================================================
 .PHONY: build
-build: check-env clean-sessions ## Build all services (clears session logs)
+build: check-env ## Build all services
 	@echo "$(GREEN)Building all services...$(NC)"
 	docker compose $(COMPOSE_FILES) build --parallel
 
@@ -211,7 +211,7 @@ autonomous-unsafe: ## Start autonomous with all bash commands allowed (dangerous
 .PHONY: autonomous-status
 autonomous-status: ## Show autonomous development progress
 	@echo "$(GREEN)Autonomous Development Status$(NC)"
-	@docker compose $(COMPOSE_FILES) exec main-agent cat /workspace/progress.json 2>/dev/null | jq '.' || echo "No progress.json found"
+	@docker compose $(COMPOSE_FILES) exec main-agent cat /workspace/task_list.json 2>/dev/null | jq '.tasks[] | {id, title, status}' || echo "No task_list.json found"
 
 .PHONY: init-spec
 init-spec: ## Create SPEC.md template in workspace
@@ -316,10 +316,14 @@ prune: ## Prune unused Docker resources
 	docker system prune -af --volumes --filter "label!=keep"
 	@echo "$(GREEN)Docker resources pruned$(NC)"
 
-.PHONY: clean-sessions
-clean-sessions: ## Remove session log files from workspace (SESSION_*.md)
-	@rm -rf workspace/sessions/SESSION_*.md 2>/dev/null || true
-	@echo "$(GREEN)Session files cleaned$(NC)"
+.PHONY: reset-workspace
+reset-workspace: ## Reset workspace and sessions (clears all project files)
+	@read -p "$(YELLOW)This will delete workspace contents and session logs. Are you sure? [y/N] $(NC)" -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		rm -rf workspace/SPEC.md workspace/task_list.json workspace/context/* workspace/sessions/* 2>/dev/null || true; \
+		echo "$(GREEN)Workspace reset complete$(NC)"; \
+	fi
 
 .PHONY: reset
 reset: clean ## Full reset (destructive!)

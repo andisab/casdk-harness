@@ -46,8 +46,8 @@ After initialization, the workspace should have:
 ```
 /workspace/
 ├── SPEC.md              # Project specification
-├── task_list.json       # Generated task list (IMMUTABLE after this)
-└── progress.json        # Progress tracking (created by system)
+├── task_list.json       # Task list with status field (PASS/FAIL/null per task)
+└── sessions/            # Session logs (session_N.json)
 ```
 
 ## Signals

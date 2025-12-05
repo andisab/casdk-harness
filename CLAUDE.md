@@ -44,7 +44,7 @@ See [README.md](./README.md) for key features and user-facing capabilities.
 
 ```
 claudeagentsdk-harness/
-├── .claude/                    # Claude Code configuration (SDK-compliant structure)
+├── .claude/                    # Claude Configuration (SDK-compliant structure)
 │   ├── agents/                 # Agent reference definitions - flat structure with prefixes (44 total)
 │   │   ├── build-*.md          # Build/orchestration agents (3)
 │   │   ├── data-*.md           # Data engineering agents (1)
