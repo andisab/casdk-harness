@@ -49,7 +49,7 @@ class KnowledgeGraph:
             return
 
         try:
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path) as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -573,7 +573,7 @@ async def _search_nodes_handler(args: dict[str, Any]) -> dict[str, Any]:
                 result += f"    - {obs}\n"
 
         if results["relations"]:
-            result += f"\nRelations between results:\n"
+            result += "\nRelations between results:\n"
             for r in results["relations"]:
                 result += f"  {r['from']} --[{r['relationType']}]--> {r['to']}\n"
 
@@ -604,7 +604,7 @@ async def _open_nodes_handler(args: dict[str, Any]) -> dict[str, Any]:
                 result += f"    - {obs}\n"
 
         if results["relations"]:
-            result += f"\nRelations:\n"
+            result += "\nRelations:\n"
             for r in results["relations"]:
                 result += f"  {r['from']} --[{r['relationType']}]--> {r['to']}\n"
 

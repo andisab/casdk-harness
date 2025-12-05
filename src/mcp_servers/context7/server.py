@@ -10,7 +10,6 @@ import os
 from typing import Any
 
 import httpx
-
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 # Context7 API configuration

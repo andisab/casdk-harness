@@ -10,7 +10,6 @@ Cost: Free (no API calls)
 Duration: < 10 seconds total
 """
 
-import asyncio
 import os
 
 import pytest

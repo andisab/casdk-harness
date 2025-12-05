@@ -6,6 +6,7 @@ This test file can be run manually to debug issues with the SDK integration:
 """
 
 import asyncio
+
 import pytest
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, query
 
@@ -165,15 +166,6 @@ def test_sdk_imports():
     print("TEST: SDK imports")
     print("=" * 80)
 
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ClaudeAgentOptions,
-        ClaudeSDKClient,
-        ResultMessage,
-        SystemMessage,
-        UserMessage,
-        query,
-    )
 
     print("✓ All SDK imports successful")
     print("✓ TEST PASSED\n")

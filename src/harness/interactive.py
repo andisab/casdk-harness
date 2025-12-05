@@ -22,7 +22,6 @@ from harness.cli import (
     print_welcome_banner,
 )
 from harness.config import get_config
-from harness.monitoring import MetricsCollector
 
 logger = structlog.get_logger(__name__)
 

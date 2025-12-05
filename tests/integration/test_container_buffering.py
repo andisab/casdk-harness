@@ -63,7 +63,7 @@ for i in range(10):
                 line = await asyncio.wait_for(
                     proc.stdout.readline(), timeout=timeout_seconds
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
 
             if not line:
@@ -78,7 +78,7 @@ for i in range(10):
         # Wait for process to complete
         await asyncio.wait_for(proc.wait(), timeout=5.0)
 
-    except Exception as e:
+    except Exception:
         if proc.returncode is None:
             proc.terminate()
             await proc.wait()
@@ -134,7 +134,7 @@ for i in range(10):
                 line = await asyncio.wait_for(
                     proc.stdout.readline(), timeout=timeout_seconds
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 break
 
             if not line:

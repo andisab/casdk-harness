@@ -108,7 +108,26 @@ interactive_cache_hit_ratio = Gauge(
 
 
 class MetricsCollector:
-    """Collects and exports metrics for monitoring."""
+    """Collects and exports metrics for monitoring.
+
+    This class uses the singleton pattern to ensure only one metrics
+    server is started, avoiding port conflicts across sessions.
+    """
+
+    _instance: "MetricsCollector | None" = None
+    _server_started: bool = False
+
+    def __new__(
+        cls,
+        port: int = 9090,
+        workspace_dir: Path | None = None,
+        checkpoint_dir: Path | None = None,
+    ) -> "MetricsCollector":
+        """Create or return singleton instance."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
 
     def __init__(
         self,
@@ -124,19 +143,31 @@ class MetricsCollector:
             workspace_dir: Path to workspace directory
             checkpoint_dir: Path to checkpoint directory
         """
+        # Only initialize once (singleton pattern)
+        if getattr(self, "_initialized", False):
+            return
+
         self.port = port
         self.workspace_dir = workspace_dir or Path("/workspace")
         self.checkpoint_dir = checkpoint_dir or Path("/memory/checkpoints")
         self.running = False
+        self._initialized = True
 
     def start(self) -> None:
-        """Start metrics HTTP server."""
+        """Start metrics HTTP server (only once per process)."""
+        # Only start server once across all instances
+        if MetricsCollector._server_started:
+            logger.debug("Metrics server already running, skipping start")
+            return
+
         try:
             start_http_server(self.port)
+            MetricsCollector._server_started = True
             logger.info("Metrics server started", port=self.port)
         except OSError as e:
             # Port already in use - this is OK, metrics are still collected
-            if e.errno == 98:  # Address already in use
+            if e.errno == 98 or e.errno == 48:  # Linux: 98, macOS: 48 (Address already in use)
+                MetricsCollector._server_started = True  # Mark as started even if port in use
                 logger.warning(
                     "Metrics server port already in use - skipping HTTP server start. "
                     "Metrics will still be collected and available via Prometheus scraping.",
@@ -146,6 +177,12 @@ class MetricsCollector:
                 logger.error("Failed to start metrics server", error=str(e), exc_info=True)
         except Exception as e:
             logger.error("Failed to start metrics server", error=str(e), exc_info=True)
+
+    @classmethod
+    def reset_singleton(cls) -> None:
+        """Reset the singleton instance (for testing)."""
+        cls._instance = None
+        cls._server_started = False
 
     async def collect_system_metrics(self) -> None:
         """Continuously collect system-level metrics."""

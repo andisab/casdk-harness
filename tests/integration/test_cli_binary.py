@@ -8,11 +8,10 @@ Cost: Free (no API calls)
 Duration: < 5 seconds total
 """
 
-import asyncio
-import subprocess
-import sys
 import os
 import shutil
+import subprocess
+import sys
 
 
 def test_claude_cli_exists():
@@ -40,9 +39,9 @@ def test_claude_cli_exists():
 
         # Check if executable
         if os.access(claude_path, os.X_OK):
-            print(f"✓ Claude is executable")
+            print("✓ Claude is executable")
         else:
-            print(f"✗ Claude is not executable")
+            print("✗ Claude is not executable")
             return False
     else:
         print("✗ Claude not found in PATH")

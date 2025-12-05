@@ -4,8 +4,6 @@ Tests complete workflow from requirements to implementation to testing.
 WARNING: This test uses real API calls and can be expensive. Use sparingly.
 """
 
-import subprocess
-from pathlib import Path
 
 import pytest
 import structlog

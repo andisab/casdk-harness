@@ -1,22 +1,41 @@
 """Unit tests for Memory MCP server."""
 
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
 
 # Import the server module - use handler functions and class for testing
 from mcp_servers.memory.server import (
     KnowledgeGraph,
-    _create_entities_handler as create_entities,
-    _create_relations_handler as create_relations,
-    _add_observations_handler as add_observations,
-    _delete_entities_handler as delete_entities,
-    _delete_observations_handler as delete_observations,
-    _delete_relations_handler as delete_relations,
-    _read_graph_handler as read_graph,
-    _search_nodes_handler as search_nodes,
-    _open_nodes_handler as open_nodes,
     memory_server,
+)
+from mcp_servers.memory.server import (
+    _add_observations_handler as add_observations,
+)
+from mcp_servers.memory.server import (
+    _create_entities_handler as create_entities,
+)
+from mcp_servers.memory.server import (
+    _create_relations_handler as create_relations,
+)
+from mcp_servers.memory.server import (
+    _delete_entities_handler as delete_entities,
+)
+from mcp_servers.memory.server import (
+    _delete_observations_handler as delete_observations,
+)
+from mcp_servers.memory.server import (
+    _delete_relations_handler as delete_relations,
+)
+from mcp_servers.memory.server import (
+    _open_nodes_handler as open_nodes,
+)
+from mcp_servers.memory.server import (
+    _read_graph_handler as read_graph,
+)
+from mcp_servers.memory.server import (
+    _search_nodes_handler as search_nodes,
 )
 
 

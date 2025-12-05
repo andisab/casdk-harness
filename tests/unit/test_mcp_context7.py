@@ -1,14 +1,20 @@
 """Unit tests for Context7 MCP server."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
+from mcp_servers.context7.server import (
+    _get_headers,
+    context7_server,
+)
+from mcp_servers.context7.server import (
+    _get_library_docs_handler as get_library_docs,
+)
 
 # Import the server module - use handler functions for testing
 from mcp_servers.context7.server import (
     _resolve_library_id_handler as resolve_library_id,
-    _get_library_docs_handler as get_library_docs,
-    context7_server,
-    _get_headers,
 )
 
 

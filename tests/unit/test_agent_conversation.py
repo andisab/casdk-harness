@@ -4,8 +4,9 @@ Tests verify that the SDK client is created once and reused across
 multiple execute() calls to maintain conversation history.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from harness.agent import AgentSession
 

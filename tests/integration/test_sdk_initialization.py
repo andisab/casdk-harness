@@ -13,7 +13,6 @@ Duration: ~5-15 seconds per test
 
 import asyncio
 import time
-from pathlib import Path
 
 import pytest
 import structlog

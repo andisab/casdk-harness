@@ -6,9 +6,8 @@ sources with tiered loading and API key validation.
 
 import json
 import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import structlog
 
@@ -29,8 +28,8 @@ class MCPConfigLoader:
         self.logger = logger.bind(component="mcp_loader")
 
     def load_config(
-        self, base_path: str | Path, plugin_paths: Optional[List[Path]] = None
-    ) -> Dict[str, Any]:
+        self, base_path: str | Path, plugin_paths: list[Path] | None = None
+    ) -> dict[str, Any]:
         """Load and merge MCP configurations from base and plugin paths.
 
         Args:
@@ -87,7 +86,7 @@ class MCPConfigLoader:
 
         return {"mcpServers": merged_servers}
 
-    def validate_config(self, config: Dict[str, Any]) -> None:
+    def validate_config(self, config: dict[str, Any]) -> None:
         """Validate MCP server configuration structure.
 
         Args:
@@ -134,7 +133,7 @@ class MCPConfigLoader:
 
         self.logger.debug("MCP configuration validated successfully", server_count=len(servers))
 
-    def check_api_keys(self, server_config: Dict[str, Any]) -> tuple[bool, List[str]]:
+    def check_api_keys(self, server_config: dict[str, Any]) -> tuple[bool, list[str]]:
         """Check if required API keys are present based on env placeholders in config.
 
         Auto-discovers required env vars by looking for ${VAR_NAME} patterns in
@@ -174,7 +173,7 @@ class MCPConfigLoader:
         )
         return True, []
 
-    def resolve_env_vars(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def resolve_env_vars(self, config: dict[str, Any]) -> dict[str, Any]:
         """Resolve environment variable placeholders in configuration.
 
         Replaces ${VAR_NAME} placeholders with actual environment variable values.
@@ -242,8 +241,8 @@ class MCPConfigLoader:
             return 1
 
     def filter_by_tier(
-        self, config: Dict[str, Any], tier: int, check_keys: bool = True
-    ) -> Dict[str, Any]:
+        self, config: dict[str, Any], tier: int, check_keys: bool = True
+    ) -> dict[str, Any]:
         """Filter configuration to only include servers from specified tier.
 
         Args:
@@ -286,10 +285,10 @@ class MCPConfigLoader:
     def load_tier(
         self,
         base_path: str | Path,
-        plugin_paths: Optional[List[Path]] = None,
+        plugin_paths: list[Path] | None = None,
         tier: int = 1,
         check_keys: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Load and return configuration for a specific tier.
 
         Convenience method that combines load_config, resolve_env_vars, and filter_by_tier.

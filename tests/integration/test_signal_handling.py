@@ -10,7 +10,6 @@ Duration: ~30-60 seconds total (due to container start/stop)
 
 import asyncio
 import subprocess
-import time
 
 import pytest
 
