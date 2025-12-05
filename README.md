@@ -331,17 +331,7 @@ Configuration is done through `.env` file (copy from `.env.example`):
 | `LOG_LEVEL` | Logging level | `INFO` |
 | `LOG_FORMAT` | Log format | `json` |
 
-### Database
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `POSTGRES_HOST` | PostgreSQL host | `postgres` |
-| `POSTGRES_PORT` | PostgreSQL port | `5432` |
-| `POSTGRES_DB` | Database name | `claude_harness` |
-| `POSTGRES_USER` | Database user | `claude` |
-| `POSTGRES_PASSWORD` | Database password | (set in .env) |
-
-### Redis
+### Cache (Redis)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -701,12 +691,12 @@ docker stats claude-main-agent
 
 ```bash
 # .env.example (committed to git)
-DATABASE_URL=postgresql://user:pass@host:5432/db
-API_KEY=your_api_key_here
+ANTHROPIC_API_KEY=your_api_key_here
+REDIS_PASSWORD=your_redis_password
 
 # .env (never committed, gitignored)
-DATABASE_URL=postgresql://prod:real_secret@prod:5432/mydb
-API_KEY=sk_live_actual_key
+ANTHROPIC_API_KEY=sk-ant-actual_key_here
+REDIS_PASSWORD=real_secret_password
 ```
 
 ## Troubleshooting

@@ -14,7 +14,6 @@
 **Last Updated**: December 2, 2025
 
 ### What's Working
-
 - ✅ Interactive conversation mode with Rich CLI (cli.py, interactive.py)
 - ✅ Quiet mode for clean chat (--quiet flag suppresses system logs)
 - ✅ Action logging hooks and session metrics (infrastructure in place)
@@ -25,12 +24,6 @@
 - ✅ CLI tools for git/GitHub/GitLab (git, gh, glab)
 - ✅ Token usage tracking and cost calculation (verified in Grafana)
 
-### Known Limitations
-
-- ⚠️ **Agent definitions NOT loaded** - 44 agents in `.claude/agents/` are reference documentation only (see IMPLEMENTATION.md Phase 2)
-- Test coverage at ~61% (target: 80%+)
-
-> For implementation roadmap and planned features, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)
 
 ## Project Overview
 
@@ -52,7 +45,7 @@ See [README.md](./README.md) for key features and user-facing capabilities.
 ```
 claudeagentsdk-harness/
 ├── .claude/                    # Claude Code configuration (SDK-compliant structure)
-│   ├── agents/                 # Agent definitions - flat structure with prefixes (44 total)
+│   ├── agents/                 # Agent reference definitions - flat structure with prefixes (44 total)
 │   │   ├── build-*.md          # Build/orchestration agents (3)
 │   │   ├── data-*.md           # Data engineering agents (1)
 │   │   ├── db-*.md             # Database experts (7)
@@ -108,9 +101,14 @@ claudeagentsdk-harness/
 │           └── interactive_sessions.json  # Interactive sessions dashboard
 │
 ├── workspace/                  # Agent working directory (gitignored)
+│   └── context/              # Technical context files (created by autonomous mode)
+│       ├── architecture.md   # System design overview
+│       ├── decisions.md      # Technical decisions log (append-only)
+│       ├── issues.md         # Known issues and blockers
+│       └── next-steps.md     # Priorities for next session
 ├── memory/                     # Persistent agent memory (gitignored)
 │   ├── checkpoints/
-│   └── context/
+│   └── graph/                # Memory MCP knowledge graph
 ├── logs/                       # Application logs (gitignored)
 │   ├── main/
 │   ├── reviewer/
@@ -232,7 +230,7 @@ Pydantic-based configuration with environment variable loading:
 from harness.config import get_config
 
 config = get_config()
-print(config.database_url)        # postgresql+asyncpg://...
+print(config.redis_url)           # redis://redis:6379/0
 print(config.checkpoint_dir)      # /memory/checkpoints
 print(config.claude_model)        # claude-sonnet-4-5-20250929
 ```
@@ -438,11 +436,6 @@ python -m harness.interactive --model opus --quiet --stats
 - **Access**: Full workspace access
 - **Permission Mode**: acceptAll
 - **Max Turns**: 100
-
-**postgres:**
-- **Version**: PostgreSQL 16
-- **Persistent**: Volume for data
-- **Health Check**: `pg_isready` command
 
 **redis:**
 - **Version**: Redis 7
@@ -1159,8 +1152,9 @@ You are running within the Claude Agent SDK Harness, a production-ready framewor
     - `specs/` - Coding standards (python, make, javascript, etc.)
 - **Workspace**: `/workspace` - Clean canvas for development work
   - `/workspace/projects/` - Clone external repositories here
+  - `/workspace/context/` - Technical context files (architecture, decisions, issues, next-steps)
   - `/workspace/` - Scratch space for agent operations
-- **Memory**: `/memory` - Persistent state storage (checkpoints, context)
+- **Memory**: `/memory` - Persistent state storage (checkpoints, MCP memory graph)
 - **Logs**: `/logs` - Structured application and action logs
 - **Config**: `/config` - System configuration files
 
