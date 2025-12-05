@@ -3,16 +3,17 @@
 import asyncio
 import signal
 import sys
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 
 import structlog
 from claude_agent_sdk import (
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
     CLIConnectionError,
     CLIJSONDecodeError,
     CLINotFoundError,
-    ClaudeAgentOptions,
-    ClaudeSDKClient,
     ProcessError,
     ResultMessage,
 )
@@ -41,6 +42,8 @@ class AgentSession:
         config: HarnessConfig | None = None,
         checkpoint_manager: CheckpointManager | None = None,
         metrics_collector: MetricsCollector | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
     ) -> None:
         """
         Initialize agent session.
@@ -50,9 +53,13 @@ class AgentSession:
             config: Configuration object (uses global config if None)
             checkpoint_manager: Checkpoint manager instance
             metrics_collector: Metrics collector instance
+            model: Override model (uses config.claude_model if None)
+            system_prompt: Override system prompt (loads from file if None)
         """
         self.agent_name = agent_name
         self.config = config or get_config()
+        self._model_override = model
+        self._system_prompt_override = system_prompt
 
         # Plugin configuration (Phase 1B)
         from pathlib import Path
@@ -118,6 +125,15 @@ class AgentSession:
             mcp_servers=len(self.mcp_servers),
             plugin_skills=len(self.plugin_skills),
         )
+
+    async def __aenter__(self) -> "AgentSession":
+        """Async context manager entry - starts the session."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit - shuts down the session."""
+        await self.shutdown()
 
     def _load_plugin_skills_manually(self) -> dict[str, dict[str, str]]:
         """Manually discover plugin skills as workaround for SDK bug.
@@ -395,15 +411,16 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         cli_env = os.environ.copy()
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
-        # Load system prompt from external file
-        system_prompt = self._load_system_prompt()
+        # Use override or load from file
+        system_prompt = self._system_prompt_override or self._load_system_prompt()
+        model = self._model_override or self.config.claude_model
 
         return ClaudeAgentOptions(
             allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
             permission_mode=self.config.claude_permission_mode,
             max_turns=self.config.claude_max_turns,
             cwd="/app",  # SDK needs /app to find .claude/skills/
-            model=self.config.claude_model,
+            model=model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
             setting_sources=["user", "project"],  # Enable skills from .claude/skills/
             plugins=self.plugins,  # Phase 1B: Enable plugin loading

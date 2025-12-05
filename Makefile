@@ -87,7 +87,7 @@ dev-detached: check-env ## Start development environment in background
 # Build Targets
 # =============================================================================
 .PHONY: build
-build: check-env ## Build all services
+build: check-env clean-sessions ## Build all services (clears session logs)
 	@echo "$(GREEN)Building all services...$(NC)"
 	docker compose $(COMPOSE_FILES) build --parallel
 
@@ -184,6 +184,41 @@ interactive-quiet: ## Start interactive in quiet mode (no system logs)
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --quiet
 
 # =============================================================================
+# Autonomous Development Mode
+# =============================================================================
+.PHONY: autonomous
+autonomous: ## Start autonomous development mode (quiet by default)
+	@echo "$(GREEN)Starting autonomous development mode...$(NC)"
+	@echo "$(YELLOW)Press Ctrl+C to gracefully stop$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet
+
+.PHONY: autonomous-verbose
+autonomous-verbose: ## Start autonomous with verbose logging
+	@echo "$(GREEN)Starting autonomous mode with verbose logging...$(NC)"
+	@echo "$(YELLOW)Press Ctrl+C to gracefully stop$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous
+
+.PHONY: autonomous-model
+autonomous-model: ## Start autonomous with specific model (usage: make autonomous-model MODEL=opus)
+	@echo "$(GREEN)Starting autonomous mode with $(MODEL) model...$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet --model $(MODEL)
+
+.PHONY: autonomous-unsafe
+autonomous-unsafe: ## Start autonomous with all bash commands allowed (dangerous!)
+	@echo "$(RED)WARNING: All bash commands allowed - use with caution!$(NC)"
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet --allow-all-commands
+
+.PHONY: autonomous-status
+autonomous-status: ## Show autonomous development progress
+	@echo "$(GREEN)Autonomous Development Status$(NC)"
+	@docker compose $(COMPOSE_FILES) exec main-agent cat /workspace/progress.json 2>/dev/null | jq '.' || echo "No progress.json found"
+
+.PHONY: init-spec
+init-spec: ## Create SPEC.md template in workspace
+	@echo "$(GREEN)Creating SPEC.md template...$(NC)"
+	@docker compose $(COMPOSE_FILES) exec main-agent bash -c 'if [ -f /workspace/SPEC.md ]; then echo "SPEC.md already exists"; else echo "# Project Specification\n\n## Overview\n\nDescribe your project here.\n\n## Requirements\n\n1. Requirement 1\n2. Requirement 2\n\n## Technical Constraints\n\n- Constraint 1\n- Constraint 2\n" > /workspace/SPEC.md && echo "Created /workspace/SPEC.md"; fi'
+
+# =============================================================================
 # Testing
 # =============================================================================
 .PHONY: test
@@ -250,24 +285,6 @@ typecheck: ## Run type checking
 	docker compose $(COMPOSE_FILES) exec main-agent mypy src/
 
 # =============================================================================
-# Database Operations
-# =============================================================================
-.PHONY: db-shell
-db-shell: ## PostgreSQL shell
-	docker compose $(COMPOSE_FILES) exec postgres psql -U ${POSTGRES_USER:-claude} -d ${POSTGRES_DB:-claude_harness}
-
-.PHONY: db-backup
-db-backup: ## Backup database
-	@mkdir -p backups
-	docker compose $(COMPOSE_FILES) exec -T postgres pg_dump -U ${POSTGRES_USER:-claude} ${POSTGRES_DB:-claude_harness} | gzip > backups/backup_$(shell date +%Y%m%d_%H%M%S).sql.gz
-	@echo "$(GREEN)Database backed up to backups/$(NC)"
-
-.PHONY: db-restore
-db-restore: ## Restore database from backup
-	@read -p "Backup file: " file; \
-	gunzip -c $$file | docker compose $(COMPOSE_FILES) exec -T postgres psql -U ${POSTGRES_USER:-claude} ${POSTGRES_DB:-claude_harness}
-
-# =============================================================================
 # Monitoring
 # =============================================================================
 .PHONY: metrics
@@ -298,6 +315,11 @@ clean: ## Remove containers and volumes
 prune: ## Prune unused Docker resources
 	docker system prune -af --volumes --filter "label!=keep"
 	@echo "$(GREEN)Docker resources pruned$(NC)"
+
+.PHONY: clean-sessions
+clean-sessions: ## Remove session log files from workspace (SESSION_*.md)
+	@rm -rf workspace/sessions/SESSION_*.md 2>/dev/null || true
+	@echo "$(GREEN)Session files cleaned$(NC)"
 
 .PHONY: reset
 reset: clean ## Full reset (destructive!)
