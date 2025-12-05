@@ -6,11 +6,9 @@ from pathlib import Path
 import pytest
 
 from harness.progress import (
-    MAX_SESSIONS_KEPT,
     ProgressManager,
-    ProgressState,
     QASession,
-    SessionEntry,
+    SessionData,
     TaskItem,
     TaskList,
 )
@@ -149,6 +147,19 @@ class TestTaskItem:
         assert task.title == "Implement user authentication"
         assert task.priority == 1
         assert len(task.acceptance_criteria) == 2
+        assert task.status is None  # Default status
+
+    def test_task_item_with_status(self) -> None:
+        """Test creating a task item with status."""
+        task = TaskItem(
+            id="task-001",
+            title="Test task",
+            description="Description",
+            acceptance_criteria=["Criterion 1"],
+            status="PASS",
+        )
+
+        assert task.status == "PASS"
 
     def test_task_item_to_dict(self) -> None:
         """Test serialization to dictionary."""
@@ -157,6 +168,7 @@ class TestTaskItem:
             title="Test task",
             description="Description",
             acceptance_criteria=["Criterion 1"],
+            status="FAIL",
         )
 
         data = task.to_dict()
@@ -164,6 +176,7 @@ class TestTaskItem:
         assert data["id"] == "task-001"
         assert data["title"] == "Test task"
         assert data["priority"] == 1  # Default
+        assert data["status"] == "FAIL"
 
     def test_task_item_from_dict(self) -> None:
         """Test deserialization from dictionary."""
@@ -173,6 +186,7 @@ class TestTaskItem:
             "description": "Another description",
             "acceptance_criteria": ["AC1", "AC2"],
             "priority": 2,
+            "status": "PASS",
         }
 
         task = TaskItem.from_dict(data)
@@ -180,6 +194,20 @@ class TestTaskItem:
         assert task.id == "task-002"
         assert task.priority == 2
         assert len(task.acceptance_criteria) == 2
+        assert task.status == "PASS"
+
+    def test_task_item_from_dict_no_status(self) -> None:
+        """Test deserialization from dictionary without status field."""
+        data = {
+            "id": "task-002",
+            "title": "Another task",
+            "description": "Another description",
+            "acceptance_criteria": ["AC1"],
+        }
+
+        task = TaskItem.from_dict(data)
+
+        assert task.status is None
 
 
 class TestTaskList:
@@ -256,81 +284,175 @@ class TestTaskList:
         assert sorted_tasks[1].id == "t3"  # Priority 2
         assert sorted_tasks[2].id == "t1"  # Priority 3
 
+    def test_update_task_status(self) -> None:
+        """Test updating task status."""
+        task = TaskItem(
+            id="task-001",
+            title="Task 1",
+            description="Desc 1",
+            acceptance_criteria=["AC1"],
+        )
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test",
+            tasks=[task],
+        )
 
-class TestSessionEntry:
-    """Tests for SessionEntry dataclass."""
+        # Update existing task
+        result = task_list.update_task_status("task-001", "PASS")
+        assert result is True
+        assert task_list.get_task("task-001").status == "PASS"
 
-    def test_create_session_entry(self) -> None:
-        """Test creating a session entry."""
-        session = SessionEntry(
+        # Update to FAIL
+        result = task_list.update_task_status("task-001", "FAIL")
+        assert result is True
+        assert task_list.get_task("task-001").status == "FAIL"
+
+        # Update nonexistent task
+        result = task_list.update_task_status("nonexistent", "PASS")
+        assert result is False
+
+    def test_get_next_task(self) -> None:
+        """Test getting next task to work on."""
+        tasks = [
+            TaskItem(id="t1", title="T1", description="D1", acceptance_criteria=[], priority=2),
+            TaskItem(id="t2", title="T2", description="D2", acceptance_criteria=[], priority=1),
+            TaskItem(id="t3", title="T3", description="D3", acceptance_criteria=[], priority=3),
+        ]
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test",
+            tasks=tasks,
+        )
+
+        # Should return highest priority (lowest number) with no status
+        next_task = task_list.get_next_task()
+        assert next_task is not None
+        assert next_task.id == "t2"  # Priority 1
+
+        # Mark t2 as PASS, should return t1 (priority 2)
+        task_list.update_task_status("t2", "PASS")
+        next_task = task_list.get_next_task()
+        assert next_task is not None
+        assert next_task.id == "t1"
+
+        # Mark t1 as FAIL, should return t3 (priority 3)
+        task_list.update_task_status("t1", "FAIL")
+        next_task = task_list.get_next_task()
+        assert next_task is not None
+        assert next_task.id == "t3"
+
+        # Mark all, should return None
+        task_list.update_task_status("t3", "PASS")
+        next_task = task_list.get_next_task()
+        assert next_task is None
+
+    def test_get_completion_stats(self) -> None:
+        """Test getting completion statistics."""
+        tasks = [
+            TaskItem(id="t1", title="T1", description="D1", acceptance_criteria=[], status="PASS"),
+            TaskItem(id="t2", title="T2", description="D2", acceptance_criteria=[], status="FAIL"),
+            TaskItem(id="t3", title="T3", description="D3", acceptance_criteria=[]),  # No status
+        ]
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test",
+            tasks=tasks,
+        )
+
+        stats = task_list.get_completion_stats()
+
+        assert stats["total_tasks"] == 3
+        assert stats["passed"] == 1
+        assert stats["failed"] == 1
+        assert stats["remaining"] == 1
+        assert stats["completion_percent"] == pytest.approx(33.33, rel=0.1)
+
+
+class TestSessionData:
+    """Tests for SessionData dataclass."""
+
+    def test_create_session_data(self) -> None:
+        """Test creating session data."""
+        session = SessionData(
             session_number=1,
             started_at="2025-12-04T10:00:00Z",
             ended_at="2025-12-04T10:30:00Z",
-            tasks_completed=["task-001"],
+            tasks_worked=["task-001"],
+            tasks_passed=["task-001"],
             total_turns=25,
             total_tokens=50000,
             total_cost_usd=0.15,
         )
 
         assert session.session_number == 1
-        assert session.tasks_completed == ["task-001"]
+        assert session.tasks_worked == ["task-001"]
+        assert session.tasks_passed == ["task-001"]
+        assert session.tasks_failed == []
+        assert session.git_commits == []
         assert session.total_cost_usd == 0.15
+        assert session.transcript == []
 
-    def test_session_entry_serialization(self) -> None:
-        """Test session entry round-trip serialization."""
-        session = SessionEntry(
+    def test_session_data_to_dict(self) -> None:
+        """Test serialization to dictionary."""
+        session = SessionData(
             session_number=1,
             started_at="2025-12-04T10:00:00Z",
-            tasks_completed=["task-001"],
+            tasks_worked=["task-001"],
+            tasks_passed=["task-001"],
+            git_commits=["abc123"],
         )
 
         data = session.to_dict()
-        restored = SessionEntry.from_dict(data)
 
-        assert restored.session_number == session.session_number
-        assert restored.tasks_completed == session.tasks_completed
+        assert data["session_number"] == 1
+        assert data["tasks_worked"] == ["task-001"]
+        assert data["tasks_passed"] == ["task-001"]
+        assert data["tasks_failed"] == []
+        assert data["git_commits"] == ["abc123"]
 
+    def test_session_data_from_dict(self) -> None:
+        """Test deserialization from dictionary."""
+        data = {
+            "session_number": 2,
+            "started_at": "2025-12-04T11:00:00Z",
+            "ended_at": "2025-12-04T11:30:00Z",
+            "tasks_worked": ["task-001", "task-002"],
+            "tasks_passed": ["task-001"],
+            "tasks_failed": ["task-002"],
+            "git_commits": ["abc123", "def456"],
+            "total_turns": 50,
+            "total_tokens": 100000,
+            "total_cost_usd": 0.30,
+            "notes": "Some notes",
+            "transcript": [{"role": "system", "content": "test"}],
+        }
 
-class TestProgressState:
-    """Tests for ProgressState dataclass."""
+        session = SessionData.from_dict(data)
 
-    def test_add_session_rotates_old(self) -> None:
-        """Test that adding sessions rotates old ones."""
-        state = ProgressState(task_list_version="1.0")
+        assert session.session_number == 2
+        assert len(session.tasks_worked) == 2
+        assert len(session.tasks_passed) == 1
+        assert len(session.tasks_failed) == 1
+        assert len(session.git_commits) == 2
+        assert len(session.transcript) == 1
 
-        # Add MAX_SESSIONS_KEPT + 2 sessions
-        for i in range(MAX_SESSIONS_KEPT + 2):
-            session = SessionEntry(
-                session_number=i + 1,
-                started_at=f"2025-12-04T{i:02d}:00:00Z",
-            )
-            state.add_session(session)
+    def test_add_message(self) -> None:
+        """Test adding a message to transcript."""
+        session = SessionData(
+            session_number=1,
+            started_at="2025-12-04T10:00:00Z",
+        )
 
-        # Should only keep MAX_SESSIONS_KEPT
-        assert len(state.sessions) == MAX_SESSIONS_KEPT
-        assert state.total_sessions == MAX_SESSIONS_KEPT + 2
-        # First session should be session number 3 (1 and 2 rotated out)
-        assert state.sessions[0].session_number == 3
+        session.add_message("user", "Hello")
+        session.add_message("assistant", "Hi there")
 
-    def test_mark_task_completed(self) -> None:
-        """Test marking a task as completed."""
-        state = ProgressState(task_list_version="1.0")
-        state.current_task_id = "task-001"
-
-        state.mark_task_completed("task-001")
-
-        assert "task-001" in state.completed_task_ids
-        assert state.current_task_id is None
-
-    def test_mark_task_blocked(self) -> None:
-        """Test marking a task as blocked."""
-        state = ProgressState(task_list_version="1.0")
-        state.current_task_id = "task-001"
-
-        state.mark_task_blocked("task-001")
-
-        assert "task-001" in state.blocked_task_ids
-        assert state.current_task_id is None
+        assert len(session.transcript) == 2
+        assert session.transcript[0]["role"] == "user"
+        assert session.transcript[0]["content"] == "Hello"
 
 
 class TestProgressManager:
@@ -385,25 +507,8 @@ class TestProgressManager:
         with pytest.raises(FileExistsError):
             manager.create_task_list(task_list)
 
-    def test_progress_state_lifecycle(self, temp_workspace: Path) -> None:
-        """Test progress state save and load."""
-        manager = ProgressManager(temp_workspace)
-
-        # Initialize progress
-        state = manager.init_progress("1.0")
-        assert state.task_list_version == "1.0"
-
-        # Update and save
-        state.mark_task_completed("task-001")
-        manager.save_progress(state)
-
-        # Load and verify
-        loaded = manager.load_progress()
-        assert loaded is not None
-        assert "task-001" in loaded.completed_task_ids
-
-    def test_get_next_task(self, temp_workspace: Path) -> None:
-        """Test getting the next task to work on."""
+    def test_save_task_list(self, temp_workspace: Path) -> None:
+        """Test saving task list with status updates."""
         manager = ProgressManager(temp_workspace)
 
         task_list = TaskList(
@@ -411,75 +516,191 @@ class TestProgressManager:
             created_at="2025-12-04T00:00:00Z",
             project_name="Test",
             tasks=[
-                TaskItem(id="t1", title="T1", description="D1", acceptance_criteria=[], priority=2),
-                TaskItem(id="t2", title="T2", description="D2", acceptance_criteria=[], priority=1),
+                TaskItem(
+                    id="task-001",
+                    title="Task 1",
+                    description="Desc 1",
+                    acceptance_criteria=["AC1"],
+                ),
             ],
         )
 
-        state = ProgressState(task_list_version="1.0")
+        manager.create_task_list(task_list)
 
-        # Should return highest priority (lowest number)
-        next_task = manager.get_next_task(task_list, state)
-        assert next_task is not None
-        assert next_task.id == "t2"  # Priority 1
+        # Update status and save
+        task_list.update_task_status("task-001", "PASS")
+        manager.save_task_list(task_list)
 
-        # Mark t2 completed, should return t1
-        state.mark_task_completed("t2")
-        next_task = manager.get_next_task(task_list, state)
-        assert next_task is not None
-        assert next_task.id == "t1"
+        # Load and verify
+        loaded = manager.load_task_list()
+        assert loaded.get_task("task-001").status == "PASS"
 
-        # Mark t1 completed, should return None
-        state.mark_task_completed("t1")
-        next_task = manager.get_next_task(task_list, state)
-        assert next_task is None
-
-    def test_session_log_lifecycle(self, temp_workspace: Path) -> None:
-        """Test session log writing and reading."""
+    def test_session_json_lifecycle(self, temp_workspace: Path) -> None:
+        """Test session JSON writing and reading."""
         manager = ProgressManager(temp_workspace)
 
-        session = SessionEntry(
+        session = SessionData(
             session_number=1,
             started_at="2025-12-04T10:00:00Z",
             ended_at="2025-12-04T10:30:00Z",
-            tasks_completed=["task-001"],
+            tasks_worked=["task-001"],
+            tasks_passed=["task-001"],
+            transcript=[{"role": "system", "content": "Session content"}],
         )
 
-        # Write session log
-        path = manager.write_session_log(session, "Session content here")
+        # Save session
+        path = manager.save_session(session)
 
         assert path.exists()
-        assert "SESSION_1.md" in str(path)
+        assert "session_1.json" in str(path)
 
-        # Read session log
-        content = manager.load_session_log(1)
-        assert content is not None
-        assert "Session 1" in content
-        assert "task-001" in content
+        # Load session
+        loaded = manager.load_session(1)
+        assert loaded is not None
+        assert loaded.session_number == 1
+        assert loaded.tasks_passed == ["task-001"]
+        assert len(loaded.transcript) == 1
 
-    def test_get_completion_stats(self, temp_workspace: Path) -> None:
-        """Test getting completion statistics."""
+    def test_load_nonexistent_session(self, temp_workspace: Path) -> None:
+        """Test loading a session that doesn't exist."""
         manager = ProgressManager(temp_workspace)
 
+        loaded = manager.load_session(999)
+        assert loaded is None
+
+    def test_load_all_sessions(self, temp_workspace: Path) -> None:
+        """Test loading all sessions."""
+        manager = ProgressManager(temp_workspace)
+
+        # Create multiple sessions
+        for i in range(1, 4):
+            session = SessionData(
+                session_number=i,
+                started_at=f"2025-12-04T{i:02d}:00:00Z",
+            )
+            manager.save_session(session)
+
+        sessions = manager.load_all_sessions()
+
+        assert len(sessions) == 3
+        assert sessions[0].session_number == 1
+        assert sessions[2].session_number == 3
+
+    def test_get_totals(self, temp_workspace: Path) -> None:
+        """Test computing totals from session files."""
+        manager = ProgressManager(temp_workspace)
+
+        # Create sessions with different stats
+        session1 = SessionData(
+            session_number=1,
+            started_at="2025-12-04T10:00:00Z",
+            total_turns=50,
+            total_tokens=10000,
+            total_cost_usd=0.10,
+            git_commits=["abc123"],
+        )
+        session2 = SessionData(
+            session_number=2,
+            started_at="2025-12-04T11:00:00Z",
+            total_turns=75,
+            total_tokens=15000,
+            total_cost_usd=0.15,
+            git_commits=["def456", "ghi789"],
+        )
+
+        manager.save_session(session1)
+        manager.save_session(session2)
+
+        totals = manager.get_totals()
+
+        assert totals["total_sessions"] == 2
+        assert totals["total_turns"] == 125
+        assert totals["total_tokens"] == 25000
+        assert totals["total_cost_usd"] == 0.25
+        assert len(totals["all_commits"]) == 3
+
+    def test_start_session(self, temp_workspace: Path) -> None:
+        """Test starting a new session."""
+        manager = ProgressManager(temp_workspace)
+
+        session = manager.start_session()
+
+        assert session.session_number == 1
+        assert session.started_at is not None
+        assert session.ended_at is None
+
+        # Start another session
+        manager.save_session(session)
+        session2 = manager.start_session()
+
+        assert session2.session_number == 2
+
+    def test_end_session(self, temp_workspace: Path) -> None:
+        """Test ending a session saves both task list and session."""
+        manager = ProgressManager(temp_workspace)
+
+        # Create task list first
         task_list = TaskList(
             version="1.0",
             created_at="2025-12-04T00:00:00Z",
             project_name="Test",
             tasks=[
-                TaskItem(id="t1", title="T1", description="D1", acceptance_criteria=[]),
-                TaskItem(id="t2", title="T2", description="D2", acceptance_criteria=[]),
-                TaskItem(id="t3", title="T3", description="D3", acceptance_criteria=[]),
+                TaskItem(
+                    id="task-001",
+                    title="Task 1",
+                    description="Desc 1",
+                    acceptance_criteria=["AC1"],
+                ),
             ],
         )
+        manager.create_task_list(task_list)
 
-        state = ProgressState(task_list_version="1.0")
-        state.mark_task_completed("t1")
-        state.mark_task_blocked("t2")
+        # Start session and update task status
+        session = manager.start_session()
+        task_list.update_task_status("task-001", "PASS")
 
-        stats = manager.get_completion_stats(task_list, state)
+        # End session
+        path = manager.end_session(session, task_list)
 
-        assert stats["total_tasks"] == 3
-        assert stats["completed"] == 1
-        assert stats["blocked"] == 1
-        assert stats["remaining"] == 1
-        assert stats["completion_percent"] == pytest.approx(33.33, rel=0.1)
+        # Verify session was saved
+        assert path.exists()
+
+        # Verify task list was saved with status
+        loaded_tasks = manager.load_task_list()
+        assert loaded_tasks.get_task("task-001").status == "PASS"
+
+        # Verify session has ended_at set
+        loaded_session = manager.load_session(session.session_number)
+        assert loaded_session.ended_at is not None
+
+    def test_get_session_count(self, temp_workspace: Path) -> None:
+        """Test counting session files."""
+        manager = ProgressManager(temp_workspace)
+
+        assert manager.get_session_count() == 0
+
+        # Create sessions
+        for i in range(1, 4):
+            session = SessionData(session_number=i, started_at="2025-12-04T00:00:00Z")
+            manager.save_session(session)
+
+        assert manager.get_session_count() == 3
+
+    def test_get_next_session_number(self, temp_workspace: Path) -> None:
+        """Test getting next session number."""
+        manager = ProgressManager(temp_workspace)
+
+        # First session should be 1
+        assert manager.get_next_session_number() == 1
+
+        # After saving session 1, next should be 2
+        session = SessionData(session_number=1, started_at="2025-12-04T00:00:00Z")
+        manager.save_session(session)
+
+        assert manager.get_next_session_number() == 2
+
+        # Skip some numbers, next should still work
+        session = SessionData(session_number=5, started_at="2025-12-04T00:00:00Z")
+        manager.save_session(session)
+
+        assert manager.get_next_session_number() == 6

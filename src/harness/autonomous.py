@@ -29,7 +29,7 @@ from rich.prompt import Prompt
 from harness.agent import AgentSession
 from harness.cli import parse_and_print_message
 from harness.config import get_config
-from harness.progress import ProgressManager, ProgressState, QASession, SessionEntry
+from harness.progress import ProgressManager, QASession, SessionData, TaskList
 
 # Delay between autonomous sessions (seconds)
 AUTO_CONTINUE_DELAY_SECONDS = 5
@@ -349,14 +349,11 @@ Resume with the next question in the sequence.
 
         # Load current state
         task_list = self.progress_manager.load_task_list()
-        progress = self.progress_manager.load_progress()
 
-        if progress is None:
-            progress = self.progress_manager.init_progress(task_list.version)
-
-        # Get current task details
-        next_task = self.progress_manager.get_next_task(task_list, progress)
-        stats = self.progress_manager.get_completion_stats(task_list, progress)
+        # Get task stats from task list and session totals
+        task_stats = task_list.get_completion_stats()
+        totals = self.progress_manager.get_totals()
+        next_task = task_list.get_next_task()
 
         prompt = f"""{base_prompt}
 
@@ -369,12 +366,12 @@ Resume with the next question in the sequence.
 **Created**: {task_list.created_at}
 
 ### Progress
-- **Total Tasks**: {stats['total_tasks']}
-- **Completed**: {stats['completed']} ({stats['completion_percent']:.1f}%)
-- **Blocked**: {stats['blocked']}
-- **Remaining**: {stats['remaining']}
-- **Total Sessions**: {stats['total_sessions']}
-- **Total Cost**: ${stats['total_cost_usd']:.4f}
+- **Total Tasks**: {task_stats['total_tasks']}
+- **Passed**: {task_stats['passed']} ({task_stats['completion_percent']:.1f}%)
+- **Failed**: {task_stats['failed']}
+- **Remaining**: {task_stats['remaining']}
+- **Total Sessions**: {totals['total_sessions']}
+- **Total Cost**: ${totals['total_cost_usd']:.4f}
 
 ### Current Task
 """
@@ -392,13 +389,14 @@ Resume with the next question in the sequence.
         else:
             prompt += "\n**All tasks completed!** Review and finalize the project.\n"
 
-        # Add recent session summaries if available
-        if progress.sessions:
+        # Add recent session summaries
+        all_sessions = self.progress_manager.load_all_sessions()
+        if all_sessions:
             prompt += "\n### Recent Sessions\n"
-            for session in progress.sessions[-3:]:  # Last 3 sessions
+            for session in all_sessions[-3:]:  # Last 3 sessions
                 prompt += f"\n**Session {session.session_number}** ({session.started_at})\n"
-                prompt += f"- Completed: {', '.join(session.tasks_completed) or 'None'}\n"
-                prompt += f"- Blocked: {', '.join(session.tasks_blocked) or 'None'}\n"
+                prompt += f"- Passed: {', '.join(session.tasks_passed) or 'None'}\n"
+                prompt += f"- Failed: {', '.join(session.tasks_failed) or 'None'}\n"
                 if session.notes:
                     prompt += f"- Notes: {session.notes[:200]}...\n"
 
@@ -425,13 +423,15 @@ Resume with the next question in the sequence.
     def _check_completion_signals(
         self,
         content: str,
-        session_entry: SessionEntry,
+        session: SessionData,
+        task_list: "TaskList | None" = None,
     ) -> tuple[bool, bool]:
         """Check message content for task completion signals.
 
         Args:
             content: Message content to check
-            session_entry: Session entry to update
+            session: Session data to update
+            task_list: Task list to update status (for continuation mode)
 
         Returns:
             Tuple of (task_completed, task_blocked)
@@ -449,7 +449,13 @@ Resume with the next question in the sequence.
             match = re.search(r"\[TASK_COMPLETE:\s*(task-\d+)\]", content)
             if match:
                 task_id = match.group(1)
-                session_entry.tasks_completed.append(task_id)
+                if task_id not in session.tasks_passed:
+                    session.tasks_passed.append(task_id)
+                if task_id not in session.tasks_worked:
+                    session.tasks_worked.append(task_id)
+                # Update task status in task_list
+                if task_list:
+                    task_list.update_task_status(task_id, "PASS")
                 task_completed = True
                 logger.info("Task completed", task_id=task_id)
 
@@ -459,7 +465,13 @@ Resume with the next question in the sequence.
             if match:
                 task_id = match.group(1)
                 blocked_reason = match.group(2)
-                session_entry.tasks_blocked.append(task_id)
+                if task_id not in session.tasks_failed:
+                    session.tasks_failed.append(task_id)
+                if task_id not in session.tasks_worked:
+                    session.tasks_worked.append(task_id)
+                # Update task status in task_list
+                if task_list:
+                    task_list.update_task_status(task_id, "FAIL")
                 task_blocked = True
                 logger.info("Task blocked", task_id=task_id, reason=blocked_reason)
 
@@ -470,8 +482,8 @@ Resume with the next question in the sequence.
                 commit_hash = match.group(1)
                 commit_msg = match.group(2) or ""
                 commit_entry = f"{commit_hash}: {commit_msg}" if commit_msg else commit_hash
-                if commit_entry not in session_entry.git_commits:
-                    session_entry.git_commits.append(commit_entry)
+                if commit_entry not in session.git_commits:
+                    session.git_commits.append(commit_entry)
                     logger.info("Commit recorded", hash=commit_hash, message=commit_msg)
 
         return task_completed, task_blocked
@@ -479,7 +491,7 @@ Resume with the next question in the sequence.
     async def _run_initializer_session(
         self,
         prompt: str,
-        session_entry: SessionEntry,
+        session: SessionData,
         qa_session: QASession,
     ) -> tuple[bool, str]:
         """Run an interactive Tech Lead Q&A session.
@@ -489,7 +501,7 @@ Resume with the next question in the sequence.
 
         Args:
             prompt: System prompt for the session
-            session_entry: Session entry to track stats
+            session: Session data to track stats
             qa_session: QA session for progress tracking and persistence
 
         Returns:
@@ -540,7 +552,7 @@ Resume with the next question in the sequence.
                 agent_name=agent_name,
                 model=self.model,
                 system_prompt=prompt,
-            ) as session:
+            ) as agent_session:
                 # Start message depends on whether we're resuming
                 if is_resuming:
                     current_message = (
@@ -553,10 +565,10 @@ Resume with the next question in the sequence.
                 while not task_list_ready and not self._shutdown_requested:
                     # Execute current message and display response
                     last_agent_response = ""
-                    async for message in session.execute(current_message):
+                    async for message in agent_session.execute(current_message):
                         content = self._extract_content_str(message)
                         session_content.append(content)
-                        session_entry.total_turns += 1
+                        session.total_turns += 1
                         last_agent_response += content
 
                         # Parse question progress
@@ -567,7 +579,7 @@ Resume with the next question in the sequence.
 
                         # Check for completion
                         completed, blocked = self._check_completion_signals(
-                            content, session_entry
+                            content, session
                         )
                         if completed:
                             task_list_ready = True
@@ -620,10 +632,10 @@ Resume with the next question in the sequence.
                             break
 
                 # Get final stats
-                if hasattr(session, "total_tokens"):
-                    session_entry.total_tokens = session.total_tokens
-                if hasattr(session, "total_cost_usd"):
-                    session_entry.total_cost_usd = session.total_cost_usd
+                if hasattr(agent_session, "total_tokens"):
+                    session.total_tokens = agent_session.total_tokens
+                if hasattr(agent_session, "total_cost_usd"):
+                    session.total_cost_usd = agent_session.total_cost_usd
 
         except Exception as e:
             logger.error("Initializer session error", error=str(e))
@@ -639,7 +651,8 @@ Resume with the next question in the sequence.
     async def _run_continuation_session(
         self,
         prompt: str,
-        session_entry: SessionEntry,
+        session: SessionData,
+        task_list: TaskList,
     ) -> tuple[bool, str]:
         """Run an autonomous coding session (no human interaction).
 
@@ -648,7 +661,8 @@ Resume with the next question in the sequence.
 
         Args:
             prompt: System prompt for the session
-            session_entry: Session entry to track stats
+            session: Session data to track stats
+            task_list: Task list for status updates
 
         Returns:
             Tuple of (task_completed_or_blocked, session_content)
@@ -676,19 +690,19 @@ Resume with the next question in the sequence.
                 agent_name=agent_name,
                 model=self.model,
                 system_prompt=prompt,
-            ) as session:
+            ) as agent_session:
                 # Single autonomous execution
-                async for message in session.execute("Begin work on current task."):
+                async for message in agent_session.execute("Begin work on current task."):
                     content = self._extract_content_str(message)
                     session_content.append(content)
-                    session_entry.total_turns += 1
+                    session.total_turns += 1
 
                     # Display message
                     parse_and_print_message(message, self.console, quiet=False)
 
-                    # Check for completion signals
+                    # Check for completion signals (updates task_list status)
                     completed, blocked = self._check_completion_signals(
-                        content, session_entry
+                        content, session, task_list
                     )
                     if completed:
                         task_completed = True
@@ -701,10 +715,10 @@ Resume with the next question in the sequence.
                         break
 
                 # Get final stats
-                if hasattr(session, "total_tokens"):
-                    session_entry.total_tokens = session.total_tokens
-                if hasattr(session, "total_cost_usd"):
-                    session_entry.total_cost_usd = session.total_cost_usd
+                if hasattr(agent_session, "total_tokens"):
+                    session.total_tokens = agent_session.total_tokens
+                if hasattr(agent_session, "total_cost_usd"):
+                    session.total_cost_usd = agent_session.total_cost_usd
 
         except Exception as e:
             logger.error("Continuation session error", error=str(e))
@@ -717,8 +731,9 @@ Resume with the next question in the sequence.
         self,
         mode: str,
         prompt: str,
-        session_entry: SessionEntry,
+        session: SessionData,
         qa_session: QASession | None = None,
+        task_list: TaskList | None = None,
     ) -> tuple[bool, str]:
         """Run a single agent session.
 
@@ -729,8 +744,9 @@ Resume with the next question in the sequence.
         Args:
             mode: 'initializer' or 'continuation'
             prompt: System prompt for the session
-            session_entry: Session entry to track stats
+            session: Session data to track stats
             qa_session: QA session for initializer mode
+            task_list: Task list for continuation mode
 
         Returns:
             Tuple of (task_completed, session_content)
@@ -738,9 +754,11 @@ Resume with the next question in the sequence.
         if mode == "initializer":
             if qa_session is None:
                 qa_session = self._create_qa_session()
-            return await self._run_initializer_session(prompt, session_entry, qa_session)
+            return await self._run_initializer_session(prompt, session, qa_session)
         else:
-            return await self._run_continuation_session(prompt, session_entry)
+            if task_list is None:
+                raise ValueError("task_list required for continuation mode")
+            return await self._run_continuation_session(prompt, session, task_list)
 
     async def run(self) -> None:
         """Run the autonomous development loop."""
@@ -754,8 +772,10 @@ Resume with the next question in the sequence.
             mode = self._get_mode()
             logger.info("Starting session", mode=mode)
 
-            # Load or create QA session for initializer mode
+            # Load state based on mode
             qa_session: QASession | None = None
+            task_list: TaskList | None = None
+
             if mode == "initializer":
                 qa_session = self._load_qa_session()
                 if qa_session is None:
@@ -764,53 +784,47 @@ Resume with the next question in the sequence.
             else:
                 # Initialize context directory for continuation mode
                 self._init_context_directory()
+                # Load task list BEFORE building prompt and running session
+                task_list = self.progress_manager.load_task_list()
                 prompt = self._build_continuation_prompt()
 
             # Start session tracking
-            session_entry = self.progress_manager.start_session()
+            session = self.progress_manager.start_session()
 
             # Run the session
             task_completed, session_content = await self._run_session(
                 mode=mode,
                 prompt=prompt,
-                session_entry=session_entry,
+                session=session,
                 qa_session=qa_session,
+                task_list=task_list,
             )
 
-            # Load/create progress state
+            # Handle session completion
             if mode == "continuation":
-                task_list = self.progress_manager.load_task_list()
-                progress = self.progress_manager.load_progress()
-                if progress is None:
-                    progress = self.progress_manager.init_progress(task_list.version)
+                # task_list status was updated during session via _check_completion_signals
+                # Add transcript to session
+                session.transcript = [{"role": "system", "content": session_content}]
 
-                # Update progress with completed/blocked tasks
-                for task_id in session_entry.tasks_completed:
-                    progress.mark_task_completed(task_id)
-                for task_id in session_entry.tasks_blocked:
-                    progress.mark_task_blocked(task_id)
-
-                # Check if all done
-                stats = self.progress_manager.get_completion_stats(task_list, progress)
+                # Check if all done using task_list stats
+                stats = task_list.get_completion_stats()
                 if stats["remaining"] == 0:
                     logger.info("All tasks completed!")
-                    # End session and exit
-                    self.progress_manager.end_session(session_entry, progress, session_content)
+                    # End session (saves both task_list and session)
+                    self.progress_manager.end_session(session, task_list)
                     break
 
-                # End session
-                self.progress_manager.end_session(session_entry, progress, session_content)
+                # End session (saves both task_list and session)
+                self.progress_manager.end_session(session, task_list)
 
             else:
-                # For initializer mode, just write session log
+                # For initializer mode, just save session
+                session.transcript = [{"role": "system", "content": session_content}]
+                self.progress_manager.save_session(session)
+
                 if task_completed:
                     # Task list was created, next iteration will be continuation
                     logger.info("Initializer complete, switching to continuation mode")
-
-                # Create minimal progress for session tracking
-                progress = ProgressState(task_list_version="pending")
-                progress.add_session(session_entry)
-                self.progress_manager.write_session_log(session_entry, session_content)
 
             # Check for shutdown before delay
             if self._shutdown_requested:

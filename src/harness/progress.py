@@ -1,22 +1,17 @@
 """Progress tracking for autonomous development sessions.
 
 This module provides:
-- TaskItem: Individual task with id, title, description, acceptance_criteria
-- TaskList: Immutable collection of tasks (created once by Tech Lead)
-- SessionEntry: Single session record (turns, tokens, commits)
-- ProgressState: Compact state with size limits (max 10 sessions, 100KB)
-- ProgressManager: File I/O for task_list.json, progress.json, SESSION_n.md
+- TaskItem: Individual task with id, title, description, acceptance_criteria, status
+- TaskList: Collection of tasks with mutable status field
+- SessionData: Complete session record including transcript
+- ProgressManager: File I/O for task_list.json and session_N.json files
 """
 
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-
-# Size limits for progress state
-MAX_SESSIONS_KEPT = 10
-MAX_PROGRESS_SIZE_BYTES = 100 * 1024  # 100KB
+from typing import Any, Literal
 
 
 @dataclass
@@ -77,16 +72,22 @@ class QASession:
 
 @dataclass
 class TaskItem:
-    """Individual task with acceptance criteria.
+    """Individual task with acceptance criteria and status.
 
-    Once created in task_list.json, tasks are immutable.
-    Only the completion status can change (tracked in progress.json).
+    Task definition fields (id, title, description, acceptance_criteria, priority)
+    are immutable after creation. Only the status field can be updated.
+
+    Status values:
+    - None: Task not yet attempted
+    - "PASS": Task completed successfully
+    - "FAIL": Task failed/blocked
     """
     id: str
     title: str
     description: str
     acceptance_criteria: list[str]
     priority: int = 1  # 1 = highest priority
+    status: Literal["PASS", "FAIL"] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -96,6 +97,7 @@ class TaskItem:
             "description": self.description,
             "acceptance_criteria": self.acceptance_criteria,
             "priority": self.priority,
+            "status": self.status,
         }
 
     @classmethod
@@ -107,15 +109,16 @@ class TaskItem:
             description=data["description"],
             acceptance_criteria=data.get("acceptance_criteria", []),
             priority=data.get("priority", 1),
+            status=data.get("status"),
         )
 
 
 @dataclass
 class TaskList:
-    """Immutable collection of tasks.
+    """Collection of tasks with mutable status field.
 
-    Created once by Tech Lead agent and never modified.
-    The task_list.json file is read-only after initial creation.
+    Task definitions are created once by Tech Lead agent.
+    Only the status field on individual tasks can be updated.
     """
     version: str
     created_at: str
@@ -152,20 +155,74 @@ class TaskList:
         """Get tasks sorted by priority (1 = highest)."""
         return sorted(self.tasks, key=lambda t: t.priority)
 
+    def update_task_status(self, task_id: str, status: Literal["PASS", "FAIL"]) -> bool:
+        """Update the status of a task.
+
+        Args:
+            task_id: ID of the task to update
+            status: New status ("PASS" or "FAIL")
+
+        Returns:
+            True if task was found and updated, False otherwise
+        """
+        task = self.get_task(task_id)
+        if task is None:
+            return False
+        task.status = status
+        return True
+
+    def get_next_task(self) -> TaskItem | None:
+        """Get the next task to work on.
+
+        Returns the highest priority task that has no status (not yet attempted).
+
+        Returns:
+            Next task to work on, or None if all tasks have been attempted
+        """
+        for task in self.get_sorted_tasks():
+            if task.status is None:
+                return task
+        return None
+
+    def get_completion_stats(self) -> dict[str, Any]:
+        """Get completion statistics for the task list.
+
+        Returns:
+            Dictionary with completion stats
+        """
+        total = len(self.tasks)
+        passed = sum(1 for t in self.tasks if t.status == "PASS")
+        failed = sum(1 for t in self.tasks if t.status == "FAIL")
+        remaining = total - passed - failed
+
+        return {
+            "total_tasks": total,
+            "passed": passed,
+            "failed": failed,
+            "remaining": remaining,
+            "completion_percent": (passed / total * 100) if total > 0 else 0,
+        }
+
 
 @dataclass
-class SessionEntry:
-    """Record of a single autonomous session."""
+class SessionData:
+    """Complete record of a single autonomous session.
+
+    Stored as session_N.json in the sessions directory.
+    Includes all metadata and the full conversation transcript.
+    """
     session_number: int
     started_at: str
     ended_at: str | None = None
-    tasks_completed: list[str] = field(default_factory=list)
-    tasks_blocked: list[str] = field(default_factory=list)
+    tasks_worked: list[str] = field(default_factory=list)
+    tasks_passed: list[str] = field(default_factory=list)
+    tasks_failed: list[str] = field(default_factory=list)
     git_commits: list[str] = field(default_factory=list)
     total_turns: int = 0
     total_tokens: int = 0
     total_cost_usd: float = 0.0
     notes: str = ""
+    transcript: list[dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -173,113 +230,46 @@ class SessionEntry:
             "session_number": self.session_number,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
-            "tasks_completed": self.tasks_completed,
-            "tasks_blocked": self.tasks_blocked,
+            "tasks_worked": self.tasks_worked,
+            "tasks_passed": self.tasks_passed,
+            "tasks_failed": self.tasks_failed,
             "git_commits": self.git_commits,
             "total_turns": self.total_turns,
             "total_tokens": self.total_tokens,
             "total_cost_usd": self.total_cost_usd,
             "notes": self.notes,
+            "transcript": self.transcript,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SessionEntry":
-        """Create SessionEntry from dictionary."""
+    def from_dict(cls, data: dict[str, Any]) -> "SessionData":
+        """Create SessionData from dictionary."""
         return cls(
             session_number=data["session_number"],
             started_at=data["started_at"],
             ended_at=data.get("ended_at"),
-            tasks_completed=data.get("tasks_completed", []),
-            tasks_blocked=data.get("tasks_blocked", []),
+            tasks_worked=data.get("tasks_worked", []),
+            tasks_passed=data.get("tasks_passed", []),
+            tasks_failed=data.get("tasks_failed", []),
             git_commits=data.get("git_commits", []),
             total_turns=data.get("total_turns", 0),
             total_tokens=data.get("total_tokens", 0),
             total_cost_usd=data.get("total_cost_usd", 0.0),
             notes=data.get("notes", ""),
+            transcript=data.get("transcript", []),
         )
 
-
-@dataclass
-class ProgressState:
-    """Compact progress state with automatic size management.
-
-    Tracks:
-    - Current task being worked on
-    - Completed task IDs
-    - Session history (limited to MAX_SESSIONS_KEPT)
-    - Cumulative statistics
-    """
-    task_list_version: str
-    current_task_id: str | None = None
-    completed_task_ids: list[str] = field(default_factory=list)
-    blocked_task_ids: list[str] = field(default_factory=list)
-    sessions: list[SessionEntry] = field(default_factory=list)
-    total_sessions: int = 0
-    total_cost_usd: float = 0.0
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "task_list_version": self.task_list_version,
-            "current_task_id": self.current_task_id,
-            "completed_task_ids": self.completed_task_ids,
-            "blocked_task_ids": self.blocked_task_ids,
-            "sessions": [s.to_dict() for s in self.sessions],
-            "total_sessions": self.total_sessions,
-            "total_cost_usd": self.total_cost_usd,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ProgressState":
-        """Create ProgressState from dictionary."""
-        return cls(
-            task_list_version=data["task_list_version"],
-            current_task_id=data.get("current_task_id"),
-            completed_task_ids=data.get("completed_task_ids", []),
-            blocked_task_ids=data.get("blocked_task_ids", []),
-            sessions=[SessionEntry.from_dict(s) for s in data.get("sessions", [])],
-            total_sessions=data.get("total_sessions", 0),
-            total_cost_usd=data.get("total_cost_usd", 0.0),
-        )
-
-    def add_session(self, session: SessionEntry) -> None:
-        """Add a session entry, rotating old sessions if needed."""
-        self.sessions.append(session)
-        self.total_sessions += 1
-        self.total_cost_usd += session.total_cost_usd
-
-        # Rotate old sessions to stay within limits
-        while len(self.sessions) > MAX_SESSIONS_KEPT:
-            self.sessions.pop(0)
-
-    def mark_task_completed(self, task_id: str) -> None:
-        """Mark a task as completed."""
-        if task_id not in self.completed_task_ids:
-            self.completed_task_ids.append(task_id)
-        if task_id in self.blocked_task_ids:
-            self.blocked_task_ids.remove(task_id)
-        if self.current_task_id == task_id:
-            self.current_task_id = None
-
-    def mark_task_blocked(self, task_id: str) -> None:
-        """Mark a task as blocked."""
-        if task_id not in self.blocked_task_ids:
-            self.blocked_task_ids.append(task_id)
-        if self.current_task_id == task_id:
-            self.current_task_id = None
-
-    def set_current_task(self, task_id: str) -> None:
-        """Set the current task being worked on."""
-        self.current_task_id = task_id
+    def add_message(self, role: str, content: str) -> None:
+        """Add a message to the transcript."""
+        self.transcript.append({"role": role, "content": content})
 
 
 class ProgressManager:
     """Manages progress files for autonomous sessions.
 
     File structure:
-    - task_list.json: Immutable task list (created by Tech Lead)
-    - progress.json: Compact progress state (rotated)
-    - sessions/SESSION_n.md: Detailed session logs (all kept)
+    - task_list.json: Tasks with mutable status field (PASS/FAIL/null)
+    - sessions/session_N.json: Complete session data including transcript
     """
 
     def __init__(self, workspace_dir: Path) -> None:
@@ -290,13 +280,12 @@ class ProgressManager:
         """
         self.workspace_dir = workspace_dir
         self.task_list_path = workspace_dir / "task_list.json"
-        self.progress_path = workspace_dir / "progress.json"
         self.sessions_dir = workspace_dir / "sessions"
 
         # Ensure directories exist
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Task List Operations (Immutable after creation) ---
+    # --- Task List Operations ---
 
     def has_task_list(self) -> bool:
         """Check if task list exists."""
@@ -311,7 +300,7 @@ class ProgressManager:
         if self.task_list_path.exists():
             raise FileExistsError(
                 f"Task list already exists at {self.task_list_path}. "
-                "Task lists are immutable after creation."
+                "Delete it first if you want to recreate."
             )
 
         with open(self.task_list_path, "w") as f:
@@ -334,57 +323,31 @@ class ProgressManager:
 
         return TaskList.from_dict(data)
 
-    # --- Progress State Operations ---
+    def save_task_list(self, task_list: TaskList) -> None:
+        """Save task list to file (updates status fields).
 
-    def has_progress(self) -> bool:
-        """Check if progress state exists."""
-        return self.progress_path.exists()
+        Args:
+            task_list: Task list to save
+        """
+        with open(self.task_list_path, "w") as f:
+            json.dump(task_list.to_dict(), f, indent=2)
 
-    def load_progress(self) -> ProgressState | None:
-        """Load progress state from file, or None if doesn't exist."""
-        if not self.progress_path.exists():
-            return None
-
-        with open(self.progress_path) as f:
-            data = json.load(f)
-
-        return ProgressState.from_dict(data)
-
-    def save_progress(self, state: ProgressState) -> None:
-        """Save progress state to file with size enforcement."""
-        data = state.to_dict()
-        json_str = json.dumps(data, indent=2)
-
-        # Check size and rotate if needed
-        while len(json_str.encode()) > MAX_PROGRESS_SIZE_BYTES and len(state.sessions) > 1:
-            state.sessions.pop(0)
-            data = state.to_dict()
-            json_str = json.dumps(data, indent=2)
-
-        with open(self.progress_path, "w") as f:
-            f.write(json_str)
-
-    def init_progress(self, task_list_version: str) -> ProgressState:
-        """Initialize new progress state."""
-        state = ProgressState(task_list_version=task_list_version)
-        self.save_progress(state)
-        return state
-
-    # --- Session Log Operations ---
+    # --- Session Operations ---
 
     def get_session_count(self) -> int:
-        """Get number of session log files."""
-        return len(list(self.sessions_dir.glob("SESSION_*.md")))
+        """Get number of session files."""
+        return len(list(self.sessions_dir.glob("session_*.json")))
 
     def get_next_session_number(self) -> int:
         """Get the next session number."""
-        existing = list(self.sessions_dir.glob("SESSION_*.md"))
+        existing = list(self.sessions_dir.glob("session_*.json"))
         if not existing:
             return 1
 
         numbers = []
         for path in existing:
             try:
+                # Extract number from "session_N.json"
                 num = int(path.stem.split("_")[1])
                 numbers.append(num)
             except (IndexError, ValueError):
@@ -392,138 +355,100 @@ class ProgressManager:
 
         return max(numbers, default=0) + 1
 
-    def write_session_log(self, session: SessionEntry, content: str) -> Path:
-        """Write detailed session log to markdown file.
+    def save_session(self, session: SessionData) -> Path:
+        """Save session data to JSON file.
 
         Args:
-            session: Session entry with metadata
-            content: Detailed session content
+            session: Session data to save
 
         Returns:
             Path to created session file
         """
-        session_file = self.sessions_dir / f"SESSION_{session.session_number}.md"
-
-        header = f"""# Session {session.session_number}
-
-**Started**: {session.started_at}
-**Ended**: {session.ended_at or "In Progress"}
-**Tasks Completed**: {", ".join(session.tasks_completed) or "None"}
-**Tasks Blocked**: {", ".join(session.tasks_blocked) or "None"}
-**Commits**: {", ".join(session.git_commits) or "None"}
-**Turns**: {session.total_turns}
-**Tokens**: {session.total_tokens:,}
-**Cost**: ${session.total_cost_usd:.4f}
-
----
-
-"""
+        session_file = self.sessions_dir / f"session_{session.session_number}.json"
 
         with open(session_file, "w") as f:
-            f.write(header + content)
+            json.dump(session.to_dict(), f, indent=2)
 
         return session_file
 
-    def load_session_log(self, session_number: int) -> str | None:
-        """Load session log content.
+    def load_session(self, session_number: int) -> SessionData | None:
+        """Load session data from file.
 
         Args:
             session_number: Session number to load
 
         Returns:
-            Session log content or None if not found
+            SessionData or None if not found
         """
-        session_file = self.sessions_dir / f"SESSION_{session_number}.md"
+        session_file = self.sessions_dir / f"session_{session_number}.json"
         if not session_file.exists():
             return None
 
         with open(session_file) as f:
-            return f.read()
+            data = json.load(f)
+
+        return SessionData.from_dict(data)
+
+    def load_all_sessions(self) -> list[SessionData]:
+        """Load all session data files.
+
+        Returns:
+            List of SessionData sorted by session number
+        """
+        sessions = []
+        for path in self.sessions_dir.glob("session_*.json"):
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                sessions.append(SessionData.from_dict(data))
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+        return sorted(sessions, key=lambda s: s.session_number)
+
+    def get_totals(self) -> dict[str, Any]:
+        """Compute aggregate totals from all session files.
+
+        Returns:
+            Dictionary with total_sessions, total_cost_usd, total_tokens,
+            total_turns, and all_commits
+        """
+        sessions = self.load_all_sessions()
+
+        return {
+            "total_sessions": len(sessions),
+            "total_cost_usd": sum(s.total_cost_usd for s in sessions),
+            "total_tokens": sum(s.total_tokens for s in sessions),
+            "total_turns": sum(s.total_turns for s in sessions),
+            "all_commits": [c for s in sessions for c in s.git_commits],
+        }
 
     # --- High-Level Operations ---
 
-    def get_next_task(self, task_list: TaskList, progress: ProgressState) -> TaskItem | None:
-        """Get the next task to work on.
-
-        Priority:
-        1. Current task (if set and not completed/blocked)
-        2. Highest priority incomplete task
-
-        Args:
-            task_list: The task list
-            progress: Current progress state
-
-        Returns:
-            Next task to work on, or None if all complete
-        """
-        # Check if current task is still valid
-        if progress.current_task_id:
-            if (
-                progress.current_task_id not in progress.completed_task_ids
-                and progress.current_task_id not in progress.blocked_task_ids
-            ):
-                return task_list.get_task(progress.current_task_id)
-
-        # Find next incomplete task by priority
-        done_or_blocked = set(progress.completed_task_ids) | set(progress.blocked_task_ids)
-
-        for task in task_list.get_sorted_tasks():
-            if task.id not in done_or_blocked:
-                return task
-
-        return None
-
-    def get_completion_stats(
-        self, task_list: TaskList, progress: ProgressState
-    ) -> dict[str, Any]:
-        """Get completion statistics.
-
-        Returns:
-            Dictionary with completion stats
-        """
-        total = len(task_list.tasks)
-        completed = len(progress.completed_task_ids)
-        blocked = len(progress.blocked_task_ids)
-        remaining = total - completed - blocked
-
-        return {
-            "total_tasks": total,
-            "completed": completed,
-            "blocked": blocked,
-            "remaining": remaining,
-            "completion_percent": (completed / total * 100) if total > 0 else 0,
-            "total_sessions": progress.total_sessions,
-            "total_cost_usd": progress.total_cost_usd,
-        }
-
-    def start_session(self) -> SessionEntry:
-        """Start a new session and return the entry."""
+    def start_session(self) -> SessionData:
+        """Start a new session and return the data object."""
         session_number = self.get_next_session_number()
         now = datetime.now(UTC).isoformat()
 
-        return SessionEntry(
+        return SessionData(
             session_number=session_number,
             started_at=now,
         )
 
-    def end_session(
-        self,
-        session: SessionEntry,
-        progress: ProgressState,
-        content: str = "",
-    ) -> Path:
-        """End a session, update progress, and write log.
+    def end_session(self, session: SessionData, task_list: TaskList) -> Path:
+        """End a session, save task list status, and write session file.
 
         Args:
-            session: Session entry to end
-            progress: Progress state to update
-            content: Detailed session content for log file
+            session: Session data to end
+            task_list: Task list with updated status fields
 
         Returns:
-            Path to session log file
+            Path to session file
         """
         session.ended_at = datetime.now(UTC).isoformat()
-        progress.add_session(session)
-        self.save_progress(progress)
 
-        return self.write_session_log(session, content)
+        # Save updated task list (with any status changes)
+        self.save_task_list(task_list)
+
+        # Save session data
+        return self.save_session(session)
