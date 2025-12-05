@@ -73,19 +73,6 @@ services:
           cpus: '2'
           memory: 4G
 
-  # Production database with connection pooling
-  postgres:
-    # Don't expose port in production
-    ports: []
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
-
   # Production redis
   redis:
     # Don't expose port in production

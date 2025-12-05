@@ -1,6 +1,5 @@
 """Configuration management for Claude Agent SDK Harness."""
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -64,13 +63,6 @@ class HarnessConfig(BaseSettings):
         description="Configuration directory",
     )
 
-    # Database Configuration
-    postgres_host: str = Field(default="postgres")
-    postgres_port: int = Field(default=5432)
-    postgres_db: str = Field(default="claude_harness")
-    postgres_user: str = Field(default="claude")
-    postgres_password: str = Field(default="")
-
     # Redis Configuration
     redis_host: str = Field(default="redis")
     redis_port: int = Field(default=6379)
@@ -89,20 +81,30 @@ class HarnessConfig(BaseSettings):
     enable_auto_scaling: bool = Field(default=False)
     enable_cost_optimization: bool = Field(default=True)
 
+    # Autonomous Mode Configuration
+    autonomous_delay_seconds: int = Field(
+        default=3,
+        description="Delay between autonomous sessions in seconds",
+    )
+    autonomous_max_sessions: int = Field(
+        default=100,
+        description="Maximum number of autonomous sessions",
+    )
+    autonomous_task_timeout: int = Field(
+        default=1800,
+        description="Timeout per task in seconds (30 min)",
+    )
+    bash_allow_all: bool = Field(
+        default=False,
+        description="Bypass bash command security checks (dangerous)",
+    )
+
     # Cloud Provider Configuration
     claude_code_use_bedrock: bool = Field(default=False)
     aws_region: str = Field(default="us-east-1")
     claude_code_use_vertex: bool = Field(default=False)
     gcp_project_id: str = Field(default="")
     gcp_region: str = Field(default="us-central1")
-
-    @property
-    def database_url(self) -> str:
-        """Get PostgreSQL connection URL."""
-        return (
-            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
 
     @property
     def redis_url(self) -> str:

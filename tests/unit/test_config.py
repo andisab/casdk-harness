@@ -1,6 +1,5 @@
 """Unit tests for configuration management."""
 
-import pytest
 
 from harness.config import HarnessConfig
 
@@ -15,25 +14,6 @@ def test_config_defaults() -> None:
     assert config.claude_permission_mode == "acceptEdits"
     assert config.claude_max_turns == 1000
     assert config.log_level == "INFO"
-
-
-def test_database_url() -> None:
-    """Test database URL generation."""
-    # Arrange
-    config = HarnessConfig(
-        anthropic_api_key="test-key",
-        postgres_user="testuser",
-        postgres_password="testpass",
-        postgres_host="localhost",
-        postgres_port=5432,
-        postgres_db="testdb",
-    )
-
-    # Act
-    url = config.database_url
-
-    # Assert
-    assert url == "postgresql+asyncpg://testuser:testpass@localhost:5432/testdb"
 
 
 def test_redis_url() -> None:

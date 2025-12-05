@@ -17,35 +17,47 @@ services:
     # Override command for development - keep container alive for interactive sessions
     # Use 'make interactive' to start a session
     command: tail -f /dev/null
-    # Volume mounts for live code reload (no watch mode)
+    # Volume mounts for live code reload
     volumes:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated
+    # Watch mode for file sync (used by 'make dev')
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
+        - action: sync
+          path: ./tests
+          target: /app/tests
 
   reviewer-agent:
     build:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    # Volume mounts for live code reload (no watch mode)
     volumes:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
 
   tester-agent:
     build:
       target: development
     environment:
       - DEBUG=${DEBUG:-true}
-    # Volume mounts for live code reload (no watch mode)
     volumes:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated
-
-  # Development database with exposed port
-  postgres:
-    ports:
-      - "5432:5432"
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /app/src
 
   # Development redis with exposed port
   redis:

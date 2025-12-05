@@ -34,11 +34,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_URL=redis://redis:6379
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-claude_harness}
-      - POSTGRES_USER=${POSTGRES_USER:-claude}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude:/app/.claude:ro
@@ -54,8 +49,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -69,13 +62,6 @@ services:
         reservations:
           cpus: ${AGENT_CPU_RESERVATION:-2}
           memory: ${AGENT_MEMORY_RESERVATION:-4G}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: ${HEALTH_CHECK_INTERVAL:-30s}
-      timeout: ${HEALTH_CHECK_TIMEOUT:-3s}
-      retries: ${HEALTH_CHECK_RETRIES:-3}
-      start_period: ${HEALTH_CHECK_START_PERIOD:-10s}
-
   # ===========================================================================
   # Code Reviewer Agent
   # ===========================================================================
@@ -92,7 +78,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
-      - CLAUDE_PERMISSION_MODE=manual
+      - CLAUDE_PERMISSION_MODE=default
       - CLAUDE_MAX_TURNS=50
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
@@ -140,7 +126,7 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
-      - CLAUDE_PERMISSION_MODE=acceptAll
+      - CLAUDE_PERMISSION_MODE=bypassPermissions
       - CLAUDE_MAX_TURNS=100
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
@@ -171,31 +157,6 @@ services:
         limits:
           cpus: ${TESTER_CPU_LIMIT:-2}
           memory: ${TESTER_MEMORY_LIMIT:-4G}
-
-  # ===========================================================================
-  # PostgreSQL Database
-  # ===========================================================================
-  postgres:
-    image: postgres:16-alpine
-    container_name: claude-postgres
-    hostname: postgres
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-claude_harness}
-      - POSTGRES_USER=${POSTGRES_USER:-claude}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_postgres_password}
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    restart: unless-stopped
-    networks:
-      - claude-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-claude} -d ${POSTGRES_DB:-claude_harness}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ===========================================================================
   # Redis Cache & Pub/Sub
@@ -289,8 +250,6 @@ networks:
 # Volumes
 # =============================================================================
 volumes:
-  postgres_data:
-    driver: local
   redis_data:
     driver: local
   prometheus_data:
