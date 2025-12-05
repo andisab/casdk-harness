@@ -463,6 +463,17 @@ Resume with the next question in the sequence.
                 task_blocked = True
                 logger.info("Task blocked", task_id=task_id, reason=blocked_reason)
 
+        # Check for git commits
+        if "[COMMIT:" in content:
+            # Pattern: [COMMIT: hash: message] or [COMMIT: hash]
+            for match in re.finditer(r"\[COMMIT:\s*([a-f0-9]+)(?::\s*(.+?))?\]", content):
+                commit_hash = match.group(1)
+                commit_msg = match.group(2) or ""
+                commit_entry = f"{commit_hash}: {commit_msg}" if commit_msg else commit_hash
+                if commit_entry not in session_entry.git_commits:
+                    session_entry.git_commits.append(commit_entry)
+                    logger.info("Commit recorded", hash=commit_hash, message=commit_msg)
+
         return task_completed, task_blocked
 
     async def _run_initializer_session(

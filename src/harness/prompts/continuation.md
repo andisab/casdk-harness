@@ -85,7 +85,7 @@ If blocked:
 
 ## Step 6: Commit Your Progress
 
-Make descriptive git commits:
+Make descriptive git commits and report them:
 ```bash
 git add .
 git commit -m "feat(task-XXX): brief description
@@ -95,6 +95,18 @@ git commit -m "feat(task-XXX): brief description
 - Tests passing
 "
 ```
+
+**IMPORTANT**: After each commit, output the commit signal:
+```
+[COMMIT: <hash>: <message>]
+```
+
+Example:
+```
+[COMMIT: a1b2c3d: feat(task-001): implement user authentication]
+```
+
+This logs commits to the session record for tracking.
 
 ## Step 7: End Session Cleanly
 
@@ -120,9 +132,10 @@ Before context fills up:
 
 ## Signals
 
-Use these signals to communicate task state:
+Use these signals to communicate state:
 - `[TASK_COMPLETE: task-XXX]` - Task finished, all criteria met
 - `[TASK_BLOCKED: task-XXX: reason]` - Task cannot proceed
+- `[COMMIT: hash: message]` - Git commit made (output after every commit)
 
 ## Important Rules
 
