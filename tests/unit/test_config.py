@@ -40,6 +40,7 @@ def test_redis_url_no_password() -> None:
         anthropic_api_key="test-key",
         redis_host="localhost",
         redis_port=6379,
+        redis_password="",  # Explicitly set empty to override env
     )
 
     # Act

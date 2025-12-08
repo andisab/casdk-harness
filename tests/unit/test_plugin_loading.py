@@ -2,8 +2,12 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+import pytest
 
 from harness.agent import AgentSession
+from harness.config import HarnessConfig
 
 
 def test_plugin_paths_exist():
@@ -42,19 +46,39 @@ def test_plugin_manifests_valid():
             assert field in data, f"Plugin {plugin} missing required field: {field}"
 
 
-def test_agent_session_plugin_configuration():
+def test_agent_session_plugin_configuration(tmp_path: Path):
     """Verify AgentSession includes plugin configuration."""
-    session = AgentSession(agent_name="test")
+    # Create required temp directories
+    (tmp_path / "workspace").mkdir(exist_ok=True)
+    (tmp_path / "memory").mkdir(exist_ok=True)
 
-    assert hasattr(session, "plugins"), "AgentSession missing plugins attribute"
-    assert len(session.plugins) == 3, f"Expected 3 plugins, got {len(session.plugins)}"
+    mock_config = HarnessConfig(
+        workspace_dir=tmp_path / "workspace",
+        memory_dir=tmp_path / "memory",
+    )
 
-    # Verify plugin paths are absolute and valid
-    for plugin_config in session.plugins:
-        assert plugin_config["type"] == "local"
-        plugin_path = Path(plugin_config["path"])
-        assert plugin_path.is_absolute(), f"Plugin path not absolute: {plugin_path}"
-        assert plugin_path.exists(), f"Plugin path does not exist: {plugin_path}"
+    with (
+        patch("harness.agent.RedisMessageBroker") as mock_redis,
+        patch("harness.agent.docker_server"),
+        patch("harness.agent.context7_server"),
+        patch("harness.agent.memory_server"),
+    ):
+        mock_redis_instance = MagicMock()
+        mock_redis_instance.connect.side_effect = ConnectionError("Test: Redis not available")
+        mock_redis_instance.connected = False
+        mock_redis.return_value = mock_redis_instance
+
+        session = AgentSession(agent_name="test", config=mock_config)
+
+        assert hasattr(session, "plugins"), "AgentSession missing plugins attribute"
+        assert len(session.plugins) == 3, f"Expected 3 plugins, got {len(session.plugins)}"
+
+        # Verify plugin paths are absolute and valid
+        for plugin_config in session.plugins:
+            assert plugin_config["type"] == "local"
+            plugin_path = Path(plugin_config["path"])
+            assert plugin_path.is_absolute(), f"Plugin path not absolute: {plugin_path}"
+            assert plugin_path.exists(), f"Plugin path does not exist: {plugin_path}"
 
 
 def test_plugin_names_in_manifests():
