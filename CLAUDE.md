@@ -132,7 +132,7 @@ claudeagentsdk-harness/
 │   └── interactive_basic.py    # Basic interactive mode example
 │
 ├── docs/                       # Additional documentation
-│   └── IMPLEMENTATION.md       # Implementation roadmap and technical specifications
+│   └── HARDENING.md            # Production readiness and security audit
 │
 ├── .mcp.json                   # MCP server configuration
 ├── docker-compose.yml          # Base compose configuration
@@ -1092,7 +1092,7 @@ snakeviz profile.stats
 
 ## Future Development
 
-For detailed implementation roadmap, planned features, and technical specifications, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md).
+For production readiness status and security audit findings, see [docs/HARDENING.md](./docs/HARDENING.md).
 
 ## Contributing
 
@@ -1172,7 +1172,7 @@ When working on external repositories:
 3. Change directory: `cd /workspace/projects/{repo-name}/`
 4. Run commands directly in that directory
 
-**Note**: External repos can have their own `.claude/` directories, but repository context switching is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 1 for planned API.
+**Note**: External repos can have their own `.claude/` directories, but repository context switching is not yet implemented.
 
 ### Available MCP Servers
 
@@ -1276,11 +1276,56 @@ See `.ssh/README.md` for detailed setup instructions.
 - Mark as completed immediately when done
 - Break complex tasks into smaller steps
 
+### Autonomous Mode
+
+The harness supports long-running autonomous development sessions via `make autonomous`.
+
+**Workflow:**
+```
+1. No task_list.json exists?
+   → Run Initializer Mode (Tech Lead Q&A)
+   → Generate task_list.json when requirements clear
+
+2. task_list.json exists?
+   → Run Continuation Mode (Coding Agent)
+   → Work on highest priority incomplete task
+   → Mark tasks complete or blocked
+   → Commit changes
+   → Loop until all tasks done
+```
+
+**Subagent Definitions (8 available):**
+
+| Agent | Model | Purpose |
+|-------|-------|---------|
+| `tech-lead` | sonnet | Spec refinement, task planning |
+| `python-expert` | sonnet | Python/FastAPI development |
+| `typescript-expert` | sonnet | TS/React/Node development |
+| `testing-agent` | haiku | Test writing and execution |
+| `deployment-agent` | haiku | Docker/CI-CD configuration |
+| `reviewer-agent` | sonnet | Code review (read-only) |
+| `database-expert` | sonnet | Schema design, queries |
+| `frontend-expert` | sonnet | React/CSS/UI development |
+
+**Progress Tracking Files:**
+
+| File | Purpose | Mutability |
+|------|---------|------------|
+| `task_list.json` | Task definitions with status (PASS/FAIL/null) | Status field mutable |
+| `sessions/session_N.json` | Session metadata + transcript | One per session |
+
+**Commands:**
+```bash
+make autonomous          # Start autonomous development mode
+make autonomous-model    # With specific model (MODEL=opus)
+make autonomous-unsafe   # With all commands allowed (dangerous)
+make autonomous-status   # Show progress status
+```
+
 ### Agent Definitions (Not Yet Loaded)
 - 44 agent definition files exist in `.claude/agents/` as reference documentation
 - ⚠️ **Agent auto-discovery NOT implemented** - agents are not currently loaded by the SDK
 - Agent definitions are organized by prefix: `dev-*`, `db-*`, `infra-*`, `ml-*`, `web-*`
-- For implementation roadmap, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 2
 
 ### Plugins (Phase 1B - Workaround Active ⚠️)
 
@@ -1329,7 +1374,6 @@ The harness has 3 plugins configured in `.claude/plugins/`, but due to an SDK li
 └── hooks/                    # Optional
 ```
 
-For detailed implementation, see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) Phase 1B.
 
 ### Best Practices
 1. Check memory for existing project context before starting
@@ -1358,8 +1402,8 @@ The SDK currently loads:
 - ~~Plugins from `.claude/plugins/`~~ ⚠️ Phase 1B Workaround (plugin skills manually discovered)
 - ~~Skills from `.claude/skills/`~~ ✅ Phase 1 Complete (12 base skills + 6 plugin skills via workaround)
 
-**Not Yet Implemented** (see [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md)):
-- Agent definitions from `.claude/agents/` (Phase 2)
+**Not Yet Implemented**:
+- Agent definitions from `.claude/agents/` (SDK limitation)
 - Coding standards from `.claude/specs/`
 
 ---

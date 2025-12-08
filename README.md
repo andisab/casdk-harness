@@ -219,7 +219,7 @@ cd your-repo
 # All standard tools (Read, Write, Bash, etc.) work here
 ```
 
-**Note**: Automatic repository context switching is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) for planned features.
+**Note**: Automatic repository context switching is not yet implemented.
 
 ## Complete Command Reference
 
@@ -397,7 +397,7 @@ The harness includes 44 agent definition files in `.claude/agents/` organized by
 - **Web (web-\*)**: Frontend designer, FastAPI architect, Next.js (3 total)
 - **Data (data-\*)**: Python data engineer (1 total)
 
-⚠️ **Note**: These agent definitions are currently reference documentation only. Agent auto-discovery is not yet implemented. See [docs/IMPLEMENTATION.md](./docs/IMPLEMENTATION.md) for implementation roadmap.
+⚠️ **Note**: These agent definitions are currently reference documentation only. Agent auto-discovery is not yet implemented (SDK limitation).
 
 ## Monitoring & Observability
 
