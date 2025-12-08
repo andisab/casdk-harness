@@ -57,16 +57,18 @@ api_cost_dollars = Counter(
 )
 
 # Interactive Session Metrics
+# Note: session_id removed from labels to prevent unbounded Prometheus cardinality
+# Per-session metrics are tracked in-memory via SessionMetrics class instead
 interactive_session_prompts_total = Counter(
     "interactive_session_prompts_total",
     "Total user prompts in interactive sessions",
-    ["agent", "session_id"],
+    ["agent"],
 )
 
 interactive_session_responses_total = Counter(
     "interactive_session_responses_total",
     "Total agent responses in interactive sessions",
-    ["agent", "session_id"],
+    ["agent"],
 )
 
 interactive_session_duration_seconds = Histogram(
@@ -348,28 +350,24 @@ class MetricsCollector:
             )
 
     @staticmethod
-    def record_user_prompt(agent: str, session_id: str) -> None:
+    def record_user_prompt(agent: str) -> None:
         """
         Record a user prompt in an interactive session.
 
         Args:
             agent: Agent name
-            session_id: Session ID
         """
-        interactive_session_prompts_total.labels(agent=agent, session_id=session_id).inc()
+        interactive_session_prompts_total.labels(agent=agent).inc()
 
     @staticmethod
-    def record_agent_response(agent: str, session_id: str) -> None:
+    def record_agent_response(agent: str) -> None:
         """
         Record an agent response in an interactive session.
 
         Args:
             agent: Agent name
-            session_id: Session ID
         """
-        interactive_session_responses_total.labels(
-            agent=agent, session_id=session_id
-        ).inc()
+        interactive_session_responses_total.labels(agent=agent).inc()
 
     @staticmethod
     def record_interactive_session_duration(agent: str, duration: float) -> None:

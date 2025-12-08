@@ -107,9 +107,9 @@ Evaluate ab-casdk-harness for production readiness and identify security/archite
 
 | Issue | Location | Impact | Effort | Priority |
 |-------|----------|--------|--------|----------|
-| **Unbounded metric cardinality** | `monitoring.py:62-64` | Prometheus OOM | 4h | P0 |
-| **God object anti-pattern** | `agent.py` (981 LOC) | Poor testability | 8h | P0 |
-| **Missing error recovery** | `agent.py:85-93` | Silent Redis failures | 2h | P0 |
+| ~~Unbounded metric cardinality~~ | `monitoring.py` | ~~Prometheus OOM~~ | - | ✅ Fixed |
+| **God object anti-pattern** | `agent.py` (980 LOC) | Poor testability | 8h | P0 |
+| ~~Missing error recovery~~ | `agent.py` | ~~Silent Redis failures~~ | - | ✅ Fixed |
 | ~~Placeholder implementations~~ | `checkpoint.py` | ~~Broken recovery~~ | - | ✅ Fixed |
 
 ### Major Issues
@@ -263,13 +263,14 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 
 | # | Issue | Type | Effort |
 |---|-------|------|--------|
-| 1 | Unbounded metric cardinality | Arch | 4h |
+| ~~1~~ | ~~Unbounded metric cardinality~~ | ~~Arch~~ | ✅ Fixed |
 | 2 | Plaintext checkpoint data (CRIT-01) | Sec | 8h |
 | 3 | God object refactoring (`agent.py`) | Arch | 8h |
 | 4 | SSH keys in containers (CRIT-02) | Sec | 4h |
 | 5 | User prompts logged (CRIT-03) | Sec | 4h |
+| ~~6~~ | ~~Missing Redis error recovery~~ | ~~Arch~~ | ✅ Fixed |
 
-**P0 Total: ~28 hours (~4 days)**
+**P0 Remaining: ~24 hours (~3 days)**
 
 ### P1: High (Fix Before Production)
 
@@ -322,7 +323,8 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 - [ ] CRIT-01: Implement checkpoint encryption
 - [ ] CRIT-02: Replace SSH keys with tokens
 - [ ] CRIT-03: Add log sanitization
-- [ ] Fix Prometheus cardinality (remove session_id)
+- [x] Fix Prometheus cardinality (remove session_id) ✅
+- [x] Fix Redis error recovery (explicit disabled state) ✅
 - [x] Implement workspace snapshots (git-based) ✅
 
 ### Week 2: High Priority (P1)

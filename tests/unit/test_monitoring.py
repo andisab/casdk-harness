@@ -314,18 +314,18 @@ def test_update_cache_metrics_zero_total_input() -> None:
 def test_record_user_prompt() -> None:
     """Test recording user prompt metric."""
     with patch("harness.monitoring.interactive_session_prompts_total") as mock_prompts:
-        MetricsCollector.record_user_prompt("main", "session-123")
+        MetricsCollector.record_user_prompt("main")
 
-        mock_prompts.labels.assert_called_with(agent="main", session_id="session-123")
+        mock_prompts.labels.assert_called_with(agent="main")
         mock_prompts.labels().inc.assert_called_once()
 
 
 def test_record_agent_response() -> None:
     """Test recording agent response metric."""
     with patch("harness.monitoring.interactive_session_responses_total") as mock_responses:
-        MetricsCollector.record_agent_response("main", "session-456")
+        MetricsCollector.record_agent_response("main")
 
-        mock_responses.labels.assert_called_with(agent="main", session_id="session-456")
+        mock_responses.labels.assert_called_with(agent="main")
         mock_responses.labels().inc.assert_called_once()
 
 

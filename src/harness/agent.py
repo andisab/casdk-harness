@@ -81,13 +81,21 @@ class AgentSession:
         )
 
         # Initialize Redis message broker for cross-agent communication
-        self.message_broker = RedisMessageBroker()
+        # Set to None on connection failure to make disabled state explicit
+        self.message_broker: RedisMessageBroker | None = None
+        self.redis_available: bool = False
         try:
-            self.message_broker.connect()
+            broker = RedisMessageBroker()
+            broker.connect()
+            self.message_broker = broker
+            self.redis_available = True
             logger.info("Redis message broker connected", agent=agent_name)
         except Exception as e:
+            # Redis unavailable - inter-agent messaging disabled
+            # This is expected in single-agent mode or when Redis is not running
             logger.warning(
-                "Failed to connect to Redis message broker - inter-agent messaging disabled",
+                "Redis not available - inter-agent messaging disabled. "
+                "This is normal for single-agent deployments.",
                 agent=agent_name,
                 error=str(e),
             )
@@ -662,9 +670,9 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         Returns:
             Message ID if published successfully, None otherwise
         """
-        if not self.message_broker.connected:
-            logger.warning(
-                "Cannot publish task result - Redis not connected",
+        if not self.redis_available or self.message_broker is None:
+            logger.debug(
+                "Skipping task result publish - Redis not available",
                 agent=self.agent_name,
                 task_id=task_id,
             )
@@ -710,9 +718,9 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         Returns:
             Task result if found within timeout, None otherwise
         """
-        if not self.message_broker.connected:
-            logger.warning(
-                "Cannot wait for dependency - Redis not connected",
+        if not self.redis_available or self.message_broker is None:
+            logger.debug(
+                "Cannot wait for dependency - Redis not available",
                 agent=self.agent_name,
                 dependency_agent=dependency_agent,
                 task_id=task_id,
@@ -869,9 +877,10 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         # Save final checkpoint
         self.checkpoint_manager.save_checkpoint(self.state)
 
-        # Disconnect from Redis
-        if self.message_broker.connected:
+        # Disconnect from Redis if connected
+        if self.redis_available and self.message_broker is not None:
             self.message_broker.disconnect()
+            self.redis_available = False
 
         # Update metrics
         self.metrics.set_active_sessions(self.agent_name, 0)

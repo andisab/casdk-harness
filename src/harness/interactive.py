@@ -105,7 +105,7 @@ async def run_interactive_session() -> None:
                     continue
 
                 # Record user prompt metric
-                session.metrics.record_user_prompt(agent_name, session.session_id)
+                session.metrics.record_user_prompt(agent_name)
 
                 # Execute agent task
                 logger.info(
@@ -129,9 +129,7 @@ async def run_interactive_session() -> None:
 
                     # Record metrics based on message type
                     if isinstance(message, AssistantMessage):
-                        session.metrics.record_agent_response(
-                            agent_name, session.session_id
-                        )
+                        session.metrics.record_agent_response(agent_name)
 
                         # Record message types
                         for block in message.content:
