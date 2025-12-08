@@ -47,12 +47,19 @@ async def run_interactive_session() -> None:
     # Override model if specified in args
     if args.model != "sonnet":
         # Map model shorthand to full model names
+        # Valid models: sonnet (default), haiku, opus
         model_map = {
             "haiku": "claude-3-5-haiku-20241022",
-            "opus": "claude-3-opus-20240229",
+            "opus": "claude-opus-4-5-20251101",
         }
-        config.claude_model = model_map.get(args.model, f"claude-{args.model}-4-20250514")
-        logger.info("Model override", model=config.claude_model)
+        if args.model not in model_map:
+            console.print(
+                f"[yellow]Warning: Unknown model '{args.model}'. "
+                f"Valid options: sonnet, haiku, opus. Using default (sonnet).[/yellow]\n"
+            )
+        else:
+            config.claude_model = model_map[args.model]
+            logger.info("Model override", model=config.claude_model)
 
     # Determine whether to print stats
     print_stats = args.stats.lower() in ("true", "1", "yes")

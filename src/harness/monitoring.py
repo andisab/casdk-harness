@@ -315,12 +315,23 @@ class MetricsCollector:
         if cached_tokens > 0:
             MetricsCollector.record_token_usage(model, "cached", cached_tokens)
 
-        # Calculate cost based on Sonnet 4.5 pricing
-        # TODO: Add pricing for other models when needed
+        # Calculate cost based on model pricing (December 2025 pricing)
+        # Pricing per 1K tokens:
+        # - claude-opus-4-5-*:   $0.015 input, $0.075 output, $0.0015 cached
+        # - claude-sonnet-4-5-*: $0.003 input, $0.015 output, $0.0003 cached
+        # - claude-3-5-haiku-*:  $0.001 input, $0.005 output, $0.0001 cached
+        model_lower = model.lower()
+        if "opus" in model_lower:
+            input_rate, output_rate, cached_rate = 0.015, 0.075, 0.0015
+        elif "haiku" in model_lower:
+            input_rate, output_rate, cached_rate = 0.001, 0.005, 0.0001
+        else:  # Default to Sonnet pricing
+            input_rate, output_rate, cached_rate = 0.003, 0.015, 0.0003
+
         cost = (
-            (input_tokens / 1000.0) * 0.003
-            + (output_tokens / 1000.0) * 0.015
-            + (cached_tokens / 1000.0) * 0.0003
+            (input_tokens / 1000.0) * input_rate
+            + (output_tokens / 1000.0) * output_rate
+            + (cached_tokens / 1000.0) * cached_rate
         )
 
         if cost > 0:
