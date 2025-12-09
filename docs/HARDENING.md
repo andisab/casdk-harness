@@ -1,6 +1,6 @@
 # Repository Hardening Plan
 
-> **Status**: Active | **Last Updated**: December 8, 2025 | **Test Coverage**: 73%
+> **Status**: Active | **Last Updated**: December 8, 2025 | **Test Coverage**: 73% | **Architecture Issues Fixed**: 6/9
 
 ## Objective
 
@@ -30,9 +30,9 @@ Evaluate ab-casdk-harness for production readiness and identify security/archite
 | Metric | Value | Target |
 |--------|-------|--------|
 | **Test Coverage** | 73% | 80% |
-| **Architecture Readiness** | 45% | 80% |
+| **Architecture Readiness** | 65% | 80% |
 | **Security Posture** | 6.5/10 | 8/10 |
-| **Unit Tests** | 414 | - |
+| **Unit Tests** | 455+ | - |
 
 ### Key Findings
 
@@ -68,7 +68,7 @@ Evaluate ab-casdk-harness for production readiness and identify security/archite
 
 | Item | Status | Effort |
 |------|--------|--------|
-| Agent Health Checks | Main agent unhealthy | LOW (1-2 days) |
+| ~~Agent Health Checks~~ | ✅ Implemented | - |
 
 ---
 
@@ -116,14 +116,13 @@ Evaluate ab-casdk-harness for production readiness and identify security/archite
 
 | Issue | Location | Impact | Effort | Priority |
 |-------|----------|--------|--------|----------|
-| No health check endpoints | All agents | Can't verify liveness | 2h | P1 |
-| Missing request timeouts | `agent.py:475-533` | Hung requests | 2h | P1 |
+| ~~No health check endpoints~~ | ~~All agents~~ | ~~Can't verify liveness~~ | - | ✅ Fixed |
+| ~~Missing request timeouts~~ | ~~`agent.py:475-533`~~ | ~~Hung requests~~ | - | ✅ Fixed |
 | No rate limiting | `autonomous.py` | API quota exhaustion | 3h | P1 |
-| **No circuit breaker for Redis** | `messaging.py:34-54` | Cascade failures | 4h | P1 |
-| **SDK client lifecycle leaks** | `agent.py:854-880` | Resource exhaustion | 3h | P1 |
-| Checkpoint cleanup race | `checkpoint.py:254-268` | File corruption | 2h | P2 |
-| No signal propagation | `autonomous.py:85-91` | Orphaned processes | 3h | P2 |
-| Magic numbers everywhere | Multiple files | Hard to tune | 4h | P2 |
+| ~~**No circuit breaker for Redis**~~ | ~~`messaging.py:34-54`~~ | ~~Cascade failures~~ | - | ✅ Fixed |
+| ~~**SDK client lifecycle leaks**~~ | ~~`agent.py:854-880`~~ | ~~Resource exhaustion~~ | - | ✅ Fixed |
+| ~~No signal propagation~~ | ~~`autonomous.py:85-91`~~ | ~~Orphaned processes~~ | - | ✅ Fixed |
+| ~~Magic numbers everywhere~~ | ~~Multiple files~~ | ~~Hard to tune~~ | - | ✅ Fixed |
 
 ### Proposed Refactoring
 
@@ -277,14 +276,14 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 | # | Issue | Type | Effort |
 |---|-------|------|--------|
 | 6 | Missing rate limiting (HIGH-01) | Sec | 4h |
-| 7 | Redis circuit breaker | Arch | 4h |
-| 8 | SDK client lifecycle leaks | Arch | 3h |
-| 9 | Health check endpoints | Arch | 2h |
-| 10 | Request timeouts | Arch | 2h |
+| ~~7~~ | ~~Redis circuit breaker~~ | ~~Arch~~ | ✅ Fixed |
+| ~~8~~ | ~~SDK client lifecycle leaks~~ | ~~Arch~~ | ✅ Fixed |
+| ~~9~~ | ~~Health check endpoints~~ | ~~Arch~~ | ✅ Fixed |
+| ~~10~~ | ~~Request timeouts~~ | ~~Arch~~ | ✅ Fixed |
 | 11 | Bash command bypass (HIGH-04) | Sec | 2h |
 | 12 | Redis password security (HIGH-02) | Sec | 2h |
 
-**P1 Total: ~19 hours (~2.5 days)**
+**P1 Remaining: ~8 hours (~1 day)** *(was ~19h)*
 
 ### P2: Medium (Should Address)
 
@@ -293,14 +292,14 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 | 13 | Security headers (HIGH-05) | Sec | 3h |
 | 14 | Docker socket proxy (HIGH-06) | Sec | 4h |
 | 15 | Checkpoint cleanup race | Arch | 2h |
-| 16 | Signal propagation | Arch | 3h |
-| 17 | Centralize magic numbers | Arch | 4h |
+| ~~16~~ | ~~Signal propagation~~ | ~~Arch~~ | ✅ Fixed |
+| ~~17~~ | ~~Centralize magic numbers~~ | ~~Arch~~ | ✅ Fixed |
 | 18 | Session timeout enforcement | Sec | 2h |
 | 19 | Error message sanitization | Sec | 2h |
 | 20 | Dependency vulnerability scanning | Sec | 2h |
 | 21 | Cost budget enforcement | Sec | 3h |
 
-**P2 Total: ~25 hours (~4 days)**
+**P2 Remaining: ~18 hours (~3 days)** *(was ~25h)*
 
 ### P3: Low (Best Practices)
 
@@ -329,9 +328,12 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 
 ### Week 2: High Priority (P1)
 - [ ] Add rate limiting with Redis
-- [ ] Implement circuit breaker for Redis
-- [ ] Add health check endpoints
-- [ ] Add request timeouts
+- [x] Implement circuit breaker for Redis ✅ (messaging.py)
+- [x] Add health check endpoints ✅ (health.py)
+- [x] Add request timeouts ✅ (agent.py)
+- [x] Implement SDK client lifecycle tracking ✅ (agent.py)
+- [x] Implement async signal propagation ✅ (autonomous.py)
+- [x] Centralize magic numbers in config ✅ (config.py)
 - [ ] Remove bash bypass flag or restrict to dev
 
 ### Week 3: Simplification & Export
