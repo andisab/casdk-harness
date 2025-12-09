@@ -335,7 +335,7 @@ class RedisMessageBroker:
 
             results = []
             if messages:
-                for stream, msg_list in messages:
+                for _stream, msg_list in messages:
                     for msg_id, msg_data in msg_list:
                         # Parse JSON content
                         content = json.loads(msg_data.get("content", "{}"))
@@ -452,7 +452,7 @@ class RedisMessageBroker:
 
             results = []
             if messages:
-                for stream, msg_list in messages:
+                for _stream, msg_list in messages:
                     for msg_id, msg_data in msg_list:
                         content = json.loads(msg_data.get("content", "{}"))
                         results.append(

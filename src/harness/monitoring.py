@@ -1,13 +1,95 @@
 """Monitoring and metrics collection for agent sessions."""
 
 import asyncio
+import base64
+import os
+import threading
 from pathlib import Path
 from typing import Any
+from wsgiref.simple_server import WSGIServer, make_server
 
 import structlog
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, make_wsgi_app
 
 logger = structlog.get_logger(__name__)
+
+
+def _check_metrics_auth(environ: dict[str, Any]) -> bool:
+    """Check basic auth credentials for metrics endpoint.
+
+    Args:
+        environ: WSGI environment dict
+
+    Returns:
+        True if authenticated or no auth required, False otherwise
+    """
+    auth_token = os.environ.get("METRICS_AUTH_TOKEN", "")
+    if not auth_token:
+        # No auth configured - allow access (backwards compatible)
+        return True
+
+    auth_header = environ.get("HTTP_AUTHORIZATION", "")
+    if not auth_header.startswith("Basic "):
+        return False
+
+    try:
+        # Decode base64 credentials
+        credentials = base64.b64decode(auth_header[6:]).decode("utf-8")
+        return credentials == auth_token
+    except Exception:
+        return False
+
+
+def _create_auth_middleware(app: Any) -> Any:
+    """Create WSGI middleware that enforces basic auth.
+
+    Args:
+        app: WSGI application to wrap
+
+    Returns:
+        Wrapped WSGI application with auth middleware
+    """
+    def wrapped(environ: dict[str, Any], start_response: Any) -> Any:
+        if not _check_metrics_auth(environ):
+            start_response(
+                "401 Unauthorized",
+                [
+                    ("WWW-Authenticate", 'Basic realm="metrics"'),
+                    ("Content-Type", "text/plain"),
+                ],
+            )
+            return [b"Unauthorized"]
+        return app(environ, start_response)
+
+    return wrapped
+
+
+def start_authenticated_http_server(port: int = 9090) -> WSGIServer | None:
+    """Start Prometheus metrics HTTP server with optional authentication.
+
+    If METRICS_AUTH_TOKEN environment variable is set, requires basic auth
+    with format 'username:password' matching the token value.
+
+    Args:
+        port: Port to listen on
+
+    Returns:
+        Server instance or None if failed
+    """
+    try:
+        # Create Prometheus WSGI app and wrap with auth middleware
+        metrics_app = make_wsgi_app(registry=REGISTRY)
+        app = _create_auth_middleware(metrics_app)
+
+        # Create and start server in a daemon thread
+        server = make_server("", port, app, handler_class=None)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+
+        return server
+    except Exception as e:
+        logger.error("Failed to start authenticated metrics server", error=str(e))
+        return None
 
 # Prometheus Metrics
 agent_requests_total = Counter(
@@ -121,11 +203,15 @@ class MetricsCollector:
 
     def __new__(
         cls,
-        port: int = 9090,
-        workspace_dir: Path | None = None,
-        checkpoint_dir: Path | None = None,
+        port: int = 9090,  # noqa: ARG004
+        workspace_dir: Path | None = None,  # noqa: ARG004
+        checkpoint_dir: Path | None = None,  # noqa: ARG004
     ) -> "MetricsCollector":
-        """Create or return singleton instance."""
+        """Create or return singleton instance.
+
+        Args are unused here but required to match __init__ signature.
+        Actual initialization happens in __init__.
+        """
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -156,16 +242,26 @@ class MetricsCollector:
         self._initialized = True
 
     def start(self) -> None:
-        """Start metrics HTTP server (only once per process)."""
+        """Start metrics HTTP server with optional authentication.
+
+        If METRICS_AUTH_TOKEN is set, requires basic auth for /metrics endpoint.
+        Otherwise, allows unauthenticated access (backwards compatible).
+        """
         # Only start server once across all instances
         if MetricsCollector._server_started:
             logger.debug("Metrics server already running, skipping start")
             return
 
         try:
-            start_http_server(self.port)
-            MetricsCollector._server_started = True
-            logger.info("Metrics server started", port=self.port)
+            server = start_authenticated_http_server(self.port)
+            if server is not None:
+                MetricsCollector._server_started = True
+                auth_enabled = bool(os.environ.get("METRICS_AUTH_TOKEN"))
+                logger.info(
+                    "Metrics server started",
+                    port=self.port,
+                    auth_enabled=auth_enabled,
+                )
         except OSError as e:
             # Port already in use - this is OK, metrics are still collected
             if e.errno == 98 or e.errno == 48:  # Linux: 98, macOS: 48 (Address already in use)

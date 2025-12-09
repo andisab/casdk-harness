@@ -150,7 +150,7 @@ class MCPConfigLoader:
             return True, []  # No env vars required
 
         missing = []
-        for key, value in server_config["env"].items():
+        for _key, value in server_config["env"].items():
             # Check if value is a ${...} placeholder (indicates required env var)
             if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                 env_var_name = value[2:-1]  # Extract "VAR_NAME" from "${VAR_NAME}"

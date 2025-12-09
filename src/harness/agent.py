@@ -4,7 +4,7 @@ import asyncio
 import signal
 import sys
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -25,6 +25,7 @@ from harness.health import HealthServer
 from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
+from harness.security import sanitize_sensitive_data
 
 # In-process MCP servers (Method A)
 from mcp_servers.context7 import context7_server
@@ -36,6 +37,12 @@ logger = structlog.get_logger(__name__)
 
 class AgentTimeoutError(Exception):
     """Raised when agent execution exceeds the configured timeout."""
+
+    pass
+
+
+class SessionTimeoutError(Exception):
+    """Raised when the session exceeds the configured maximum duration."""
 
     pass
 
@@ -138,6 +145,9 @@ class AgentSession:
             "completed_tasks": [],
             "current_task": None,
         }
+
+        # Session timeout tracking (enforces claude_session_timeout config)
+        self._session_start_time = datetime.now(UTC)
 
         # Context budget tracking for graceful session management
         # Budget is calculated based on model's context window
@@ -314,7 +324,7 @@ class AgentSession:
 
         return servers
 
-    def _load_mcp_servers(self, tiers: list[int] = [1]) -> dict[str, Any]:
+    def _load_mcp_servers(self, tiers: list[int] | None = None) -> dict[str, Any]:
         """Load subprocess MCP servers (Method B) for specified tiers.
 
         Phase 1C Architecture: Subprocess servers for external dependencies.
@@ -332,6 +342,9 @@ class AgentSession:
         Returns:
             Dict mapping server names to stdio server configurations
         """
+        if tiers is None:
+            tiers = [1]
+
         from pathlib import Path
 
         # Get plugin paths for merging plugin .mcp.json files
@@ -558,7 +571,10 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
             Agent response messages
         """
         start_time = datetime.now()
-        self.state["current_task"] = prompt
+        self.state["current_task"] = sanitize_sensitive_data(prompt)
+
+        # Check session timeout before executing
+        self._check_session_timeout()
 
         try:
             logger.info(
@@ -573,7 +589,7 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 async with asyncio.timeout(self.config.claude_api_timeout):
                     async for message in self._execute_with_retry(prompt, **kwargs):
                         yield message
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.metrics.record_request(self.agent_name, "timeout")
                 logger.error(
                     "Request timeout exceeded",
@@ -582,7 +598,7 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 )
                 raise AgentTimeoutError(
                     f"Agent execution timed out after {self.config.claude_api_timeout}s"
-                )
+                ) from None
 
             # Record successful execution
             duration = (datetime.now() - start_time).total_seconds()
@@ -591,7 +607,7 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
 
             self.state["completed_tasks"].append(
                 {
-                    "prompt": prompt[:100],  # Store first 100 chars
+                    "prompt": sanitize_sensitive_data(prompt[:100]),  # Sanitized first 100 chars
                     "completed_at": datetime.now().isoformat(),
                     "duration": duration,
                 }
@@ -625,7 +641,7 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
     async def _execute_with_retry(
         self,
         prompt: str,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Execute using persistent SDK client (maintains conversation history).
@@ -635,7 +651,7 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
 
         Args:
             prompt: Task prompt
-            **kwargs: Additional arguments (unused, kept for compatibility)
+            **_kwargs: Additional arguments (unused, kept for API compatibility)
 
         Yields:
             Agent response messages
@@ -991,6 +1007,29 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 }
 
         return None
+
+    def _check_session_timeout(self) -> None:
+        """Check if session has exceeded the configured timeout.
+
+        Raises:
+            SessionTimeoutError: If session has exceeded claude_session_timeout seconds.
+        """
+        elapsed = (datetime.now(UTC) - self._session_start_time).total_seconds()
+        timeout = self.config.claude_session_timeout
+
+        if elapsed > timeout:
+            hours = elapsed / 3600
+            logger.error(
+                "Session timeout exceeded",
+                elapsed_seconds=elapsed,
+                elapsed_hours=f"{hours:.2f}",
+                timeout_seconds=timeout,
+                agent=self.agent_name,
+            )
+            raise SessionTimeoutError(
+                f"Session exceeded {timeout}s timeout (running for {hours:.2f}h). "
+                "Save your work and start a new session."
+            )
 
     def _format_budget_warning(
         self, level: str, percent: float, remaining: int

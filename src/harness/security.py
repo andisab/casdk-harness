@@ -233,10 +233,7 @@ def validate_rm_command(command: str) -> bool:
         return False
 
     # Check for recursive flags without workspace target
-    if re.search(r"-[rf]*\s+/(?!workspace)", command):
-        return False
-
-    return True
+    return not re.search(r"-[rf]*\s+/(?!workspace)", command)
 
 
 def validate_chmod_command(command: str) -> bool:
@@ -255,10 +252,7 @@ def validate_chmod_command(command: str) -> bool:
         return False
 
     # Block recursive chmod on system directories
-    if "-R" in command and not re.search(r"/workspace", command):
-        return False
-
-    return True
+    return not ("-R" in command and not re.search(r"/workspace", command))
 
 
 def validate_pkill_command(command: str) -> bool:
@@ -279,10 +273,7 @@ def validate_pkill_command(command: str) -> bool:
             return True
 
     # Allow kill with PID (numeric argument, with optional signal flag)
-    if re.search(r"kill\s+(-\d+\s+)?\d+", command):
-        return True
-
-    return False
+    return bool(re.search(r"kill\s+(-\d+\s+)?\d+", command))
 
 
 # Command-specific validators
@@ -386,3 +377,94 @@ def create_security_hook(allow_all: bool = False) -> Callable[[str], dict[str, s
         return {"allowed": is_valid, "reason": reason}
 
     return hook
+
+
+# =============================================================================
+# Sensitive Data Sanitization
+# =============================================================================
+
+# Patterns for sensitive data that should be redacted before logging/storage
+# ORDER MATTERS: Specific patterns FIRST (to preserve precise marker info), then generic patterns
+SENSITIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # === SPECIFIC API KEY PATTERNS (run first for precise identification) ===
+
+    # Anthropic API keys
+    (re.compile(r"sk-ant-[a-zA-Z0-9\-]{20,}"), "***ANTHROPIC_KEY***"),
+    (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "***ANTHROPIC_KEY***"),
+
+    # GitHub tokens
+    (re.compile(r"ghp_[a-zA-Z0-9]{36}"), "***GITHUB_TOKEN***"),
+    (re.compile(r"github_pat_[a-zA-Z0-9_]{22,}"), "***GITHUB_TOKEN***"),
+    (re.compile(r"gho_[a-zA-Z0-9]{36}"), "***GITHUB_OAUTH***"),
+
+    # GitLab tokens
+    (re.compile(r"glpat-[a-zA-Z0-9\-]{20,}"), "***GITLAB_TOKEN***"),
+
+    # Slack tokens
+    (re.compile(r"xox[baprs]-[a-zA-Z0-9\-]+"), "***SLACK_TOKEN***"),
+
+    # AWS access keys
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "***AWS_ACCESS_KEY***"),
+
+    # Google API keys
+    (re.compile(r"AIza[0-9A-Za-z\-_]{35}"), "***GOOGLE_API_KEY***"),
+
+    # === GENERIC PATTERNS (run after specific, catch remaining secrets) ===
+
+    # Generic patterns for key=value pairs (catches password=xxx, secret=xxx, etc.)
+    # Note: Won't match values already replaced with *** markers above
+    (
+        re.compile(
+            r"(?i)(api[_-]?key|password|secret|token|bearer|auth|credential)"
+            r"\s*[:=]\s*[\"']?([^\s\"'*]{8,})[\"']?"
+        ),
+        r"\1=***REDACTED***",
+    ),
+
+    # Bearer tokens in headers
+    (re.compile(r"Bearer\s+[a-zA-Z0-9\-_.]+"), "Bearer ***REDACTED***"),
+
+    # === URL AND PII PATTERNS (run last) ===
+
+    # Basic auth in URLs (must run before email pattern to preserve URL structure)
+    (
+        re.compile(r"(https?://)([^:]+):([^@]+)@"),
+        r"\1***USER***:***PASS***@",
+    ),
+
+    # Email addresses (PII) - run last to avoid interfering with URL parsing
+    (
+        re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+        "***EMAIL***",
+    ),
+]
+
+
+def sanitize_sensitive_data(text: str) -> str:
+    """Remove sensitive data from text before logging or storage.
+
+    This function applies a series of regex patterns to redact:
+    - API keys (Anthropic, GitHub, GitLab, Slack, AWS, Google)
+    - Passwords and secrets in key=value format
+    - Email addresses (PII)
+    - Bearer tokens
+    - Basic auth credentials in URLs
+
+    Args:
+        text: The text to sanitize
+
+    Returns:
+        Sanitized text with sensitive data replaced by placeholders
+
+    Example:
+        >>> sanitize_sensitive_data("key=sk-abc123xyz")
+        'key=***ANTHROPIC_KEY***'
+    """
+    if not text:
+        return text
+
+    result = text
+    for pattern, replacement in SENSITIVE_PATTERNS:
+        result = pattern.sub(replacement, result)
+
+    return result

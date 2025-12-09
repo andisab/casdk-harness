@@ -1,15 +1,27 @@
 # Repository Hardening Plan
 
-> **Status**: Active | **Last Updated**: December 8, 2025 | **Test Coverage**: 73%
+> **Status**: Active | **Last Updated**: December 9, 2025 | **Test Coverage**: 73%
 
 ## Current State
 
 | Metric | Value | Target |
 |--------|-------|--------|
 | **Test Coverage** | 73% | 80% |
-| **Security Posture** | 6.5/10 | 8/10 |
+| **Security Posture** | 7.5/10 | 8/10 |
 
-**Blocking Issues**: 3 Critical security vulnerabilities + God object in agent.py
+**Blocking Issues**: 2 Critical security vulnerabilities + God object in agent.py
+
+---
+
+## Recently Resolved
+
+| Issue | CVSS | Resolution |
+|-------|------|------------|
+| ~~CRIT-03: Log sanitization~~ | 7.5 | Added `sanitize_sensitive_data()` in `security.py`, applied to prompt storage |
+| ~~HIGH-04: Bash bypass flag~~ | 8.8 | Removed `--allow-all-commands` flag entirely |
+| ~~P2: Session timeout~~ | 5.3 | Added `_check_session_timeout()` enforcing `claude_session_timeout` |
+| ~~P3: Default passwords~~ | 3.0 | Changed to `CHANGE_ME_BEFORE_PRODUCTION` placeholders |
+| ~~P3: Metrics auth~~ | 3.5 | Added optional basic auth via `METRICS_AUTH_TOKEN` |
 
 ---
 
@@ -17,12 +29,12 @@
 
 | Priority | Remaining | Effort |
 |----------|-----------|--------|
-| **P0 Critical** | 4 issues | ~24h |
-| **P1 High** | 3 issues | ~8h |
-| **P2 Medium** | 7 issues | ~18h |
-| **P3 Low** | 6 issues | ~14h |
+| **P0 Critical** | 3 issues | ~20h |
+| **P1 High** | 2 issues | ~6h |
+| **P2 Medium** | 6 issues | ~16h |
+| **P3 Low** | 4 issues | ~11h |
 
-**Total Remaining**: ~64 hours
+**Total Remaining**: ~53 hours
 
 ---
 
@@ -40,7 +52,7 @@ Checkpoints store complete agent state in plaintext JSON, including conversation
 - [ ] Store encryption keys in secure vault (AWS KMS, HashiCorp Vault)
 - [ ] Add integrity verification (HMAC-SHA256)
 - [ ] Implement key rotation (30-day)
-- [ ] Add checkpoint sanitization for sensitive patterns
+- [x] Add checkpoint sanitization for sensitive patterns (via sanitize_sensitive_data)
 
 ### CRIT-02: SSH Private Keys in Containers
 **CVSS**: 8.8 | **Location**: `docker-compose.yml:26` | **Effort**: 4h
@@ -55,21 +67,8 @@ SSH private keys mounted directly into containers at `/home/claude/.ssh:ro`. All
 - [ ] Remove SSH key mounts from docker-compose.yml
 - [ ] Implement container-level secret injection
 
-### CRIT-03: User Prompts Logged Without Sanitization
-**CVSS**: 7.5 | **Location**: `agent.py:494-500` | **Effort**: 4h
-
-User prompts logged with partial content, potentially capturing API keys, passwords, PII, and business logic.
-
-**Impact**: PII leakage, credential exposure, compliance violations
-
-**Remediation**:
-- [ ] Implement regex-based log sanitization
-- [ ] Hash prompts instead of storing plaintext
-- [ ] Add sensitive pattern filters (API keys, emails, passwords)
-- [ ] Implement log retention policy (30 days max)
-
 ### God Object Refactoring
-**Location**: `agent.py` (981 LOC) | **Effort**: 8h
+**Location**: `agent.py` (1000+ LOC) | **Effort**: 8h
 
 `AgentSession` handles 9+ responsibilities, causing poor testability and maintenance burden.
 
@@ -90,16 +89,7 @@ AgentSession (~300 LOC)
 | Issue | CVSS | Location | Effort |
 |-------|------|----------|--------|
 | Missing rate limiting | 7.5 | `autonomous.py` | 4h |
-| Bash command bypass flag | 8.8 | `autonomous.py:25` | 2h |
 | Redis password in env vars | 7.0 | `.env.example:162` | 2h |
-
-### HIGH-04: Bash Command Bypass Flag
-The `--allow-all-commands` flag completely bypasses security validation, allowing `rm -rf /`, arbitrary code execution, and credential theft.
-
-**Remediation**:
-- [ ] Remove flag entirely or restrict to non-production
-- [ ] Add mandatory audit logging even when bypassed
-- [ ] Require admin approval for bypass mode
 
 ---
 
@@ -110,7 +100,6 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 | Security headers | 6.5 | `docker-compose.prod.yml` | 3h |
 | Docker socket exposure | 9.0 | `mcp_servers/docker` | 4h |
 | Checkpoint cleanup race | - | `checkpoint.py` | 2h |
-| Session timeout enforcement | 5.3 | `config.py:38` | 2h |
 | Error message sanitization | 5.0 | `agent.py:607-630` | 2h |
 | Dependency vulnerability scanning | 5.5 | `pyproject.toml` | 2h |
 | Cost budget enforcement | 4.0 | `monitoring.py:286-338` | 3h |
@@ -125,8 +114,6 @@ The `--allow-all-commands` flag completely bypasses security validation, allowin
 | Container image signing | 5.0 | Build pipeline | 3h |
 | Redis stream ACLs | 4.5 | `messaging.py` | 3h |
 | Test workspace isolation | 6.0 | `docker-compose.yml` | 1h |
-| Default passwords | 3.0 | `.env.example:162-165` | 1h |
-| Metrics endpoint auth | 3.5 | `monitoring.py:122-140` | 2h |
 
 ---
 
@@ -157,4 +144,4 @@ To reach 80% overall: cli.py and interactive.py tests (~8h total, deferred)
 
 ---
 
-*Last Updated: December 8, 2025*
+*Last Updated: December 9, 2025*

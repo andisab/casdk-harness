@@ -70,18 +70,15 @@ class AutonomousRunner:
         self,
         workspace_dir: Path,
         model: str | None = None,
-        allow_all_commands: bool = False,
     ) -> None:
         """Initialize the autonomous runner.
 
         Args:
             workspace_dir: Directory for development work
             model: Claude model to use (defaults to config)
-            allow_all_commands: If True, bypass bash security checks
         """
         self.workspace_dir = workspace_dir
         self.model = model
-        self.allow_all_commands = allow_all_commands
         self.config = get_config()
         self.progress_manager = ProgressManager(workspace_dir)
         self._shutdown_requested = False
@@ -1367,7 +1364,7 @@ Resume with the next question in the sequence.
                 )
                 # If we get here, shutdown was requested
                 logger.info("Shutdown event received during delay")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Normal timeout, continue to next session
                 pass
 
@@ -1377,7 +1374,6 @@ Resume with the next question in the sequence.
 async def run_autonomous(
     workspace_dir: Path | None = None,
     model: str | None = None,
-    allow_all_commands: bool = False,
     quiet: bool = False,  # noqa: ARG001 - handled in main() before this is called
 ) -> None:
     """Run autonomous development mode.
@@ -1385,7 +1381,6 @@ async def run_autonomous(
     Args:
         workspace_dir: Directory for development work
         model: Claude model to use
-        allow_all_commands: Bypass bash security checks
         quiet: Suppress system logs (handled in main() before this call)
     """
     config = get_config()
@@ -1396,7 +1391,6 @@ async def run_autonomous(
     runner = AutonomousRunner(
         workspace_dir=workspace_dir,
         model=model,
-        allow_all_commands=allow_all_commands,
     )
 
     await runner.run()
@@ -1419,11 +1413,6 @@ def main() -> None:
         default=None,
         choices=["sonnet", "opus", "haiku"],
         help="Claude model to use",
-    )
-    parser.add_argument(
-        "--allow-all-commands",
-        action="store_true",
-        help="Bypass bash command security checks",
     )
     parser.add_argument(
         "--quiet",
@@ -1456,7 +1445,6 @@ def main() -> None:
             run_autonomous(
                 workspace_dir=args.workspace,
                 model=model,
-                allow_all_commands=args.allow_all_commands,
                 quiet=args.quiet,
             )
         )

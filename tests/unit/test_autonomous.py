@@ -1576,23 +1576,6 @@ class TestRunAutonomous:
             assert call_kwargs["model"] == "claude-opus-4-5-20251101"
 
     @pytest.mark.asyncio
-    async def test_passes_allow_all_commands_to_runner(
-        self, temp_workspace: Path, mock_config
-    ) -> None:
-        """Test run_autonomous passes allow_all_commands parameter."""
-        from harness.autonomous import run_autonomous
-
-        with patch("harness.autonomous.AutonomousRunner") as mock_runner_class:
-            mock_runner = MagicMock()
-            mock_runner.run = AsyncMock()
-            mock_runner_class.return_value = mock_runner
-
-            await run_autonomous(allow_all_commands=True)
-
-            call_kwargs = mock_runner_class.call_args.kwargs
-            assert call_kwargs["allow_all_commands"] is True
-
-    @pytest.mark.asyncio
     async def test_calls_runner_run(
         self, temp_workspace: Path, mock_config
     ) -> None:
@@ -1693,20 +1676,6 @@ class TestMainCLI:
         from harness.autonomous import main
 
         with patch.object(sys, "argv", ["autonomous", "--workspace", "/custom/path"]):
-            with patch("harness.autonomous.asyncio.run") as mock_run:
-                with patch("harness.autonomous.get_config") as mock_config:
-                    mock_config.return_value = MagicMock(
-                        workspace_dir=Path("/test")
-                    )
-                    main()
-                    mock_run.assert_called_once()
-
-    def test_allow_all_commands_argument(self) -> None:
-        """Test --allow-all-commands argument is passed correctly."""
-        import sys
-        from harness.autonomous import main
-
-        with patch.object(sys, "argv", ["autonomous", "--allow-all-commands"]):
             with patch("harness.autonomous.asyncio.run") as mock_run:
                 with patch("harness.autonomous.get_config") as mock_config:
                     mock_config.return_value = MagicMock(

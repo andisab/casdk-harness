@@ -4,7 +4,6 @@ Provides /health and /ready endpoints for Kubernetes-style health checks.
 Used by Docker health checks and orchestration systems to verify agent status.
 """
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -50,7 +49,7 @@ class HealthServer:
             agent=session.agent_name,
         )
 
-    async def health_handler(self, request: web.Request) -> web.Response:
+    async def health_handler(self, _request: web.Request) -> web.Response:
         """Handle /health liveness probe.
 
         Returns 200 if process is running, regardless of readiness.
@@ -62,7 +61,7 @@ class HealthServer:
             }
         )
 
-    async def ready_handler(self, request: web.Request) -> web.Response:
+    async def ready_handler(self, _request: web.Request) -> web.Response:
         """Handle /ready readiness probe.
 
         Returns 200 only if agent is fully ready to accept work.
@@ -83,7 +82,7 @@ class HealthServer:
             status=status_code,
         )
 
-    async def status_handler(self, request: web.Request) -> web.Response:
+    async def status_handler(self, _request: web.Request) -> web.Response:
         """Handle /status detailed status endpoint.
 
         Returns comprehensive status information for debugging.

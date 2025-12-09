@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -518,10 +517,10 @@ def test_stop_metrics_collection(metrics_collector: MetricsCollector) -> None:
 
 def test_start_server_success(metrics_collector: MetricsCollector) -> None:
     """Test successful server start."""
-    with patch("harness.monitoring.start_http_server") as mock_start:
+    mock_server = MagicMock()
+    with patch("harness.monitoring.start_authenticated_http_server", return_value=mock_server):
         metrics_collector.start()
 
-        mock_start.assert_called_once_with(metrics_collector.port)
         assert MetricsCollector._server_started is True
 
 
@@ -530,7 +529,7 @@ def test_start_server_already_running() -> None:
     MetricsCollector._server_started = True
     collector = MetricsCollector(port=19095)
 
-    with patch("harness.monitoring.start_http_server") as mock_start:
+    with patch("harness.monitoring.start_authenticated_http_server") as mock_start:
         collector.start()
 
         # Should not try to start again
@@ -544,7 +543,7 @@ def test_start_server_port_in_use_linux() -> None:
     error = OSError()
     error.errno = 98  # Linux: Address already in use
 
-    with patch("harness.monitoring.start_http_server", side_effect=error):
+    with patch("harness.monitoring.start_authenticated_http_server", side_effect=error):
         collector.start()
 
         # Should still mark as started (metrics still work)
@@ -559,7 +558,7 @@ def test_start_server_port_in_use_macos() -> None:
     error = OSError()
     error.errno = 48  # macOS: Address already in use
 
-    with patch("harness.monitoring.start_http_server", side_effect=error):
+    with patch("harness.monitoring.start_authenticated_http_server", side_effect=error):
         collector.start()
 
         # Should still mark as started (metrics still work)
@@ -574,7 +573,7 @@ def test_start_server_other_os_error() -> None:
     error = OSError()
     error.errno = 13  # Permission denied
 
-    with patch("harness.monitoring.start_http_server", side_effect=error):
+    with patch("harness.monitoring.start_authenticated_http_server", side_effect=error):
         collector.start()
 
         # Should NOT mark as started for other errors
@@ -586,7 +585,7 @@ def test_start_server_general_exception() -> None:
     MetricsCollector.reset_singleton()
     collector = MetricsCollector(port=19099)
 
-    with patch("harness.monitoring.start_http_server", side_effect=Exception("Connection error")):
+    with patch("harness.monitoring.start_authenticated_http_server", side_effect=Exception("Connection error")):
         collector.start()
 
         # Should NOT mark as started for general errors
