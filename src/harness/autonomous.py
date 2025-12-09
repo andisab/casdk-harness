@@ -584,6 +584,22 @@ Resume with the next question in the sequence.
                     # Execute current message and display response
                     last_agent_response = ""
                     async for message in agent_session.execute(current_message):
+                        # Handle budget warnings from harness
+                        if (
+                            isinstance(message, dict)
+                            and message.get("subtype") == "context_budget_warning"
+                        ):
+                            logger.warning(
+                                "Context budget warning in Q&A session",
+                                level=message.get("level"),
+                                tokens_used=message.get("tokens_used"),
+                                tokens_remaining=message.get("tokens_remaining"),
+                                percent_used=message.get("percent_used"),
+                            )
+                            # Let parse_and_print_message handle display
+                            parse_and_print_message(message, self.console, quiet=False)
+                            continue
+
                         content = self._extract_content_str(message)
                         session_content.append(content)
                         session.total_turns += 1
@@ -711,6 +727,22 @@ Resume with the next question in the sequence.
             ) as agent_session:
                 # Single autonomous execution
                 async for message in agent_session.execute("Begin work on current task."):
+                    # Handle budget warnings from harness
+                    if (
+                        isinstance(message, dict)
+                        and message.get("subtype") == "context_budget_warning"
+                    ):
+                        logger.warning(
+                            "Context budget warning in continuation session",
+                            level=message.get("level"),
+                            tokens_used=message.get("tokens_used"),
+                            tokens_remaining=message.get("tokens_remaining"),
+                            percent_used=message.get("percent_used"),
+                        )
+                        # Let parse_and_print_message handle display
+                        parse_and_print_message(message, self.console, quiet=False)
+                        continue
+
                     content = self._extract_content_str(message)
                     session_content.append(content)
                     session.total_turns += 1

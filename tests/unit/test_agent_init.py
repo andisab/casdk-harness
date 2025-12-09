@@ -322,3 +322,175 @@ class TestContextManager:
 
             # After context exit, shutdown should have been called
             assert mock_client.disconnect.called
+
+
+class TestContextBudgetTracking:
+    """Tests for context budget tracking functionality."""
+
+    def test_token_budget_initialized(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify token_budget is initialized based on model context window."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+
+        # Default model is claude-sonnet-4-5-20250929 with 200K context
+        assert session.token_budget == 200_000
+
+    def test_tokens_used_initially_zero(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify tokens_used is initialized to 0."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+        assert session.tokens_used == 0
+
+    def test_triggered_warnings_initially_empty(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify triggered warnings set is empty initially."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+        assert len(session._triggered_warnings) == 0
+
+    def test_budget_thresholds_calculated(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify budget thresholds are calculated from percentages."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+
+        # With 200K budget and default percentages (70%, 75%, 85%)
+        expected_warning = int(200_000 * 0.70)   # 140,000
+        expected_urgent = int(200_000 * 0.75)    # 150,000
+        expected_critical = int(200_000 * 0.85)  # 170,000
+
+        assert expected_warning in session._budget_warning_thresholds
+        assert expected_urgent in session._budget_warning_thresholds
+        assert expected_critical in session._budget_warning_thresholds
+
+        assert session._budget_warning_thresholds[expected_warning] == "warning"
+        assert session._budget_warning_thresholds[expected_urgent] == "urgent"
+        assert session._budget_warning_thresholds[expected_critical] == "critical"
+
+    def test_budget_override_used(self, mock_dependencies, tmp_path: Path):
+        """Verify context_budget_override is used when set."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        config = HarnessConfig(
+            workspace_dir=tmp_path / "workspace",
+            memory_dir=tmp_path / "memory",
+            claude_model="claude-sonnet-4-5-20250929",
+            context_budget_override=100_000,  # Override to 100K
+        )
+
+        session = AgentSession(agent_name="test", config=config)
+
+        # Should use override instead of model's context window
+        assert session.token_budget == 100_000
+
+    def test_check_budget_threshold_returns_none_below_threshold(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify _check_budget_threshold returns None when below all thresholds."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+        session.tokens_used = 50_000  # 25%, below all thresholds
+
+        result = session._check_budget_threshold()
+        assert result is None
+
+    def test_check_budget_threshold_returns_warning(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify _check_budget_threshold returns warning dict when threshold crossed."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+        session.tokens_used = 145_000  # 72.5%, above warning threshold (70%)
+
+        result = session._check_budget_threshold()
+
+        assert result is not None
+        assert result["type"] == "system"
+        assert result["subtype"] == "context_budget_warning"
+        assert result["level"] == "warning"
+        assert result["tokens_used"] == 145_000
+        assert "content" in result
+
+    def test_check_budget_threshold_only_triggers_once(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify each threshold only triggers once per session."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+        session.tokens_used = 145_000  # Above warning threshold
+
+        # First call should return warning
+        result1 = session._check_budget_threshold()
+        assert result1 is not None
+        assert result1["level"] == "warning"
+
+        # Second call at same level should return None (already triggered)
+        result2 = session._check_budget_threshold()
+        assert result2 is None
+
+    def test_budget_thresholds_scale_with_model(self, mock_dependencies, tmp_path: Path):
+        """Verify thresholds scale correctly for different model context windows."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        # Use extended model with 1M context
+        config = HarnessConfig(
+            workspace_dir=tmp_path / "workspace",
+            memory_dir=tmp_path / "memory",
+            claude_model="claude-3-5-sonnet-20241022-extended",
+        )
+
+        session = AgentSession(agent_name="test", config=config)
+
+        # With 1M budget, thresholds should be much higher
+        assert session.token_budget == 1_000_000
+        expected_warning = int(1_000_000 * 0.70)  # 700,000
+        assert expected_warning in session._budget_warning_thresholds
+
+    def test_format_budget_warning_messages(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify _format_budget_warning returns appropriate messages."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        session = AgentSession(agent_name="test", config=mock_config)
+
+        warning_msg = session._format_budget_warning("warning", 72.5, 55000)
+        assert "CONTEXT_BUDGET" in warning_msg
+        assert "72%" in warning_msg
+
+        urgent_msg = session._format_budget_warning("urgent", 76.0, 48000)
+        assert "Checkpoint saved" in urgent_msg
+
+        critical_msg = session._format_budget_warning("critical", 86.0, 28000)
+        assert "Stop new work" in critical_msg
+
+    @pytest.mark.asyncio
+    async def test_budget_reset_on_session_start(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify tokens_used and triggered_warnings reset on session start."""
+        (tmp_path / "workspace").mkdir(exist_ok=True)
+        (tmp_path / "memory").mkdir(exist_ok=True)
+
+        with patch("harness.agent.ClaudeSDKClient") as mock_client_class:
+            from unittest.mock import AsyncMock
+            mock_client = AsyncMock()
+            mock_client.connect = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            session = AgentSession(agent_name="test", config=mock_config)
+
+            # Simulate some tokens used and warnings triggered
+            session.tokens_used = 100_000
+            session._triggered_warnings.add(140_000)
+
+            await session.start()
+
+            # Should be reset after start()
+            assert session.tokens_used == 0
+            assert len(session._triggered_warnings) == 0

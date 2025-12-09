@@ -214,8 +214,60 @@ def get_user_input(console: Console) -> str:
     return user_input
 
 
+def _handle_dict_message(message: dict, console: Console, quiet: bool) -> None:
+    """
+    Handle custom dict messages from the harness (e.g., budget warnings).
+
+    Args:
+        message: Custom dict message with type/subtype fields
+        console: Rich console instance
+        quiet: Whether to suppress system messages
+    """
+    msg_type = message.get("type")
+    subtype = message.get("subtype")
+
+    # Handle context budget warnings
+    if msg_type == "system" and subtype == "context_budget_warning":
+        # Always show budget warnings, even in quiet mode
+        level = message.get("level", "warning")
+        content = message.get("content", "")
+        tokens_used = message.get("tokens_used", 0)
+        tokens_remaining = message.get("tokens_remaining", 0)
+        percent_used = message.get("percent_used", 0)
+
+        # Color coding based on severity
+        colors = {
+            "warning": "yellow",
+            "urgent": "orange1",
+            "critical": "red bold",
+        }
+        border_style = colors.get(level, "yellow")
+
+        # Create a panel with budget info
+        budget_panel = Panel(
+            content,
+            title=f"Context Budget ({level.upper()})",
+            subtitle=f"{tokens_used:,} / {tokens_used + tokens_remaining:,} tokens ({percent_used:.0f}%)",
+            border_style=border_style,
+        )
+        console.print(budget_panel)
+
+    elif msg_type == "system":
+        # Generic system message from harness
+        if quiet:
+            return
+        content = message.get("content", str(message))
+        print_rich_message("system", content, console)
+
+    else:
+        # Unknown dict message - log and display raw
+        logger.debug("Unknown dict message type", message=message)
+        if not quiet:
+            print_rich_message("system", str(message), console)
+
+
 def parse_and_print_message(
-    message: Message,
+    message: Message | dict,
     console: Console,
     print_stats: bool = False,
     quiet: bool = False,
@@ -224,7 +276,7 @@ def parse_and_print_message(
     Parse and print a message based on its type and content.
 
     Args:
-        message: SDK message to parse and display
+        message: SDK message or custom dict message to parse and display
         console: Rich console instance
         print_stats: Whether to print session statistics for ResultMessage
         quiet: Whether to suppress system messages
@@ -234,6 +286,11 @@ def parse_and_print_message(
         message_type=type(message).__name__,
         quiet=quiet,
     )
+
+    # Handle custom dict messages (e.g., budget warnings from harness)
+    if isinstance(message, dict):
+        _handle_dict_message(message, console, quiet)
+        return
 
     # Assistant messages include TextBlock, ToolUseBlock, ThinkingBlock
     # https://docs.claude.com/en/api/agent-sdk/python#content-block-types

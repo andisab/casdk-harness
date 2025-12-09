@@ -6,6 +6,30 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Model context window sizes (tokens)
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    # Claude 4 models
+    "claude-sonnet-4-5-20250929": 200_000,
+    "claude-opus-4-5-20251101": 200_000,
+    # Claude 3.5 models
+    "claude-3-5-sonnet-20241022": 200_000,
+    "claude-3-5-haiku-20241022": 200_000,
+    # Extended context models
+    "claude-3-5-sonnet-20241022-extended": 1_000_000,
+}
+
+
+def get_context_window(model: str) -> int:
+    """Get context window size for a model.
+
+    Args:
+        model: The model identifier string.
+
+    Returns:
+        Context window size in tokens. Defaults to 200,000 if model unknown.
+    """
+    return MODEL_CONTEXT_WINDOWS.get(model, 200_000)
+
 
 class HarnessConfig(BaseSettings):
     """Main configuration for the harness."""
@@ -156,6 +180,24 @@ class HarnessConfig(BaseSettings):
     shutdown_timeout: int = Field(
         default=5,
         description="Timeout for graceful shutdown in seconds",
+    )
+
+    # Context Budget Configuration
+    context_budget_warning_pct: float = Field(
+        default=0.70,
+        description="Warning threshold as percentage of context window (0.70 = 70%)",
+    )
+    context_budget_urgent_pct: float = Field(
+        default=0.75,
+        description="Urgent threshold as percentage of context window (0.75 = 75%)",
+    )
+    context_budget_critical_pct: float = Field(
+        default=0.85,
+        description="Critical threshold as percentage of context window (0.85 = 85%)",
+    )
+    context_budget_override: int | None = Field(
+        default=None,
+        description="Override context window size (useful for testing)",
     )
 
     @property

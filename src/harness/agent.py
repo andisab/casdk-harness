@@ -139,6 +139,25 @@ class AgentSession:
             "current_task": None,
         }
 
+        # Context budget tracking for graceful session management
+        # Budget is calculated based on model's context window
+        from harness.config import get_context_window
+
+        self.token_budget = (
+            self.config.context_budget_override
+            if self.config.context_budget_override
+            else get_context_window(self.config.claude_model)
+        )
+        self.tokens_used = 0
+
+        # Percentage-based warning thresholds (calculated from budget)
+        self._budget_warning_thresholds = {
+            int(self.token_budget * self.config.context_budget_warning_pct): "warning",
+            int(self.token_budget * self.config.context_budget_urgent_pct): "urgent",
+            int(self.token_budget * self.config.context_budget_critical_pct): "critical",
+        }
+        self._triggered_warnings: set[int] = set()
+
         # Load MCP servers (Phase 1C - Method A + Method B)
         # 1. Load in-process servers (Method A) - docker, context7, memory
         self.inprocess_servers = self._load_inprocess_servers()
@@ -477,6 +496,11 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 agent=self.agent_name,
             )
 
+            # Reset budget tracking for new session
+            # Each session starts fresh with its own context window
+            self.tokens_used = 0
+            self._triggered_warnings.clear()
+
             # Capture session ID from first SystemMessage
             # Note: SDK automatically sends SystemMessage on connect
             # We'll capture it in the first execute() call
@@ -660,13 +684,26 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                         model=self.config.claude_model,
                         usage=usage,
                     )
+
+                    # Accumulate total usage for budget tracking
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                    self.tokens_used += input_tokens + output_tokens
+
                     logger.debug(
                         "Token usage recorded",
                         agent=self.agent_name,
-                        input_tokens=usage.get("input_tokens", 0),
-                        output_tokens=usage.get("output_tokens", 0),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
                         cached_tokens=usage.get("cache_read_input_tokens", 0),
+                        tokens_used_total=self.tokens_used,
+                        token_budget=self.token_budget,
                     )
+
+                    # Check budget thresholds and yield warning if crossed
+                    budget_warning = self._check_budget_threshold()
+                    if budget_warning:
+                        yield budget_warning
 
                 yield message
 
@@ -912,6 +949,87 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 exc_info=True,
             )
             return False
+
+    def _check_budget_threshold(self) -> dict[str, Any] | None:
+        """
+        Check if any budget thresholds have been crossed.
+
+        Returns warning message dict if a threshold was crossed, None otherwise.
+        Each threshold only triggers once per session.
+        """
+        for threshold, level in sorted(self._budget_warning_thresholds.items()):
+            if (
+                self.tokens_used >= threshold
+                and threshold not in self._triggered_warnings
+            ):
+                self._triggered_warnings.add(threshold)
+
+                remaining = self.token_budget - self.tokens_used
+                percent_used = (self.tokens_used / self.token_budget) * 100
+
+                logger.warning(
+                    "Context budget threshold crossed",
+                    level=level,
+                    tokens_used=self.tokens_used,
+                    tokens_remaining=remaining,
+                    percent_used=f"{percent_used:.1f}%",
+                    agent=self.agent_name,
+                )
+
+                # Trigger checkpoint at urgent threshold
+                if level == "urgent":
+                    asyncio.create_task(self._save_budget_checkpoint())
+
+                return {
+                    "type": "system",
+                    "subtype": "context_budget_warning",
+                    "level": level,
+                    "content": self._format_budget_warning(level, percent_used, remaining),
+                    "tokens_used": self.tokens_used,
+                    "tokens_remaining": remaining,
+                    "percent_used": percent_used,
+                }
+
+        return None
+
+    def _format_budget_warning(
+        self, level: str, percent: float, remaining: int
+    ) -> str:
+        """Format a budget warning message based on severity level."""
+        messages = {
+            "warning": (
+                f"[CONTEXT_BUDGET: {percent:.0f}% used, ~{remaining:,} tokens remaining. "
+                "Consider wrapping up current work.]"
+            ),
+            "urgent": (
+                f"[CONTEXT_BUDGET: {percent:.0f}% used. Checkpoint saved. "
+                "Update context files and prepare to end session.]"
+            ),
+            "critical": (
+                f"[CONTEXT_BUDGET: {percent:.0f}% used. Stop new work. "
+                "Save state and signal session end.]"
+            ),
+        }
+        return messages.get(level, messages["warning"])
+
+    async def _save_budget_checkpoint(self) -> None:
+        """Save checkpoint triggered by budget threshold."""
+        logger.info(
+            "Saving budget-triggered checkpoint",
+            tokens_used=self.tokens_used,
+            token_budget=self.token_budget,
+            agent=self.agent_name,
+        )
+        try:
+            await self.checkpoint_manager.save_checkpoint(
+                await self._get_state_async()
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to save budget checkpoint",
+                error=str(e),
+                agent=self.agent_name,
+            )
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the agent session and cleanup SDK client."""
