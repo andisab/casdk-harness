@@ -11,7 +11,127 @@ from harness.progress import (
     SessionData,
     TaskItem,
     TaskList,
+    WorkspaceConfig,
+    WorkspaceState,
 )
+
+
+class TestWorkspaceState:
+    """Tests for WorkspaceState enum."""
+
+    def test_workspace_state_values(self) -> None:
+        """Test that all workspace states are defined."""
+        assert WorkspaceState.EMPTY is not None
+        assert WorkspaceState.WORK_IN_PROGRESS is not None
+        assert WorkspaceState.COMPLETED is not None
+        assert WorkspaceState.CONFLICT is not None
+        assert WorkspaceState.EXTERNAL_REPO is not None
+        assert WorkspaceState.MIXED is not None
+
+    def test_workspace_state_unique_values(self) -> None:
+        """Test that all workspace states have unique values."""
+        values = [state.value for state in WorkspaceState]
+        assert len(values) == len(set(values))
+
+
+class TestWorkspaceConfig:
+    """Tests for WorkspaceConfig dataclass."""
+
+    def test_create_local_workspace_config(self) -> None:
+        """Test creating a local workspace config."""
+        config = WorkspaceConfig(type="local")
+
+        assert config.type == "local"
+        assert config.branch is None
+        assert config.remote_url is None
+        assert config.initialized_from is None
+
+    def test_create_external_workspace_config(self) -> None:
+        """Test creating an external workspace config with all fields."""
+        config = WorkspaceConfig(
+            type="external",
+            branch="casdk-auth-feature",
+            remote_url="git@github.com:org/repo.git",
+            initialized_from="abc123def456",
+        )
+
+        assert config.type == "external"
+        assert config.branch == "casdk-auth-feature"
+        assert config.remote_url == "git@github.com:org/repo.git"
+        assert config.initialized_from == "abc123def456"
+
+    def test_workspace_config_to_dict_minimal(self) -> None:
+        """Test serialization with minimal fields."""
+        config = WorkspaceConfig(type="local")
+        data = config.to_dict()
+
+        assert data == {"type": "local"}
+        assert "branch" not in data
+        assert "remote_url" not in data
+        assert "initialized_from" not in data
+
+    def test_workspace_config_to_dict_full(self) -> None:
+        """Test serialization with all fields."""
+        config = WorkspaceConfig(
+            type="external",
+            branch="casdk-feature",
+            remote_url="git@github.com:org/repo.git",
+            initialized_from="abc123",
+        )
+        data = config.to_dict()
+
+        assert data["type"] == "external"
+        assert data["branch"] == "casdk-feature"
+        assert data["remote_url"] == "git@github.com:org/repo.git"
+        assert data["initialized_from"] == "abc123"
+
+    def test_workspace_config_from_dict_minimal(self) -> None:
+        """Test deserialization with minimal fields."""
+        data = {"type": "local"}
+        config = WorkspaceConfig.from_dict(data)
+
+        assert config.type == "local"
+        assert config.branch is None
+        assert config.remote_url is None
+
+    def test_workspace_config_from_dict_full(self) -> None:
+        """Test deserialization with all fields."""
+        data = {
+            "type": "external",
+            "branch": "casdk-new-feature",
+            "remote_url": "git@gitlab.com:org/project.git",
+            "initialized_from": "def456",
+        }
+        config = WorkspaceConfig.from_dict(data)
+
+        assert config.type == "external"
+        assert config.branch == "casdk-new-feature"
+        assert config.remote_url == "git@gitlab.com:org/project.git"
+        assert config.initialized_from == "def456"
+
+    def test_workspace_config_from_dict_defaults(self) -> None:
+        """Test that missing type defaults to 'local'."""
+        data = {}
+        config = WorkspaceConfig.from_dict(data)
+
+        assert config.type == "local"
+
+    def test_workspace_config_roundtrip(self) -> None:
+        """Test serialization and deserialization preserves data."""
+        original = WorkspaceConfig(
+            type="external",
+            branch="casdk-auth",
+            remote_url="git@github.com:user/repo.git",
+            initialized_from="abc123def",
+        )
+
+        data = original.to_dict()
+        restored = WorkspaceConfig.from_dict(data)
+
+        assert restored.type == original.type
+        assert restored.branch == original.branch
+        assert restored.remote_url == original.remote_url
+        assert restored.initialized_from == original.initialized_from
 
 
 class TestQASession:
@@ -370,6 +490,132 @@ class TestTaskList:
         assert stats["failed"] == 1
         assert stats["remaining"] == 1
         assert stats["completion_percent"] == pytest.approx(33.33, rel=0.1)
+
+    def test_task_list_without_workspace_config(self) -> None:
+        """Test backwards compatibility - TaskList without workspace field."""
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test",
+            tasks=[],
+        )
+
+        assert task_list.workspace is None
+
+        # Serialization should not include workspace field
+        data = task_list.to_dict()
+        assert "workspace" not in data
+
+    def test_task_list_with_workspace_config(self) -> None:
+        """Test TaskList with workspace configuration."""
+        workspace = WorkspaceConfig(
+            type="external",
+            branch="casdk-feature",
+            remote_url="git@github.com:org/repo.git",
+        )
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test",
+            tasks=[],
+            workspace=workspace,
+        )
+
+        assert task_list.workspace is not None
+        assert task_list.workspace.type == "external"
+        assert task_list.workspace.branch == "casdk-feature"
+
+    def test_task_list_to_dict_with_workspace(self) -> None:
+        """Test serialization includes workspace when present."""
+        workspace = WorkspaceConfig(
+            type="external",
+            branch="casdk-auth",
+            remote_url="git@github.com:user/repo.git",
+            initialized_from="abc123",
+        )
+        task_list = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="External Project",
+            tasks=[],
+            workspace=workspace,
+        )
+
+        data = task_list.to_dict()
+
+        assert "workspace" in data
+        assert data["workspace"]["type"] == "external"
+        assert data["workspace"]["branch"] == "casdk-auth"
+        assert data["workspace"]["remote_url"] == "git@github.com:user/repo.git"
+        assert data["workspace"]["initialized_from"] == "abc123"
+
+    def test_task_list_from_dict_without_workspace(self) -> None:
+        """Test deserialization works without workspace field (backwards compat)."""
+        data = {
+            "version": "1.0",
+            "created_at": "2025-12-04T00:00:00Z",
+            "project_name": "Old Project",
+            "tasks": [],
+        }
+
+        task_list = TaskList.from_dict(data)
+
+        assert task_list.workspace is None
+        assert task_list.project_name == "Old Project"
+
+    def test_task_list_from_dict_with_workspace(self) -> None:
+        """Test deserialization includes workspace config."""
+        data = {
+            "version": "1.0",
+            "created_at": "2025-12-04T00:00:00Z",
+            "project_name": "External Project",
+            "tasks": [],
+            "workspace": {
+                "type": "external",
+                "branch": "casdk-new-feature",
+                "remote_url": "git@gitlab.com:org/project.git",
+            },
+        }
+
+        task_list = TaskList.from_dict(data)
+
+        assert task_list.workspace is not None
+        assert task_list.workspace.type == "external"
+        assert task_list.workspace.branch == "casdk-new-feature"
+        assert task_list.workspace.remote_url == "git@gitlab.com:org/project.git"
+
+    def test_task_list_workspace_roundtrip(self) -> None:
+        """Test serialization and deserialization preserves workspace config."""
+        workspace = WorkspaceConfig(
+            type="external",
+            branch="casdk-feature-x",
+            remote_url="git@github.com:org/repo.git",
+            initialized_from="def456",
+        )
+        original = TaskList(
+            version="1.0",
+            created_at="2025-12-04T00:00:00Z",
+            project_name="Test Project",
+            tasks=[
+                TaskItem(
+                    id="task-001",
+                    title="Task 1",
+                    description="Desc",
+                    acceptance_criteria=["AC1"],
+                ),
+            ],
+            workspace=workspace,
+        )
+
+        data = original.to_dict()
+        restored = TaskList.from_dict(data)
+
+        assert restored.workspace is not None
+        assert restored.workspace.type == original.workspace.type
+        assert restored.workspace.branch == original.workspace.branch
+        assert restored.workspace.remote_url == original.workspace.remote_url
+        assert restored.workspace.initialized_from == original.workspace.initialized_from
+        assert len(restored.tasks) == 1
 
 
 class TestSessionData:

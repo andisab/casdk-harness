@@ -40,13 +40,82 @@ When requirements are clear:
 3. Make adjustments based on feedback
 4. Output `[TASK_LIST_READY]` when approved
 
+## Working with External Repositories
+
+When the workspace contains an external git repository (cloned from GitHub, GitLab, etc.),
+the SPEC.md **MUST** include a `branch` field to specify the feature branch name.
+
+### Branch Field Requirement
+
+Add this field at the top of SPEC.md for external repositories:
+
+```markdown
+# Project: Feature Name
+
+branch: casdk-feature-name
+
+## Overview
+...
+```
+
+**Branch Naming Convention:**
+- Must start with `casdk-` prefix
+- Use lowercase letters, numbers, and hyphens only
+- Examples: `casdk-auth-system`, `casdk-api-v2`, `casdk-fix-123`
+
+**Why This Matters:**
+- The autonomous runner will checkout or create this branch before starting work
+- All commits will be made on this branch, not on `main` or `master`
+- This protects the main branch and enables clean pull requests
+
+### SPEC.md Example for External Repos
+
+```markdown
+# Project: Add User Authentication
+
+branch: casdk-user-auth
+
+## Overview
+Add JWT-based authentication to the existing FastAPI application.
+
+## Requirements
+- User registration with email/password
+- Login endpoint returning JWT tokens
+- Protected route middleware
+
+## Acceptance Criteria
+- [ ] Registration creates user in database
+- [ ] Login returns valid JWT
+- [ ] Protected routes reject invalid tokens
+```
+
+### Workspace Configuration
+
+When working on an external repository, the `task_list.json` will include a `workspace` field:
+
+```json
+{
+  "version": "1.0",
+  "project_name": "Add User Authentication",
+  "workspace": {
+    "type": "external",
+    "branch": "casdk-user-auth",
+    "remote_url": "https://github.com/user/repo.git",
+    "initialized_from": "abc123..."
+  },
+  "tasks": [...]
+}
+```
+
+This configuration is stored automatically when the task list is created.
+
 ## File Structure
 
 After initialization, the workspace should have:
 ```
 /workspace/
-├── SPEC.md              # Project specification
-├── task_list.json       # Task list with status field (PASS/FAIL/null per task)
+├── SPEC.md              # Project specification (with branch field for external repos)
+├── task_list.json       # Task list with status and workspace config
 └── sessions/            # Session logs (session_N.json)
 ```
 

@@ -1,6 +1,8 @@
 """Progress tracking for autonomous development sessions.
 
 This module provides:
+- WorkspaceState: Enum for detected workspace states
+- WorkspaceConfig: Configuration for workspace type and branch management
 - TaskItem: Individual task with id, title, description, acceptance_criteria, status
 - TaskList: Collection of tasks with mutable status field
 - SessionData: Complete session record including transcript
@@ -10,8 +12,66 @@ This module provides:
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Literal
+
+
+class WorkspaceState(Enum):
+    """Detected workspace states for autonomous mode.
+
+    These states determine how the autonomous runner initializes
+    and what actions are taken before entering initializer or
+    continuation mode.
+    """
+
+    EMPTY = auto()  # State A: Empty or only SPEC.md
+    WORK_IN_PROGRESS = auto()  # State B: task_list.json with incomplete tasks
+    COMPLETED = auto()  # State C: task_list.json with all tasks done
+    CONFLICT = auto()  # State D: Multiple SPEC.md or task_list.json
+    EXTERNAL_REPO = auto()  # State E: Git repo without our files
+    MIXED = auto()  # State F: Files present but no git repo
+
+
+@dataclass
+class WorkspaceConfig:
+    """Workspace configuration stored in task_list.json.
+
+    Tracks whether we're working on a local project or an external
+    repository, and manages branch information for external repos.
+
+    Attributes:
+        type: "local" for new projects, "external" for cloned repos
+        branch: Branch name for external repos (e.g., "casdk-feature-name")
+        remote_url: Git remote URL for external repos
+        initialized_from: Hash of SPEC.md when task list was created
+    """
+
+    type: Literal["local", "external"]
+    branch: str | None = None
+    remote_url: str | None = None
+    initialized_from: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        result: dict[str, Any] = {"type": self.type}
+        if self.branch is not None:
+            result["branch"] = self.branch
+        if self.remote_url is not None:
+            result["remote_url"] = self.remote_url
+        if self.initialized_from is not None:
+            result["initialized_from"] = self.initialized_from
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WorkspaceConfig":
+        """Create WorkspaceConfig from dictionary."""
+        return cls(
+            type=data.get("type", "local"),
+            branch=data.get("branch"),
+            remote_url=data.get("remote_url"),
+            initialized_from=data.get("initialized_from"),
+        )
 
 
 @dataclass
@@ -119,29 +179,45 @@ class TaskList:
 
     Task definitions are created once by Tech Lead agent.
     Only the status field on individual tasks can be updated.
+
+    Attributes:
+        version: Schema version
+        created_at: ISO timestamp when created
+        project_name: Name of the project
+        tasks: List of TaskItem objects
+        workspace: Optional workspace configuration for external repos
     """
+
     version: str
     created_at: str
     project_name: str
     tasks: list[TaskItem]
+    workspace: WorkspaceConfig | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "version": self.version,
             "created_at": self.created_at,
             "project_name": self.project_name,
             "tasks": [task.to_dict() for task in self.tasks],
         }
+        if self.workspace is not None:
+            result["workspace"] = self.workspace.to_dict()
+        return result
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskList":
         """Create TaskList from dictionary."""
+        workspace = None
+        if "workspace" in data:
+            workspace = WorkspaceConfig.from_dict(data["workspace"])
         return cls(
             version=data["version"],
             created_at=data["created_at"],
             project_name=data["project_name"],
             tasks=[TaskItem.from_dict(t) for t in data.get("tasks", [])],
+            workspace=workspace,
         )
 
     def get_task(self, task_id: str) -> TaskItem | None:

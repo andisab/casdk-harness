@@ -18,9 +18,11 @@ import hashlib
 import json
 import re
 import signal
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 from rich.console import Console
@@ -29,7 +31,14 @@ from rich.prompt import Prompt
 from harness.agent import AgentSession
 from harness.cli import parse_and_print_message
 from harness.config import get_config
-from harness.progress import ProgressManager, QASession, SessionData, TaskList
+from harness.progress import (
+    ProgressManager,
+    QASession,
+    SessionData,
+    TaskList,
+    WorkspaceConfig,
+    WorkspaceState,
+)
 
 # Load prompts from files
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -78,6 +87,8 @@ class AutonomousRunner:
         self._shutdown_requested = False
         self._shutdown_event: asyncio.Event | None = None
         self.console = Console()
+        # Workspace config to be persisted in task_list.json (set by external repo handler)
+        self._pending_workspace_config: WorkspaceConfig | None = None
 
     def _setup_signal_handlers(self) -> None:
         """Set up async signal handlers in the running event loop.
@@ -203,6 +214,448 @@ tags: [priorities, focus]
                 with open(file_path, "w") as f:
                     f.write(content)
                 logger.debug("Created context file", path=str(file_path))
+
+    # --- Workspace State Detection ---
+
+    def _detect_workspace_state(self) -> tuple[WorkspaceState, dict[str, Any]]:
+        """Detect the current workspace state.
+
+        Analyzes the workspace directory to determine what state it's in:
+        - EMPTY: Only SPEC.md exists or workspace is empty
+        - WORK_IN_PROGRESS: task_list.json exists with incomplete tasks
+        - COMPLETED: task_list.json exists with all tasks done
+        - CONFLICT: Multiple SPEC.md or task_list.json files found
+        - EXTERNAL_REPO: Git repo exists without our files (cloned repo)
+        - MIXED: Files exist but no git repo
+
+        Returns:
+            Tuple of (state, context_dict) where context_dict contains
+            relevant information about the detected state.
+        """
+        context: dict[str, Any] = {}
+
+        # Check for conflicting files (State D)
+        spec_files = list(self.workspace_dir.glob("**/SPEC.md"))
+        task_list_files = list(self.workspace_dir.glob("**/task_list.json"))
+
+        if len(spec_files) > 1 or len(task_list_files) > 1:
+            context["spec_files"] = [str(f) for f in spec_files]
+            context["task_list_files"] = [str(f) for f in task_list_files]
+            return WorkspaceState.CONFLICT, context
+
+        # Check for existing task list
+        has_task_list = self.progress_manager.has_task_list()
+        has_git = (self.workspace_dir / ".git").is_dir()
+        has_spec = (self.workspace_dir / "SPEC.md").exists()
+
+        # Get workspace contents (excluding hidden files and sessions dir)
+        workspace_contents = [
+            f
+            for f in self.workspace_dir.iterdir()
+            if not f.name.startswith(".") and f.name != "sessions"
+        ]
+
+        if has_task_list:
+            task_list = self.progress_manager.load_task_list()
+            stats = task_list.get_completion_stats()
+            context["task_list"] = task_list
+            context["stats"] = stats
+
+            if stats["remaining"] == 0:
+                return WorkspaceState.COMPLETED, context
+            return WorkspaceState.WORK_IN_PROGRESS, context
+
+        # No task_list.json - check other states
+        if has_git and not has_spec:
+            # External repo (State E) - git repo without our files
+            context["remote_url"] = self._get_git_remote_url()
+            context["current_branch"] = self._get_current_branch()
+            return WorkspaceState.EXTERNAL_REPO, context
+
+        # Count non-SPEC files (excluding context directory and hidden files)
+        non_spec_files = [
+            f
+            for f in workspace_contents
+            if f.name != "SPEC.md" and f.name != "context"
+        ]
+
+        if not has_git and len(non_spec_files) > 0:
+            # Mixed state (State F) - files exist but no git
+            context["files"] = [f.name for f in non_spec_files[:10]]
+            return WorkspaceState.MIXED, context
+
+        # Empty or only SPEC.md (State A)
+        context["has_spec"] = has_spec
+        return WorkspaceState.EMPTY, context
+
+    # --- Git Helper Methods ---
+
+    def _get_git_remote_url(self) -> str | None:
+        """Get the git remote URL for origin."""
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=self.workspace_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return None
+
+    def _get_current_branch(self) -> str | None:
+        """Get the current git branch name."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=self.workspace_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return None
+
+    def _run_git_init(self) -> bool:
+        """Initialize a git repository in the workspace.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["git", "init"],
+                cwd=self.workspace_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                logger.info("Git repository initialized", path=str(self.workspace_dir))
+                return True
+            logger.error("Git init failed", stderr=result.stderr)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error("Git init exception", error=str(e))
+        return False
+
+    def _ensure_branch(self, branch_name: str) -> bool:
+        """Ensure we're on the specified branch, creating if needed.
+
+        Args:
+            branch_name: Name of branch to switch to or create
+
+        Returns:
+            True if successful, False otherwise
+        """
+        current = self._get_current_branch()
+        if current == branch_name:
+            logger.info("Already on branch", branch=branch_name)
+            return True
+
+        try:
+            # Check if branch exists
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", branch_name],
+                cwd=self.workspace_dir,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                # Branch exists, checkout
+                checkout_result = subprocess.run(
+                    ["git", "checkout", branch_name],
+                    cwd=self.workspace_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if checkout_result.returncode == 0:
+                    logger.info("Switched to existing branch", branch=branch_name)
+                    return True
+            else:
+                # Create and checkout new branch
+                checkout_result = subprocess.run(
+                    ["git", "checkout", "-b", branch_name],
+                    cwd=self.workspace_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if checkout_result.returncode == 0:
+                    logger.info("Created and switched to branch", branch=branch_name)
+                    return True
+
+            logger.error("Failed to switch branch", stderr=checkout_result.stderr)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error("Branch switch exception", error=str(e))
+        return False
+
+    def _parse_branch_from_spec(self) -> str | None:
+        """Parse branch name from SPEC.md file.
+
+        Looks for a line like 'branch: casdk-feature-name'
+
+        Returns:
+            Branch name if found, None otherwise
+        """
+        spec_path = self.workspace_dir / "SPEC.md"
+        if not spec_path.exists():
+            return None
+
+        try:
+            content = spec_path.read_text()
+            # Look for branch: casdk-xxx pattern
+            match = re.search(r"^branch:\s*(casdk-[\w-]+)", content, re.MULTILINE)
+            if match:
+                return match.group(1)
+        except OSError:
+            pass
+        return None
+
+    def _get_or_prompt_branch_name(self) -> str | None:
+        """Get branch name from SPEC.md or prompt user.
+
+        Returns:
+            Branch name if provided, None if user cancels
+        """
+        # First try to get from SPEC.md
+        branch = self._parse_branch_from_spec()
+        if branch:
+            return branch
+
+        # Prompt user
+        self.console.print(
+            "\n[yellow]No branch specified in SPEC.md.[/yellow]\n"
+            "Branch naming convention: casdk-{feature-name}"
+        )
+
+        try:
+            branch_name = Prompt.ask(
+                "Enter branch name (or 'cancel' to exit)",
+                default="casdk-feature",
+            )
+
+            if branch_name.lower() == "cancel":
+                return None
+
+            if not branch_name.startswith("casdk-"):
+                branch_name = f"casdk-{branch_name}"
+
+            return branch_name
+        except (KeyboardInterrupt, EOFError):
+            return None
+
+    # --- Workspace State Handlers ---
+
+    async def _handle_workspace_state(
+        self, state: WorkspaceState, context: dict[str, Any]
+    ) -> bool:
+        """Handle the detected workspace state.
+
+        Args:
+            state: Detected workspace state
+            context: Context dict from detection
+
+        Returns:
+            True if should proceed, False if should exit
+        """
+        handlers = {
+            WorkspaceState.EMPTY: self._handle_empty_workspace,
+            WorkspaceState.WORK_IN_PROGRESS: self._handle_wip_workspace,
+            WorkspaceState.COMPLETED: self._handle_completed_workspace,
+            WorkspaceState.CONFLICT: self._handle_conflict_workspace,
+            WorkspaceState.EXTERNAL_REPO: self._handle_external_repo,
+            WorkspaceState.MIXED: self._handle_mixed_workspace,
+        }
+        handler = handlers.get(state)
+        if handler:
+            return await handler(context)
+        return True
+
+    async def _handle_empty_workspace(self, context: dict[str, Any]) -> bool:
+        """Handle State A: Empty workspace.
+
+        Initializes git repo and proceeds to initializer mode.
+        """
+        logger.info("Empty workspace detected, initializing git repository")
+
+        # Initialize git repo
+        if not self._run_git_init():
+            self.console.print(
+                "[red]Failed to initialize git repository. Please check permissions.[/red]"
+            )
+            return False
+
+        if not context.get("has_spec"):
+            self.console.print(
+                "\n[yellow]No SPEC.md found. The Tech Lead will help you create one.[/yellow]\n"
+            )
+
+        return True
+
+    async def _handle_wip_workspace(self, context: dict[str, Any]) -> bool:
+        """Handle State B: Work in progress.
+
+        Logs progress and continues normally.
+        """
+        stats = context.get("stats", {})
+        self.console.print(
+            f"\n[green]Resuming work: {stats.get('passed', 0)}/{stats.get('total_tasks', 0)} "
+            f"tasks complete[/green]\n"
+        )
+        return True
+
+    async def _handle_completed_workspace(self, context: dict[str, Any]) -> bool:
+        """Handle State C: All tasks completed.
+
+        Prompts user to review or archive.
+        """
+        stats = context.get("stats", {})
+        self.console.print(
+            f"\n[bold green]All {stats.get('total_tasks', 0)} tasks completed![/bold green]\n"
+            "\nOptions:\n"
+            "  1. Archive and start new project (run 'make reset-workspace')\n"
+            "  2. Continue to review/finalize\n"
+        )
+
+        try:
+            response = Prompt.ask(
+                "Continue reviewing?",
+                choices=["y", "n"],
+                default="n",
+            )
+            return response.lower() == "y"
+        except (KeyboardInterrupt, EOFError):
+            return False
+
+    async def _handle_conflict_workspace(self, context: dict[str, Any]) -> bool:
+        """Handle State D: Conflicting files.
+
+        Refuses to proceed and requires manual cleanup.
+        """
+        self.console.print(
+            "\n[bold red]ERROR: Conflicting workspace state detected[/bold red]\n"
+        )
+
+        spec_files = context.get("spec_files", [])
+        task_list_files = context.get("task_list_files", [])
+
+        if len(spec_files) > 1:
+            self.console.print("Multiple SPEC.md files found:")
+            for f in spec_files:
+                self.console.print(f"  - {f}")
+
+        if len(task_list_files) > 1:
+            self.console.print("\nMultiple task_list.json files found:")
+            for f in task_list_files:
+                self.console.print(f"  - {f}")
+
+        self.console.print(
+            "\n[yellow]Please delete or rename the duplicate files and run again.[/yellow]"
+        )
+        return False
+
+    async def _handle_external_repo(self, context: dict[str, Any]) -> bool:
+        """Handle State E: External repository.
+
+        Prompts user to work on the repo or clean workspace.
+        """
+        remote_url = context.get("remote_url", "unknown")
+        current_branch = context.get("current_branch", "unknown")
+
+        self.console.print(
+            f"\n[cyan]External repository detected[/cyan]\n"
+            f"  Remote: {remote_url}\n"
+            f"  Branch: {current_branch}\n"
+        )
+
+        try:
+            response = Prompt.ask(
+                "Work on this repository or clean workspace?",
+                choices=["work", "clean"],
+                default="work",
+            )
+
+            if response == "clean":
+                self.console.print(
+                    "\n[yellow]Please run 'make reset-workspace' to clean.[/yellow]\n"
+                )
+                return False
+
+            # Get or prompt for branch name
+            branch_name = self._get_or_prompt_branch_name()
+            if not branch_name:
+                self.console.print("\n[yellow]No branch specified. Exiting.[/yellow]\n")
+                return False
+
+            # Ensure we're on the correct branch
+            if not self._ensure_branch(branch_name):
+                self.console.print(
+                    f"\n[red]Failed to switch to branch '{branch_name}'[/red]\n"
+                )
+                return False
+
+            # Store workspace config for persistence in task_list.json
+            self._pending_workspace_config = WorkspaceConfig(
+                type="external",
+                branch=branch_name,
+                remote_url=remote_url,
+                initialized_from=self._get_spec_hash(),
+            )
+
+            self.console.print(
+                f"\n[green]Ready to work on branch '{branch_name}'[/green]\n"
+            )
+            return True
+
+        except (KeyboardInterrupt, EOFError):
+            return False
+
+    async def _handle_mixed_workspace(self, context: dict[str, Any]) -> bool:
+        """Handle State F: Mixed state.
+
+        Warns user and asks about cleanup.
+        """
+        files = context.get("files", [])
+
+        self.console.print(
+            f"\n[yellow]Workspace contains files but no git repository:[/yellow]\n"
+            f"  Files: {', '.join(files[:5])}"
+            f"{'...' if len(files) > 5 else ''}\n"
+        )
+
+        try:
+            response = Prompt.ask(
+                "Initialize git and continue, or clean workspace?",
+                choices=["continue", "clean"],
+                default="continue",
+            )
+
+            if response == "clean":
+                self.console.print(
+                    "\n[yellow]Please run 'make reset-workspace' to clean.[/yellow]\n"
+                )
+                return False
+
+            # Initialize git repo
+            if not self._run_git_init():
+                self.console.print(
+                    "[red]Failed to initialize git repository.[/red]"
+                )
+                return False
+
+            return True
+
+        except (KeyboardInterrupt, EOFError):
+            return False
 
     def _get_spec_hash(self) -> str:
         """Get hash of SPEC.md to detect changes."""
@@ -821,6 +1274,15 @@ Resume with the next question in the sequence.
             workspace=str(self.workspace_dir),
             model=self.model or self.config.claude_model,
         )
+
+        # Detect and handle workspace state before main loop
+        state, context = self._detect_workspace_state()
+        logger.info("Workspace state detected", state=state.name)
+
+        should_proceed = await self._handle_workspace_state(state, context)
+        if not should_proceed:
+            logger.info("Exiting due to workspace state handling")
+            return
 
         while not self._shutdown_requested:
             mode = self._get_mode()

@@ -665,6 +665,141 @@ docker stats claude-main-agent
 - **Log rotation**: Automatic (configured in monitoring)
 - **API budget**: Monitor in Grafana, set alerts in `.env`
 
+## Autonomous Mode
+
+The harness supports fully autonomous development sessions that can run for hours without intervention. Use `make autonomous` to start.
+
+### How It Works
+
+1. **Write a SPEC.md** in your workspace describing what you want to build
+2. **Run `make autonomous`** - the Tech Lead agent refines requirements and creates a task list
+3. **Tasks are executed automatically** - specialized agents complete tasks one by one
+4. **Progress is tracked** in `task_list.json` with PASS/FAIL status
+
+### Quick Start
+
+```bash
+# 1. Create or edit your project spec
+cat > workspace/SPEC.md << 'EOF'
+# My Feature
+
+Build a REST API with user authentication.
+
+## Requirements
+- JWT-based authentication
+- User registration and login endpoints
+- Protected routes middleware
+EOF
+
+# 2. Start autonomous mode
+make autonomous
+
+# 3. Check progress anytime
+make autonomous-status
+```
+
+### Workspace States
+
+Before starting, the runner detects your workspace state:
+
+| State | What It Means | What Happens |
+|-------|---------------|--------------|
+| **Empty** | Fresh workspace (only SPEC.md or nothing) | Initializes git, starts Tech Lead Q&A |
+| **Work in Progress** | Incomplete tasks exist | Continues from where it left off |
+| **Completed** | All tasks done | Prompts to review or archive |
+| **Conflict** | Multiple SPEC.md or task_list.json files | Refuses - clean up duplicates first |
+| **External Repo** | Cloned repo without our files | Asks: work on this repo or clean? |
+| **Mixed** | Files exist but no git repo | Warns and asks how to proceed |
+
+### Working with External Repositories
+
+When you clone an external repository to work on, add a `branch` field to your SPEC.md:
+
+```markdown
+# Project: Add Authentication
+
+branch: casdk-auth-feature
+
+## Overview
+Add JWT authentication to the existing API.
+
+## Requirements
+- User model and migration
+- Login/register endpoints
+- JWT token generation
+```
+
+**Branch Naming Rules:**
+- Must start with `casdk-` prefix
+- Use lowercase letters, numbers, and hyphens only
+- Examples: `casdk-auth-system`, `casdk-fix-login-bug`, `casdk-api-v2`
+
+The runner will automatically create or switch to this branch before starting work.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `make autonomous` | Start autonomous development (default: sonnet) |
+| `make autonomous-model MODEL=opus` | Use specific model |
+| `make autonomous-status` | Show current progress |
+| `make autonomous-unsafe` | Allow all commands (dangerous!) |
+| `make reset-workspace` | Clean workspace for fresh start |
+
+### Progress Tracking
+
+Two files track your session:
+
+| File | Purpose |
+|------|---------|
+| `task_list.json` | Task definitions with status (PASS/FAIL/null) and workspace config |
+| `sessions/session_N.json` | Full transcript and metrics for each session |
+
+### Example Session Flow
+
+```
+$ make autonomous
+
+Detecting workspace state...
+✓ Empty workspace detected (SPEC.md found)
+✓ Git repository initialized
+
+Starting Tech Lead Q&A session...
+
+Question 1/3: What authentication method do you prefer?
+  [1] JWT tokens (recommended for APIs)
+  [2] Session cookies
+  [3] OAuth 2.0
+
+You: 1
+
+Question 2/3: Should users be able to register themselves?
+You: Yes, with email verification
+
+Question 3/3: Any rate limiting requirements?
+You: 100 requests per minute per user
+
+Generating task list...
+✓ Created task_list.json with 8 tasks
+
+Starting development session...
+[Task 1/8] Creating User model...
+[Task 2/8] Setting up JWT utilities...
+...
+```
+
+### Resuming After Interruption
+
+If your session is interrupted, simply run `make autonomous` again:
+
+```bash
+$ make autonomous
+
+Detecting workspace state...
+✓ Work in progress (3/8 tasks completed)
+✓ Resuming from task 4...
+```
+
 ## Security
 
 ### Built-in Security Features

@@ -1280,19 +1280,53 @@ See `.ssh/README.md` for detailed setup instructions.
 
 The harness supports long-running autonomous development sessions via `make autonomous`.
 
+**Workspace State Detection:**
+
+Before starting, the runner detects the workspace state and handles it appropriately:
+
+| State | Condition | Action |
+|-------|-----------|--------|
+| **EMPTY** | Only SPEC.md or nothing | Run `git init`, proceed to initializer |
+| **WORK_IN_PROGRESS** | task_list.json with incomplete tasks | Continue normally |
+| **COMPLETED** | All tasks PASS/FAIL | Prompt: review or archive |
+| **CONFLICT** | Multiple SPEC.md or task_list.json | REFUSE, require manual cleanup |
+| **EXTERNAL_REPO** | .git exists, no SPEC.md + task_list.json | Ask: work on repo or clean |
+| **MIXED** | Files exist, no .git | Warn, ask about cleanup |
+
 **Workflow:**
 ```
-1. No task_list.json exists?
+1. Detect workspace state (see table above)
+   → Handle state appropriately (git init, prompt user, etc.)
+
+2. No task_list.json exists?
    → Run Initializer Mode (Tech Lead Q&A)
    → Generate task_list.json when requirements clear
 
-2. task_list.json exists?
+3. task_list.json exists?
    → Run Continuation Mode (Coding Agent)
    → Work on highest priority incomplete task
    → Mark tasks complete or blocked
    → Commit changes
    → Loop until all tasks done
 ```
+
+**External Repository Support:**
+
+When working on an external repository (cloned from GitHub, GitLab, etc.), the SPEC.md **must** include a `branch` field:
+
+```markdown
+# Project: Feature Name
+
+branch: casdk-feature-name
+
+## Overview
+...
+```
+
+**Branch Naming Convention:**
+- Must start with `casdk-` prefix
+- Use lowercase letters, numbers, and hyphens only
+- Examples: `casdk-auth-system`, `casdk-api-v2`, `casdk-fix-123`
 
 **Subagent Definitions (8 available):**
 
@@ -1311,7 +1345,7 @@ The harness supports long-running autonomous development sessions via `make auto
 
 | File | Purpose | Mutability |
 |------|---------|------------|
-| `task_list.json` | Task definitions with status (PASS/FAIL/null) | Status field mutable |
+| `task_list.json` | Task definitions with status and workspace config | Status field mutable |
 | `sessions/session_N.json` | Session metadata + transcript | One per session |
 
 **Commands:**
