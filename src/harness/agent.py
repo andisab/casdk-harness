@@ -21,8 +21,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, get_config
+from harness.health import HealthServer
 from harness.mcp_loader import MCPConfigLoader
-from harness.messaging import RedisMessageBroker
+from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
 
 # In-process MCP servers (Method A)
@@ -31,6 +32,12 @@ from mcp_servers.docker import docker_server
 from mcp_servers.memory import memory_server
 
 logger = structlog.get_logger(__name__)
+
+
+class AgentTimeoutError(Exception):
+    """Raised when agent execution exceeds the configured timeout."""
+
+    pass
 
 
 class AgentSession:
@@ -74,6 +81,7 @@ class AgentSession:
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
             interval=self.config.claude_checkpoint_interval,
+            max_checkpoints=self.config.checkpoint_keep_count,
         )
         self.metrics = metrics_collector or MetricsCollector(
             workspace_dir=self.config.workspace_dir,
@@ -82,14 +90,23 @@ class AgentSession:
 
         # Initialize Redis message broker for cross-agent communication
         # Set to None on connection failure to make disabled state explicit
+        # Uses circuit breaker pattern for resilience (see messaging.py)
         self.message_broker: RedisMessageBroker | None = None
         self.redis_available: bool = False
         try:
-            broker = RedisMessageBroker()
+            broker = RedisMessageBroker(config=self.config)
             broker.connect()
             self.message_broker = broker
             self.redis_available = True
             logger.info("Redis message broker connected", agent=agent_name)
+        except CircuitBreakerOpenError as e:
+            # Circuit breaker is open - Redis was failing, skip connection
+            logger.warning(
+                "Redis circuit breaker is open - inter-agent messaging disabled. "
+                "Will retry automatically after recovery timeout.",
+                agent=agent_name,
+                error=str(e),
+            )
         except Exception as e:
             # Redis unavailable - inter-agent messaging disabled
             # This is expected in single-agent mode or when Redis is not running
@@ -103,6 +120,13 @@ class AgentSession:
         # SDK client and session management (persistent across execute() calls)
         self.client: ClaudeSDKClient | None = None  # Persistent SDK client
         self.session_id: str | None = None  # SDK session ID (set on connect)
+
+        # Background task tracking for proper lifecycle management
+        # All background tasks (checkpointing, metrics) are tracked here for cleanup
+        self._background_tasks: set[asyncio.Task[Any]] = set()
+
+        # Health check server (started in start(), stopped in shutdown())
+        self.health_server: HealthServer | None = None
 
         # Temporary local session ID until SDK connects
         self._local_session_id = f"{agent_name}_{datetime.now().isoformat()}"
@@ -470,15 +494,29 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         self.metrics.start()
         self.metrics.set_active_sessions(self.agent_name, 1)
 
-        # Start auto-checkpoint task
-        asyncio.create_task(
+        # Start auto-checkpoint task (tracked for cleanup)
+        checkpoint_task = asyncio.create_task(
             self.checkpoint_manager.auto_checkpoint(
                 get_state_fn=self._get_state_async
             )
         )
+        self._background_tasks.add(checkpoint_task)
+        checkpoint_task.add_done_callback(self._background_tasks.discard)
 
-        # Start metrics collection task
-        asyncio.create_task(self.metrics.collect_system_metrics())
+        # Start metrics collection task (tracked for cleanup)
+        metrics_task = asyncio.create_task(self.metrics.collect_system_metrics())
+        self._background_tasks.add(metrics_task)
+        metrics_task.add_done_callback(self._background_tasks.discard)
+
+        logger.debug(
+            "Background tasks started",
+            agent=self.agent_name,
+            task_count=len(self._background_tasks),
+        )
+
+        # Start health check server
+        self.health_server = HealthServer(session=self)
+        await self.health_server.start()
 
     async def execute(
         self,
@@ -503,11 +541,24 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 "Executing agent task",
                 agent=self.agent_name,
                 prompt_length=len(prompt),
+                timeout=self.config.claude_api_timeout,
             )
 
-            # Execute with retry
-            async for message in self._execute_with_retry(prompt, **kwargs):
-                yield message
+            # Execute with retry and timeout
+            try:
+                async with asyncio.timeout(self.config.claude_api_timeout):
+                    async for message in self._execute_with_retry(prompt, **kwargs):
+                        yield message
+            except asyncio.TimeoutError:
+                self.metrics.record_request(self.agent_name, "timeout")
+                logger.error(
+                    "Request timeout exceeded",
+                    agent=self.agent_name,
+                    timeout=self.config.claude_api_timeout,
+                )
+                raise AgentTimeoutError(
+                    f"Agent execution timed out after {self.config.claude_api_timeout}s"
+                )
 
             # Record successful execution
             duration = (datetime.now() - start_time).total_seconds()
@@ -529,6 +580,9 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 duration=duration,
             )
 
+        except AgentTimeoutError:
+            # Re-raise timeout errors (already logged and recorded above)
+            raise
         except Exception as e:
             self.metrics.record_request(self.agent_name, "error")
             logger.error(
@@ -862,6 +916,35 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
     async def shutdown(self) -> None:
         """Gracefully shutdown the agent session and cleanup SDK client."""
         logger.info("Shutting down agent session", agent=self.agent_name)
+
+        # Cancel all background tasks first
+        if self._background_tasks:
+            logger.debug(
+                "Cancelling background tasks",
+                agent=self.agent_name,
+                task_count=len(self._background_tasks),
+            )
+            for task in self._background_tasks:
+                task.cancel()
+
+            # Wait for cancellation with timeout
+            try:
+                await asyncio.wait(
+                    self._background_tasks,
+                    timeout=self.config.shutdown_timeout,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Error waiting for background tasks to cancel",
+                    error=str(e),
+                )
+            finally:
+                self._background_tasks.clear()
+
+        # Stop health server
+        if self.health_server is not None:
+            await self.health_server.stop()
+            self.health_server = None
 
         # Disconnect SDK client
         if self.client:

@@ -2,55 +2,249 @@
 
 This module provides a Redis Streams-based message broker that enables
 reliable communication between agents running in different Docker containers.
+
+Features:
+- Circuit breaker pattern for resilience
+- Exponential backoff retry with tenacity
+- Configurable timeouts from HarnessConfig
 """
 
 import json
-import os
 import time
+from enum import Enum
 from typing import Any
 
 import redis
 import structlog
+from tenacity import (
+    RetryError,
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from harness.config import HarnessConfig, get_config
 
 logger = structlog.get_logger(__name__)
 
 
-class RedisMessageBroker:
-    """Redis Streams-based message broker for agent coordination."""
+class CircuitState(Enum):
+    """Circuit breaker states."""
 
-    def __init__(self, redis_url: str | None = None) -> None:
+    CLOSED = "closed"  # Normal operation, requests flow through
+    OPEN = "open"  # Failures exceeded threshold, requests blocked
+    HALF_OPEN = "half_open"  # Testing recovery, allowing limited requests
+
+
+class CircuitBreakerOpenError(Exception):
+    """Raised when circuit breaker is open and blocking requests."""
+
+    pass
+
+
+class CircuitBreaker:
+    """Circuit breaker for protecting against cascade failures.
+
+    The circuit breaker pattern prevents repeated calls to a failing service,
+    allowing it time to recover while providing fast failure to callers.
+
+    States:
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: After threshold failures, block all requests
+    - HALF_OPEN: After recovery timeout, test with single request
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: int = 30,
+        name: str = "redis",
+    ) -> None:
+        """
+        Initialize circuit breaker.
+
+        Args:
+            failure_threshold: Consecutive failures before opening circuit
+            recovery_timeout: Seconds to wait before testing recovery
+            name: Name for logging purposes
+        """
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.name = name
+        self.failures = 0
+        self.state = CircuitState.CLOSED
+        self.last_failure_time: float | None = None
+
+        logger.debug(
+            "Circuit breaker initialized",
+            name=name,
+            failure_threshold=failure_threshold,
+            recovery_timeout=recovery_timeout,
+        )
+
+    def is_open(self) -> bool:
+        """Check if circuit is open (blocking requests).
+
+        Also handles transition from OPEN to HALF_OPEN after recovery timeout.
+        """
+        if self.state == CircuitState.CLOSED:
+            return False
+
+        if self.state == CircuitState.OPEN:
+            # Check if recovery timeout has passed
+            if self.last_failure_time is not None:
+                elapsed = time.time() - self.last_failure_time
+                if elapsed >= self.recovery_timeout:
+                    logger.info(
+                        "Circuit breaker transitioning to half-open",
+                        name=self.name,
+                        elapsed_seconds=elapsed,
+                    )
+                    self.state = CircuitState.HALF_OPEN
+                    return False
+            return True
+
+        # HALF_OPEN allows request through for testing
+        return False
+
+    def record_success(self) -> None:
+        """Record successful operation, reset failures if in HALF_OPEN."""
+        if self.state == CircuitState.HALF_OPEN:
+            logger.info(
+                "Circuit breaker closing after successful recovery",
+                name=self.name,
+            )
+            self.state = CircuitState.CLOSED
+            self.failures = 0
+            self.last_failure_time = None
+        elif self.state == CircuitState.CLOSED:
+            self.failures = 0
+
+    def record_failure(self) -> None:
+        """Record failed operation, potentially open circuit."""
+        self.failures += 1
+        self.last_failure_time = time.time()
+
+        if self.state == CircuitState.HALF_OPEN:
+            # Failed during recovery test, reopen circuit
+            logger.warning(
+                "Circuit breaker reopening after failed recovery attempt",
+                name=self.name,
+            )
+            self.state = CircuitState.OPEN
+        elif self.failures >= self.failure_threshold:
+            logger.warning(
+                "Circuit breaker opening due to failure threshold",
+                name=self.name,
+                failures=self.failures,
+                threshold=self.failure_threshold,
+            )
+            self.state = CircuitState.OPEN
+
+    def get_state(self) -> dict[str, Any]:
+        """Get current circuit breaker state for monitoring."""
+        return {
+            "name": self.name,
+            "state": self.state.value,
+            "failures": self.failures,
+            "failure_threshold": self.failure_threshold,
+            "recovery_timeout": self.recovery_timeout,
+            "last_failure_time": self.last_failure_time,
+        }
+
+
+class RedisMessageBroker:
+    """Redis Streams-based message broker for agent coordination.
+
+    Features:
+    - Circuit breaker for resilience against Redis failures
+    - Retry with exponential backoff
+    - Configurable timeouts from HarnessConfig
+    """
+
+    def __init__(
+        self,
+        redis_url: str | None = None,
+        config: HarnessConfig | None = None,
+    ) -> None:
         """
         Initialize Redis message broker.
 
         Args:
-            redis_url: Redis connection URL (defaults to REDIS_URL env var)
+            redis_url: Redis connection URL (overrides config.redis_url)
+            config: Harness configuration (defaults to global config)
         """
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379")
+        self.config = config or get_config()
+        self.redis_url = redis_url or self.config.redis_url
         self.client: redis.Redis | None = None
         self.connected = False
 
-        logger.info("Redis message broker initialized", redis_url=self.redis_url)
+        # Initialize circuit breaker with config values
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=self.config.redis_circuit_breaker_threshold,
+            recovery_timeout=self.config.redis_circuit_breaker_recovery,
+            name="redis",
+        )
+
+        logger.info(
+            "Redis message broker initialized",
+            redis_url=self.redis_url,
+            timeout=self.config.redis_timeout,
+        )
 
     def connect(self) -> None:
-        """Connect to Redis server."""
+        """Connect to Redis server with circuit breaker protection."""
+        # Check circuit breaker first
+        if self.circuit_breaker.is_open():
+            raise CircuitBreakerOpenError(
+                f"Circuit breaker is open, Redis unavailable. "
+                f"Will retry in {self.circuit_breaker.recovery_timeout}s"
+            )
+
+        try:
+            self._connect_with_retry()
+            self.circuit_breaker.record_success()
+        except RetryError as e:
+            self.circuit_breaker.record_failure()
+            logger.error(
+                "Redis connection failed after retries",
+                error=str(e),
+                circuit_state=self.circuit_breaker.get_state(),
+            )
+            raise
+        except Exception as e:
+            self.circuit_breaker.record_failure()
+            logger.error(
+                "Unexpected error connecting to Redis",
+                error=str(e),
+                circuit_state=self.circuit_breaker.get_state(),
+                exc_info=True,
+            )
+            raise
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True,
+    )
+    def _connect_with_retry(self) -> None:
+        """Internal connection method with retry logic."""
         try:
             self.client = redis.Redis.from_url(
                 self.redis_url,
-                decode_responses=True,  # Automatically decode responses to str
-                socket_connect_timeout=5,
-                socket_timeout=5,
+                decode_responses=True,
+                socket_connect_timeout=self.config.redis_timeout,
+                socket_timeout=self.config.redis_timeout,
             )
             # Test connection
             self.client.ping()
             self.connected = True
             logger.info("Connected to Redis server")
         except redis.ConnectionError as e:
-            logger.error("Failed to connect to Redis", error=str(e), exc_info=True)
+            logger.warning("Redis connection attempt failed", error=str(e))
             raise
         except Exception as e:
-            logger.error(
-                "Unexpected error connecting to Redis", error=str(e), exc_info=True
-            )
+            logger.warning("Unexpected error in Redis connection", error=str(e))
             raise
 
     def disconnect(self) -> None:
@@ -355,6 +549,22 @@ class RedisMessageBroker:
                 exc_info=True,
             )
             raise
+
+    def get_circuit_breaker_state(self) -> dict[str, Any]:
+        """Get circuit breaker state for monitoring.
+
+        Returns:
+            Dict with circuit breaker state information
+        """
+        return self.circuit_breaker.get_state()
+
+    def is_available(self) -> bool:
+        """Check if Redis is available (connected and circuit not open).
+
+        Returns:
+            True if Redis is available for operations
+        """
+        return self.connected and not self.circuit_breaker.is_open()
 
     def __enter__(self) -> "RedisMessageBroker":
         """Context manager entry."""

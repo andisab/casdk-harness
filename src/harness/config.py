@@ -83,7 +83,7 @@ class HarnessConfig(BaseSettings):
 
     # Autonomous Mode Configuration
     autonomous_delay_seconds: int = Field(
-        default=3,
+        default=5,
         description="Delay between autonomous sessions in seconds",
     )
     autonomous_max_sessions: int = Field(
@@ -105,6 +105,58 @@ class HarnessConfig(BaseSettings):
     claude_code_use_vertex: bool = Field(default=False)
     gcp_project_id: str = Field(default="")
     gcp_region: str = Field(default="us-central1")
+
+    # API Timeout Configuration
+    claude_api_timeout: int = Field(
+        default=60,
+        description="API request timeout in seconds",
+    )
+
+    # Checkpoint Configuration
+    checkpoint_keep_count: int = Field(
+        default=5,
+        description="Number of checkpoint files to keep",
+    )
+
+    # Redis Circuit Breaker Configuration
+    redis_timeout: int = Field(
+        default=5,
+        description="Redis socket timeout in seconds",
+    )
+    redis_circuit_breaker_threshold: int = Field(
+        default=5,
+        description="Consecutive failures before circuit opens",
+    )
+    redis_circuit_breaker_recovery: int = Field(
+        default=30,
+        description="Seconds to wait before testing recovery",
+    )
+
+    # Retry Configuration
+    retry_attempts: int = Field(
+        default=3,
+        description="Number of retry attempts for operations",
+    )
+    retry_min_wait: int = Field(
+        default=4,
+        description="Minimum wait time between retries in seconds",
+    )
+    retry_max_wait: int = Field(
+        default=10,
+        description="Maximum wait time between retries in seconds",
+    )
+
+    # Health Check Configuration
+    health_port: int = Field(
+        default=8080,
+        description="Port for health check HTTP server",
+    )
+
+    # Shutdown Configuration
+    shutdown_timeout: int = Field(
+        default=5,
+        description="Timeout for graceful shutdown in seconds",
+    )
 
     @property
     def redis_url(self) -> str:

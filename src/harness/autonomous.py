@@ -31,9 +31,6 @@ from harness.cli import parse_and_print_message
 from harness.config import get_config
 from harness.progress import ProgressManager, QASession, SessionData, TaskList
 
-# Delay between autonomous sessions (seconds)
-AUTO_CONTINUE_DELAY_SECONDS = 5
-
 # Load prompts from files
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -79,16 +76,37 @@ class AutonomousRunner:
         self.config = get_config()
         self.progress_manager = ProgressManager(workspace_dir)
         self._shutdown_requested = False
+        self._shutdown_event: asyncio.Event | None = None
         self.console = Console()
 
-        # Set up signal handlers
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+    def _setup_signal_handlers(self) -> None:
+        """Set up async signal handlers in the running event loop.
 
-    def _signal_handler(self, signum: int, frame: object) -> None:
-        """Handle shutdown signals gracefully."""
-        logger.info("Shutdown signal received", signal=signum)
+        Must be called from within an async context (e.g., run()).
+        Uses loop.add_signal_handler() for proper async signal handling.
+        """
+        loop = asyncio.get_running_loop()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(
+                sig,
+                lambda s=sig: asyncio.create_task(self._handle_signal(s)),
+            )
+        logger.debug("Async signal handlers installed", signals=["SIGINT", "SIGTERM"])
+
+    async def _handle_signal(self, sig: signal.Signals) -> None:
+        """Handle shutdown signals asynchronously.
+
+        Args:
+            sig: The signal that was received
+        """
+        sig_name = sig.name if hasattr(sig, "name") else str(sig)
+        logger.info("Shutdown signal received", signal=sig_name)
         self._shutdown_requested = True
+
+        # Set event to wake up any waiting coroutines
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
 
     def _init_context_directory(self) -> None:
         """Initialize the context directory with template files.
@@ -762,6 +780,10 @@ Resume with the next question in the sequence.
 
     async def run(self) -> None:
         """Run the autonomous development loop."""
+        # Set up async signal handlers now that we have an event loop
+        self._setup_signal_handlers()
+        self._shutdown_event = asyncio.Event()
+
         logger.info(
             "Starting autonomous runner",
             workspace=str(self.workspace_dir),
@@ -830,18 +852,30 @@ Resume with the next question in the sequence.
             if self._shutdown_requested:
                 break
 
-            # Delay before next session with visible countdown
+            # Delay before next session with visible countdown (interruptible)
             self.console.print(
                 "\n[dim]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/dim]"
             )
+            delay = self.config.autonomous_delay_seconds
             self.console.print(
-                f"[yellow]Session complete. Starting next session in {AUTO_CONTINUE_DELAY_SECONDS} seconds...[/yellow]"
+                f"[yellow]Session complete. Starting next session in {delay} seconds...[/yellow]"
             )
             self.console.print(
                 "[dim]Press Ctrl+C to exit[/dim]"
             )
-            logger.debug(f"Waiting {AUTO_CONTINUE_DELAY_SECONDS}s before next session...")
-            await asyncio.sleep(AUTO_CONTINUE_DELAY_SECONDS)
+            logger.debug(f"Waiting {delay}s before next session...")
+
+            # Use interruptible wait with shutdown event
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=delay,
+                )
+                # If we get here, shutdown was requested
+                logger.info("Shutdown event received during delay")
+            except asyncio.TimeoutError:
+                # Normal timeout, continue to next session
+                pass
 
         logger.info("Autonomous runner stopped")
 
