@@ -116,15 +116,32 @@ class TestAutonomousRunner:
         assert "My Project" in prompt
         assert "Test specification content" in prompt
 
-    def test_signal_handler_sets_shutdown_flag(self, temp_workspace: Path, mock_config) -> None:
-        """Test signal handler sets shutdown flag."""
+    @pytest.mark.asyncio
+    async def test_handle_signal_sets_shutdown_flag(self, temp_workspace: Path, mock_config) -> None:
+        """Test async signal handler sets shutdown flag."""
         runner = AutonomousRunner(workspace_dir=temp_workspace)
 
         assert runner._shutdown_requested is False
 
-        # Simulate signal (we pass None for frame as we don't use it)
-        runner._signal_handler(2, None)  # SIGINT = 2
+        # Simulate async signal handling
+        import signal
+        await runner._handle_signal(signal.SIGINT)
 
+        assert runner._shutdown_requested is True
+
+    @pytest.mark.asyncio
+    async def test_handle_signal_sets_shutdown_event(self, temp_workspace: Path, mock_config) -> None:
+        """Test async signal handler sets shutdown event when initialized."""
+        import asyncio
+        runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner._shutdown_event = asyncio.Event()
+
+        assert not runner._shutdown_event.is_set()
+
+        import signal
+        await runner._handle_signal(signal.SIGTERM)
+
+        assert runner._shutdown_event.is_set()
         assert runner._shutdown_requested is True
 
     def test_init_context_directory_creates_files(self, temp_workspace: Path, mock_config) -> None:
