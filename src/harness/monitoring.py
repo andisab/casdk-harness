@@ -6,12 +6,24 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
-from wsgiref.simple_server import WSGIServer, make_server
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 import structlog
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram, make_wsgi_app
 
 logger = structlog.get_logger(__name__)
+
+
+class QuietWSGIRequestHandler(WSGIRequestHandler):
+    """WSGI request handler that suppresses access logs.
+
+    The default WSGIRequestHandler logs every request to stderr,
+    which pollutes the console output during interactive sessions.
+    """
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+        """Suppress all HTTP access log messages."""
+        pass
 
 
 def _check_metrics_auth(environ: dict[str, Any]) -> bool:
@@ -81,8 +93,8 @@ def start_authenticated_http_server(port: int = 9090) -> WSGIServer | None:
         metrics_app = make_wsgi_app(registry=REGISTRY)
         app = _create_auth_middleware(metrics_app)
 
-        # Create and start server in a daemon thread
-        server = make_server("", port, app, handler_class=None)
+        # Create and start server in a daemon thread with quiet handler
+        server = make_server("", port, app, handler_class=QuietWSGIRequestHandler)
         server_thread = threading.Thread(target=server.serve_forever, daemon=True)
         server_thread.start()
 
@@ -257,7 +269,7 @@ class MetricsCollector:
             if server is not None:
                 MetricsCollector._server_started = True
                 auth_enabled = bool(os.environ.get("METRICS_AUTH_TOKEN"))
-                logger.info(
+                logger.debug(
                     "Metrics server started",
                     port=self.port,
                     auth_enabled=auth_enabled,
@@ -285,7 +297,7 @@ class MetricsCollector:
     async def collect_system_metrics(self) -> None:
         """Continuously collect system-level metrics."""
         self.running = True
-        logger.info("Starting system metrics collection")
+        logger.debug("System metrics collection started")
 
         while self.running:
             try:

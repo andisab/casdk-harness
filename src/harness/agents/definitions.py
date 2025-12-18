@@ -3,6 +3,9 @@
 This module defines the available subagents that can be delegated to
 via the SDK Task tool during autonomous development.
 
+Agent definitions are loaded dynamically from .md files in the configs/ directory.
+Each .md file uses YAML frontmatter for metadata and markdown body for system prompt.
+
 Usage:
     from harness.agents.definitions import get_agent_definition, AGENT_DEFINITIONS
 
@@ -14,10 +17,18 @@ Usage:
         print(f"{name}: {agent.description}")
 """
 
+import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-# Base prompts directory
+import yaml
+
+logger = logging.getLogger(__name__)
+
+# Directories
+CONFIGS_DIR = Path(__file__).parent / "configs"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
@@ -31,14 +42,14 @@ class AgentDefinition:
         model: Model to use (sonnet, opus, haiku)
         tools: List of allowed tools
         system_prompt: System prompt for the agent
-        max_turns: Maximum conversation turns (default: 50)
+        max_turns: Maximum conversation turns (default: 100)
     """
     name: str
     description: str
     model: str
     tools: list[str]
     system_prompt: str
-    max_turns: int = 50
+    max_turns: int = 100
 
 
 def _load_prompt_if_exists(prompt_name: str) -> str:
@@ -50,188 +61,164 @@ def _load_prompt_if_exists(prompt_name: str) -> str:
     return ""
 
 
-# Core tool sets for different agent types
-CORE_READ_TOOLS = ["Read", "Glob", "Grep"]
-CORE_WRITE_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"]
-CORE_DEV_TOOLS = ["Read", "Write", "Edit", "MultiEdit", "Bash", "Glob", "Grep", "Skill"]
-CORE_REVIEW_TOOLS = ["Read", "Glob", "Grep"]
-
-
-# Agent Definitions
-# These are hard-coded to avoid runtime discovery issues with the SDK
-
-TECH_LEAD = AgentDefinition(
-    name="tech-lead",
-    description="Senior technical lead for spec refinement and task planning",
-    model="sonnet",
-    tools=["Read", "Write", "Bash", "Glob", "Grep"],
-    system_prompt="""You are a senior technical lead. Your role is to:
-1. Review project specifications
-2. Ask clarifying questions to refine requirements
-3. Create structured task lists for development
-4. Identify dependencies and prioritize work
-
-Focus on clarity, completeness, and actionable tasks.
-""",
-    max_turns=100,
-)
-
-PYTHON_EXPERT = AgentDefinition(
-    name="python-expert",
-    description="Python specialist for FastAPI, Django, and modern Python patterns",
-    model="sonnet",
-    tools=CORE_DEV_TOOLS,
-    system_prompt="""You are a Python expert specializing in:
-- FastAPI and Django web frameworks
-- Modern Python 3.12+ patterns (type hints, dataclasses, async/await)
-- Clean architecture and SOLID principles
-- Testing with pytest
-- Package management with uv/pip
-
-Write clean, well-documented, type-annotated Python code.
-Follow PEP 8 and project conventions.
-""",
-    max_turns=100,
-)
-
-TYPESCRIPT_EXPERT = AgentDefinition(
-    name="typescript-expert",
-    description="TypeScript specialist for React, Node.js, and modern web development",
-    model="sonnet",
-    tools=CORE_DEV_TOOLS,
-    system_prompt="""You are a TypeScript expert specializing in:
-- React and Next.js frontend development
-- Node.js backend development
-- Modern TypeScript patterns (strict mode, generics, utility types)
-- Testing with Jest and Vitest
-- Package management with npm/pnpm
-
-Write clean, well-typed TypeScript code.
-Follow project conventions and best practices.
-""",
-    max_turns=100,
-)
-
-TESTING_AGENT = AgentDefinition(
-    name="testing-agent",
-    description="Test specialist for writing and running comprehensive tests",
-    model="haiku",
-    tools=["Read", "Write", "Bash", "Glob", "Grep"],
-    system_prompt="""You are a testing specialist. Your role is to:
-1. Write comprehensive unit tests
-2. Create integration tests for critical paths
-3. Run tests and analyze failures
-4. Improve test coverage
-
-Focus on:
-- Clear test names that describe behavior
-- Arrange-Act-Assert pattern
-- Edge cases and error handling
-- Fast, isolated tests
-
-Use pytest for Python, Jest/Vitest for TypeScript.
-""",
-    max_turns=50,
-)
-
-DEPLOYMENT_AGENT = AgentDefinition(
-    name="deployment-agent",
-    description="DevOps specialist for Docker, CI/CD, and deployment automation",
-    model="haiku",
-    tools=["Read", "Write", "Bash", "Glob", "Grep", "mcp__docker__list_containers",
-           "mcp__docker__container_logs", "mcp__docker__container_stats", "Skill"],
-    system_prompt="""You are a DevOps specialist. Your role is to:
-1. Configure Docker containers and compose files
-2. Set up CI/CD pipelines (GitHub Actions, GitLab CI)
-3. Manage deployment configurations
-4. Monitor container health and logs
-
-Focus on:
-- Reproducible builds
-- Security best practices
-- Efficient layer caching
-- Environment-specific configurations
-""",
-    max_turns=50,
-)
-
-REVIEWER_AGENT = AgentDefinition(
-    name="reviewer-agent",
-    description="Code reviewer for security, quality, and best practices",
-    model="sonnet",
-    tools=CORE_REVIEW_TOOLS,
-    system_prompt="""You are a code reviewer. Your role is to:
-1. Review code changes for quality and correctness
-2. Identify security vulnerabilities
-3. Suggest improvements and best practices
-4. Verify test coverage
-
-Focus on:
-- Logic correctness
-- Security issues (OWASP top 10)
-- Performance bottlenecks
-- Code maintainability
-
-Provide specific, actionable feedback.
-Read-only access - do not modify files.
-""",
-    max_turns=30,
-)
-
-DATABASE_EXPERT = AgentDefinition(
-    name="database-expert",
-    description="Database specialist for schema design and query optimization",
-    model="sonnet",
-    tools=CORE_DEV_TOOLS,
-    system_prompt="""You are a database expert specializing in:
-- PostgreSQL, MySQL, SQLite
-- Schema design and migrations
-- Query optimization (EXPLAIN ANALYZE)
-- Index strategies
-- Data modeling
-
-Focus on:
-- Normalized schemas
-- Efficient queries
-- Proper indexing
-- Connection pooling
-""",
-    max_turns=50,
-)
-
-FRONTEND_EXPERT = AgentDefinition(
-    name="frontend-expert",
-    description="Frontend specialist for React, CSS, and UI/UX",
-    model="sonnet",
-    tools=CORE_DEV_TOOLS,
-    system_prompt="""You are a frontend expert specializing in:
-- React and component architecture
-- CSS/Tailwind styling
-- Accessibility (WCAG)
-- Responsive design
-- State management
-
-Focus on:
-- Component reusability
-- Performance optimization
-- User experience
-- Cross-browser compatibility
-""",
-    max_turns=100,
-)
-
-
-# Registry of all agent definitions
-AGENT_DEFINITIONS: dict[str, AgentDefinition] = {
-    "tech-lead": TECH_LEAD,
-    "python-expert": PYTHON_EXPERT,
-    "typescript-expert": TYPESCRIPT_EXPERT,
-    "testing-agent": TESTING_AGENT,
-    "deployment-agent": DEPLOYMENT_AGENT,
-    "reviewer-agent": REVIEWER_AGENT,
-    "database-expert": DATABASE_EXPERT,
-    "frontend-expert": FRONTEND_EXPERT,
+# Model name mapping from .md files to SDK format
+MODEL_MAP = {
+    "opus 4.1": "opus",
+    "opus 4.5": "opus",
+    "sonnet 4.5": "sonnet",
+    "sonnet 4.0": "sonnet",
+    "haiku 3.5": "haiku",
+    "haiku": "haiku",
+    "sonnet": "sonnet",
+    "opus": "opus",
 }
+
+
+def parse_agent_md_file(filepath: Path) -> dict[str, Any]:
+    """Parse YAML frontmatter and markdown body from agent .md file.
+
+    Args:
+        filepath: Path to the .md file
+
+    Returns:
+        Dictionary with parsed metadata and body
+
+    Raises:
+        ValueError: If no frontmatter found
+    """
+    content = filepath.read_text()
+    pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
+    match = re.match(pattern, content, re.DOTALL)
+    if not match:
+        raise ValueError(f"No frontmatter found in {filepath}")
+
+    metadata = yaml.safe_load(match.group(1))
+    tools_str = metadata.get("tools", "")
+    tools = [t.strip() for t in tools_str.split(",") if t.strip()]
+
+    # Extract just the first paragraph of description for the short description
+    description = metadata.get("description", "").strip()
+    # Take first sentence or line for short description
+    short_desc = description.split("\n")[0].strip()
+    if len(short_desc) > 200:
+        short_desc = short_desc[:197] + "..."
+
+    return {
+        "name": metadata.get("name"),
+        "description": short_desc,
+        "tools": tools,
+        "model": metadata.get("model", "sonnet"),
+        "max_turns": metadata.get("max_turns", 100),
+        "body": match.group(2).strip(),
+    }
+
+
+def load_agent_from_md(filename: str) -> AgentDefinition:
+    """Load agent definition from .md file.
+
+    Args:
+        filename: Filename without .md extension
+
+    Returns:
+        AgentDefinition loaded from file
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+    """
+    md_file = CONFIGS_DIR / f"{filename}.md"
+    if not md_file.exists():
+        raise FileNotFoundError(f"Agent file not found: {md_file}")
+
+    parsed = parse_agent_md_file(md_file)
+    model = MODEL_MAP.get(parsed["model"], parsed["model"])
+
+    return AgentDefinition(
+        name=parsed["name"],
+        description=parsed["description"],
+        model=model,
+        tools=parsed["tools"],
+        system_prompt=parsed["body"],
+        max_turns=parsed["max_turns"],
+    )
+
+
+# Tech Lead loads from prompts directory (used directly by autonomous.py)
+def _load_tech_lead() -> AgentDefinition:
+    """Load tech-lead agent from prompt file."""
+    prompt = _load_prompt_if_exists("tech-lead-agent")
+    if not prompt:
+        logger.warning("tech-lead-agent.md not found, using fallback prompt")
+        prompt = "You are a senior technical lead for spec refinement and task planning."
+    return AgentDefinition(
+        name="tech-lead",
+        description="Senior technical lead for spec refinement and task planning",
+        model="sonnet",
+        tools=["Read", "Write", "Bash", "Glob", "Grep"],
+        system_prompt=prompt,
+        max_turns=100,
+    )
+
+
+TECH_LEAD = _load_tech_lead()
+
+
+def _load_all_agents() -> dict[str, AgentDefinition]:
+    """Load all agent definitions from config files.
+
+    Returns:
+        Dictionary mapping agent names to definitions
+    """
+    agents: dict[str, AgentDefinition] = {}
+
+    # Mapping from logical agent name to config filename
+    agent_files = {
+        # Development agents
+        "python-expert": "dev-python-expert",
+        "typescript-expert": "dev-typescript-expert",
+        "go-expert": "dev-go-expert",
+        "nodejs-expert": "dev-nodejs-expert",
+        "react-expert": "dev-react-expert",
+        "refactor-agent": "dev-refactor-agent",
+        # Database agents
+        "database-expert": "db-postgres-expert",
+        "sql-expert": "db-sql-expert",
+        # Infrastructure agents
+        "docker-engineer": "infra-docker-engineer",
+        "gcp-architect": "infra-gcp-architect",
+        "gitlab-ci-expert": "infra-gitlab-ci-expert",
+        "k8s-engineer": "infra-k8s-engineer",
+        # Task-specific agents
+        "testing-agent": "test-sdet-expert",
+        "reviewer-agent": "dev-code-review-expert",
+    }
+
+    # Keep tech-lead inline (used by autonomous.py)
+    agents["tech-lead"] = TECH_LEAD
+
+    for name, filename in agent_files.items():
+        try:
+            agent = load_agent_from_md(filename)
+            # Override the name with the logical key for consistency
+            agent = AgentDefinition(
+                name=name,
+                description=agent.description,
+                model=agent.model,
+                tools=agent.tools,
+                system_prompt=agent.system_prompt,
+                max_turns=agent.max_turns,
+            )
+            agents[name] = agent
+            logger.debug(f"Loaded agent: {name} from {filename}.md")
+        except FileNotFoundError:
+            logger.warning(f"Agent config not found: {filename}.md (agent: {name})")
+        except Exception as e:
+            logger.warning(f"Failed to load agent {name} from {filename}.md: {e}")
+
+    return agents
+
+
+# Load all agents at module import
+AGENT_DEFINITIONS: dict[str, AgentDefinition] = _load_all_agents()
 
 
 def get_agent_definition(name: str) -> AgentDefinition | None:
@@ -268,3 +255,13 @@ def get_agents_by_model(model: str) -> list[AgentDefinition]:
         agent for agent in AGENT_DEFINITIONS.values()
         if agent.model == model
     ]
+
+
+def reload_agents() -> None:
+    """Reload all agent definitions from disk.
+
+    Useful for development when agent configs are modified.
+    """
+    global AGENT_DEFINITIONS
+    AGENT_DEFINITIONS = _load_all_agents()
+    logger.info(f"Reloaded {len(AGENT_DEFINITIONS)} agent definitions")

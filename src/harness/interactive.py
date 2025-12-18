@@ -12,16 +12,23 @@ from pathlib import Path
 import structlog
 from claude_agent_sdk import AssistantMessage, ResultMessage, ToolUseBlock
 from rich.console import Console
+from rich.status import Status
 
 from harness.agent import AgentSession
 from harness.cli import (
+    display_session_info,
     get_user_input,
     parse_and_print_message,
     parser,
     print_goodbye_banner,
     print_welcome_banner,
 )
-from harness.config import get_config
+from harness.config import (
+    RuntimeConfig,
+    configure_logging,
+    get_config,
+    resolve_model_name,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -32,62 +39,79 @@ async def run_interactive_session() -> None:
     args = parser.parse_args()
     console = Console()
 
-    # Configure quiet mode if requested
-    if args.quiet:
-        # Suppress all logging by setting to CRITICAL level
-        import logging
-        logging.getLogger().setLevel(logging.CRITICAL)
-        structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
-        )
-
-    # Get configuration
+    # Get configuration (immutable singleton)
     config = get_config()
 
-    # Override model if specified in args
-    if args.model != "sonnet":
-        # Map model shorthand to full model names
-        # Valid models: sonnet (default), haiku, opus
-        model_map = {
-            "haiku": "claude-3-5-haiku-20241022",
-            "opus": "claude-opus-4-5-20251101",
-        }
-        if args.model not in model_map:
+    # Resolve model override from CLI arg (None if default or unrecognized)
+    model_override = None
+    if args.model and args.model != "sonnet":
+        model_override = resolve_model_name(args.model)
+        if model_override is None:
             console.print(
                 f"[yellow]Warning: Unknown model '{args.model}'. "
                 f"Valid options: sonnet, haiku, opus. Using default (sonnet).[/yellow]\n"
             )
-        else:
-            config.claude_model = model_map[args.model]
-            logger.info("Model override", model=config.claude_model)
+
+    # Create immutable RuntimeConfig with CLI overrides applied
+    runtime = RuntimeConfig.from_harness_config(
+        config,
+        mode="interactive",
+        model_override=model_override,
+        quiet=args.quiet,
+    )
+
+    # Configure logging using centralized function
+    configure_logging(runtime)
+
+    logger.info("Runtime config created", model=runtime.model, quiet=runtime.quiet)
 
     # Determine whether to print stats
     print_stats = args.stats.lower() in ("true", "1", "yes")
 
     # Print welcome banner
     agent_name = "main"
-    print_welcome_banner(console, agent_name, config.claude_model)
+    print_welcome_banner(console, agent_name, runtime.model)
 
-    # Create and start agent session
-    session = AgentSession(agent_name=agent_name, config=config)
+    # Create and start agent session with loading spinner
+    # Spinner wraps both constructor AND start() since both do I/O
     session_start_time = datetime.now()
+    with Status(
+        "[cyan]Initializing session...[/cyan]",
+        console=console,
+        spinner="dots",
+    ):
+        session = AgentSession(
+            agent_name=agent_name,
+            config=config,
+            runtime_config=runtime,
+        )
+        await session.start()
+        recovered = await session.recover_from_checkpoint()
 
     try:
-        # Start the session (begins metrics collection and checkpointing)
-        await session.start()
-        logger.info(
-            "Interactive session initialized",
-            session_id=session.session_id,
-            checkpoint_interval=config.claude_checkpoint_interval,
-        )
-
-        # Attempt to recover from checkpoint if available
-        recovered = await session.recover_from_checkpoint()
+        # Show recovery status if applicable
         if recovered and not args.quiet:
             console.print(
                 "[green]✓ Recovered from previous checkpoint[/green]\n",
                 style="dim",
             )
+            # Display session info locally (no API call needed)
+            display_session_info(session.get_session_info(), console)
+
+        # Generate dynamic agent introduction for NEW sessions only
+        # Recovered sessions already have context - skip intro to save time/tokens
+        if not args.quiet and not recovered:
+            intro_prompt = (
+                "Briefly introduce yourself in 2-3 short paragraphs. Include: "
+                "1) Who you are (name, that you're built on Anthropic's Claude Agent SDK), "
+                "2) Key capabilities (tools you have access to like file operations, bash, "
+                "web browsers via Playwright/Puppeteer, Docker, library docs, spawning sub-agents), "
+                "3) Your working directory setup (/app vs /workspace), "
+                "4) Available CLI tools (git, gh, glab with SSH keys configured). "
+                "End by asking how you can help. Keep it concise and friendly."
+            )
+            async for message in session.execute(intro_prompt):
+                parse_and_print_message(message, console, config.log_format == "json")
 
         # Main conversation loop
         while True:
@@ -158,7 +182,7 @@ async def run_interactive_session() -> None:
                             if total_input > 0:
                                 session.metrics.update_cache_metrics(
                                     agent_name,
-                                    config.claude_model,
+                                    runtime.model,
                                     cache_read,
                                     cache_creation,
                                     total_input,
@@ -192,6 +216,28 @@ async def run_interactive_session() -> None:
                     f"\n[red]Error: {str(e)}[/red]",
                     style="bold red",
                 )
+                # Provide helpful suggestions based on error type
+                error_str = str(e).lower()
+                if "api" in error_str or "key" in error_str or "auth" in error_str:
+                    console.print(
+                        "[dim]Suggestion: Check your ANTHROPIC_API_KEY in .env[/dim]"
+                    )
+                elif "connection" in error_str or "network" in error_str:
+                    console.print(
+                        "[dim]Suggestion: Check your network connection and try again[/dim]"
+                    )
+                elif "timeout" in error_str:
+                    console.print(
+                        "[dim]Suggestion: Try a simpler prompt or increase timeout[/dim]"
+                    )
+                elif "rate" in error_str or "limit" in error_str:
+                    console.print(
+                        "[dim]Suggestion: Wait a moment, then try again (rate limited)[/dim]"
+                    )
+                elif "memory" in error_str or "oom" in error_str:
+                    console.print(
+                        "[dim]Suggestion: Increase AGENT_MEMORY_LIMIT in .env[/dim]"
+                    )
                 console.print(
                     "[dim]You can continue chatting or type 'exit' to quit.[/dim]\n"
                 )
@@ -202,7 +248,10 @@ async def run_interactive_session() -> None:
             error=str(e),
             exc_info=True,
         )
-        console.print(f"\n[red bold]Fatal Error: {str(e)}[/red bold]\n")
+        console.print(f"\n[red bold]Fatal Error: {str(e)}[/red bold]")
+        console.print(
+            "[dim]Run 'make doctor' to diagnose or see docs/TROUBLESHOOTING.md[/dim]\n"
+        )
         sys.exit(1)
 
     finally:
@@ -255,7 +304,8 @@ def main() -> None:
         print("\n\nSession interrupted by user.\n")
         sys.exit(0)
     except Exception as e:
-        print(f"\n\nFatal error: {e}\n")
+        print(f"\n\nFatal error: {e}")
+        print("Run 'make doctor' to diagnose or see docs/TROUBLESHOOTING.md\n")
         sys.exit(1)
 
 

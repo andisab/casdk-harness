@@ -75,12 +75,8 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self.last_failure_time: float | None = None
 
-        logger.debug(
-            "Circuit breaker initialized",
-            name=name,
-            failure_threshold=failure_threshold,
-            recovery_timeout=recovery_timeout,
-        )
+        # Debug-level logging for circuit breaker initialization
+        # (included in Redis connection summary at info level)
 
     def is_open(self) -> bool:
         """Check if circuit is open (blocking requests).
@@ -186,11 +182,8 @@ class RedisMessageBroker:
             name="redis",
         )
 
-        logger.info(
-            "Redis message broker initialized",
-            redis_url=self.redis_url,
-            timeout=self.config.redis_timeout,
-        )
+        # Connection will be logged after successful connect()
+        # to avoid duplicate logging
 
     def connect(self) -> None:
         """Connect to Redis server with circuit breaker protection."""
@@ -239,7 +232,7 @@ class RedisMessageBroker:
             # Test connection
             self.client.ping()
             self.connected = True
-            logger.info("Connected to Redis server")
+            logger.debug("Redis ping successful")
         except redis.ConnectionError as e:
             logger.warning("Redis connection attempt failed", error=str(e))
             raise

@@ -1,9 +1,11 @@
 """Core agent session management and execution."""
 
 import asyncio
+import os
 import signal
 import sys
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,14 +19,19 @@ from claude_agent_sdk import (
     ProcessError,
     ResultMessage,
 )
+from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.checkpoint import CheckpointManager
-from harness.config import HarnessConfig, get_config
+from harness.commands import CommandRegistry
+from harness.config import HarnessConfig, RuntimeConfig, get_config
 from harness.health import HealthServer
+from harness.hooks import HookRegistry
 from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
+from harness.plugin_manager import HookEvent, PluginManager
 from harness.security import sanitize_sensitive_data
 
 # In-process MCP servers (Method A)
@@ -33,6 +40,69 @@ from mcp_servers.docker import docker_server
 from mcp_servers.memory import memory_server
 
 logger = structlog.get_logger(__name__)
+
+
+@contextmanager
+def _suppress_subprocess_stderr() -> Generator[None, None, None]:
+    """Suppress stderr at the OS file descriptor level.
+
+    This is needed to suppress output from subprocesses (like the Claude CLI)
+    that write directly to fd 2, bypassing Python's sys.stderr.
+    Used to hide "Using bundled Claude Code CLI: ..." message during connect.
+
+    Note: Only stderr is suppressed to allow stdout (used by Rich spinner) to continue.
+    """
+    # Flush any pending output
+    sys.stderr.flush()
+
+    # Save the original stderr file descriptor
+    original_stderr_fd = os.dup(2)
+
+    # Open /dev/null and redirect stderr to it
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 2)
+    os.close(devnull)
+
+    try:
+        yield
+    finally:
+        # Restore original stderr
+        sys.stderr.flush()
+        os.dup2(original_stderr_fd, 2)
+        os.close(original_stderr_fd)
+
+
+# Playwright MCP tools for browser automation (DOM-based, faster)
+PLAYWRIGHT_TOOLS = [
+    "mcp__playwright__browser_navigate",
+    "mcp__playwright__browser_click",
+    "mcp__playwright__browser_fill_form",
+    "mcp__playwright__browser_hover",
+    "mcp__playwright__browser_drag",
+    "mcp__playwright__browser_press_key",
+    "mcp__playwright__browser_snapshot",
+    "mcp__playwright__browser_take_screenshot",
+    "mcp__playwright__browser_evaluate",
+    "mcp__playwright__browser_close",
+    "mcp__playwright__browser_navigate_back",
+    "mcp__playwright__browser_resize",
+    "mcp__playwright__browser_file_upload",
+    "mcp__playwright__browser_handle_dialog",
+    "mcp__playwright__browser_console_messages",
+    "mcp__playwright__browser_network_requests",
+    "mcp__playwright__browser_run_code",
+]
+
+# Puppeteer MCP tools for browser automation (visual verification)
+PUPPETEER_TOOLS = [
+    "mcp__puppeteer__puppeteer_navigate",
+    "mcp__puppeteer__puppeteer_screenshot",
+    "mcp__puppeteer__puppeteer_click",
+    "mcp__puppeteer__puppeteer_fill",
+    "mcp__puppeteer__puppeteer_select",
+    "mcp__puppeteer__puppeteer_hover",
+    "mcp__puppeteer__puppeteer_evaluate",
+]
 
 
 class AgentTimeoutError(Exception):
@@ -54,10 +124,13 @@ class AgentSession:
         self,
         agent_name: str = "main",
         config: HarnessConfig | None = None,
+        runtime_config: RuntimeConfig | None = None,
         checkpoint_manager: CheckpointManager | None = None,
         metrics_collector: MetricsCollector | None = None,
         model: str | None = None,
         system_prompt: str | None = None,
+        permission_mode: str | None = None,
+        quiet: bool = False,
     ) -> None:
         """
         Initialize agent session.
@@ -65,25 +138,56 @@ class AgentSession:
         Args:
             agent_name: Name of the agent
             config: Configuration object (uses global config if None)
+            runtime_config: Immutable runtime config with CLI overrides applied.
+                            If None, created from config with legacy overrides.
             checkpoint_manager: Checkpoint manager instance
             metrics_collector: Metrics collector instance
-            model: Override model (uses config.claude_model if None)
+            model: Deprecated - use runtime_config. Override model.
             system_prompt: Override system prompt (loads from file if None)
+            permission_mode: Deprecated - use runtime_config. Override permission mode.
+            quiet: Deprecated - use runtime_config. Suppress logging.
         """
         self.agent_name = agent_name
         self.config = config or get_config()
+
+        # Build runtime config if not provided (backward compatibility)
+        if runtime_config is None:
+            runtime_config = RuntimeConfig.from_harness_config(
+                self.config,
+                mode="interactive",  # Default assumption for backward compat
+                model_override=model,
+                permission_mode_override=permission_mode,
+                quiet=quiet,
+            )
+        self.runtime = runtime_config
+
+        # Keep legacy attributes for any code still using them (deprecated)
         self._model_override = model
         self._system_prompt_override = system_prompt
+        self._permission_mode_override = permission_mode
+        self._quiet = quiet
 
-        # Plugin configuration (Phase 1B)
+        # Plugin configuration via PluginManager
         from pathlib import Path
-        plugin_base = Path(__file__).parent.parent.parent / ".claude" / "plugins"
-        self.plugins = [
-            {"type": "local", "path": str(plugin_base / "arch")},
-            {"type": "local", "path": str(plugin_base / "context-engineering")},
-            {"type": "local", "path": str(plugin_base / "research-team")},
-        ]
-        self.plugin_base = plugin_base  # Store for manual loading workaround
+        plugin_base = Path(__file__).parent / "plugins"
+        self.plugin_manager = PluginManager(
+            plugin_dirs=[plugin_base],
+            enabled_plugins=self.config.enabled_plugins_list,
+            use_sdk_only=self.config.plugin_use_sdk_only,
+        )
+        self.plugin_manager.discover_plugins()
+        self.plugin_manager.load_all_plugins()
+
+        # Get plugin paths for SDK (still passed for future SDK support)
+        self.plugins = self.plugin_manager.get_plugin_paths()
+        self.plugin_base = plugin_base  # Keep for backward compatibility
+
+        # Initialize registries for commands and hooks
+        self.command_registry = CommandRegistry()
+        self.command_registry.register_all(self.plugin_manager.get_all_commands())
+
+        self.hook_registry = HookRegistry(cwd=str(self.config.workspace_dir))
+        self.hook_registry.register_all(self.plugin_manager.get_all_hooks())
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
@@ -96,32 +200,40 @@ class AgentSession:
         )
 
         # Initialize Redis message broker for cross-agent communication
-        # Set to None on connection failure to make disabled state explicit
+        # Only connect when in multi-agent mode (AGENT_NAME explicitly set in docker-compose)
         # Uses circuit breaker pattern for resilience (see messaging.py)
         self.message_broker: RedisMessageBroker | None = None
         self.redis_available: bool = False
-        try:
-            broker = RedisMessageBroker(config=self.config)
-            broker.connect()
-            self.message_broker = broker
-            self.redis_available = True
-            logger.info("Redis message broker connected", agent=agent_name)
-        except CircuitBreakerOpenError as e:
-            # Circuit breaker is open - Redis was failing, skip connection
-            logger.warning(
-                "Redis circuit breaker is open - inter-agent messaging disabled. "
-                "Will retry automatically after recovery timeout.",
+
+        # Check if multi-agent mode is active (AGENT_NAME is set for container agents)
+        agent_name_env = os.environ.get("AGENT_NAME")
+        if agent_name_env is not None:
+            try:
+                broker = RedisMessageBroker(config=self.config)
+                broker.connect()
+                self.message_broker = broker
+                self.redis_available = True
+                logger.debug(
+                    "Redis connected for multi-agent messaging",
+                    agent=agent_name,
+                    url=self.config.redis_url,
+                )
+            except CircuitBreakerOpenError as e:
+                logger.warning(
+                    "Redis circuit breaker open - inter-agent messaging disabled",
+                    agent=agent_name,
+                    error=str(e),
+                )
+            except Exception as e:
+                logger.warning(
+                    "Redis not available - inter-agent messaging disabled",
+                    agent=agent_name,
+                    error=str(e),
+                )
+        else:
+            logger.debug(
+                "Single-agent mode - Redis messaging disabled",
                 agent=agent_name,
-                error=str(e),
-            )
-        except Exception as e:
-            # Redis unavailable - inter-agent messaging disabled
-            # This is expected in single-agent mode or when Redis is not running
-            logger.warning(
-                "Redis not available - inter-agent messaging disabled. "
-                "This is normal for single-agent deployments.",
-                agent=agent_name,
-                error=str(e),
             )
 
         # SDK client and session management (persistent across execute() calls)
@@ -171,20 +283,36 @@ class AgentSession:
         # Load MCP servers (Phase 1C - Method A + Method B)
         # 1. Load in-process servers (Method A) - docker, context7, memory
         self.inprocess_servers = self._load_inprocess_servers()
-        # 2. Load subprocess servers (Method B) - playwright, joplin, excel
+        # 2. Load subprocess servers (Method B) - playwright
         subprocess_servers = self._load_mcp_servers(tiers=[1, 2])
         # 3. Merge: in-process takes precedence over subprocess
         self.mcp_servers = {**subprocess_servers, **self.inprocess_servers}
 
-        # TEMPORARY: Manually discover plugin skills (SDK workaround)
-        self.plugin_skills = self._load_plugin_skills_manually()
+        # Discover all skills (base + plugin)
+        self.discovered_skills = self._load_all_skills()
 
-        logger.info(
-            "Agent session initialized",
-            agent=agent_name,
-            session_id=self.session_id,
-            mcp_servers=len(self.mcp_servers),
-            plugin_skills=len(self.plugin_skills),
+        # Share discovered plugin skills and agents with CLI for display in SystemMessage
+        if self.discovered_skills:
+            from harness.cli import set_plugin_skills
+            plugin_skill_names = [
+                name for name, info in self.discovered_skills.items()
+                if info.get("source") == "plugin"
+            ]
+            set_plugin_skills(plugin_skill_names)
+
+        # Share plugin agents with CLI
+        plugin_agents = self.plugin_manager.get_all_agents()
+        if plugin_agents:
+            from harness.cli import set_plugin_agents
+            set_plugin_agents(list(plugin_agents.keys()))
+
+        # Consolidated MCP servers log (debug to avoid spinner interference)
+        logger.debug(
+            "MCP servers loaded",
+            inprocess=len(self.inprocess_servers),
+            subprocess=len(subprocess_servers),
+            total=len(self.mcp_servers),
+            servers=list(self.mcp_servers.keys()),
         )
 
     async def __aenter__(self) -> "AgentSession":
@@ -196,80 +324,47 @@ class AgentSession:
         """Async context manager exit - shuts down the session."""
         await self.shutdown()
 
-    def _load_plugin_skills_manually(self) -> dict[str, dict[str, str]]:
-        """Manually discover plugin skills as workaround for SDK bug.
+    def _load_all_skills(self) -> dict[str, dict[str, str]]:
+        """Discover all skills from base directory and plugins.
 
-        TEMPORARY WORKAROUND (2025-11-25):
-        Python SDK v0.1.9 accepts plugins parameter but Claude CLI subprocess
-        not loading them. See GitHub issues:
-        - https://github.com/anthropics/claude-code/issues/11620
-        - https://github.com/anthropics/claude-agent-sdk-python/issues/213
-
-        This function manually discovers plugin skills until SDK bug is fixed.
+        Discovers skills from:
+        1. Base skills directory (src/harness/skills/)
+        2. Plugin skills directories (via PluginManager)
 
         Returns:
-            Dict mapping skill names to metadata (plugin, path)
+            Dict mapping skill names to metadata (source, path, plugin)
         """
-        import json
+        from pathlib import Path
 
-        plugin_skills = {}
+        all_skills: dict[str, dict[str, str]] = {}
 
-        # Scan each plugin directory for skills
-        for plugin_path in self.plugin_base.glob("*/"):
-            if not plugin_path.is_dir():
-                continue
+        # 1. Discover base skills from src/harness/skills/
+        base_skills_dir = Path(__file__).parent / "skills"
+        if base_skills_dir.exists():
+            for skill_path in base_skills_dir.glob("*/SKILL.md"):
+                skill_name = skill_path.parent.name
+                all_skills[skill_name] = {
+                    "source": "base",
+                    "path": str(skill_path),
+                }
 
-            plugin_name = plugin_path.name
-            manifest_path = plugin_path / ".claude-plugin" / "plugin.json"
+        # 2. Get plugin skills from PluginManager
+        plugin_skills = self.plugin_manager.get_all_skills()
+        all_skills.update(plugin_skills)
 
-            # Skip if no manifest
-            if not manifest_path.exists():
-                logger.warning(
-                    "Plugin missing manifest, skipping",
-                    plugin=plugin_name,
-                    expected_path=str(manifest_path)
-                )
-                continue
-
-            # Load manifest to check for skills paths
-            try:
-                manifest = json.loads(manifest_path.read_text())
-                skill_paths = manifest.get("skills", [])
-
-                if not skill_paths:
-                    continue
-
-                # Discover skills in each specified path
-                for skill_rel_path in skill_paths:
-                    skills_dir = plugin_path / skill_rel_path.lstrip("./")
-
-                    if not skills_dir.exists():
-                        continue
-
-                    # Find all SKILL.md files
-                    for skill_path in skills_dir.glob("*/SKILL.md"):
-                        skill_name = skill_path.parent.name
-                        plugin_skills[skill_name] = {
-                            "plugin": plugin_name,
-                            "path": str(skill_path),
-                            "source": "plugin-manual-discovery"
-                        }
-
-            except Exception as e:
-                logger.warning(
-                    "Failed to load plugin manifest",
-                    plugin=plugin_name,
-                    error=str(e)
-                )
-
-        if plugin_skills:
-            logger.info(
-                "Manually discovered plugin skills (SDK workaround)",
-                count=len(plugin_skills),
-                skills=list(plugin_skills.keys())
+        # Log with breakdown by source
+        if all_skills:
+            base_count = len([s for s in all_skills.values() if s.get("source") == "base"])
+            plugin_count = len([s for s in all_skills.values() if s.get("source") == "plugin"])
+            logger.debug(
+                "Discovered skills",
+                total=len(all_skills),
+                base=base_count,
+                plugins=plugin_count,
+                skills=list(all_skills.keys()),
             )
 
-        return plugin_skills
+        return all_skills
 
     def _load_inprocess_servers(self) -> dict[str, Any]:
         """Load in-process MCP servers (Method A).
@@ -294,29 +389,14 @@ class AgentSession:
 
         # Docker - always available (uses Docker SDK)
         servers["docker"] = docker_server
-        logger.info(
-            "Loaded in-process MCP server",
-            server="docker",
-            method="A (in-process)",
-        )
 
         # Context7 - always available (no API key required, works with rate limits)
         servers["context7"] = context7_server
-        logger.info(
-            "Loaded in-process MCP server",
-            server="context7",
-            method="A (in-process)",
-        )
 
         # Memory - always available (knowledge graph for persistent memory)
         servers["memory"] = memory_server
-        logger.info(
-            "Loaded in-process MCP server",
-            server="memory",
-            method="A (in-process)",
-        )
 
-        logger.info(
+        logger.debug(
             "In-process MCP servers loaded",
             count=len(servers),
             servers=list(servers.keys()),
@@ -329,7 +409,7 @@ class AgentSession:
 
         Phase 1C Architecture: Subprocess servers for external dependencies.
         - Tier 1: Empty (all fast servers now in-process)
-        - Tier 2: External servers (memory, playwright, joplin) - 120s timeout
+        - Tier 2: External servers (playwright) - 120s timeout
 
         Note: git, docker, context7, and github are now loaded as in-process
         servers (Method A). See _load_inprocess_servers() for those.
@@ -351,7 +431,7 @@ class AgentSession:
         plugin_paths = [Path(p["path"]) for p in self.plugins]
 
         loader = MCPConfigLoader()
-        base_mcp_path = Path(__file__).parent.parent.parent / ".claude" / ".mcp.json"
+        base_mcp_path = Path(__file__).parent / "config" / ".mcp.json"
 
         all_mcp_servers = {}
         loaded_tiers = []
@@ -365,30 +445,25 @@ class AgentSession:
                     check_keys=True  # Check API keys and skip servers with missing keys
                 )
 
-                # Map all servers uniformly as subprocess servers (stdio protocol)
+                # Map all servers as subprocess servers (SDK format: just command + args)
                 for server_name, server_config in tier_config["mcpServers"].items():
-                    # Format for SDK: {"type": "stdio", "command": "...", "args": [...]}
-                    all_mcp_servers[server_name] = {
-                        "type": "stdio",
+                    # Format for SDK: {"command": "...", "args": [...]}
+                    # NOTE: Do NOT wrap with "type": "stdio" - SDK handles transport internally
+                    mcp_config = {
                         "command": server_config["command"],
                         "args": server_config["args"],
-                        **({"env": server_config["env"]} if server_config.get("env") else {})
                     }
-                    logger.info(
-                        "Loaded MCP server",
+                    if server_config.get("env"):
+                        mcp_config["env"] = server_config["env"]
+                    all_mcp_servers[server_name] = mcp_config
+                    logger.debug(
+                        "Loaded MCP server config",
                         server=server_name,
-                        tier=tier,
                         command=server_config["command"],
-                        transport="stdio"
+                        tier=tier,
                     )
 
                 loaded_tiers.append(tier)
-                logger.info(
-                    "MCP tier loaded successfully",
-                    tier=tier,
-                    server_count=len(tier_config["mcpServers"]),
-                    servers=list(tier_config["mcpServers"].keys())
-                )
 
             except FileNotFoundError as e:
                 if tier == 1:
@@ -414,57 +489,140 @@ class AgentSession:
                 # Continue loading other tiers
 
         if all_mcp_servers:
-            logger.info(
-                "MCP servers loaded successfully",
+            logger.debug(
+                "Subprocess MCP servers loaded",
                 tiers=loaded_tiers,
-                total_servers=len(all_mcp_servers),
+                count=len(all_mcp_servers),
                 servers=list(all_mcp_servers.keys())
             )
-        else:
-            logger.warning("No MCP servers loaded", requested_tiers=tiers)
+        elif tiers != [1]:  # Only warn if we expected servers (tier 1 is now empty by design)
+            logger.debug("No subprocess MCP servers loaded", requested_tiers=tiers)
 
         return all_mcp_servers
 
     def _load_system_prompt(self) -> str:
-        """Load system prompt from .claude/CLAUDE.md file.
+        """Load system prompt based on AGENT_NAME environment variable.
+
+        Supports different prompts for different agent types:
+        - main (default): main-interactivedev-agent.md
+        - reviewer: reviewer-agent.md
+        - tester: tester-agent.md
 
         Returns:
             System prompt content with plugin skills appended if any.
         """
+        import os
         from pathlib import Path
 
-        # Load base system prompt from .claude/CLAUDE.md
-        prompt_file = Path(__file__).parent.parent.parent / ".claude" / "CLAUDE.md"
+        # Map agent names to their prompt files
+        prompt_map = {
+            "main": "main-interactivedev-agent.md",
+            "reviewer": "reviewer-agent.md",
+            "tester": "tester-agent.md",
+        }
+
+        # Get agent name from environment (default: main)
+        agent_name = os.environ.get("AGENT_NAME", "main")
+        prompt_filename = prompt_map.get(agent_name, "main-interactivedev-agent.md")
+
+        # Load the appropriate prompt file
+        prompt_file = Path(__file__).parent / "prompts" / prompt_filename
 
         if prompt_file.exists():
             system_prompt = prompt_file.read_text()
-            logger.debug("Loaded system prompt from file", path=str(prompt_file))
+            logger.info(
+                "Loaded system prompt for agent",
+                agent_name=agent_name,
+                prompt_file=prompt_filename,
+            )
         else:
             logger.warning(
                 "System prompt file not found, using minimal prompt",
-                expected_path=str(prompt_file)
+                agent_name=agent_name,
+                expected_path=str(prompt_file),
             )
             system_prompt = "Work in /workspace directory. Use absolute paths."
 
-        # Append plugin skills info if any
-        if self.plugin_skills:
+        # Append discovered skills info if any
+        if self.discovered_skills:
             skills_list = "\n".join([
-                f"  - {name} (from {info['plugin']} plugin)"
-                for name, info in self.plugin_skills.items()
+                f"  - {name} ({info.get('plugin', 'base')} {'plugin' if info['source'] == 'plugin' else 'skill'})"
+                for name, info in self.discovered_skills.items()
             ])
             system_prompt += f"""
 
 ---
 
-## Available Plugin Skills
+## Available Skills
 
-Plugin skills discovered (via manual SDK workaround):
+Skills discovered:
 {skills_list}
 
-Use them via: Skill tool with skill name (e.g., "joplin-research")
+Use them via: Skill tool with skill name (e.g., "debugging")
 """
 
         return system_prompt
+
+    def _load_plugin_agents(self) -> dict[str, SDKAgentDefinition]:
+        """Load agent definitions from plugins via PluginManager.
+
+        TEMPORARY WORKAROUND (2025-12): SDK passes --plugin-dir to CLI but
+        plugin agents don't appear in the agents list. PluginManager manually
+        loads them so they're available via the Task tool.
+
+        Set PLUGIN_USE_SDK_ONLY=true to disable this workaround when SDK is fixed.
+
+        Returns:
+            Dict mapping namespaced agent names to SDK AgentDefinition objects
+            Keys use format: plugin-name:agent-name
+        """
+        plugin_agents = self.plugin_manager.get_all_agents()
+
+        if plugin_agents:
+            logger.info(
+                "Discovered plugin agents",
+                count=len(plugin_agents),
+                agents=list(plugin_agents.keys()),
+            )
+
+        return plugin_agents
+
+    def _convert_to_sdk_agents(self) -> dict[str, SDKAgentDefinition]:
+        """Convert harness agent definitions to SDK format.
+
+        The SDK expects agents as dict[str, AgentDefinition] where:
+        - Key: Agent name (used for Task tool's subagent_type parameter)
+        - Value: SDKAgentDefinition with description, prompt, tools, model
+
+        Includes both harness-defined agents AND plugin agents.
+
+        Returns:
+            Dict mapping agent names to SDK AgentDefinition objects
+        """
+        sdk_agents: dict[str, SDKAgentDefinition] = {}
+
+        # 1. Load harness-defined agents
+        for name, agent in AGENT_DEFINITIONS.items():
+            sdk_agents[name] = SDKAgentDefinition(
+                description=agent.description,
+                prompt=agent.system_prompt,  # Our system_prompt → SDK's prompt
+                tools=agent.tools if agent.tools else None,
+                model=agent.model if agent.model in ("sonnet", "opus", "haiku") else None,
+            )
+
+        # 2. Load plugin agents (workaround for SDK limitation)
+        plugin_agents = self._load_plugin_agents()
+        sdk_agents.update(plugin_agents)
+
+        logger.debug(
+            "Converted agent definitions for SDK",
+            total=len(sdk_agents),
+            harness_agents=len(AGENT_DEFINITIONS),
+            plugin_agents=len(plugin_agents),
+            agents=list(sdk_agents.keys()),
+        )
+
+        return sdk_agents
 
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
@@ -475,39 +633,62 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         cli_env = os.environ.copy()
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
-        # Use override or load from file
+        # Use override or load from file/config
         system_prompt = self._system_prompt_override or self._load_system_prompt()
-        model = self._model_override or self.config.claude_model
+        # Use RuntimeConfig for model and permission_mode (immutable, CLI overrides applied)
+        model = self.runtime.model
+        permission_mode = self.runtime.permission_mode
+
+        # Convert harness agents to SDK format
+        sdk_agents = self._convert_to_sdk_agents()
+
+        # Built-in tools + MCP browser automation tools
+        allowed_tools = [
+            # Built-in SDK tools
+            "Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "Skill",
+            # Playwright MCP tools (DOM-based, faster)
+            *PLAYWRIGHT_TOOLS,
+            # Puppeteer MCP tools (visual verification)
+            *PUPPETEER_TOOLS,
+        ]
+
+        logger.debug(
+            "Building SDK options",
+            allowed_tools_count=len(allowed_tools),
+            mcp_servers=list(self.mcp_servers.keys()),
+            agents_count=len(sdk_agents),
+            permission_mode=permission_mode,
+            model=model,
+        )
 
         return ClaudeAgentOptions(
-            allowed_tools=["Read", "Write", "Bash", "Grep", "Glob", "WebFetch", "Skill"],
-            permission_mode=self.config.claude_permission_mode,
+            allowed_tools=allowed_tools,
+            permission_mode=permission_mode,
             max_turns=self.config.claude_max_turns,
             cwd="/app",  # SDK needs /app to find .claude/skills/
             model=model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
+            agents=sdk_agents,  # Register custom subagents for Task tool
             setting_sources=["user", "project"],  # Enable skills from .claude/skills/
             plugins=self.plugins,  # Phase 1B: Enable plugin loading
             system_prompt=system_prompt,
             env=cli_env,  # Pass environment to CLI subprocess
             stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
-            # Note: Removed invalid "debug-to-stderr" - use "debug" or nothing
         )
 
     async def start(self) -> None:
         """Start the agent session and background tasks."""
-        logger.info("Starting agent session", agent=self.agent_name)
+        logger.debug("Starting agent session", agent=self.agent_name)
 
         # Create and connect persistent SDK client
         options = self._build_sdk_options()
         self.client = ClaudeSDKClient(options=options)
 
         try:
-            await self.client.connect()
-            logger.info(
-                "SDK client connected",
-                agent=self.agent_name,
-            )
+            # Suppress "Using bundled Claude Code CLI: ..." message from SDK
+            with _suppress_subprocess_stderr():
+                await self.client.connect()
+            logger.debug("SDK client connected", agent=self.agent_name)
 
             # Reset budget tracking for new session
             # Each session starts fresh with its own context window
@@ -545,15 +726,40 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         self._background_tasks.add(metrics_task)
         metrics_task.add_done_callback(self._background_tasks.discard)
 
-        logger.debug(
-            "Background tasks started",
-            agent=self.agent_name,
-            task_count=len(self._background_tasks),
-        )
-
         # Start health check server
         self.health_server = HealthServer(session=self)
         await self.health_server.start()
+
+        # Trigger PostSessionStart hooks
+        if self.hook_registry:
+            try:
+                hook_results = await self.hook_registry.trigger_async(
+                    HookEvent.POST_SESSION_START,
+                    context={"agent_name": self.agent_name},
+                )
+                if hook_results:
+                    logger.debug(
+                        "PostSessionStart hooks triggered",
+                        count=len(hook_results),
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Failed to trigger PostSessionStart hooks",
+                    error=str(e),
+                )
+
+        # Consolidated startup log (debug level to avoid spinner interference)
+        logger.debug(
+            "Agent session ready",
+            agent=self.agent_name,
+            mcp_servers=len(self.mcp_servers),
+            skills=len(self.discovered_skills),
+            commands=len(self.command_registry) if self.command_registry else 0,
+            hooks=len(self.hook_registry) if self.hook_registry else 0,
+            checkpoint_interval=f"{self.checkpoint_manager.interval}s",
+            health_port=8080,
+            metrics_port=9090,
+        )
 
     async def execute(
         self,
@@ -581,23 +787,32 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
                 "Executing agent task",
                 agent=self.agent_name,
                 prompt_length=len(prompt),
-                timeout=self.config.claude_api_timeout,
+                inactivity_timeout=self.config.claude_api_timeout,
             )
 
-            # Execute with retry and timeout
+            # Execute with retry and inactivity timeout
+            # Each message resets the timer - only timeout if no activity
             try:
-                async with asyncio.timeout(self.config.claude_api_timeout):
-                    async for message in self._execute_with_retry(prompt, **kwargs):
+                async_gen = self._execute_with_retry(prompt, **kwargs)
+                inactivity_timeout = self.config.claude_api_timeout
+                while True:
+                    try:
+                        message = await asyncio.wait_for(
+                            anext(async_gen),
+                            timeout=inactivity_timeout,
+                        )
                         yield message
+                    except StopAsyncIteration:
+                        break
             except TimeoutError:
                 self.metrics.record_request(self.agent_name, "timeout")
                 logger.error(
-                    "Request timeout exceeded",
+                    "Inactivity timeout exceeded",
                     agent=self.agent_name,
-                    timeout=self.config.claude_api_timeout,
+                    inactivity_timeout=self.config.claude_api_timeout,
                 )
                 raise AgentTimeoutError(
-                    f"Agent execution timed out after {self.config.claude_api_timeout}s"
+                    f"Agent inactivity timeout after {self.config.claude_api_timeout}s without messages"
                 ) from None
 
             # Record successful execution
@@ -917,6 +1132,61 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         """
         return self.state.copy()
 
+    def get_session_info(self) -> dict[str, Any]:
+        """Get session information for display without an API call.
+
+        Returns local session info including MCP servers, agents, skills.
+        Used to display session summary at startup without needing
+        to make an API call to the SDK.
+
+        Returns:
+            Dict with session_id, model, mcp_servers, agents, skills, tools,
+            and counts for harness_agents and plugin_agents.
+        """
+        from harness.agents.definitions import AGENT_DEFINITIONS
+
+        # MCP servers with status
+        mcp_servers = [
+            {"name": name, "status": "connected"}
+            for name in self.mcp_servers
+        ]
+
+        # Harness agents from definitions
+        harness_agents = list(AGENT_DEFINITIONS.keys())
+
+        # Plugin agents from PluginManager
+        plugin_agents = list(self.plugin_manager.get_all_agents().keys())
+
+        # All agents combined
+        all_agents = harness_agents + plugin_agents
+
+        # Discovered skills (base + plugin) with source info
+        base_skills = []
+        plugin_skills = []
+        if self.discovered_skills:
+            for name, skill_info in self.discovered_skills.items():
+                if skill_info.get("source") == "plugin":
+                    plugin_skills.append(name)
+                else:
+                    base_skills.append(name)
+
+        return {
+            "session_id": self.session_id or self._local_session_id,
+            "model": self.runtime.model,
+            "mcp_servers": mcp_servers,
+            "agents": all_agents,
+            "harness_agents": harness_agents,
+            "plugin_agents": plugin_agents,
+            "harness_agent_count": len(harness_agents),
+            "plugin_agent_count": len(plugin_agents),
+            "skills": base_skills + plugin_skills,
+            "base_skills": base_skills,
+            "plugin_skills": plugin_skills,
+            "base_skill_count": len(base_skills),
+            "plugin_skill_count": len(plugin_skills),
+            "tools": [],  # Tools are only known after SDK connect
+        }
+
     async def recover_from_checkpoint(self) -> bool:
         """
         Attempt to recover from latest checkpoint and resume conversation.
@@ -930,23 +1200,30 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         checkpoint = self.checkpoint_manager.load_latest_checkpoint()
 
         if checkpoint is None:
-            logger.info("No checkpoint found for recovery")
+            logger.debug("No checkpoint found for recovery")
             return False
 
         try:
             recovered_state = self.checkpoint_manager.recover_from_checkpoint(checkpoint)
             self.state.update(recovered_state)
 
+            # Extract summary info for consolidated log
+            workspace_snapshot = checkpoint.get("workspace_snapshot", {})
+            memory_snapshot = checkpoint.get("memory_snapshot", {})
+
             logger.info(
-                "Successfully recovered from checkpoint",
+                "Checkpoint recovered",
                 checkpoint_time=checkpoint.get("timestamp"),
+                workspace_files=workspace_snapshot.get("file_count", 0),
+                workspace_type=workspace_snapshot.get("type", "unknown"),
+                memory_entities=memory_snapshot.get("context_size", 0),
             )
 
             # Resume SDK session if session_id exists in checkpoint
             if "sdk_session_id" in recovered_state and recovered_state["sdk_session_id"]:
                 try:
                     await self.resume_from_session_id(recovered_state["sdk_session_id"])
-                    logger.info(
+                    logger.debug(
                         "Resumed SDK conversation from checkpoint",
                         session_id=recovered_state["sdk_session_id"],
                     )
@@ -1074,6 +1351,24 @@ Use them via: Skill tool with skill name (e.g., "joplin-research")
         """Gracefully shutdown the agent session and cleanup SDK client."""
         logger.info("Shutting down agent session", agent=self.agent_name)
 
+        # Trigger Stop hooks before shutdown
+        if self.hook_registry:
+            try:
+                hook_results = await self.hook_registry.trigger_async(
+                    HookEvent.STOP,
+                    context={"agent_name": self.agent_name},
+                )
+                if hook_results:
+                    logger.debug(
+                        "Stop hooks triggered",
+                        count=len(hook_results),
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Failed to trigger Stop hooks",
+                    error=str(e),
+                )
+
         # Cancel all background tasks first
         if self._background_tasks:
             logger.debug(
@@ -1163,7 +1458,7 @@ async def run() -> None:
     logger.info(
         "Starting Claude Agent Harness",
         model=config.claude_model,
-        permission_mode=config.claude_permission_mode,
+        permission_mode=config.interactive_permission_mode,
     )
 
     # Track shutdown state

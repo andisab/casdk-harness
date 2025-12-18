@@ -123,14 +123,15 @@ class HealthServer:
             self._app.router.add_get("/ready", self.ready_handler)
             self._app.router.add_get("/status", self.status_handler)
 
-            self._runner = web.AppRunner(self._app)
+            # Disable access logging to avoid spamming stdout with health check requests
+            self._runner = web.AppRunner(self._app, access_log=None)
             await self._runner.setup()
 
             self._site = web.TCPSite(self._runner, "0.0.0.0", self.port)
             await self._site.start()
 
             self._started = True
-            logger.info(
+            logger.debug(
                 "Health server started",
                 port=self.port,
                 endpoints=["/health", "/ready", "/status"],

@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
 import signal
 import subprocess
@@ -26,11 +27,17 @@ from typing import Any
 
 import structlog
 from rich.console import Console
+from rich.panel import Panel
 from rich.prompt import Prompt
 
 from harness.agent import AgentSession
 from harness.cli import parse_and_print_message
-from harness.config import get_config
+from harness.config import (
+    RuntimeConfig,
+    configure_logging,
+    get_config,
+    resolve_model_name,
+)
 from harness.progress import (
     ProgressManager,
     QASession,
@@ -70,37 +77,54 @@ class AutonomousRunner:
         self,
         workspace_dir: Path,
         model: str | None = None,
+        quiet: bool = False,
     ) -> None:
         """Initialize the autonomous runner.
 
         Args:
             workspace_dir: Directory for development work
             model: Claude model to use (defaults to config)
+            quiet: Suppress system logs
         """
         self.workspace_dir = workspace_dir
-        self.model = model
+        self.project_dir: Path | None = None  # Set in run() after discovery
+        self.model_override = model  # Store as override, not replacement
+        self.quiet = quiet
         self.config = get_config()
-        self.progress_manager = ProgressManager(workspace_dir)
+        # Progress manager initialized after project discovery in run()
+        self.progress_manager: ProgressManager | None = None
         self._shutdown_requested = False
         self._shutdown_event: asyncio.Event | None = None
         self.console = Console()
         # Workspace config to be persisted in task_list.json (set by external repo handler)
         self._pending_workspace_config: WorkspaceConfig | None = None
 
+    def _create_runtime_config(self) -> RuntimeConfig:
+        """Create RuntimeConfig for autonomous mode."""
+        return RuntimeConfig.from_harness_config(
+            self.config,
+            mode="autonomous",
+            model_override=self.model_override,
+            quiet=self.quiet,
+        )
+
     def _setup_signal_handlers(self) -> None:
         """Set up async signal handlers in the running event loop.
 
         Must be called from within an async context (e.g., run()).
-        Uses loop.add_signal_handler() for proper async signal handling.
+
+        NOTE: We only handle SIGTERM here for Docker graceful shutdown.
+        SIGINT (Ctrl+C) uses the default Python behavior (raises KeyboardInterrupt)
+        which properly interrupts running coroutines and propagates up the stack.
         """
         loop = asyncio.get_running_loop()
 
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(
-                sig,
-                lambda s=sig: asyncio.create_task(self._handle_signal(s)),
-            )
-        logger.debug("Async signal handlers installed", signals=["SIGINT", "SIGTERM"])
+        # Only handle SIGTERM - let SIGINT use default KeyboardInterrupt behavior
+        loop.add_signal_handler(
+            signal.SIGTERM,
+            lambda: asyncio.create_task(self._handle_signal(signal.SIGTERM)),
+        )
+        logger.debug("Async signal handlers installed", signals=["SIGTERM"])
 
     async def _handle_signal(self, sig: signal.Signals) -> None:
         """Handle shutdown signals asynchronously.
@@ -116,13 +140,78 @@ class AutonomousRunner:
         if self._shutdown_event is not None:
             self._shutdown_event.set()
 
+    # --- Project Discovery ---
+
+    def _discover_project_dir(self) -> tuple[Path | None, list[Path]]:
+        """Discover project directory by locating SPEC.md.
+
+        Searches workspace recursively for exactly "SPEC.md" files.
+        - If 0 found: returns workspace root
+        - If 1 found: returns its parent directory as project root
+        - If >1 found: returns None (conflict)
+
+        Returns:
+            Tuple of (project_dir or None, list of found SPEC.md files)
+        """
+        # Search for exactly "SPEC.md" (not SPEC.bak, SPEC2.md, etc.)
+        spec_files = [
+            f for f in self.workspace_dir.rglob("SPEC.md")
+            if f.name == "SPEC.md"  # Exact match only
+        ]
+
+        if len(spec_files) == 0:
+            # No SPEC.md found - use workspace root
+            logger.info("No SPEC.md found, using workspace root as project")
+            return self.workspace_dir, spec_files
+
+        if len(spec_files) == 1:
+            # Single SPEC.md - use its parent as project root
+            project_dir = spec_files[0].parent
+            logger.info("Project discovered", project_dir=str(project_dir))
+            return project_dir, spec_files
+
+        # Multiple SPEC.md files - conflict
+        logger.warning(
+            "Multiple SPEC.md files found",
+            count=len(spec_files),
+            files=[str(f) for f in spec_files],
+        )
+        return None, spec_files
+
+    def _handle_multiple_specs(self, spec_files: list[Path]) -> bool:
+        """Handle multiple SPEC.md files found.
+
+        Prompts user to rename non-active files.
+
+        Args:
+            spec_files: List of SPEC.md file paths found
+
+        Returns:
+            False (always refuses to continue)
+        """
+        self.console.print(
+            "\n[bold red]Multiple SPEC.md files found![/bold red]\n"
+        )
+        for f in spec_files:
+            try:
+                rel_path = f.relative_to(self.workspace_dir)
+            except ValueError:
+                rel_path = f
+            self.console.print(f"  - {rel_path}")
+
+        self.console.print(
+            "\n[yellow]Please rename inactive files (e.g., SPEC.bak) and run again.[/yellow]\n"
+        )
+        return False
+
     def _init_context_directory(self) -> None:
         """Initialize the context directory with template files.
 
-        Creates /workspace/context/ with architecture.md, decisions.md,
-        issues.md, and next-steps.md if they don't exist.
+        Creates context/ in the project directory with architecture.md,
+        decisions.md, issues.md, and next-steps.md if they don't exist.
         """
-        context_dir = self.workspace_dir / "context"
+        project_dir = self.project_dir or self.workspace_dir
+        context_dir = project_dir / "context"
         context_dir.mkdir(exist_ok=True)
 
         # Template files with YAML front matter
@@ -215,15 +304,18 @@ tags: [priorities, focus]
     # --- Workspace State Detection ---
 
     def _detect_workspace_state(self) -> tuple[WorkspaceState, dict[str, Any]]:
-        """Detect the current workspace state.
+        """Detect the current project state.
 
-        Analyzes the workspace directory to determine what state it's in:
-        - EMPTY: Only SPEC.md exists or workspace is empty
+        Analyzes the project directory (discovered via SPEC.md location)
+        to determine what state it's in:
+        - EMPTY: Only SPEC.md exists or project is empty
         - WORK_IN_PROGRESS: task_list.json exists with incomplete tasks
         - COMPLETED: task_list.json exists with all tasks done
-        - CONFLICT: Multiple SPEC.md or task_list.json files found
         - EXTERNAL_REPO: Git repo exists without our files (cloned repo)
         - MIXED: Files exist but no git repo
+
+        Note: CONFLICT state for multiple SPEC.md is handled earlier
+        in _discover_project_dir().
 
         Returns:
             Tuple of (state, context_dict) where context_dict contains
@@ -231,24 +323,19 @@ tags: [priorities, focus]
         """
         context: dict[str, Any] = {}
 
-        # Check for conflicting files (State D)
-        spec_files = list(self.workspace_dir.glob("**/SPEC.md"))
-        task_list_files = list(self.workspace_dir.glob("**/task_list.json"))
-
-        if len(spec_files) > 1 or len(task_list_files) > 1:
-            context["spec_files"] = [str(f) for f in spec_files]
-            context["task_list_files"] = [str(f) for f in task_list_files]
-            return WorkspaceState.CONFLICT, context
+        # Use project_dir (discovered from SPEC.md location) for all checks
+        project_dir = self.project_dir
+        assert project_dir is not None, "project_dir must be set before state detection"
 
         # Check for existing task list
         has_task_list = self.progress_manager.has_task_list()
-        has_git = (self.workspace_dir / ".git").is_dir()
-        has_spec = (self.workspace_dir / "SPEC.md").exists()
+        has_git = (project_dir / ".git").is_dir()
+        has_spec = (project_dir / "SPEC.md").exists()
 
-        # Get workspace contents (excluding hidden files and sessions dir)
-        workspace_contents = [
+        # Get project contents (excluding hidden files and sessions dir)
+        project_contents = [
             f
-            for f in self.workspace_dir.iterdir()
+            for f in project_dir.iterdir()
             if not f.name.startswith(".") and f.name != "sessions"
         ]
 
@@ -263,8 +350,23 @@ tags: [priorities, focus]
             return WorkspaceState.WORK_IN_PROGRESS, context
 
         # No task_list.json - check other states
+
+        # Check for .git at workspace root without SPEC.md - this is a conflict
+        # (likely leftover from a previous session that was interrupted)
+        if has_git and not has_spec and project_dir == self.workspace_dir:
+            # .git exists at workspace root but no SPEC.md - conflict state
+            logger.warning(
+                "Git repository at workspace root without SPEC.md",
+                project_dir=str(project_dir),
+            )
+            context["conflict_reason"] = (
+                "A .git directory exists at workspace root but no SPEC.md file.\n"
+                "This may be leftover from a previous session."
+            )
+            return WorkspaceState.CONFLICT, context
+
         if has_git and not has_spec:
-            # External repo (State E) - git repo without our files
+            # External repo (State E) - git repo without our files (in subdirectory)
             context["remote_url"] = self._get_git_remote_url()
             context["current_branch"] = self._get_current_branch()
             return WorkspaceState.EXTERNAL_REPO, context
@@ -272,7 +374,7 @@ tags: [priorities, focus]
         # Count non-SPEC files (excluding context directory and hidden files)
         non_spec_files = [
             f
-            for f in workspace_contents
+            for f in project_contents
             if f.name != "SPEC.md" and f.name != "context"
         ]
 
@@ -287,12 +389,31 @@ tags: [priorities, focus]
 
     # --- Git Helper Methods ---
 
+    def _get_git_env(self) -> dict[str, str]:
+        """Get environment variables to restrict git to project directory only.
+
+        This prevents git from traversing up to parent directories
+        and finding the parent repository's .git folder.
+        """
+        env = os.environ.copy()
+        # Point git explicitly to the project's .git directory
+        project_dir = self.project_dir or self.workspace_dir
+        env["GIT_DIR"] = str(project_dir / ".git")
+        env["GIT_WORK_TREE"] = str(project_dir)
+        return env
+
     def _get_git_remote_url(self) -> str | None:
         """Get the git remote URL for origin."""
+        project_dir = self.project_dir or self.workspace_dir
+        # Only run if .git exists in project (not parent)
+        if not (project_dir / ".git").is_dir():
+            return None
+
         try:
             result = subprocess.run(
                 ["git", "remote", "get-url", "origin"],
-                cwd=self.workspace_dir,
+                cwd=project_dir,
+                env=self._get_git_env(),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -305,10 +426,16 @@ tags: [priorities, focus]
 
     def _get_current_branch(self) -> str | None:
         """Get the current git branch name."""
+        project_dir = self.project_dir or self.workspace_dir
+        # Only run if .git exists in project (not parent)
+        if not (project_dir / ".git").is_dir():
+            return None
+
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=self.workspace_dir,
+                cwd=project_dir,
+                env=self._get_git_env(),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -320,21 +447,22 @@ tags: [priorities, focus]
         return None
 
     def _run_git_init(self) -> bool:
-        """Initialize a git repository in the workspace.
+        """Initialize a git repository in the project directory.
 
         Returns:
             True if successful, False otherwise
         """
+        project_dir = self.project_dir or self.workspace_dir
         try:
             result = subprocess.run(
                 ["git", "init"],
-                cwd=self.workspace_dir,
+                cwd=project_dir,
                 capture_output=True,
                 text=True,
                 timeout=30,
             )
             if result.returncode == 0:
-                logger.info("Git repository initialized", path=str(self.workspace_dir))
+                logger.info("Git repository initialized", path=str(project_dir))
                 return True
             logger.error("Git init failed", stderr=result.stderr)
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
@@ -350,16 +478,25 @@ tags: [priorities, focus]
         Returns:
             True if successful, False otherwise
         """
+        project_dir = self.project_dir or self.workspace_dir
+        # Only run if .git exists in project (not parent)
+        if not (project_dir / ".git").is_dir():
+            logger.error("No .git directory in project")
+            return False
+
         current = self._get_current_branch()
         if current == branch_name:
             logger.info("Already on branch", branch=branch_name)
             return True
 
+        git_env = self._get_git_env()
+
         try:
             # Check if branch exists
             result = subprocess.run(
                 ["git", "rev-parse", "--verify", branch_name],
-                cwd=self.workspace_dir,
+                cwd=project_dir,
+                env=git_env,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -369,7 +506,8 @@ tags: [priorities, focus]
                 # Branch exists, checkout
                 checkout_result = subprocess.run(
                     ["git", "checkout", branch_name],
-                    cwd=self.workspace_dir,
+                    cwd=project_dir,
+                    env=git_env,
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -381,7 +519,8 @@ tags: [priorities, focus]
                 # Create and checkout new branch
                 checkout_result = subprocess.run(
                     ["git", "checkout", "-b", branch_name],
-                    cwd=self.workspace_dir,
+                    cwd=project_dir,
+                    env=git_env,
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -403,7 +542,8 @@ tags: [priorities, focus]
         Returns:
             Branch name if found, None otherwise
         """
-        spec_path = self.workspace_dir / "SPEC.md"
+        project_dir = self.project_dir or self.workspace_dir
+        spec_path = project_dir / "SPEC.md"
         if not spec_path.exists():
             return None
 
@@ -480,20 +620,25 @@ tags: [priorities, focus]
     async def _handle_empty_workspace(self, context: dict[str, Any]) -> bool:
         """Handle State A: Empty workspace.
 
-        Initializes git repo and proceeds to initializer mode.
+        Only initializes git repo if SPEC.md exists.
+        Without SPEC.md, proceeds to initializer mode to create one first.
         """
-        logger.info("Empty workspace detected, initializing git repository")
+        has_spec = context.get("has_spec", False)
 
-        # Initialize git repo
-        if not self._run_git_init():
-            self.console.print(
-                "[red]Failed to initialize git repository. Please check permissions.[/red]"
-            )
-            return False
-
-        if not context.get("has_spec"):
+        if has_spec:
+            # SPEC.md exists - initialize git repo
+            logger.info("SPEC.md found, initializing git repository")
+            if not self._run_git_init():
+                self.console.print(
+                    "[red]Failed to initialize git repository. Please check permissions.[/red]"
+                )
+                return False
+        else:
+            # No SPEC.md - don't init git yet, let Tech Lead create SPEC first
+            logger.info("No SPEC.md found, skipping git init until spec is created")
             self.console.print(
                 "\n[yellow]No SPEC.md found. The Tech Lead will help you create one.[/yellow]\n"
+                "[dim]Git repository will be initialized after SPEC.md is created.[/dim]\n"
             )
 
         return True
@@ -504,9 +649,11 @@ tags: [priorities, focus]
         Logs progress and continues normally.
         """
         stats = context.get("stats", {})
+        passed = stats.get("passed", 0)
+        total = stats.get("total_tasks", 0)
         self.console.print(
-            f"\n[green]Resuming work: {stats.get('passed', 0)}/{stats.get('total_tasks', 0)} "
-            f"tasks complete[/green]\n"
+            f"\n[green]Resuming autonomous dev mode: "
+            f"{passed}/{total} tasks complete with passing tests[/green]\n"
         )
         return True
 
@@ -541,6 +688,16 @@ tags: [priorities, focus]
         self.console.print(
             "\n[bold red]ERROR: Conflicting workspace state detected[/bold red]\n"
         )
+
+        # Check for custom conflict reason (e.g., .git at root without SPEC.md)
+        conflict_reason = context.get("conflict_reason")
+        if conflict_reason:
+            self.console.print(conflict_reason)
+            self.console.print(
+                "\n[yellow]Please run 'make reset-workspace' to clean up, "
+                "or remove the .git directory manually.[/yellow]"
+            )
+            return False
 
         spec_files = context.get("spec_files", [])
         task_list_files = context.get("task_list_files", [])
@@ -656,7 +813,8 @@ tags: [priorities, focus]
 
     def _get_spec_hash(self) -> str:
         """Get hash of SPEC.md to detect changes."""
-        spec_path = self.workspace_dir / "SPEC.md"
+        project_dir = self.project_dir or self.workspace_dir
+        spec_path = project_dir / "SPEC.md"
         if not spec_path.exists():
             return "no_spec"
         with open(spec_path, "rb") as f:
@@ -664,7 +822,8 @@ tags: [priorities, focus]
 
     def _get_qa_session_path(self) -> Path:
         """Get path to QA session file."""
-        return self.workspace_dir / "qa_session.json"
+        project_dir = self.project_dir or self.workspace_dir
+        return project_dir / "qa_session.json"
 
     def _load_qa_session(self) -> QASession | None:
         """Load QA session from file if exists and valid."""
@@ -756,23 +915,17 @@ tags: [priorities, focus]
         Args:
             qa_session: Optional QA session for resume context
         """
-        base_prompt = load_prompt("initializer")
-        tech_lead_prompt = load_prompt("tech_lead")
+        tech_lead_prompt = load_prompt("tech-lead-agent")
 
         # Check for existing spec
-        spec_path = self.workspace_dir / "SPEC.md"
+        project_dir = self.project_dir or self.workspace_dir
+        spec_path = project_dir / "SPEC.md"
         spec_content = ""
         if spec_path.exists():
             with open(spec_path) as f:
                 spec_content = f.read()
 
-        prompt = f"""{base_prompt}
-
----
-
-## Tech Lead Capabilities
-
-{tech_lead_prompt}
+        prompt = f"""{tech_lead_prompt}
 
 ---
 
@@ -813,7 +966,7 @@ Resume with the next question in the sequence.
 
     def _build_continuation_prompt(self) -> str:
         """Build the prompt for continuation mode."""
-        base_prompt = load_prompt("continuation")
+        base_prompt = load_prompt("main-autodev-agent")
 
         # Load current state
         task_list = self.progress_manager.load_task_list()
@@ -981,44 +1134,43 @@ Resume with the next question in the sequence.
         is_resuming = qa_session.is_resumable()
 
         # Display header with progress if available
-        self.console.print(
-            "\n[bold cyan]╔══════════════════════════════════════════════════════════════╗[/]"
-        )
         if is_resuming:
-            self.console.print(
-                "[bold cyan]║[/]  [bold white]Tech Lead Q&A Session (Resuming)[/]                        [bold cyan]║[/]"
-            )
+            title = "Tech Lead Q&A Session (Resuming)"
             if qa_session.total_questions > 0:
                 progress_pct = (
                     qa_session.current_question / qa_session.total_questions * 100
                 )
-                progress_str = (
+                subtitle = (
                     f"Progress: {qa_session.current_question}/{qa_session.total_questions} "
                     f"({progress_pct:.0f}%)"
                 )
-                # Pad to fit the box
-                padded = progress_str.ljust(56)
-                self.console.print(
-                    f"[bold cyan]║[/]  [dim]{padded}[/]  [bold cyan]║[/]"
-                )
+            else:
+                subtitle = None
         else:
-            self.console.print(
-                "[bold cyan]║[/]  [bold white]Tech Lead Q&A Session[/]                                      [bold cyan]║[/]"
-            )
-            self.console.print(
-                "[bold cyan]║[/]  [dim]Answer questions to refine the spec and generate task list[/]  [bold cyan]║[/]"
-            )
-        self.console.print(
-            "[bold cyan]╚══════════════════════════════════════════════════════════════╝[/]\n"
+            title = "Tech Lead Q&A Session"
+            subtitle = "Answer questions to refine the spec and generate task list"
+
+        header_panel = Panel(
+            "",
+            title=f"[bold white]{title}[/]",
+            subtitle=f"[dim]{subtitle}[/]" if subtitle else None,
+            border_style="bold cyan",
+            expand=True,
+            padding=(0, 0),
         )
+        self.console.print()
+        self.console.print(header_panel)
+        self.console.print()
 
         # Track last agent response for recording exchanges
         last_agent_response = ""
 
         try:
+            runtime = self._create_runtime_config()
             async with AgentSession(
                 agent_name=agent_name,
-                model=self.model,
+                config=self.config,
+                runtime_config=runtime,
                 system_prompt=prompt,
             ) as agent_session:
                 # Start message depends on whether we're resuming
@@ -1156,23 +1308,24 @@ Resume with the next question in the sequence.
         task_completed = False
         task_blocked = False
 
-        self.console.print(
-            "\n[bold green]╔══════════════════════════════════════════════════════════════╗[/]"
+        header_panel = Panel(
+            "",
+            title="[bold white]Autonomous Development Session[/]",
+            subtitle="[dim]Working on tasks from task_list.json[/]",
+            border_style="bold green",
+            expand=True,
+            padding=(0, 0),
         )
-        self.console.print(
-            "[bold green]║[/]  [bold white]Autonomous Development Session[/]                           [bold green]║[/]"
-        )
-        self.console.print(
-            "[bold green]║[/]  [dim]Working on tasks from task_list.json[/]                       [bold green]║[/]"
-        )
-        self.console.print(
-            "[bold green]╚══════════════════════════════════════════════════════════════╝[/]\n"
-        )
+        self.console.print()
+        self.console.print(header_panel)
+        self.console.print()
 
         try:
+            runtime = self._create_runtime_config()
             async with AgentSession(
                 agent_name=agent_name,
-                model=self.model,
+                config=self.config,
+                runtime_config=runtime,
                 system_prompt=prompt,
             ) as agent_session:
                 # Single autonomous execution
@@ -1266,10 +1419,22 @@ Resume with the next question in the sequence.
         self._setup_signal_handlers()
         self._shutdown_event = asyncio.Event()
 
+        # Discover project directory by finding SPEC.md
+        self.project_dir, spec_files = self._discover_project_dir()
+
+        if self.project_dir is None:
+            # Multiple SPEC.md files found - conflict
+            self._handle_multiple_specs(spec_files)
+            return
+
+        # Initialize progress manager with discovered project directory
+        self.progress_manager = ProgressManager(self.project_dir)
+
         logger.info(
             "Starting autonomous runner",
             workspace=str(self.workspace_dir),
-            model=self.model or self.config.claude_model,
+            project=str(self.project_dir),
+            model=self._create_runtime_config().model,
         )
 
         # Detect and handle workspace state before main loop
@@ -1374,16 +1539,25 @@ Resume with the next question in the sequence.
 async def run_autonomous(
     workspace_dir: Path | None = None,
     model: str | None = None,
-    quiet: bool = False,  # noqa: ARG001 - handled in main() before this is called
+    quiet: bool = False,
 ) -> None:
     """Run autonomous development mode.
 
     Args:
         workspace_dir: Directory for development work
-        model: Claude model to use
-        quiet: Suppress system logs (handled in main() before this call)
+        model: Claude model to use (full name, already resolved)
+        quiet: Suppress system logs
     """
     config = get_config()
+
+    # Configure logging using centralized function
+    runtime = RuntimeConfig.from_harness_config(
+        config,
+        mode="autonomous",
+        model_override=model,
+        quiet=quiet,
+    )
+    configure_logging(runtime)
 
     if workspace_dir is None:
         workspace_dir = config.workspace_dir
@@ -1391,6 +1565,7 @@ async def run_autonomous(
     runner = AutonomousRunner(
         workspace_dir=workspace_dir,
         model=model,
+        quiet=quiet,
     )
 
     await runner.run()
@@ -1423,22 +1598,8 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Configure quiet mode EARLY, before any other operations that might log
-    if args.quiet:
-        import logging
-        logging.getLogger().setLevel(logging.CRITICAL)
-        structlog.configure(
-            wrapper_class=structlog.make_filtering_bound_logger(logging.CRITICAL),
-        )
-
-    # Map model shorthand to full name
-    model_map = {
-        "sonnet": "claude-sonnet-4-5-20250929",
-        "opus": "claude-opus-4-5-20251101",
-        "haiku": "claude-3-5-haiku-20241022",
-    }
-
-    model = model_map.get(args.model) if args.model else None
+    # Resolve model shorthand to full name using centralized function
+    model = resolve_model_name(args.model) if args.model else None
 
     try:
         asyncio.run(

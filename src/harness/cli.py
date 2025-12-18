@@ -27,7 +27,42 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
+from harness.agents.definitions import AGENT_DEFINITIONS
+
 logger = structlog.get_logger(__name__)
+
+# Track whether init message has been displayed this session
+_init_message_shown = False
+
+# Plugin skills and agents discovered during startup (set by AgentSession)
+_plugin_skills: list[str] = []
+_plugin_agents: list[str] = []
+
+
+def set_plugin_skills(skills: list[str]) -> None:
+    """Set the list of discovered plugin skills for display in SystemMessage.
+
+    Called by AgentSession after plugin discovery to make skills available
+    for display when SDK sends SystemMessage.
+
+    Args:
+        skills: List of plugin skill names
+    """
+    global _plugin_skills
+    _plugin_skills = skills
+
+
+def set_plugin_agents(agents: list[str]) -> None:
+    """Set the list of discovered plugin agents for display in SystemMessage.
+
+    Called by AgentSession after plugin discovery to make agents available
+    for display when SDK sends SystemMessage.
+
+    Args:
+        agents: List of plugin agent names
+    """
+    global _plugin_agents
+    _plugin_agents = agents
 
 # --------------------------------
 # Parse runtime args from CLI
@@ -71,6 +106,61 @@ parser.add_argument(
 # --------------------------------
 # Convenience functions for printing messages
 # --------------------------------
+
+
+def display_session_info(session_info: dict, console: Console) -> None:
+    """Display session info panel without making an API call.
+
+    Used for recovered sessions to show session summary immediately.
+
+    Args:
+        session_info: Dict from AgentSession.get_session_info()
+        console: Rich console instance
+    """
+    global _init_message_shown
+    if _init_message_shown:
+        return
+    _init_message_shown = True
+
+    # Build MCP server status
+    mcp_status = []
+    for server in session_info.get("mcp_servers", []):
+        status_icon = "✓" if server.get("status") == "connected" else "✗"
+        mcp_status.append(f"{status_icon} {server.get('name')}")
+
+    # Agents with source breakdown
+    harness_agents = session_info.get("harness_agents", [])
+    plugin_agents = session_info.get("plugin_agents", [])
+    total_agents = len(harness_agents) + len(plugin_agents)
+
+    agent_summary = f"{total_agents} available" if total_agents > 0 else "None"
+
+    # Skills with source breakdown
+    base_skills = session_info.get("base_skills", [])
+    plugin_skills = session_info.get("plugin_skills", [])
+    total_skills = len(base_skills) + len(plugin_skills)
+    skill_summary = f"{total_skills} available" if total_skills > 0 else "None"
+
+    # Build the full summary
+    init_summary = (
+        f"Session: {session_info.get('session_id', 'N/A')}\n"
+        f"Model: {session_info.get('model', 'N/A')}\n"
+        f"MCP Servers: {', '.join(mcp_status) if mcp_status else 'None'}\n"
+        f"Sub-agents: {agent_summary}"
+    )
+    if harness_agents:
+        init_summary += f"\n  → harness: {', '.join(sorted(harness_agents))}"
+    if plugin_agents:
+        init_summary += f"\n  → plugins: {', '.join(sorted(plugin_agents))}"
+
+    init_summary += f"\nSkills: {skill_summary}"
+    if base_skills:
+        init_summary += f"\n  → base: {', '.join(sorted(base_skills))}"
+    if plugin_skills:
+        init_summary += f"\n  → plugins: {', '.join(sorted(plugin_skills))}"
+
+    print_rich_message("system", init_summary, console)
+    logger.debug("Local session info displayed", session_id=session_info.get("session_id"))
 
 
 def print_rich_message(
@@ -120,18 +210,13 @@ def print_rich_message(
     else:
         panel_content = Text(message, style=styles[type]["message_style"])
 
-    if type == "system":
-        panel = Panel.fit(
-            panel_content,
-            title=styles[type]["panel_title"],
-            border_style=styles[type]["border_style"],
-        )
-    else:
-        panel = Panel(
-            panel_content,
-            title=styles[type]["panel_title"],
-            border_style=styles[type]["border_style"],
-        )
+    # Use expand=True for consistent full-width panels that adapt to terminal size
+    panel = Panel(
+        panel_content,
+        title=styles[type]["panel_title"],
+        border_style=styles[type]["border_style"],
+        expand=True,
+    )
     console.print(panel, end="\n\n")
 
     # Log to structlog as well for observability
@@ -249,6 +334,7 @@ def _handle_dict_message(message: dict, console: Console, quiet: bool) -> None:
             title=f"Context Budget ({level.upper()})",
             subtitle=f"{tokens_used:,} / {tokens_used + tokens_remaining:,} tokens ({percent_used:.0f}%)",
             border_style=border_style,
+            expand=True,
         )
         console.print(budget_panel)
 
@@ -297,6 +383,59 @@ def parse_and_print_message(
     if isinstance(message, SystemMessage):
         # Skip system messages in quiet mode
         if quiet:
+            return
+
+        # Show init message once at startup with formatted summary
+        if message.subtype == "init":
+            global _init_message_shown
+            if _init_message_shown:
+                return
+            _init_message_shown = True
+
+            data = message.data
+            # Build concise session info
+            mcp_status = []
+            for server in data.get("mcp_servers", []):
+                status_icon = "✓" if server.get("status") == "connected" else "✗"
+                mcp_status.append(f"{status_icon} {server.get('name')}")
+
+            # Agents grouped by source
+            harness_agents = sorted(AGENT_DEFINITIONS.keys())
+            plugin_agents = sorted(_plugin_agents)
+            total_agents = len(harness_agents) + len(plugin_agents)
+
+            # Skills grouped by source (base from SDK, plugin from discovery)
+            base_skills = sorted(data.get("skills", []))
+            plugin_skills = sorted(_plugin_skills)
+            total_skills = len(base_skills) + len(plugin_skills)
+
+            # Build init summary
+            init_summary = (
+                f"Session: {data.get('session_id', 'N/A')[:8]}...\n"
+                f"Model: {data.get('model', 'N/A')}\n"
+                f"MCP Servers: {', '.join(mcp_status) if mcp_status else 'None'}\n"
+                f"Tools: {len(data.get('tools', []))} available\n"
+                f"Sub-agents: {total_agents} available"
+            )
+            if harness_agents:
+                init_summary += f"\n  → harness: {', '.join(harness_agents)}"
+            if plugin_agents:
+                init_summary += f"\n  → plugins: {', '.join(plugin_agents)}"
+
+            init_summary += f"\nSkills: {total_skills} available"
+            if base_skills:
+                init_summary += f"\n  → base: {', '.join(base_skills)}"
+            if plugin_skills:
+                init_summary += f"\n  → plugins: {', '.join(plugin_skills)}"
+
+            print_rich_message("system", init_summary, console)
+            logger.debug(
+                "Session init message displayed",
+                session_id=data.get("session_id"),
+                harness_agents=len(harness_agents),
+                plugin_agents=len(plugin_agents),
+                total_agents=total_agents,
+            )
             return
 
         if message.subtype == "compact_boundary":
@@ -396,18 +535,23 @@ def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
     """
     banner_text = f"""
 [bold cyan]Claude Agent SDK Harness[/bold cyan]
-[dim]Production-ready autonomous development framework[/dim]
+[dim]Interactive mode - chat with Claude as an autonomous development agent[/dim]
 
-[yellow]Agent:[/yellow] {agent_name}
-[yellow]Model:[/yellow] {model}
+[yellow]Agent:[/yellow] {agent_name}  [dim]|[/dim]  [yellow]Model:[/yellow] {model}
 
-[dim]Type your prompts below. Type 'exit' or 'quit' to end the session.[/dim]
+[dim]Try these:[/dim]
+  [green]"List files in /workspace"[/green]
+  [green]"Create a hello world script"[/green]
+  [green]"What MCP servers are available?"[/green]
+
+[dim]Type 'exit' or 'quit' to end. New here? See QUICKSTART.md[/dim]
     """
     panel = Panel(
         banner_text.strip(),
-        title="🤖 Welcome",
+        title="Welcome",
         border_style="bright_blue",
         padding=(1, 2),
+        expand=True,
     )
     console.print(panel, end="\n\n")
     logger.info("Interactive session started", agent=agent_name, model=model)
@@ -431,6 +575,7 @@ def print_goodbye_banner(console: Console) -> None:
         title="👋 Goodbye",
         border_style="green",
         padding=(1, 2),
+        expand=True,
     )
     console.print("\n", panel, end="\n\n")
     logger.info("Interactive session ended")

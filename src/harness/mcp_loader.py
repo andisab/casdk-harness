@@ -21,7 +21,7 @@ class MCPConfigLoader:
     # All fast servers (git, docker, context7, github, memory) are now loaded as in-process
     # servers (Method A). See agent.py _load_inprocess_servers() for those servers.
     TIER_1_SERVERS: set[str] = set()  # Empty - all fast servers now in-process (Method A)
-    TIER_2_SERVERS = {"playwright", "joplin", "excel-haris-musa"}  # Subprocess servers (npx/uvx), 120s timeout
+    TIER_2_SERVERS = {"playwright", "puppeteer"}  # Subprocess servers (npx), 120s timeout
 
     def __init__(self):
         """Initialize the MCP configuration loader."""
@@ -49,7 +49,7 @@ class MCPConfigLoader:
         if not base_path.exists():
             raise FileNotFoundError(f"Base MCP config not found: {base_path}")
 
-        self.logger.info("Loading base MCP configuration", path=str(base_path))
+        self.logger.debug("Loading base MCP configuration", path=str(base_path))
         with open(base_path) as f:
             base_config = json.load(f)
 
@@ -64,7 +64,7 @@ class MCPConfigLoader:
             for plugin_path in plugin_paths:
                 plugin_mcp_path = plugin_path / ".mcp.json"
                 if plugin_mcp_path.exists():
-                    self.logger.info(
+                    self.logger.debug(
                         "Loading plugin MCP configuration", plugin=plugin_path.name
                     )
                     with open(plugin_mcp_path) as f:
@@ -263,7 +263,7 @@ class MCPConfigLoader:
                 if check_keys:
                     has_keys, missing = self.check_api_keys(server_config)
                     if not has_keys:
-                        self.logger.info(
+                        self.logger.debug(
                             "Skipping MCP server due to missing API keys",
                             server=server_name,
                             tier=tier,
@@ -273,7 +273,7 @@ class MCPConfigLoader:
 
                 filtered_servers[server_name] = server_config
 
-        self.logger.info(
+        self.logger.debug(
             "Filtered MCP servers by tier",
             tier=tier,
             server_count=len(filtered_servers),

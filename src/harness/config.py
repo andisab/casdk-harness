@@ -1,10 +1,38 @@
 """Configuration management for Claude Agent SDK Harness."""
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    pass  # For forward references
+
+# Model shorthand mapping (centralized from interactive.py/autonomous.py)
+MODEL_SHORTHAND_MAP: dict[str, str] = {
+    "sonnet": "claude-sonnet-4-5-20250929",
+    "opus": "claude-opus-4-5-20251101",
+    "haiku": "claude-3-5-haiku-20241022",
+}
+
+
+def resolve_model_name(model_shorthand: str) -> str | None:
+    """Resolve model shorthand to full model name.
+
+    Args:
+        model_shorthand: Short name (sonnet, opus, haiku) or full model name
+
+    Returns:
+        Full model name, or None if unrecognized shorthand
+    """
+    if model_shorthand in MODEL_SHORTHAND_MAP:
+        return MODEL_SHORTHAND_MAP[model_shorthand]
+    if model_shorthand.startswith("claude-"):
+        return model_shorthand
+    return None
+
 
 # Model context window sizes (tokens)
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
@@ -50,11 +78,11 @@ class HarnessConfig(BaseSettings):
 
     # Agent Behavior
     # Valid modes: acceptEdits, bypassPermissions, default, dontAsk, plan
-    claude_permission_mode: Literal[
+    interactive_permission_mode: Literal[
         "acceptEdits", "bypassPermissions", "default", "dontAsk", "plan"
     ] = Field(
         default="acceptEdits",
-        description="Permission mode for agent actions",
+        description="Permission mode for interactive agent actions",
     )
     claude_max_turns: int = Field(
         default=1000,
@@ -105,6 +133,16 @@ class HarnessConfig(BaseSettings):
     enable_auto_scaling: bool = Field(default=False)
     enable_cost_optimization: bool = Field(default=True)
 
+    # Plugin Configuration
+    enabled_plugins: str | None = Field(
+        default=None,
+        description="Comma-separated list of enabled plugin names (None = all discovered)",
+    )
+    plugin_use_sdk_only: bool = Field(
+        default=False,
+        description="Disable workarounds and rely only on SDK plugin loading",
+    )
+
     # Autonomous Mode Configuration
     autonomous_delay_seconds: int = Field(
         default=5,
@@ -117,6 +155,12 @@ class HarnessConfig(BaseSettings):
     autonomous_task_timeout: int = Field(
         default=1800,
         description="Timeout per task in seconds (30 min)",
+    )
+    autonomous_permission_mode: Literal[
+        "acceptEdits", "bypassPermissions", "default", "dontAsk", "plan"
+    ] = Field(
+        default="bypassPermissions",
+        description="Permission mode for autonomous mode (separate from interactive)",
     )
     bash_allow_all: bool = Field(
         default=False,
@@ -132,8 +176,8 @@ class HarnessConfig(BaseSettings):
 
     # API Timeout Configuration
     claude_api_timeout: int = Field(
-        default=60,
-        description="API request timeout in seconds",
+        default=900,
+        description="Inactivity timeout in seconds (15 minutes) - resets on each message",
     )
 
     # Checkpoint Configuration
@@ -207,6 +251,17 @@ class HarnessConfig(BaseSettings):
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/0"
 
     @property
+    def enabled_plugins_list(self) -> list[str] | None:
+        """Get enabled plugins as a list.
+
+        Returns:
+            List of plugin names if enabled_plugins is set, None otherwise.
+        """
+        if self.enabled_plugins is None:
+            return None
+        return [p.strip() for p in self.enabled_plugins.split(",") if p.strip()]
+
+    @property
     def checkpoint_dir(self) -> Path:
         """Get checkpoint directory path."""
         return self.memory_dir / "checkpoints"
@@ -247,3 +302,80 @@ def reload_config() -> HarnessConfig:
     _config = HarnessConfig()
     _config.ensure_directories()
     return _config
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    """Immutable runtime configuration for a session.
+
+    Created from HarnessConfig + CLI overrides. The frozen=True ensures
+    no mutation after creation.
+    """
+
+    model: str
+    permission_mode: str
+    max_turns: int
+    api_timeout: int
+    session_timeout: int
+    checkpoint_interval: int
+    log_level: str
+    quiet: bool = False
+
+    @classmethod
+    def from_harness_config(
+        cls,
+        config: HarnessConfig,
+        *,
+        mode: Literal["interactive", "autonomous"] = "interactive",
+        model_override: str | None = None,
+        permission_mode_override: str | None = None,
+        quiet: bool = False,
+    ) -> "RuntimeConfig":
+        """Create RuntimeConfig from HarnessConfig with optional overrides.
+
+        Args:
+            config: Base HarnessConfig (from .env or defaults)
+            mode: Which mode to use for permission_mode default
+            model_override: CLI override for model
+            permission_mode_override: CLI override for permission mode
+            quiet: Suppress logging output
+        """
+        effective_model = model_override or config.claude_model
+
+        if permission_mode_override:
+            effective_permission = permission_mode_override
+        elif mode == "autonomous":
+            effective_permission = config.autonomous_permission_mode
+        else:
+            effective_permission = config.interactive_permission_mode
+
+        return cls(
+            model=effective_model,
+            permission_mode=effective_permission,
+            max_turns=config.claude_max_turns,
+            api_timeout=config.claude_api_timeout,
+            session_timeout=config.claude_session_timeout,
+            checkpoint_interval=config.claude_checkpoint_interval,
+            log_level="CRITICAL" if quiet else config.log_level,
+            quiet=quiet,
+        )
+
+
+def configure_logging(runtime: RuntimeConfig) -> None:
+    """Configure logging based on runtime config.
+
+    Args:
+        runtime: RuntimeConfig with log_level and quiet settings
+    """
+    import logging
+
+    import structlog
+
+    level = (
+        logging.CRITICAL
+        if runtime.quiet
+        else getattr(logging, runtime.log_level.upper())
+    )
+    logging.basicConfig(level=level, format="%(message)s", force=True)
+    logging.getLogger().setLevel(level)
+    structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(level))

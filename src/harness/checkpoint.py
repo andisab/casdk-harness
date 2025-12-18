@@ -55,8 +55,8 @@ class CheckpointManager:
         Args:
             get_state_fn: Function that returns current agent state
         """
-        logger.info(
-            "Starting auto-checkpoint",
+        logger.debug(
+            "Auto-checkpoint task started",
             interval=self.interval,
             directory=str(self.checkpoint_dir),
         )
@@ -129,11 +129,11 @@ class CheckpointManager:
         )
 
         if not checkpoints:
-            logger.info("No checkpoints found")
+            logger.debug("No checkpoints found")
             return None
 
         latest = checkpoints[0]
-        logger.info("Loading latest checkpoint", file=str(latest))
+        logger.debug("Loading checkpoint", file=str(latest))
 
         with open(latest, encoding="utf-8") as f:
             checkpoint = json.load(f)
@@ -150,8 +150,8 @@ class CheckpointManager:
         Returns:
             Recovered agent state
         """
-        logger.info(
-            "Recovering from checkpoint",
+        logger.debug(
+            "Processing checkpoint data",
             timestamp=checkpoint.get("timestamp"),
             version=checkpoint.get("version"),
         )
@@ -460,7 +460,7 @@ class CheckpointManager:
         Args:
             snapshot: Workspace snapshot to compare against
         """
-        logger.info(
+        logger.debug(
             "Validating workspace against checkpoint",
             timestamp=snapshot.get("timestamp"),
             snapshot_type=snapshot.get("type"),
@@ -481,14 +481,14 @@ class CheckpointManager:
                     checkpoint_head = snapshot["git_head"]
 
                     if current_head != checkpoint_head:
-                        logger.warning(
-                            "Workspace has changed since checkpoint",
+                        logger.debug(
+                            "Workspace changed since checkpoint",
                             checkpoint_head=checkpoint_head[:8],
                             current_head=current_head[:8],
                             checkpoint_branch=snapshot.get("git_branch"),
                         )
                     else:
-                        logger.info(
+                        logger.debug(
                             "Workspace matches checkpoint",
                             head=current_head[:8],
                             branch=snapshot.get("git_branch"),
@@ -507,10 +507,9 @@ class CheckpointManager:
         elif snapshot.get("type") == "files":
             # For file-based snapshots, just log the comparison
             checkpoint_count = snapshot.get("file_count", 0)
-            logger.info(
-                "File-based checkpoint recovery",
+            logger.debug(
+                "File-based checkpoint (manual verification recommended)",
                 checkpoint_file_count=checkpoint_count,
-                message="Manual verification recommended",
             )
 
     def _restore_memory(self, snapshot: dict[str, Any]) -> None:
@@ -524,9 +523,8 @@ class CheckpointManager:
         Args:
             snapshot: Memory snapshot to compare against
         """
-        logger.info(
+        logger.debug(
             "Validating memory against checkpoint",
-            timestamp=snapshot.get("timestamp"),
             checkpoint_context_size=snapshot.get("context_size", 0),
         )
 
@@ -537,14 +535,14 @@ class CheckpointManager:
         current_size = current_snapshot.get("context_size", 0)
 
         if checkpoint_size != current_size:
-            logger.warning(
+            logger.debug(
                 "Memory state differs from checkpoint",
                 checkpoint_context_size=checkpoint_size,
                 current_context_size=current_size,
                 difference=current_size - checkpoint_size,
             )
         else:
-            logger.info(
+            logger.debug(
                 "Memory matches checkpoint",
                 context_size=current_size,
             )
