@@ -2348,7 +2348,7 @@ This architecture provides:
 4. Iterate based on production usage
 
 **References:**
-- Implementation plans: `docs/agentic-orch/IMPLEMENTATION_PLANS.md`
+- Implementation roadmap: `docs/ORCHESTRATION_ROADMAP.md`
 - Existing infrastructure: `src/harness/`
 - Pattern implementations: This document, Section 3
 
