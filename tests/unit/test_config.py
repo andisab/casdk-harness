@@ -1,10 +1,15 @@
 """Unit tests for configuration management."""
 
 
+import pytest
+
 from harness.config import (
-    HarnessConfig,
     MODEL_CONTEXT_WINDOWS,
+    MODEL_SHORTHAND_MAP,
+    HarnessConfig,
+    RuntimeConfig,
     get_context_window,
+    resolve_model_name,
 )
 
 
@@ -15,7 +20,7 @@ def test_config_defaults() -> None:
 
     # Assert
     assert config.claude_model == "claude-sonnet-4-5-20250929"
-    assert config.claude_permission_mode == "acceptEdits"
+    assert config.interactive_permission_mode == "acceptEdits"
     assert config.claude_max_turns == 1000
     assert config.log_level == "INFO"
 
@@ -59,8 +64,8 @@ def test_new_config_fields_defaults() -> None:
     # Act
     config = HarnessConfig(anthropic_api_key="test-key")
 
-    # Assert - API Timeout
-    assert config.claude_api_timeout == 60
+    # Assert - Inactivity Timeout (15 minutes)
+    assert config.claude_api_timeout == 900
 
     # Assert - Checkpoint Configuration
     assert config.checkpoint_keep_count == 5
@@ -180,3 +185,112 @@ def test_context_budget_threshold_customizable() -> None:
     assert config.context_budget_urgent_pct == 0.70
     assert config.context_budget_critical_pct == 0.80
     assert config.context_budget_override == 100_000
+
+
+# Model Shorthand Tests
+
+
+def test_model_shorthand_map() -> None:
+    """Test MODEL_SHORTHAND_MAP contains expected models."""
+    assert "sonnet" in MODEL_SHORTHAND_MAP
+    assert "opus" in MODEL_SHORTHAND_MAP
+    assert "haiku" in MODEL_SHORTHAND_MAP
+    assert MODEL_SHORTHAND_MAP["sonnet"].startswith("claude-")
+
+
+def test_resolve_model_name_shorthand() -> None:
+    """Test resolve_model_name with shorthand names."""
+    assert resolve_model_name("sonnet") == "claude-sonnet-4-5-20250929"
+    assert resolve_model_name("opus") == "claude-opus-4-5-20251101"
+    assert resolve_model_name("haiku") == "claude-3-5-haiku-20241022"
+
+
+def test_resolve_model_name_full() -> None:
+    """Test resolve_model_name with full model names."""
+    assert resolve_model_name("claude-sonnet-4-5-20250929") == "claude-sonnet-4-5-20250929"
+    assert resolve_model_name("claude-custom-model") == "claude-custom-model"
+
+
+def test_resolve_model_name_unknown() -> None:
+    """Test resolve_model_name with unknown names."""
+    assert resolve_model_name("unknown") is None
+    assert resolve_model_name("gpt-4") is None
+
+
+# RuntimeConfig Tests
+
+
+def test_runtime_config_from_harness_defaults() -> None:
+    """Test RuntimeConfig uses HarnessConfig defaults."""
+    config = HarnessConfig(anthropic_api_key="test-key")
+    runtime = RuntimeConfig.from_harness_config(config)
+
+    assert runtime.model == config.claude_model
+    assert runtime.permission_mode == config.interactive_permission_mode
+    assert runtime.max_turns == config.claude_max_turns
+    assert runtime.quiet is False
+
+
+def test_runtime_config_interactive_mode() -> None:
+    """Test RuntimeConfig uses interactive permission mode."""
+    config = HarnessConfig(
+        anthropic_api_key="test-key",
+        interactive_permission_mode="acceptEdits",
+        autonomous_permission_mode="bypassPermissions",
+    )
+    runtime = RuntimeConfig.from_harness_config(config, mode="interactive")
+
+    assert runtime.permission_mode == "acceptEdits"
+
+
+def test_runtime_config_autonomous_mode() -> None:
+    """Test RuntimeConfig uses autonomous permission mode."""
+    config = HarnessConfig(
+        anthropic_api_key="test-key",
+        interactive_permission_mode="acceptEdits",
+        autonomous_permission_mode="bypassPermissions",
+    )
+    runtime = RuntimeConfig.from_harness_config(config, mode="autonomous")
+
+    assert runtime.permission_mode == "bypassPermissions"
+
+
+def test_runtime_config_model_override() -> None:
+    """Test RuntimeConfig respects model override."""
+    config = HarnessConfig(anthropic_api_key="test-key")
+    runtime = RuntimeConfig.from_harness_config(
+        config,
+        model_override="claude-opus-4-5-20251101",
+    )
+
+    assert runtime.model == "claude-opus-4-5-20251101"
+
+
+def test_runtime_config_permission_override() -> None:
+    """Test RuntimeConfig respects permission mode override."""
+    config = HarnessConfig(anthropic_api_key="test-key")
+    runtime = RuntimeConfig.from_harness_config(
+        config,
+        mode="interactive",
+        permission_mode_override="plan",
+    )
+
+    assert runtime.permission_mode == "plan"
+
+
+def test_runtime_config_quiet_mode() -> None:
+    """Test RuntimeConfig quiet mode sets log level to CRITICAL."""
+    config = HarnessConfig(anthropic_api_key="test-key", log_level="INFO")
+    runtime = RuntimeConfig.from_harness_config(config, quiet=True)
+
+    assert runtime.quiet is True
+    assert runtime.log_level == "CRITICAL"
+
+
+def test_runtime_config_immutable() -> None:
+    """Test RuntimeConfig is immutable (frozen dataclass)."""
+    config = HarnessConfig(anthropic_api_key="test-key")
+    runtime = RuntimeConfig.from_harness_config(config)
+
+    with pytest.raises(Exception):  # FrozenInstanceError
+        runtime.model = "different-model"  # type: ignore[misc]

@@ -24,7 +24,7 @@ def mock_config(tmp_path: Path) -> HarnessConfig:
         memory_dir=tmp_path / "memory",
         claude_checkpoint_interval=3600,
         claude_model="claude-sonnet-4-5-20250929",
-        claude_permission_mode="acceptEdits",
+        interactive_permission_mode="acceptEdits",
         claude_max_turns=100,
     )
 
@@ -172,16 +172,16 @@ class TestInprocessServerLoading:
         assert "memory" in session.mcp_servers
 
 
-class TestPluginSkillDiscovery:
-    """Tests for _load_plugin_skills_manually() method."""
+class TestSkillDiscovery:
+    """Tests for _load_all_skills() method."""
 
-    def test_plugin_skills_dict_created(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
-        """Verify plugin_skills is initialized as a dict."""
+    def test_discovered_skills_dict_created(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
+        """Verify discovered_skills is initialized as a dict."""
         (tmp_path / "workspace").mkdir(exist_ok=True)
         (tmp_path / "memory").mkdir(exist_ok=True)
 
         session = AgentSession(agent_name="test", config=mock_config)
-        assert isinstance(session.plugin_skills, dict)
+        assert isinstance(session.discovered_skills, dict)
 
     def test_plugin_base_path_set(self, mock_config: HarnessConfig, mock_dependencies, tmp_path: Path):
         """Verify plugin_base path is set."""

@@ -1,12 +1,12 @@
 """Integration test to verify SDK does NOT auto-discover .mcp.json.
 
-This test ensures that moving .mcp.json to .claude/.mcp.json prevents
+This test ensures that .mcp.json in src/harness/config/ prevents
 SDK auto-discovery, eliminating the double-loading problem from Phase 1C.
 
-Phase 1C Solution:
-- .mcp.json moved to .claude/.mcp.json (subdirectory)
+Phase 1C Solution (consolidated in Phase 5):
+- .mcp.json located at src/harness/config/.mcp.json
 - SDK cwd is /app, only auto-discovers from /app/.mcp.json
-- File at /app/.claude/.mcp.json is NOT auto-discovered by SDK
+- File at /app/src/harness/config/.mcp.json is NOT auto-discovered by SDK
 - Only MCPConfigLoader reads it and passes servers via mcp_servers parameter
 
 Cost: Free (no API calls, just initialization)
@@ -24,7 +24,7 @@ async def test_no_duplicate_servers_from_sdk_autodiscovery():
     """
     Test that SDK does NOT auto-discover .mcp.json, preventing double-loading.
 
-    Purpose: Verify that moving .mcp.json to .claude/.mcp.json eliminates
+    Purpose: Verify that .mcp.json at src/harness/config/ eliminates
     SDK auto-discovery and we only see servers loaded via MCPConfigLoader.
 
     Expected behavior:
@@ -51,25 +51,25 @@ async def test_no_duplicate_servers_from_sdk_autodiscovery():
     )
 
     # Verify expected server count
-    # Tier 1: git, docker, context7, github (conditional) (3-4 servers)
-    # Tier 2: memory, playwright, joplin (conditional) (2-3 servers)
-    # Total: 5-7 servers
-    assert 5 <= len(server_names) <= 7, (
-        f"Unexpected server count: {len(server_names)}. Expected 5-7 servers. "
+    # In-process (Method A): docker, context7, memory (3 servers)
+    # Subprocess (Method B): playwright, puppeteer (2 servers)
+    # Total: 5 servers
+    assert len(server_names) == 5, (
+        f"Unexpected server count: {len(server_names)}. Expected 5 servers. "
         f"Servers loaded: {server_names}"
     )
 
-    # Verify all expected Tier 1 servers present (excluding github which needs API key)
-    tier1_expected = {"git", "docker", "context7"}
-    tier1_actual = set(server_names) & tier1_expected
+    # Verify all expected in-process servers present
+    inprocess_expected = {"docker", "context7", "memory"}
+    inprocess_actual = set(server_names) & inprocess_expected
 
-    assert tier1_actual == tier1_expected, (
-        f"Missing Tier 1 servers. Expected: {tier1_expected}, Got: {tier1_actual}"
+    assert inprocess_actual == inprocess_expected, (
+        f"Missing in-process servers. Expected: {inprocess_expected}, Got: {inprocess_actual}"
     )
 
-    # Verify Tier 2 servers that don't require API keys
-    assert "memory" in server_names, "Memory server (Tier 2) should always be loaded"
-    assert "playwright" in server_names, "Playwright server (Tier 2) should always be loaded"
+    # Verify subprocess servers
+    assert "playwright" in server_names, "Playwright server (subprocess) should always be loaded"
+    assert "puppeteer" in server_names, "Puppeteer server (subprocess) should always be loaded"
 
 
 @pytest.mark.integration
@@ -82,7 +82,7 @@ async def test_sdk_cwd_does_not_contain_mcp_json():
 
     Expected behavior:
     - .mcp.json is NOT at /app/.mcp.json (SDK cwd)
-    - .mcp.json IS at /app/.claude/.mcp.json (subdirectory)
+    - .mcp.json IS at /app/src/harness/config/.mcp.json (subdirectory)
     - SDK cannot auto-discover it
 
     Cost: Free
@@ -91,14 +91,14 @@ async def test_sdk_cwd_does_not_contain_mcp_json():
 
     sdk_cwd = Path("/app")
     mcp_json_in_cwd = sdk_cwd / ".mcp.json"
-    mcp_json_in_claude = sdk_cwd / ".claude" / ".mcp.json"
+    mcp_json_in_harness = sdk_cwd / "src" / "harness" / "config" / ".mcp.json"
 
     # Verify .mcp.json NOT in SDK cwd (would cause auto-discovery)
     assert not mcp_json_in_cwd.exists(), (
         f".mcp.json should NOT exist at {mcp_json_in_cwd} (SDK would auto-discover it)"
     )
 
-    # Verify .mcp.json IS in .claude/ subdirectory (safe from auto-discovery)
-    assert mcp_json_in_claude.exists(), (
-        f".mcp.json should exist at {mcp_json_in_claude} (MCPConfigLoader reads it)"
+    # Verify .mcp.json IS in src/harness/config/ (safe from auto-discovery)
+    assert mcp_json_in_harness.exists(), (
+        f".mcp.json should exist at {mcp_json_in_harness} (MCPConfigLoader reads it)"
     )

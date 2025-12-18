@@ -7,8 +7,6 @@ when additional CLI work is done.
 
 from __future__ import annotations
 
-import pytest
-
 from harness.cli import format_tool_result, is_json_string
 
 

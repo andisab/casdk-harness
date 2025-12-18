@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 import structlog
-
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
