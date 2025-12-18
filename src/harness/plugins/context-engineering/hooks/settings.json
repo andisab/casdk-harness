@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "PostSessionStart": [
+      {
+        "command": "echo 'Context Engineering plugin loaded'",
+        "timeout": 5
+      }
+    ]
+  }
+}

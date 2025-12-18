@@ -1,0 +1,26 @@
+{
+  "name": "context-engineering",
+  "version": "1.0.0",
+  "description": "Comprehensive toolkit for creating production-ready Claude Code resources: agents, skills, plugins, commands, hooks, and patterns",
+  "author": {
+    "name": "Andis A. Blukis",
+    "email": "andis.blukis@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andisab/ab-casdk-harness"
+  },
+  "license": "MIT",
+  "keywords": [
+    "context-engineering",
+    "agent-development",
+    "skill-creation",
+    "plugin-development",
+    "mcp",
+    "automation"
+  ],
+  "agents": ["./agents"],
+  "skills": ["./skills"],
+  "commands": ["./commands"],
+  "hooks": ["./hooks"]
+}
