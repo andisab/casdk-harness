@@ -2009,7 +2009,174 @@ async def logged_agent_call(agent: str, prompt: str):
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: December 17, 2025
+## Appendix A: Simple Sequential Pipeline
+
+For cases where you need a straightforward sequential chain (simpler than Hybrid Pipeline):
+
+```python
+from harness.direct_agent import call_agent_simple
+import asyncio
+
+class PipelineOrchestrator:
+    """Sequential pipeline with specialized stages."""
+
+    def __init__(self, stages):
+        self.stages = stages
+
+    async def execute(self, initial_input: str):
+        """Execute pipeline sequentially."""
+        current_data = initial_input
+        results = []
+
+        for i, stage in enumerate(self.stages):
+            print(f"Stage {i+1}/{len(self.stages)}: {stage['agent_name']}")
+
+            prompt = stage.get("prompt_template", "{input}").format(
+                input=current_data
+            )
+
+            result = await call_agent_simple(stage["agent_name"], prompt)
+
+            if "transform" in stage:
+                result = stage["transform"](result)
+
+            results.append({"stage": i+1, "agent": stage["agent_name"], "output": result})
+            current_data = result
+
+        return {"final_output": current_data, "stage_results": results}
+
+
+# Content generation pipeline example
+async def content_pipeline_example():
+    pipeline = PipelineOrchestrator([
+        {"agent_name": "researcher", "prompt_template": "Research: {input}"},
+        {"agent_name": "outliner", "prompt_template": "Create outline: {input}"},
+        {"agent_name": "writer", "prompt_template": "Write article: {input}"},
+        {"agent_name": "editor", "prompt_template": "Edit for clarity: {input}"},
+    ])
+    return await pipeline.execute("The impact of AI on healthcare")
+```
+
+**When to use Simple Pipeline vs Hybrid Pipeline:**
+- **Simple Pipeline**: Linear transformations, content generation, data processing
+- **Hybrid Pipeline**: Multiple patterns needed, quality gates, complex multi-phase workflows
+
+---
+
+## Appendix B: Common Pitfalls and How to Avoid Them
+
+### 1. Context Explosion
+
+**Pitfall**: Passing full context to every agent, exceeding token limits.
+
+```python
+# Bad: Pass everything
+context = full_conversation_history + all_files
+
+# Good: Pass only relevant context
+context = summarize(relevant_messages) + current_file
+```
+
+### 2. Sequential Execution When Parallel is Possible
+
+**Pitfall**: Running independent tasks sequentially.
+
+```python
+# Bad: Sequential (slow)
+result1 = await agent1.execute()
+result2 = await agent2.execute()
+
+# Good: Parallel (fast)
+result1, result2 = await asyncio.gather(agent1.execute(), agent2.execute())
+```
+
+### 3. No Error Handling
+
+**Pitfall**: Agent failures crash entire system.
+
+```python
+# Bad
+result = await call_agent_simple("agent", prompt)
+
+# Good
+try:
+    result = await resilient_agent_call("agent", prompt, max_retries=3)
+except Exception as e:
+    result = fallback_handler(e)
+```
+
+### 4. Ignoring Costs
+
+**Pitfall**: No tracking of token usage and costs.
+
+```python
+tracker = CostTracker()
+result = await call_agent_simple("agent", prompt)
+tracker.track("claude-3-5-sonnet", input_tokens, output_tokens)
+
+if tracker.get_total_cost() > budget:
+    send_alert()
+```
+
+### 5. Brittle JSON Parsing
+
+**Pitfall**: Assuming agents always return perfect JSON.
+
+```python
+# Bad
+result = json.loads(response)
+
+# Good - handles code blocks, malformed JSON, fallbacks
+result = extract_json_from_response(response)
+```
+
+---
+
+## Appendix C: References and Further Reading
+
+### Official Documentation
+
+- **Claude API**: https://docs.anthropic.com/
+- **LangChain**: https://python.langchain.com/docs/
+- **LangGraph**: https://langchain-ai.github.io/langgraph/
+
+### Research Papers
+
+- "Multi-Agent Systems: A Survey" - Wooldridge & Jennings
+- "Hierarchical Task Networks" - Erol, Hendler, Nau
+- "Contract Net Protocol" - Smith
+- "Blackboard Systems" - Engelmore & Morgan
+
+### Related Patterns
+
+- **Microservices Architecture**: Similar decoupling principles
+- **Actor Model**: Message-passing concurrency
+- **Map-Reduce**: Hierarchical data processing
+- **Pub-Sub**: Event-driven coordination
+
+---
+
+## Conclusion
+
+This guide presented five dominant orchestration paradigms:
+
+1. **Hierarchical**: Best for structured problems with clear decomposition
+2. **Blackboard**: Best for complex problem-solving without clear algorithms
+3. **Mediator**: Best for complex routing and policy enforcement
+4. **Peer-to-Peer**: Best for dynamic environments requiring robustness
+5. **Hybrid Pipeline**: Best for production applications with multi-phase workflows
+
+**Key Takeaways:**
+
+- Start simple (Hierarchical or Pipeline) and add complexity as needed
+- Hybrid approaches dominate in production systems
+- Context management and caching are critical for cost control
+- Always implement error handling and monitoring
+- Choose paradigms based on problem characteristics, not preferences
+
+---
+
+**Document Version**: 1.1
+**Last Updated**: December 18, 2025
 **Framework**: Claude Agent SDK (Python)
 **Working Directory**: `/workspace/`

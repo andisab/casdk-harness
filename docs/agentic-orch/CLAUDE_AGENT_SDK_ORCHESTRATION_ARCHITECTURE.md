@@ -231,7 +231,7 @@ Input → Agent A → Agent B → Agent C → Final Output
 **Implementation:**
 
 ```python
-# /workspace/orchestration/patterns/sequential_pipeline.py
+# src/harness/orchestration/patterns/sequential_pipeline.py
 
 import asyncio
 from typing import Any, List, Dict
@@ -448,7 +448,7 @@ async def example_code_review_pipeline():
 **Implementation:**
 
 ```python
-# /workspace/orchestration/patterns/hierarchical_coordinator.py
+# src/harness/orchestration/patterns/hierarchical_coordinator.py
 
 import asyncio
 from typing import Any, List, Dict, Callable
@@ -782,7 +782,7 @@ Perform comprehensive analysis of the codebase in /workspace/myproject:
 **Implementation:**
 
 ```python
-# /workspace/orchestration/patterns/broadcast_multi_perspective.py
+# src/harness/orchestration/patterns/broadcast_multi_perspective.py
 
 import asyncio
 from typing import Any, List, Dict, Callable
@@ -1064,7 +1064,7 @@ Agent C ──┘                               ├──> Redis Stream ──> 
 **Implementation:**
 
 ```python
-# /workspace/orchestration/patterns/event_driven_async.py
+# src/harness/orchestration/patterns/event_driven_async.py
 
 import asyncio
 import json
@@ -1400,7 +1400,7 @@ async def example_distributed_workflow():
 **Purpose:** Analyze complex tasks and automatically select appropriate coordination pattern.
 
 ```python
-# /workspace/orchestration/task_decomposition.py
+# src/harness/orchestration/task_decomposition.py
 
 import asyncio
 from typing import Any, Dict, List
@@ -1534,9 +1534,9 @@ Return ONLY the JSON, no additional text.
         )
 
         # Import pattern implementations
-        from orchestration.patterns.sequential_pipeline import SequentialPipeline
-        from orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
-        from orchestration.patterns.broadcast_multi_perspective import BroadcastMultiPerspective
+        from harness.orchestration.patterns.sequential_pipeline import SequentialPipeline
+        from harness.orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
+        from harness.orchestration.patterns.broadcast_multi_perspective import BroadcastMultiPerspective
 
         try:
             if pattern == "sequential":
@@ -1665,7 +1665,7 @@ Perform comprehensive security audit of the web application:
 For complex workflows with dependencies:
 
 ```python
-# /workspace/orchestration/dependency_graph.py
+# src/harness/orchestration/dependency_graph.py
 
 from typing import Any, Dict, List, Set
 import structlog
@@ -1882,7 +1882,7 @@ Database: {dep:analyze_database}
 This example demonstrates all patterns working together:
 
 ```python
-# /workspace/orchestration/examples/research_pipeline.py
+# src/harness/orchestration/examples/research_pipeline.py
 
 """
 Complete research pipeline demonstrating all orchestration patterns:
@@ -1893,9 +1893,9 @@ Complete research pipeline demonstrating all orchestration patterns:
 """
 
 import asyncio
-from orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
-from orchestration.patterns.broadcast_multi_perspective import BroadcastMultiPerspective
-from orchestration.patterns.sequential_pipeline import SequentialPipeline
+from harness.orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
+from harness.orchestration.patterns.broadcast_multi_perspective import BroadcastMultiPerspective
+from harness.orchestration.patterns.sequential_pipeline import SequentialPipeline
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -2004,7 +2004,7 @@ if __name__ == "__main__":
 ### 6.1 Cost Optimization
 
 ```python
-# /workspace/orchestration/cost_optimization.py
+# src/harness/orchestration/cost_optimization.py
 
 from typing import Any, Dict
 import structlog
@@ -2062,7 +2062,7 @@ class CostOptimizer:
 ### 6.2 Monitoring and Observability
 
 ```python
-# /workspace/orchestration/monitoring.py
+# src/harness/orchestration/monitoring.py
 
 import time
 from typing import Any, Dict, List
@@ -2135,7 +2135,7 @@ class OrchestrationMetrics:
 ### 6.3 Error Recovery
 
 ```python
-# /workspace/orchestration/error_recovery.py
+# src/harness/orchestration/error_recovery.py
 
 import asyncio
 from typing import Any, Callable
@@ -2211,7 +2211,7 @@ class RetryStrategy:
 result = await call_agent_simple("python-expert", "Analyze this codebase")
 
 # After: Multi-agent pipeline
-from orchestration.patterns.sequential_pipeline import SequentialPipeline
+from harness.orchestration.patterns.sequential_pipeline import SequentialPipeline
 
 pipeline = SequentialPipeline(stages=[
     {"agent_name": "python-expert", "prompt_template": "Code analysis: {input}"},
@@ -2223,7 +2223,7 @@ result = await pipeline.execute("/workspace/myproject")
 
 **Step 3: Add Monitoring**
 ```python
-from orchestration.monitoring import OrchestrationMetrics
+from harness.orchestration.monitoring import OrchestrationMetrics
 
 metrics = OrchestrationMetrics()
 metrics.start_task("task_1", "pipeline", "python-expert")
@@ -2261,10 +2261,10 @@ Start
 ### A.1 Quick Start Template
 
 ```python
-# /workspace/my_orchestration.py
+# src/harness/orchestration/my_orchestration.py
 
 import asyncio
-from orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
+from harness.orchestration.patterns.hierarchical_coordinator import HierarchicalCoordinator
 
 async def main():
     # Quick start: Hierarchical pattern
@@ -2291,7 +2291,7 @@ if __name__ == "__main__":
 Create orchestration plugin:
 
 ```bash
-# /app/src/harness/plugins/orchestration/plugin.yaml
+# src/harness/plugins/orchestration/plugin.yaml
 name: orchestration
 version: 1.0.0
 description: Multi-agent orchestration patterns
@@ -2307,10 +2307,10 @@ commands:
 ### A.3 Testing Patterns
 
 ```python
-# /workspace/tests/test_orchestration.py
+# tests/unit/test_orchestration.py
 
 import pytest
-from orchestration.patterns.sequential_pipeline import SequentialPipeline
+from harness.orchestration.patterns.sequential_pipeline import SequentialPipeline
 
 @pytest.mark.asyncio
 async def test_sequential_pipeline():
@@ -2342,18 +2342,18 @@ This architecture provides:
 5. **Battle-Tested**: Based on proven distributed systems patterns
 
 **Next Steps:**
-1. Copy pattern implementations to `/workspace/orchestration/`
+1. Implement patterns in `src/harness/orchestration/`
 2. Test with your specific agents and tasks
 3. Add monitoring and cost tracking
 4. Iterate based on production usage
 
 **References:**
-- Research materials: `/workspace/temp/research/notes/`
-- Existing infrastructure: `/app/src/harness/`
+- Implementation plans: `docs/agentic-orch/IMPLEMENTATION_PLANS.md`
+- Existing infrastructure: `src/harness/`
 - Pattern implementations: This document, Section 3
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-12-17
+**Document Version:** 1.1
+**Last Updated:** 2025-12-18
 **Maintained By:** Claude Agent SDK Orchestration Team
