@@ -92,6 +92,46 @@ Enable peer-to-peer coordination between Docker containers.
 3. Circuit breaker integration
 4. Checkpoint integration for long-running orchestrations
 
+### Phase 5: ContextGrad Framework Integration
+
+**Objective**: Leverage orchestration patterns for CGF test execution and optimization workflows.
+
+**Dependencies**: Plan A Phases 1-4, CGF infrastructure (see `docs/features/CONTEXT-GRAD-SPEC.md`)
+
+**Integration Points:**
+
+| CGF Component | Orchestration Pattern | Use Case |
+|---------------|----------------------|----------|
+| TestHarness | Sequential Pipeline | Ordered test stage execution (syntax → unit → integration) |
+| ParallelTestRunner | Broadcast | Run same tests across multiple configurations |
+| OptimizationEngine | Hierarchical | Coordinator manages optimizer agents per resource type |
+| MetricsCollector | Event-Driven | Async metrics aggregation from distributed test runs |
+
+**Deliverables:**
+1. TestHarness orchestration adapter - wraps patterns for CGF test stages
+2. OrchestrationOptimizer agent - applies meta-optimization to orchestration configs
+3. CGF-specific metrics in Prometheus (optimization iterations, convergence rate)
+4. Hybrid pipeline preset for multi-stage optimization workflows
+
+**Example Integration:**
+
+```python
+from harness.orchestration import SequentialPipeline, BroadcastMultiPerspective
+from harness.optimization import TestHarness, TestStage
+
+# CGF TestHarness using orchestration patterns
+class OrchestrationTestHarness(TestHarness):
+    def __init__(self):
+        self.pipeline = SequentialPipeline([
+            (TestStage.SYNTAX, "syntax-validator"),
+            (TestStage.UNIT, "unit-test-runner"),
+            (TestStage.INTEGRATION, "integration-test-runner"),
+        ])
+
+    async def run_all_stages(self, resource: str) -> TestResults:
+        return await self.pipeline.execute(resource)
+```
+
 ---
 
 ## Plan B: Tooling (Context-Engineering Plugin)
@@ -209,3 +249,4 @@ DSPy can optimize agent prompts automatically. TextGrad can provide gradient fee
 - [x] Delete consolidated reports
 - [ ] Begin Plan B Phase 1 (specs extraction)
 - [ ] Begin Plan A Phase 1 (infrastructure module)
+- [ ] Begin Plan A Phase 5 (CGF integration) - after CGF infrastructure complete

@@ -71,7 +71,7 @@ W1    W2       W3          W4    W5 (Haiku/Sonnet)
 #### Basic Structure
 
 ```python
-# File: /workspace/agents/hierarchical_coordinator.py
+# File: src/harness/orchestration/patterns/hierarchical_coordinator.py
 
 import asyncio
 from harness.direct_agent import call_agent, call_agent_simple
@@ -185,7 +185,7 @@ if __name__ == "__main__":
 #### Advanced: Hierarchical with Dependencies
 
 ```python
-# File: /workspace/agents/hierarchical_with_deps.py
+# File: src/harness/orchestration/patterns/hierarchical_with_deps.py
 
 import asyncio
 from collections import defaultdict
@@ -249,7 +249,7 @@ class DependencyAwareCoordinator:
 #### Context Management for Hierarchy
 
 ```python
-# File: /workspace/agents/hierarchical_context.py
+# File: src/harness/orchestration/patterns/hierarchical_context.py
 
 class HierarchicalContextManager:
     """
@@ -312,7 +312,7 @@ class HierarchicalContextManager:
 ### Performance Optimizations
 
 ```python
-# File: /workspace/agents/hierarchical_optimized.py
+# File: src/harness/orchestration/patterns/hierarchical_optimized.py
 
 class OptimizedHierarchicalCoordinator:
     """
@@ -402,7 +402,7 @@ Shared workspace where multiple specialist agents observe, contribute partial so
 #### Basic Blackboard
 
 ```python
-# File: /workspace/agents/blackboard.py
+# File: src/harness/orchestration/patterns/blackboard.py
 
 import json
 import asyncio
@@ -696,7 +696,7 @@ if __name__ == "__main__":
 #### Optimizations
 
 ```python
-# File: /workspace/agents/blackboard_optimized.py
+# File: src/harness/orchestration/patterns/blackboard_optimized.py
 
 class OptimizedBlackboard(Blackboard):
     """
@@ -770,7 +770,7 @@ Central mediator facilitates all agent communication, providing routing, load ba
 ### Implementation in This Framework
 
 ```python
-# File: /workspace/agents/mediator.py
+# File: src/harness/orchestration/patterns/mediator.py
 
 import asyncio
 from typing import Dict, List, Any, Callable
@@ -1057,7 +1057,7 @@ All agents have equal status and communicate directly without a central coordina
 ### Implementation in This Framework
 
 ```python
-# File: /workspace/agents/peer_to_peer.py
+# File: src/harness/orchestration/patterns/peer_to_peer.py
 
 import asyncio
 import json
@@ -1340,7 +1340,7 @@ Execution    Execution    (Blackboard)  (Peer Review)
 ### Implementation in This Framework
 
 ```python
-# File: /workspace/agents/hybrid_pipeline.py
+# File: src/harness/orchestration/patterns/hybrid_pipeline.py
 
 import asyncio
 import json
@@ -1662,7 +1662,7 @@ if __name__ == "__main__":
 ### Advanced: Adaptive Pipeline
 
 ```python
-# File: /workspace/agents/adaptive_pipeline.py
+# File: src/harness/orchestration/patterns/adaptive_pipeline.py
 
 class AdaptivePipeline(HybridPipeline):
     """
