@@ -8,7 +8,7 @@ services:
     build:
       target: development
     environment:
-      - DEBUG=${DEBUG:-true}
+      - DEBUG=${DEBUG:-false}
       - HOT_RELOAD=${HOT_RELOAD:-true}
       - ENABLE_PROFILING=${ENABLE_PROFILING:-false}
     # Enable debugging port
@@ -35,7 +35,7 @@ services:
     build:
       target: development
     environment:
-      - DEBUG=${DEBUG:-true}
+      - DEBUG=${DEBUG:-false}
     volumes:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated
@@ -49,7 +49,7 @@ services:
     build:
       target: development
     environment:
-      - DEBUG=${DEBUG:-true}
+      - DEBUG=${DEBUG:-false}
     volumes:
       - ./src:/app/src:delegated
       - ./tests:/app/tests:delegated

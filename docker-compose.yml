@@ -1,9 +1,14 @@
 # =============================================================================
 # Claude Agent SDK Harness - Base Configuration
 # =============================================================================
-# Use with: docker compose up
+# Use with: docker compose up                     (main-agent + monitoring only)
+# Multi-agent: docker compose --profile multi-agent up (all agents + redis)
 # Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 # Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# Profiles:
+#   - (default): main-agent + prometheus + grafana
+#   - multi-agent: adds reviewer-agent, tester-agent, redis
 
 services:
   # ===========================================================================
@@ -36,7 +41,6 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./workspace:/workspace:delegated
-      - ./.claude:/app/.claude:ro
       - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/main:/logs:delegated
@@ -46,9 +50,8 @@ services:
     ports:
       - "${MAIN_AGENT_PORT:-8080}:8080"
       - "${MAIN_METRICS_PORT:-9091}:9090"  # Prometheus metrics
-    depends_on:
-      redis:
-        condition: service_healthy
+    # Note: Redis dependency removed - main-agent gracefully handles Redis unavailability
+    # When running with --profile multi-agent, Redis will be available
     stdin_open: true
     tty: true
     restart: unless-stopped
@@ -63,9 +66,10 @@ services:
           cpus: ${AGENT_CPU_RESERVATION:-2}
           memory: ${AGENT_MEMORY_RESERVATION:-4G}
   # ===========================================================================
-  # Code Reviewer Agent
+  # Code Reviewer Agent (multi-agent profile)
   # ===========================================================================
   reviewer-agent:
+    profiles: ["multi-agent"]
     build:
       context: .
       dockerfile: agents/main/Dockerfile
@@ -76,6 +80,7 @@ services:
     container_name: claude-reviewer-agent
     hostname: reviewer-agent
     environment:
+      - AGENT_NAME=reviewer
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
       - CLAUDE_PERMISSION_MODE=default
@@ -86,7 +91,6 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./workspace:/workspace:ro
-      - ./.claude:/app/.claude:ro
       - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/reviewer:/logs:delegated
@@ -111,9 +115,10 @@ services:
           memory: ${REVIEWER_MEMORY_LIMIT:-4G}
 
   # ===========================================================================
-  # Tester Agent
+  # Tester Agent (multi-agent profile)
   # ===========================================================================
   tester-agent:
+    profiles: ["multi-agent"]
     build:
       context: .
       dockerfile: agents/main/Dockerfile
@@ -124,6 +129,7 @@ services:
     container_name: claude-tester-agent
     hostname: tester-agent
     environment:
+      - AGENT_NAME=tester
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
       - CLAUDE_PERMISSION_MODE=bypassPermissions
@@ -134,7 +140,6 @@ services:
       - REDIS_URL=redis://redis:6379
     volumes:
       - ./workspace:/workspace:delegated
-      - ./.claude:/app/.claude:ro
       - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
       - ./logs/tester:/logs:delegated
@@ -159,9 +164,10 @@ services:
           memory: ${TESTER_MEMORY_LIMIT:-4G}
 
   # ===========================================================================
-  # Redis Cache & Pub/Sub
+  # Redis Cache & Pub/Sub (multi-agent profile)
   # ===========================================================================
   redis:
+    profiles: ["multi-agent"]
     image: redis:7-alpine
     container_name: claude-redis
     hostname: redis

@@ -63,10 +63,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -e ".[dev]"
 
-# Install Claude Code CLI and make it accessible to all users
-RUN curl -fsSL https://claude.ai/install.sh | bash && \
-    cp /root/.local/bin/claude /usr/local/bin/claude && \
-    chmod +x /usr/local/bin/claude
+# Install Claude Code CLI via npm (more reliable than install.sh)
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install standalone uv/uvx for running Python MCP servers
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
@@ -93,6 +91,11 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Must be done before switching to non-root user
 RUN --mount=type=cache,target=/root/.cache/npm \
     npx playwright install --with-deps chromium
+
+# Install Puppeteer Chromium browser for MCP server
+# Separate from Playwright to avoid conflicts
+RUN --mount=type=cache,target=/root/.cache/npm \
+    npx puppeteer browsers install chrome
 
 # Create non-root user for development with home directory
 RUN groupadd -r claude && \

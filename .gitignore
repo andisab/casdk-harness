@@ -52,16 +52,15 @@ htmlcov/
 
 # Workspace (directory tracked, contents ignored - agent's blank canvas)
 /workspace/*
+!/workspace/.gitkeep
 
 # Memory and checkpoints (gitignored, contains state)
-memory/checkpoints/*
-memory/context/*
-!memory/checkpoints/.gitkeep
-!memory/context/.gitkeep
+/memory/*
+!/memory/.gitkeep
 
 # Logs
-logs/**/*
-!logs/**/.gitkeep
+/logs/*
+!/logs/.gitkeep
 
 # Temporary files
 *.log

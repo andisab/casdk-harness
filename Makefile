@@ -49,21 +49,79 @@ NC := \033[0m
 # =============================================================================
 .PHONY: help
 help: ## Show available targets
-	@echo "$(GREEN)Claude Agent SDK Harness - Available Commands$(NC)"
+	@echo "$(GREEN)Claude Agent SDK Harness - Commands$(NC)"
 	@echo ""
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo "$(YELLOW)Getting Started:$(NC)"
+	@echo "  init                 Initialize project (first time setup)"
+	@echo "  build                Build all services"
+	@echo "  up / up-multi        Start services (background)"
+	@echo "  down                 Stop all services"
+	@echo "  doctor               Diagnose setup issues"
+	@echo ""
+	@echo "$(YELLOW)Interactive Mode:$(NC)"
+	@echo "  interactive          Start interactive conversation"
+	@echo "  interactive-quiet    Interactive without system logs"
+	@echo ""
+	@echo "$(YELLOW)Autonomous Mode:$(NC)"
+	@echo "  autonomous           Start autonomous development"
+	@echo "  autonomous-status    Show development progress"
+	@echo "  init-spec            Create SPEC.md template"
+	@echo ""
+	@echo "$(YELLOW)Testing:$(NC)"
+	@echo "  test                 Run full test suite"
+	@echo "  test-unit            Run unit tests only"
+	@echo "  test-integration     Run integration tests"
+	@echo "  test-multi           Test multi-agent coordination"
+	@echo "  coverage             Generate coverage report"
+	@echo ""
+	@echo "$(YELLOW)Code Quality:$(NC)"
+	@echo "  lint / lint-fix      Run linter (with auto-fix)"
+	@echo "  format               Format code"
+	@echo "  typecheck            Run type checking"
+	@echo ""
+	@echo "$(YELLOW)Services:$(NC)"
+	@echo "  services             List all services"
+	@echo "  logs / logs-main     View service logs"
+	@echo "  shell                Shell into main agent"
+	@echo "  health               Check service health"
+	@echo ""
+	@echo "$(YELLOW)Monitoring:$(NC)"
+	@echo "  metrics              Open Grafana dashboard"
+	@echo "  prometheus           Open Prometheus UI"
+	@echo ""
+	@echo "$(YELLOW)Maintenance:$(NC)"
+	@echo "  clean                Remove containers and volumes"
+	@echo "  prune                Prune Docker resources"
+	@echo "  reset                Full reset (destructive)"
+	@echo ""
+	@echo "$(YELLOW)Tip:$(NC) Use MODEL=opus make interactive to change model"
+	@echo "For details: cat QUICKSTART.md"
 	@echo ""
 
 # =============================================================================
-# Initial Setup
+# Getting Started
 # =============================================================================
 .PHONY: init
 init: check-env ## Initialize project (first time setup)
-	@echo "$(GREEN)Initializing Claude Agent SDK Harness...$(NC)"
-	@[ -f $(ENV_FILE) ] || cp .env.example $(ENV_FILE)
-	@echo "$(YELLOW)Please edit .env and add your ANTHROPIC_API_KEY$(NC)"
+	@echo ""
+	@echo "$(GREEN)Welcome to Claude Agent SDK Harness!$(NC)"
+	@echo ""
+	@if [ -f $(ENV_FILE) ]; then \
+		echo "$(GREEN)✓ .env file already exists$(NC)"; \
+	else \
+		cp .env.example $(ENV_FILE); \
+		echo "$(GREEN)✓ Created .env from template$(NC)"; \
+	fi
 	@mkdir -p workspace memory/checkpoints memory/context logs/{main,reviewer,tester,orchestrator}
-	@echo "$(GREEN)Initialization complete!$(NC)"
+	@echo "$(GREEN)✓ Created directories$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Next Steps:$(NC)"
+	@echo "  1. Edit .env and set your ANTHROPIC_API_KEY"
+	@echo "  2. Run: make prod"
+	@echo "  3. Run: make interactive"
+	@echo ""
+	@echo "$(GREEN)See QUICKSTART.md for a 5-minute tutorial$(NC)"
+	@echo ""
 
 .PHONY: check-env
 check-env: ## Validate environment
@@ -75,13 +133,14 @@ check-env: ## Validate environment
 # Development
 # =============================================================================
 .PHONY: dev
-dev: check-env ## Start development environment with hot-reload
+dev: check-env ## Start development environment with hot-reload (main-agent + monitoring)
 	@echo "$(GREEN)Starting development environment...$(NC)"
 	docker compose $(COMPOSE_FILES) up --build --remove-orphans --watch
 
-.PHONY: dev-detached
-dev-detached: check-env ## Start development environment in background
-	docker compose $(COMPOSE_FILES) up -d --build --remove-orphans
+.PHONY: dev-multi
+dev-multi: check-env ## Start development with multi-agent (all agents + redis)
+	@echo "$(GREEN)Starting multi-agent development environment...$(NC)"
+	docker compose $(COMPOSE_FILES) --profile multi-agent up --build --remove-orphans --watch
 
 # =============================================================================
 # Build Targets
@@ -91,10 +150,6 @@ build: check-env ## Build all services
 	@echo "$(GREEN)Building all services...$(NC)"
 	docker compose $(COMPOSE_FILES) build --parallel
 
-.PHONY: build-main
-build-main: check-env ## Build main agent only
-	docker compose $(COMPOSE_FILES) build main-agent
-
 .PHONY: build-no-cache
 build-no-cache: check-env ## Build without cache (clean build)
 	docker compose $(COMPOSE_FILES) build --no-cache --parallel
@@ -103,24 +158,20 @@ build-no-cache: check-env ## Build without cache (clean build)
 # Service Management
 # =============================================================================
 .PHONY: up
-up: check-env ## Start all services
+up: check-env ## Start services (main-agent + monitoring only)
 	docker compose $(COMPOSE_FILES) up -d --remove-orphans
 
-.PHONY: up-healthy
-up-healthy: check-env ## Start and wait for health checks
-	docker compose $(COMPOSE_FILES) up -d --wait --wait-timeout 60
+.PHONY: up-multi
+up-multi: check-env ## Start all services including multi-agent (reviewer, tester, redis)
+	docker compose $(COMPOSE_FILES) --profile multi-agent up -d --remove-orphans
 
 .PHONY: down
-down: ## Stop all services
-	docker compose $(COMPOSE_FILES) down
+down: ## Stop all services (including multi-agent if running)
+	docker compose $(COMPOSE_FILES) --profile multi-agent down
 
 .PHONY: restart
 restart: ## Restart all services
 	docker compose $(COMPOSE_FILES) restart
-
-.PHONY: ps
-ps: ## Show running containers
-	docker compose $(COMPOSE_FILES) ps
 
 .PHONY: services
 services: ## List all services
@@ -169,14 +220,6 @@ interactive: ## Start interactive conversation with main agent
 	@echo "$(YELLOW)Type 'exit' or 'quit' to end the session$(NC)"
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive
 
-.PHONY: chat
-chat: interactive ## Alias for interactive mode
-
-.PHONY: interactive-model
-interactive-model: ## Start interactive with specific model (usage: make interactive-model MODEL=opus)
-	@echo "$(GREEN)Starting interactive session with $(MODEL) model...$(NC)"
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --model $(MODEL)
-
 .PHONY: interactive-quiet
 interactive-quiet: ## Start interactive in quiet mode (no system logs)
 	@echo "$(GREEN)Starting interactive session in quiet mode...$(NC)"
@@ -192,31 +235,90 @@ autonomous: ## Start autonomous development mode (quiet by default)
 	@echo "$(YELLOW)Press Ctrl+C to gracefully stop$(NC)"
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet
 
-.PHONY: autonomous-verbose
-autonomous-verbose: ## Start autonomous with verbose logging
-	@echo "$(GREEN)Starting autonomous mode with verbose logging...$(NC)"
-	@echo "$(YELLOW)Press Ctrl+C to gracefully stop$(NC)"
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous
-
-.PHONY: autonomous-model
-autonomous-model: ## Start autonomous with specific model (usage: make autonomous-model MODEL=opus)
-	@echo "$(GREEN)Starting autonomous mode with $(MODEL) model...$(NC)"
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet --model $(MODEL)
-
 .PHONY: autonomous-unsafe
 autonomous-unsafe: ## Start autonomous with all bash commands allowed (dangerous!)
 	@echo "$(RED)WARNING: All bash commands allowed - use with caution!$(NC)"
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.autonomous --quiet --allow-all-commands
 
 .PHONY: autonomous-status
-autonomous-status: ## Show autonomous development progress
-	@echo "$(GREEN)Autonomous Development Status$(NC)"
-	@docker compose $(COMPOSE_FILES) exec main-agent cat /workspace/task_list.json 2>/dev/null | jq '.tasks[] | {id, title, status}' || echo "No task_list.json found"
+autonomous-status: ## Show autonomous development progress (use between sessions or from second terminal)
+	@echo ""
+	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(GREEN)           AUTONOMOUS DEVELOPMENT STATUS$(NC)"
+	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@# Project Info
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -f /workspace/task_list.json ]; then \
+			PROJECT=$$(jq -r ".project_name // \"Unknown\"" /workspace/task_list.json 2>/dev/null); \
+			CREATED=$$(jq -r ".created_at // \"Unknown\"" /workspace/task_list.json 2>/dev/null); \
+			echo "$(YELLOW)Project:$(NC) $$PROJECT"; \
+			echo "$(YELLOW)Created:$(NC) $$CREATED"; \
+			echo ""; \
+		else \
+			echo "$(RED)No task_list.json found - run make autonomous to initialize$(NC)"; \
+			exit 0; \
+		fi'
+	@# Task Stats
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -f /workspace/task_list.json ]; then \
+			TOTAL=$$(jq ".tasks | length" /workspace/task_list.json); \
+			PASS=$$(jq "[.tasks[] | select(.status == \"PASS\")] | length" /workspace/task_list.json); \
+			FAIL=$$(jq "[.tasks[] | select(.status == \"FAIL\")] | length" /workspace/task_list.json); \
+			PENDING=$$(jq "[.tasks[] | select(.status == null)] | length" /workspace/task_list.json); \
+			if [ $$TOTAL -gt 0 ]; then PCT=$$((PASS * 100 / TOTAL)); else PCT=0; fi; \
+			echo "$(YELLOW)Progress:$(NC) $$PASS/$$TOTAL tasks complete ($$PCT%)"; \
+			echo "  $(GREEN)✓ PASS:$(NC) $$PASS  $(RED)✗ FAIL:$(NC) $$FAIL  $(YELLOW)○ Pending:$(NC) $$PENDING"; \
+			echo ""; \
+		fi'
+	@# Task List
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -f /workspace/task_list.json ]; then \
+			echo "$(YELLOW)Tasks:$(NC)"; \
+			jq -r ".tasks[] | \"  \" + (if .status == \"PASS\" then \"$(GREEN)✓$(NC)\" elif .status == \"FAIL\" then \"$(RED)✗$(NC)\" else \"$(YELLOW)○$(NC)\" end) + \" \" + .id + \": \" + .title" /workspace/task_list.json; \
+			echo ""; \
+		fi'
+	@# Session Info
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -d /workspace/sessions ]; then \
+			SESSION_COUNT=$$(ls /workspace/sessions/session_*.json 2>/dev/null | wc -l | tr -d " "); \
+			if [ "$$SESSION_COUNT" -gt 0 ]; then \
+				LATEST=$$(ls -t /workspace/sessions/session_*.json 2>/dev/null | head -1); \
+				LATEST_NAME=$$(basename $$LATEST 2>/dev/null); \
+				echo "$(YELLOW)Sessions:$(NC) $$SESSION_COUNT total (latest: $$LATEST_NAME)"; \
+			else \
+				echo "$(YELLOW)Sessions:$(NC) None yet"; \
+			fi; \
+		fi'
+	@# Recent Commits
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -d /workspace/.git ]; then \
+			echo ""; \
+			echo "$(YELLOW)Recent Commits:$(NC)"; \
+			cd /workspace && git log --oneline -3 2>/dev/null | sed "s/^/  /"; \
+		fi'
+	@# Next Steps
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		if [ -f /workspace/context/next-steps.md ]; then \
+			echo ""; \
+			echo "$(YELLOW)Next Steps:$(NC)"; \
+			head -5 /workspace/context/next-steps.md | sed "s/^/  /"; \
+		fi'
+	@echo ""
+	@echo "$(GREEN)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(YELLOW)Tip:$(NC) Run 'make autonomous' to resume development"
+	@echo ""
 
 .PHONY: init-spec
-init-spec: ## Create SPEC.md template in workspace
-	@echo "$(GREEN)Creating SPEC.md template...$(NC)"
-	@docker compose $(COMPOSE_FILES) exec main-agent bash -c 'if [ -f /workspace/SPEC.md ]; then echo "SPEC.md already exists"; else echo "# Project Specification\n\n## Overview\n\nDescribe your project here.\n\n## Requirements\n\n1. Requirement 1\n2. Requirement 2\n\n## Technical Constraints\n\n- Constraint 1\n- Constraint 2\n" > /workspace/SPEC.md && echo "Created /workspace/SPEC.md"; fi'
+init-spec: ## Copy SPEC.example.md template to workspace/SPEC.md
+	@if [ -f workspace/SPEC.md ]; then \
+		echo "$(YELLOW)workspace/SPEC.md already exists$(NC)"; \
+		echo "Remove it first or edit directly: rm workspace/SPEC.md"; \
+	else \
+		cp docs/SPEC.example.md workspace/SPEC.md; \
+		echo "$(GREEN)Created workspace/SPEC.md from docs/SPEC.example.md$(NC)"; \
+		echo "Edit workspace/SPEC.md to describe your project, then run: make autonomous"; \
+	fi
 
 # =============================================================================
 # Testing
@@ -233,37 +335,13 @@ test-unit: ## Run unit tests only
 test-integration: ## Run integration tests
 	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/ -v -m integration
 
-.PHONY: test-e2e
-test-e2e: ## Run end-to-end tests
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/e2e/ -v -m e2e
-
-.PHONY: test-smoke
-test-smoke: ## Run smoke tests
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/smoke/ -v -m smoke
+.PHONY: test-multi
+test-multi: ## Test multi-agent coordination via Redis
+	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_multi_agent.py -v
 
 .PHONY: coverage
 coverage: ## Generate test coverage report
 	docker compose $(COMPOSE_FILES) exec main-agent pytest --cov=src/harness --cov-report=html --cov-report=term
-
-.PHONY: test-watch
-test-watch: ## Run tests in watch mode
-	docker compose $(COMPOSE_FILES) exec main-agent pytest-watch
-
-.PHONY: test-buffering
-test-buffering: ## Test container stream buffering
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_container_buffering.py -v
-
-.PHONY: test-signals
-test-signals: ## Test signal handling and graceful shutdown
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_signal_handling.py -v
-
-.PHONY: test-multi-agent
-test-multi-agent: ## Test multi-agent coordination via Redis
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_multi_agent.py -v
-
-.PHONY: test-all-multiagent
-test-all-multiagent: ## Run all multi-agent implementation tests
-	docker compose $(COMPOSE_FILES) exec main-agent pytest tests/integration/test_container_buffering.py tests/integration/test_signal_handling.py tests/integration/test_multi_agent.py -v
 
 # =============================================================================
 # Code Quality
@@ -354,15 +432,8 @@ restore: ## Restore from latest backup
 # Production Deployment
 # =============================================================================
 .PHONY: prod
-prod: ## Start production environment
-	@ENVIRONMENT=production $(MAKE) up
-
-.PHONY: prod-build
-prod-build: ## Build for production
+prod: ## Build and start production environment
 	@ENVIRONMENT=production $(MAKE) build
-
-.PHONY: prod-deploy
-prod-deploy: prod-build ## Build and deploy to production
 	@ENVIRONMENT=production docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --wait
 
 # =============================================================================
@@ -395,26 +466,46 @@ version: ## Show version information
 	@echo "Environment: $(ENVIRONMENT)"
 
 .PHONY: doctor
-doctor: check-env ## Diagnose setup issues
-	@echo "$(GREEN)Running diagnostics...$(NC)"
-	@echo "Docker version:"
-	@docker version
+doctor: ## Diagnose setup issues
 	@echo ""
-	@echo "Docker Compose version:"
-	@docker compose version
+	@echo "$(GREEN)Claude Agent SDK Harness - Setup Diagnostics$(NC)"
 	@echo ""
-	@echo "Python version:"
-	@python3 --version
+	@echo "$(YELLOW)1. Docker Check$(NC)"
+	@command -v docker >/dev/null 2>&1 && echo "  $(GREEN)✓ Docker installed$(NC)" || echo "  $(RED)✗ Docker not installed$(NC)"
+	@docker info >/dev/null 2>&1 && echo "  $(GREEN)✓ Docker daemon running$(NC)" || echo "  $(RED)✗ Docker daemon not running - start Docker Desktop$(NC)"
+	@docker compose version >/dev/null 2>&1 && echo "  $(GREEN)✓ Docker Compose v2 available$(NC)" || echo "  $(RED)✗ Docker Compose v2 required$(NC)"
 	@echo ""
-	@echo "Platform: $(PLATFORM)"
+	@echo "$(YELLOW)2. Environment Check$(NC)"
+	@[ -f .env ] && echo "  $(GREEN)✓ .env file exists$(NC)" || echo "  $(RED)✗ .env file missing - run 'make init'$(NC)"
+	@if [ -f .env ]; then \
+		if grep -q "^ANTHROPIC_API_KEY=sk-ant-" .env 2>/dev/null; then \
+			echo "  $(GREEN)✓ ANTHROPIC_API_KEY appears configured$(NC)"; \
+		elif grep -q "^ANTHROPIC_API_KEY=" .env 2>/dev/null; then \
+			echo "  $(YELLOW)⚠ ANTHROPIC_API_KEY set but may be placeholder$(NC)"; \
+		else \
+			echo "  $(RED)✗ ANTHROPIC_API_KEY not set in .env$(NC)"; \
+		fi \
+	fi
 	@echo ""
-	@[ -f .env ] && echo "$(GREEN)✓ .env file exists$(NC)" || echo "$(RED)✗ .env file missing$(NC)"
-	@[ -n "$$ANTHROPIC_API_KEY" ] && echo "$(GREEN)✓ ANTHROPIC_API_KEY set$(NC)" || echo "$(YELLOW)⚠ ANTHROPIC_API_KEY not set$(NC)"
-
-.PHONY: install-deps
-install-deps: ## Install Python dependencies locally
-	pip install uv
-	uv pip install --system -e ".[dev]"
+	@echo "$(YELLOW)3. Port Availability$(NC)"
+	@lsof -i :8080 >/dev/null 2>&1 && echo "  $(YELLOW)⚠ Port 8080 in use (main agent)$(NC)" || echo "  $(GREEN)✓ Port 8080 available$(NC)"
+	@lsof -i :3000 >/dev/null 2>&1 && echo "  $(YELLOW)⚠ Port 3000 in use (grafana)$(NC)" || echo "  $(GREEN)✓ Port 3000 available$(NC)"
+	@lsof -i :9090 >/dev/null 2>&1 && echo "  $(YELLOW)⚠ Port 9090 in use (prometheus)$(NC)" || echo "  $(GREEN)✓ Port 9090 available$(NC)"
+	@echo ""
+	@echo "$(YELLOW)4. Container Status$(NC)"
+	@if docker compose $(COMPOSE_FILES) ps --quiet 2>/dev/null | grep -q .; then \
+		echo "  $(GREEN)✓ Containers running$(NC)"; \
+		docker compose $(COMPOSE_FILES) ps --format "table {{.Service}}\t{{.Status}}" 2>/dev/null | head -5; \
+	else \
+		echo "  $(YELLOW)⚠ No containers running - run 'make dev' or 'make prod'$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)5. Platform Info$(NC)"
+	@echo "  Platform: $(PLATFORM)"
+	@echo "  Docker context: $$(docker context show 2>/dev/null || echo 'default')"
+	@echo ""
+	@echo "$(GREEN)If all checks pass, run: make dev && make interactive$(NC)"
+	@echo ""
 
 # =============================================================================
 # SSH Setup (for private repositories)
@@ -460,25 +551,3 @@ ssh-test: ssh-known-hosts ## Test SSH connections to GitHub and GitLab (also upd
 	@echo ""
 	@echo "$(GREEN)Testing GitLab SSH...$(NC)"
 	@ssh -i .ssh/id_ed25519_gitlab -T git@gitlab.com 2>&1 || true
-
-.PHONY: ssh-test-container
-ssh-test-container: ## Test SSH connections from inside container (requires ssh-known-hosts first)
-	@echo "$(GREEN)Testing SSH from container...$(NC)"
-	@echo "$(YELLOW)Note: Run 'make ssh-known-hosts' first if you see host key verification errors.$(NC)"
-	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@github.com 2>&1 || true
-	docker compose $(COMPOSE_FILES) exec main-agent ssh -T git@gitlab.com 2>&1 || true
-
-# =============================================================================
-# OrbStack Specific
-# =============================================================================
-.PHONY: orbstack-info
-orbstack-info: ## Show OrbStack information
-	@echo "Docker context: $(shell docker context show 2>/dev/null)"
-	@echo "Platform: $(PLATFORM)"
-	@docker info | grep "Operating System"
-
-# =============================================================================
-# Phony Targets
-# =============================================================================
-.PHONY: all
-all: check-env build up ## Build and start everything
