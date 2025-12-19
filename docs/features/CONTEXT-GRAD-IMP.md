@@ -790,7 +790,7 @@ class TestHarness:
 
 #### 3.1 Enhanced TestHarness with Orchestration Patterns
 
-For parallel test execution and complex test pipelines, TestHarness can leverage orchestration patterns from [`docs/ORCHESTRATION_PATTERNS.md`](../ORCHESTRATION_PATTERNS.md).
+For parallel test execution and complex test pipelines, TestHarness can leverage orchestration patterns from [`docs/ORCHESTRATION.md`](../ORCHESTRATION.md).
 
 ```python
 """Enhanced TestHarness using orchestration patterns.

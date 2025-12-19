@@ -84,7 +84,7 @@ CGF extends casdk-harness by:
 - **Adding new autonomous mode**: `make optimize-agent` for meta-optimization loops
 - **Reusing agent architecture**: Tech Lead → Specialist pattern
 - **Extending configuration**: New optimization-specific settings in `.env`
-- **Orchestration patterns**: TestHarness and parallel execution can leverage patterns from [`docs/ORCHESTRATION_PATTERNS.md`](../ORCHESTRATION_PATTERNS.md) (Sequential Pipeline for test stages, Broadcast for parallel configs)
+- **Orchestration patterns**: TestHarness and parallel execution can leverage patterns from [`docs/ORCHESTRATION.md`](../ORCHESTRATION.md) (Sequential Pipeline for test stages, Broadcast for parallel configs)
 
 ### 1.3 Supported Resource Types
 
