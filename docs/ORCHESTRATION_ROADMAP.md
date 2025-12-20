@@ -1,18 +1,113 @@
-# Agentic Orchestration Implementation Plans
+# Agentic Orchestration Implementation Roadmap
 
 > **Created**: December 2025
 > **Status**: Planning complete, ready for implementation
+> **Related**: [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md) | [Feature Specs](./features/)
 
 ---
 
-## Overview
+## Executive Summary
 
-Two compatible plans for building orchestration capabilities:
+This roadmap defines the implementation path for a complete agentic orchestration system that spans:
+
+1. **Context Engineering** - Elicit objectives, plan resources, generate agents/skills
+2. **Orchestration Patterns** - 8 production-ready patterns for multi-agent coordination
+3. **ContextGrad Framework (CGF)** - Automated testing and optimization of context resources
+4. **Production Infrastructure** - Redis messaging, container coordination, observability
+
+**End-to-End Flow:**
+```
+User Objective → Context Engineering → Resource Generation → CGF Optimization → Production Deployment
+                       ↓                      ↓                    ↓
+                 context_spec.json    agents/skills/commands    optimized resources
+```
+
+---
+
+## Feature Index
+
+Detailed specifications for each major capability:
+
+| Feature | Specification | Status | Description |
+|---------|---------------|--------|-------------|
+| Context Engineering Workflow | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Refined | 4-stage workflow for resource generation |
+| ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | DSPy + TextGrad optimization system |
+| CGF Implementation Guide | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | Design Complete | Detailed implementation patterns |
+| Container Architecture | [CONTAINERIZATION.md](./features/CONTAINERIZATION.md) | Decided | Subagent-first Docker model |
+| Agentic Examples | [AGENTIC_EXAMPLES.md](./features/AGENTIC_EXAMPLES.md) | Extracted | 8+ working multi-agent examples |
+| Observability | [OBSERVABILITY.md](./features/OBSERVABILITY.md) | Planning | Grafana dashboards, session reports |
+
+**Pattern Reference**: See [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md) for the 8 core orchestration patterns with production implementations.
+
+---
+
+## Context Engineering Workflow
+
+The Context Engineering Workflow is the entry point for creating new agentic capabilities. It produces validated resources ready for CGF optimization.
+
+### Workflow Stages
+
+| Stage | Output | Completion Signal |
+|-------|--------|-------------------|
+| 1. Objective Elicitation | `context_spec.json` (objective) | `[SPEC_APPROVED]` |
+| 2. Pattern & Resource Planning | Pattern selection + resource inventory | `[RESOURCES_PLANNED]` |
+| 3. Resource Generation | Generated agents/skills/commands | `[RESOURCES_GENERATED]` |
+| 3b. Validation | `validation_report.json` | `[VALIDATION_COMPLETE]` |
+| 4. CGF Handoff | Optimization branch + CGF run | `[CGF_TESTING_STARTED]` |
+
+### Stage Details
+
+**Stage 1: Objective Elicitation**
+- Interactive Q&A to understand user's goal
+- Captures constraints, success criteria, domain context
+- Outputs structured `context_spec.json`
+
+**Stage 2: Pattern & Resource Planning**
+- Analyzes objective for pattern fit (see Pattern Selection Matrix below)
+- Inventories required resources (agents, skills, commands)
+- Identifies dependencies and execution order
+
+**Stage 3: Resource Generation**
+- Creates agent definitions with appropriate tools
+- Generates skill files with guidelines
+- Produces command wrappers for workflows
+
+**Stage 3b: Validation**
+- Syntax validation of generated resources
+- Schema conformance checking
+- Dependency resolution verification
+- Outputs `validation_report.json`
+
+**Stage 4: CGF Handoff**
+- Creates optimization branch in git
+- Initializes CGF test harness
+- Triggers first optimization run
+
+### Pattern Selection Matrix
+
+Use these business signals to select the appropriate orchestration pattern:
+
+| Business Signal | Recommended Pattern |
+|-----------------|---------------------|
+| "must happen in order", "pipeline", "stages" | Sequential Pipeline |
+| "multiple specialists", "coordinate", "delegate" | Hierarchical Coordinator |
+| "get multiple opinions", "compare approaches" | Broadcast/Consensus |
+| "async", "event-driven", "reactive", "queue" | Event-driven Async |
+| "shared workspace", "incremental refinement" | Blackboard Architecture |
+| "mediate between services", "decouple" | Mediator Pattern |
+| "equal peers", "collaborative", "negotiate" | Peer-to-Peer Coordination |
+| "complex workflow", "multiple patterns needed" | Hybrid Pipeline |
+
+---
+
+## Implementation Plans
+
+Two independent implementation tracks that can proceed in parallel:
 
 - **Plan A (Infrastructure)**: Wire Redis/messaging into working orchestration layer
 - **Plan B (Tooling)**: Extend context-engineering plugin with orchestration resources
 
-**Recommended sequence**: Plan B Phase 1-2 → Plan A Phase 1-2 → Plan B Phase 3-4 → Plan A Phase 3-4
+**Recommended Approach**: Execute Plans A and B as separate tracks. Each plan has internal phase dependencies but can proceed independently. Integration points are documented below.
 
 ---
 
@@ -96,7 +191,7 @@ Enable peer-to-peer coordination between Docker containers.
 
 **Objective**: Leverage orchestration patterns for CGF test execution and optimization workflows.
 
-**Dependencies**: Plan A Phases 1-4, CGF infrastructure (see `docs/features/CONTEXT-GRAD-SPEC.md`)
+**Dependencies**: Plan A Phases 1-4, CGF infrastructure (see [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md))
 
 **Integration Points:**
 
@@ -190,7 +285,7 @@ context-engineering/
 **Deliverables:**
 1. specs/orchestration-patterns/ - Pattern specifications from main docs
 2. specs/infrastructure/ - Redis protocol, messaging schemas
-3. specs/implementation/ - Orchestrator class spec from RD2.md
+3. specs/implementation/ - Orchestrator class spec
 4. Complete patterns/tool-restriction-patterns.md
 
 ### Phase 2: Skills & Commands
@@ -204,7 +299,7 @@ context-engineering/
 
 **Deliverables:**
 1. workflows/ directory with reusable workflow definitions
-2. examples/ directory from research.md Section 10
+2. examples/ directory with working multi-agent systems
 3. templates/workflow-template.md
 
 ### Phase 4: Agent Enhancement
@@ -228,25 +323,111 @@ DSPy can optimize agent prompts automatically. TextGrad can provide gradient fee
 
 ---
 
-## Content Consolidation Summary
+## Implementation Timelines
 
-| Source | Action | Destination |
-|--------|--------|-------------|
-| notes/*.txt (9 files) | DELETE | Content in .md files |
-| ORCHESTRATION_RD.md | MERGE infrastructure section → DELETE | Architecture doc |
-| ORCHESTRATION_RD2.md | MOVE | specs/implementation/orchestrator-class-spec.md |
-| claude_agent_orchestration_research.md Section 10 | EXTRACT | examples/ directory |
-| claude_agent_orchestration_research.md (rest) | DELETE | Duplicated in main docs |
+Plans A and B can proceed independently. Internal dependencies are within each plan.
+
+### Plan A Timeline (Infrastructure)
+
+| Phase | Feature | Dependencies | Status |
+|-------|---------|--------------|--------|
+| A1 | Infrastructure foundation (`src/harness/orchestration/`) | None | Not started |
+| A2 | Pattern integration (all 8 patterns) | A1 | Not started |
+| A3 | Container coordination (multi-agent profile) | A2 | Not started |
+| A4 | Production hardening (circuit breakers, checkpoints) | A3 | Not started |
+| A5 | CGF integration + orchestration metrics | A4 | Not started |
+
+### Plan B Timeline (Tooling)
+
+| Phase | Feature | Dependencies | Status |
+|-------|---------|--------------|--------|
+| B1 | Context Engineering Workflow foundation | None | Not started |
+| B2 | Skills & commands (`orchestration-definition`, `validate-context-spec`) | B1 | Not started |
+| B3 | Context engineer skill activation | B2 | Not started |
+| B4 | Agentic Examples documentation | B3 | Not started |
+
+### Interdependencies
+
+While Plans A and B can proceed independently, the following integration points exist:
+
+| Integration Point | Plan A Requires | Plan B Requires | Notes |
+|-------------------|-----------------|-----------------|-------|
+| Pattern definitions | - | B2 skills to reference patterns | B2 can use ORCHESTRATION_PATTERNS.md before A2 is complete |
+| CGF optimization | A5 orchestration metrics | B3 skill activation | Full CGF requires both; can test independently first |
+| Agentic examples | A2 pattern implementations | B4 example creation | Examples can be designed before patterns are implemented |
+| Container coordination | A3 multi-agent profile | B2 workflow definitions | Workflows can specify container needs before A3 is complete |
+
+**Recommended integration**: Complete B1-B2 and A1-A2 first, then integrate. CGF integration (A5 + B3) should be the final integration point.
 
 ---
 
 ## Execution Checklist
+
+### Documentation Consolidation (Completed)
 
 - [x] Delete notes/*.txt files
 - [x] Create plugin directories: specs/, workflows/, examples/
 - [x] Move RD2.md → specs/implementation/
 - [x] Extract research.md examples → examples/
 - [x] Delete consolidated reports
-- [ ] Begin Plan B Phase 1 (specs extraction)
-- [ ] Begin Plan A Phase 1 (infrastructure module)
-- [ ] Begin Plan A Phase 5 (CGF integration) - after CGF infrastructure complete
+- [x] Consolidate amendments into feature specs
+- [x] Merge ORCHESTRATION.md + ORCHESTRATION_ARCHITECTURE.md → ORCHESTRATION_PATTERNS.md
+- [x] Merge AMENDMENTS.md into this roadmap
+
+### Implementation Phases
+
+**Plan A (Infrastructure)**
+
+| Phase | Description | Deliverables | Status |
+|-------|-------------|--------------|--------|
+| A1 | Infrastructure foundation | `src/harness/orchestration/` module | Not started |
+| A2 | Pattern integration | All 8 pattern implementations with tests | Not started |
+| A3 | Container coordination | coordination-protocol.md, multi-agent prompts | Not started |
+| A4 | Production hardening | Metrics, dashboards, circuit breakers | Not started |
+| A5 | CGF integration | TestHarness adapter, optimization metrics | Not started |
+
+**Plan B (Tooling)**
+
+| Phase | Description | Deliverables | Status |
+|-------|-------------|--------------|--------|
+| B1 | Context Engineering Workflow foundation | `orchestration-definition` skill structure | Not started |
+| B2 | Skills & commands | `validate-context-spec` command | Not started |
+| B3 | Context engineer skill activation | Enhanced context-engineer.md | Not started |
+| B4 | Agentic Examples | 8+ working example systems | Not started |
+
+---
+
+## Next Actions
+
+Immediate priorities (can proceed in parallel):
+
+**Plan A Track:**
+1. **Phase A1**: Create `src/harness/orchestration/` module
+   - Abstract base classes
+   - TaskQueueManager with Redis backend
+   - RetryStrategy implementation
+
+**Plan B Track:**
+1. **Phase B1**: Create `orchestration-definition` skill structure
+   - Define skill manifest
+   - Implement Q&A flow for objective elicitation
+   - Create `context_spec.json` schema
+
+2. **Phase B2**: Implement `validate-context-spec` command
+   - Schema validation logic
+   - Dependency resolution checks
+   - Integration with skill workflow
+
+---
+
+## Consolidated Amendments Reference
+
+The following amendments have been merged into their respective feature specifications:
+
+| Former Amendment | Merged Into | Section |
+|------------------|-------------|---------|
+| Amendment 4: Validation Mechanism | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | "Context Spec Validation" |
+| Amendment 5: Pattern Inference | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Integrated into orchestration-definition skill |
+| Amendment 7: Feedback Loop | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Section 11.7 "Orchestration Pattern Learning" |
+
+This section preserved for historical reference. All active content is now in the feature specifications linked above.

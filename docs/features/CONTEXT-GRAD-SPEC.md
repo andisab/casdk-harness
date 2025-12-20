@@ -22,7 +22,7 @@ The ContextGrad Framework (CGF) is a meta-optimization system that uses DSPy and
 
 **Key Innovation:** Treats context engineering artifacts as optimizable parameters in a learning system, using LLM-based optimization (DSPy/TextGrad) combined with real-world testing to achieve measurable improvements.
 
-**Prerequisite:** This framework depends on the Plugin System Integration (Phase 1) documented in [PLUGIN-SYSTEM-INTEGRATION.md](./PLUGIN-SYSTEM-INTEGRATION.md). The plugin infrastructure must be implemented before CGF can leverage the `context-engineering` and `research-team` plugins as optimization tools.
+**Prerequisite:** CGF leverages the existing plugin infrastructure (`src/harness/plugin_manager.py`) to work with the `context-engineering` and `research-team` plugins as optimization tools.
 
 ---
 
@@ -84,7 +84,7 @@ CGF extends casdk-harness by:
 - **Adding new autonomous mode**: `make optimize-agent` for meta-optimization loops
 - **Reusing agent architecture**: Tech Lead → Specialist pattern
 - **Extending configuration**: New optimization-specific settings in `.env`
-- **Orchestration patterns**: TestHarness and parallel execution can leverage patterns from [`docs/ORCHESTRATION.md`](../ORCHESTRATION.md) (Sequential Pipeline for test stages, Broadcast for parallel configs)
+- **Orchestration patterns**: TestHarness and parallel execution can leverage patterns from [`docs/ORCHESTRATION_PATTERNS.md`](../ORCHESTRATION_PATTERNS.md) (Sequential Pipeline for test stages, Broadcast for parallel configs)
 
 ### 1.3 Supported Resource Types
 
@@ -349,7 +349,7 @@ Test cases: 6/6 passed stage 3
 
 ### 2.5 Plugin Integration
 
-CGF integrates with two plugins from the Plugin System (see [PLUGIN-SYSTEM-INTEGRATION.md](./PLUGIN-SYSTEM-INTEGRATION.md)):
+CGF integrates with two plugins from the existing Plugin System (`src/harness/plugin_manager.py`):
 
 #### context-engineering Plugin
 
@@ -1470,6 +1470,97 @@ Add cost awareness to optimization:
 - Optimize skills for sharing/selling
 - Standardized quality metrics for skills
 - Automated skill certification process
+
+### 11.7 Orchestration Pattern Learning (Feedback Loop)
+
+> **Origin**: Consolidated from AMENDMENTS.md Amendment 7
+
+Enable CGF to improve pattern selection heuristics based on orchestration execution outcomes. This bridges the gap between the Context Engineering Workflow (which selects patterns) and CGF (which optimizes resources).
+
+**ContextSpecOutcome Data Model:**
+
+```python
+@dataclass
+class ContextSpecOutcome:
+    """Record of a context spec execution for pattern learning."""
+    spec_hash: str                    # Hash of context_spec.json
+    pattern_type: str                 # Pattern used (sequential, hierarchical, etc.)
+    business_domain: str              # Domain category
+
+    # Execution metrics
+    success: bool
+    duration_seconds: float
+    tokens_used: int
+    cost_dollars: float
+
+    # Quality metrics
+    task_completion_rate: float       # % of stages completed
+    error_count: int
+    retry_count: int
+
+    # Signals that led to pattern selection
+    selection_signals: list[str]      # From Q&A responses
+
+    # Timestamp
+    executed_at: datetime
+```
+
+**PatternSelector with Learning:**
+
+```python
+class PatternSelector:
+    """Selects orchestration patterns using heuristics + learned adjustments."""
+
+    def __init__(self, feedback_store: 'FeedbackStore'):
+        self.feedback = feedback_store
+        self.base_weights = load_heuristic_weights()
+
+    def select_pattern(self, signals: list[str], domain: str) -> str:
+        """Select pattern using heuristics + historical performance."""
+        # Get historical outcomes for similar signals
+        similar_outcomes = self.feedback.query(
+            signals=signals,
+            domain=domain,
+            limit=100
+        )
+
+        # Adjust weights based on outcomes
+        adjusted_weights = self.adjust_weights(
+            self.base_weights,
+            similar_outcomes
+        )
+
+        return self.apply_decision_tree(signals, adjusted_weights)
+```
+
+**Prometheus Metrics for Orchestration:**
+
+```python
+# Orchestration-specific metrics
+orchestration_executions_total = Counter(
+    'orchestration_executions_total',
+    'Total orchestration executions',
+    ['pattern', 'domain', 'success']
+)
+
+orchestration_duration_seconds = Histogram(
+    'orchestration_duration_seconds',
+    'Orchestration execution duration',
+    ['pattern', 'domain']
+)
+
+pattern_selection_accuracy = Gauge(
+    'pattern_selection_accuracy',
+    'Pattern selection success rate over last 100 executions',
+    ['pattern']
+)
+```
+
+**Implementation Notes:**
+- Requires significant orchestration execution data before learning is effective
+- Initial implementation should log outcomes without adjusting weights
+- Weight adjustments can be enabled once baseline data (100+ executions) exists
+- Consider A/B testing pattern suggestions before fully automating
 
 ---
 

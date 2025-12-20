@@ -8,7 +8,7 @@
 
 ## Prerequisites
 
-**Phase 1: Plugin System Integration** must be completed before implementing CGF. See [PLUGIN-SYSTEM-INTEGRATION.md](./PLUGIN-SYSTEM-INTEGRATION.md).
+CGF depends on the existing plugin infrastructure (already implemented in `src/harness/plugin_manager.py`):
 
 CGF depends on:
 - `PluginManager` class for loading context-engineering and research-team plugins
@@ -790,7 +790,7 @@ class TestHarness:
 
 #### 3.1 Enhanced TestHarness with Orchestration Patterns
 
-For parallel test execution and complex test pipelines, TestHarness can leverage orchestration patterns from [`docs/ORCHESTRATION.md`](../ORCHESTRATION.md).
+For parallel test execution and complex test pipelines, TestHarness can leverage orchestration patterns from [`docs/ORCHESTRATION_PATTERNS.md`](../ORCHESTRATION_PATTERNS.md).
 
 ```python
 """Enhanced TestHarness using orchestration patterns.
@@ -881,7 +881,6 @@ These classes integrate with the Plugin System (Phase 1) to load templates and s
 """Goal definition for CGF optimization runs.
 
 Integrates with context-engineering plugin for templates and patterns.
-Requires Plugin System Integration (Phase 1) to be complete.
 """
 
 import yaml
@@ -1584,6 +1583,345 @@ def test_save_and_rollback(tmp_path):
 
 ---
 
+## Context Spec Validation
+
+The Context Engineering Workflow (see [CONTEXT_ENG_WF.md](./CONTEXT_ENG_WF.md)) generates `context_spec.json` files that define orchestration workflows. CGF provides validation infrastructure that can be shared with the Context Engineering Workflow.
+
+### ContextSpecValidator
+
+**File:** `src/harness/optimization/validation.py`
+
+```python
+"""Validation for context_spec.json and generated orchestration resources.
+
+Shared infrastructure between Context Engineering Workflow (Stage 3b)
+and CGF optimization validation.
+"""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+import json
+import jsonschema
+
+
+@dataclass
+class ValidationResult:
+    """Result of validating a context spec."""
+    valid: bool
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    agents_checked: int = 0
+    agents_valid: int = 0
+    skills_checked: int = 0
+    skills_valid: int = 0
+
+
+@dataclass
+class DryRunResult:
+    """Result of a dry-run execution."""
+    success: bool
+    pattern: str
+    stages_completed: int
+    stages_total: int
+    errors: list[str] = field(default_factory=list)
+    mock_outputs: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TestCase:
+    """Generated test case for orchestration validation."""
+    id: str
+    name: str
+    description: str
+    inputs: dict[str, Any]
+    expected_output: dict[str, Any]
+    weight: float = 1.0
+    success_metric: str = "task_completion_rate"
+
+
+class ContextSpecValidator:
+    """Validates context_spec.json files and orchestration resources.
+
+    Used by:
+    - Context Engineering Workflow Stage 3b (validation before CGF handoff)
+    - CGF TestHarness (validation during optimization iterations)
+    """
+
+    def __init__(self, schema_path: Path | None = None):
+        """Initialize validator.
+
+        Args:
+            schema_path: Path to context_spec JSON schema. If None,
+                        uses default from plugins/context-engineering/specs/
+        """
+        self.schema_path = schema_path
+        self._schema: dict | None = None
+
+    @property
+    def schema(self) -> dict:
+        """Lazy-load JSON schema."""
+        if self._schema is None:
+            if self.schema_path and self.schema_path.exists():
+                self._schema = json.loads(self.schema_path.read_text())
+            else:
+                # Minimal inline schema for MVP
+                self._schema = self._get_minimal_schema()
+        return self._schema
+
+    async def validate_spec(self, spec: dict) -> ValidationResult:
+        """Validate context_spec.json against schema and check resources.
+
+        Args:
+            spec: Parsed context_spec.json dictionary
+
+        Returns:
+            ValidationResult with errors and warnings
+        """
+        result = ValidationResult(valid=True)
+
+        # Step 1: JSON Schema validation
+        try:
+            jsonschema.validate(spec, self.schema)
+        except jsonschema.ValidationError as e:
+            result.valid = False
+            result.errors.append(f"Schema validation failed: {e.message}")
+            return result
+
+        # Step 2: Check referenced agents exist
+        for stage in spec.get("stages", []):
+            result.agents_checked += 1
+            agent_name = stage.get("agent")
+            agent_exists = stage.get("agent_exists", False)
+
+            if agent_exists:
+                # Verify agent file exists
+                if await self._agent_exists(agent_name):
+                    result.agents_valid += 1
+                else:
+                    result.errors.append(
+                        f"Agent '{agent_name}' marked as existing but not found"
+                    )
+                    result.valid = False
+            else:
+                # New agent - verify it's in resources.agents
+                if not self._agent_in_resources(agent_name, spec):
+                    result.warnings.append(
+                        f"Agent '{agent_name}' not found in resources.agents"
+                    )
+
+        # Step 3: Validate pattern configuration
+        pattern_type = spec.get("pattern", {}).get("type")
+        if pattern_type:
+            pattern_errors = self._validate_pattern_config(pattern_type, spec)
+            result.errors.extend(pattern_errors)
+            if pattern_errors:
+                result.valid = False
+
+        return result
+
+    async def dry_run(self, spec: dict) -> DryRunResult:
+        """Execute pattern with mock agents to verify data flow.
+
+        Args:
+            spec: Parsed context_spec.json dictionary
+
+        Returns:
+            DryRunResult with execution details
+        """
+        pattern_type = spec.get("pattern", {}).get("type", "sequential")
+        stages = spec.get("stages", [])
+
+        result = DryRunResult(
+            success=True,
+            pattern=pattern_type,
+            stages_completed=0,
+            stages_total=len(stages),
+        )
+
+        # Simulate stage execution
+        context = {}
+        for i, stage in enumerate(stages):
+            stage_name = stage.get("name", f"stage-{i}")
+
+            try:
+                # Mock execution - check inputs are available
+                required_inputs = stage.get("inputs", [])
+                for inp in required_inputs:
+                    if inp not in context and inp not in ["code_diff", "file_paths"]:
+                        result.errors.append(
+                            f"Stage '{stage_name}' requires input '{inp}' "
+                            f"not produced by previous stages"
+                        )
+                        result.success = False
+
+                # Mock outputs
+                outputs = stage.get("outputs", [])
+                for out in outputs:
+                    context[out] = f"mock_{out}_from_{stage_name}"
+                    result.mock_outputs[out] = context[out]
+
+                result.stages_completed += 1
+
+            except Exception as e:
+                result.errors.append(f"Stage '{stage_name}' failed: {e}")
+                result.success = False
+                break
+
+        return result
+
+    async def generate_tests(self, spec: dict) -> list[TestCase]:
+        """Generate test cases from context_spec success metrics.
+
+        Args:
+            spec: Parsed context_spec.json dictionary
+
+        Returns:
+            List of generated test cases
+        """
+        test_cases = []
+        success_metrics = spec.get("success_metrics", {})
+        stages = spec.get("stages", [])
+
+        # Generate basic test cases
+        test_cases.append(TestCase(
+            id="tc-generated-001",
+            name="All Stages Complete",
+            description="Verify all stages execute successfully",
+            inputs={"code_diff": "...", "file_paths": ["example.py"]},
+            expected_output={
+                "stages_completed": len(stages),
+                "status": "success"
+            },
+            weight=1.5,
+            success_metric="task_completion_rate"
+        ))
+
+        # Generate metric-specific tests
+        for metric_name, threshold in success_metrics.items():
+            if metric_name == "task_completion_rate":
+                continue  # Covered by basic test
+
+            test_cases.append(TestCase(
+                id=f"tc-generated-{metric_name}",
+                name=f"Metric: {metric_name}",
+                description=f"Verify {metric_name} meets threshold {threshold}",
+                inputs={"code_diff": "...", "file_paths": ["example.py"]},
+                expected_output={metric_name: threshold, "status": "success"},
+                weight=1.0,
+                success_metric=metric_name
+            ))
+
+        return test_cases
+
+    async def _agent_exists(self, agent_name: str) -> bool:
+        """Check if agent definition file exists."""
+        # Check standard locations
+        locations = [
+            Path(f"src/harness/agents/configs/{agent_name}.md"),
+            Path(f"src/harness/plugins/*/agents/{agent_name}.md"),
+        ]
+        return any(loc.exists() for loc in locations)
+
+    def _agent_in_resources(self, agent_name: str, spec: dict) -> bool:
+        """Check if agent is defined in resources.agents."""
+        agents = spec.get("resources", {}).get("agents", [])
+        return any(a.get("name") == agent_name for a in agents)
+
+    def _validate_pattern_config(self, pattern_type: str, spec: dict) -> list[str]:
+        """Validate pattern-specific configuration."""
+        errors = []
+        pattern = spec.get("pattern", {})
+
+        if pattern_type == "hierarchical":
+            if "coordinator" not in pattern:
+                errors.append("Hierarchical pattern requires 'coordinator' field")
+            if "specialists" not in pattern:
+                errors.append("Hierarchical pattern requires 'specialists' field")
+
+        elif pattern_type == "broadcast":
+            if "perspectives" not in pattern:
+                errors.append("Broadcast pattern requires 'perspectives' field")
+
+        elif pattern_type == "event_driven":
+            if "event_source" not in pattern:
+                errors.append("Event-driven pattern requires 'event_source' field")
+
+        return errors
+
+    def _get_minimal_schema(self) -> dict:
+        """Return minimal JSON schema for MVP validation."""
+        return {
+            "type": "object",
+            "required": ["metadata", "pattern", "stages"],
+            "properties": {
+                "metadata": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "version": {"type": "string"},
+                        "status": {"type": "string"}
+                    }
+                },
+                "pattern": {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["sequential", "hierarchical",
+                                    "broadcast", "event_driven"]
+                        }
+                    }
+                },
+                "stages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["name", "agent"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "agent": {"type": "string"},
+                            "agent_exists": {"type": "boolean"},
+                            "inputs": {"type": "array"},
+                            "outputs": {"type": "array"}
+                        }
+                    }
+                }
+            }
+        }
+```
+
+### validate-context-spec Command
+
+**File:** `src/harness/plugins/context-engineering/commands/validate-context-spec.md`
+
+```markdown
+---
+name: validate-context-spec
+description: Validate a context engineering specification
+arguments:
+  - name: spec_path
+    description: Path to context_spec.json
+---
+
+Validate the context specification at $1:
+
+1. **Schema Validation**: Check JSON structure against context_spec schema
+2. **Agent Verification**: Verify all referenced agents exist or are defined
+3. **Pattern Validation**: Validate pattern-specific configuration
+4. **Dry-Run** (if --dry-run flag): Execute with mock agents to verify data flow
+
+Usage:
+- `/validate-context-spec workspace/orchestration/context_spec.json`
+- `/validate-context-spec workspace/orchestration/context_spec.json --dry-run`
+
+Output: validation_report.json with schema, resource, and dry-run results.
+```
+
+---
+
 ## Next Steps
 
 1. **Review** this implementation guide alongside the main specification
@@ -1640,4 +1978,4 @@ Should optimization runs have:
 - [DSPy Documentation](https://dspy.ai/learn/)
 - [TextGrad Repository](https://github.com/zou-group/textgrad)
 - [Terraform Validation](https://developer.hashicorp.com/terraform/cli/commands/validate)
-- [casdk-harness](https://gitlab.provectus.com/provectus-ai-eng/casdk-harness)
+- [casdk-harness](https://github.com/andisab/ab-casdk-harness)
