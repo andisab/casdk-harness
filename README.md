@@ -37,7 +37,7 @@ docker compose version
 See [QUICKSTART.md](./QUICKSTART.md) for the complete 5-minute setup guide.
 
 ```bash
-git clone https://gitlab.provectus.com/provectus-ai-eng/casdk-harness.git
+git clone https://www.github.com/andis/ab-casdk-harness.git
 cd casdk-harness && make init
 # Edit .env and set: ANTHROPIC_API_KEY=sk-ant-your_key_here
 make build && make up && make interactive

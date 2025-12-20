@@ -9,7 +9,7 @@ This document outlines integration approaches for connecting **claude-ui** (Reac
 
 ## Overview
 
-[claude-ui](https://gitlab.provectus.com/provectus-ai-eng/claude-ui) is a React-based chat interface similar to Claude.ai, featuring conversation management, artifact rendering, and streaming responses. Integrating it with the harness enables a web-based frontend for interactive development sessions.
+**claude-ui** is a React-based chat interface similar to Claude.ai, featuring conversation management, artifact rendering, and streaming responses. Integrating it with the harness enables a web-based frontend for interactive development sessions.
 
 ### Why Integrate?
 
@@ -324,7 +324,7 @@ API_CORS_ORIGINS=http://localhost:5173
 
 ## References
 
-- [Claude-UI Repository](https://gitlab.provectus.com/provectus-ai-eng/claude-ui)
+- Claude-UI Repository (internal)
 - [Harness Interactive Mode](../src/harness/interactive.py)
 - [AgentSession API](../src/harness/agent.py)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)

@@ -36,13 +36,11 @@ Always clone to /workspace/projects/:
 
 ## Git Authentication
 
-SSH keys are pre-configured at /home/claude/.ssh/ for GitHub and GitLab:
+SSH keys are pre-configured at /home/claude/.ssh/ for GitHub:
 - github.com uses: id_ed25519_github
-- gitlab.provectus.com uses: id_ed25519_gitlab
 
 For git operations, use HTTPS URLs:
 - ✓ git clone https://github.com/user/repo.git
-- ✓ git clone https://gitlab.provectus.com/user/repo.git
 
 ### CLI Tools Available
 - **git**: Version control (SSH auth configured)

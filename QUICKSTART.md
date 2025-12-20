@@ -16,7 +16,7 @@ docker info
 
 ```bash
 # 1. Clone and enter the repository
-git clone https://gitlab.provectus.com/provectus-ai-eng/casdk-harness.git
+git clone https://www.github.com/andisab/ab-casdk-harness.git
 cd casdk-harness
 
 # 2. Initialize the project
