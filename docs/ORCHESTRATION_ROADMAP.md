@@ -10,13 +10,25 @@
 
 This roadmap defines the implementation path for a complete agentic orchestration system that spans:
 
+0. **CGF Infrastructure** (NEW - Foundation) - OpenTelemetry tracing, optimization store, adapters, rewards
 1. **Context Engineering** - Elicit objectives, plan resources, generate agents/skills
 2. **Orchestration Patterns** - 8 production-ready patterns for multi-agent coordination
 3. **ContextGrad Framework (CGF)** - Automated testing and optimization of context resources
 4. **Production Infrastructure** - Redis messaging, container coordination, observability
 
+**Why CGF Infrastructure First?**
+- Tracing provides execution visibility for debugging orchestration patterns
+- Reward signals inform pattern selection heuristics
+- Store pattern enables distributed execution from the start
+- Adapter framework supports multiple resource types (agents, skills, prompts, commands)
+
 **End-to-End Flow:**
 ```
+                    ┌─────────────────────────────────────────────────────────────────┐
+                    │                   CGF INFRASTRUCTURE (Phase 0)                   │
+                    │  OpenTelemetry Tracing → Store → Adapters → Rewards             │
+                    └─────────────────────────────────────────────────────────────────┘
+                                                    ↓
 User Objective → Context Engineering → Resource Generation → CGF Optimization → Production Deployment
                        ↓                      ↓                    ↓
                  context_spec.json    agents/skills/commands    optimized resources
@@ -30,6 +42,7 @@ Detailed specifications for each major capability:
 
 | Feature | Specification | Status | Description |
 |---------|---------------|--------|-------------|
+| **CGF Infrastructure** | [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md) | **In Progress** | OpenTelemetry tracing, store, adapters, rewards (Phase 0) |
 | Context Engineering Workflow | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Refined | 4-stage workflow for resource generation |
 | ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | DSPy + TextGrad optimization system |
 | CGF Implementation Guide | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | Design Complete | Detailed implementation patterns |
@@ -100,14 +113,120 @@ Use these business signals to select the appropriate orchestration pattern:
 
 ---
 
+## Phase 0: CGF Infrastructure (Foundation)
+
+> **Status**: In Progress
+> **Specification**: [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md)
+> **Origin**: Patterns adopted from [agent-lightning](https://github.com/...) framework research
+
+### Objective
+
+Build the tracing and optimization infrastructure that enables training data collection for all resources (agents, skills, prompts, commands) **before** implementing orchestration patterns. This infrastructure is foundational because:
+
+- **Tracing** provides execution visibility for debugging orchestration patterns
+- **Reward signals** inform pattern selection heuristics
+- **Store pattern** enables distributed execution from the start
+- **Adapter framework** supports multiple resource types simultaneously
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CGF INFRASTRUCTURE                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌────────────────────────────────────────────────────────────────────┐   │
+│   │                     OPTIMIZATION ORCHESTRATOR                       │   │
+│   │  (Manages optimization loops, resource versioning, convergence)     │   │
+│   └─────────────────────────────┬──────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                      OPTIMIZATION STORE (Redis)                      │  │
+│   │  ├─ Task Queue (evaluations, resource versions)                     │  │
+│   │  ├─ Span Store (OpenTelemetry traces)                               │  │
+│   │  ├─ Resource Registry (agents, skills, prompts, commands)           │  │
+│   │  └─ Results Store (rewards, metrics, feedback)                      │  │
+│   └─────────────────────────────┬──────────────────────────────────────┘  │
+│              │                  │                  │                       │
+│              ▼                  ▼                  ▼                       │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐               │
+│   │ MAIN-AGENT   │    │ AGENT-TWO    │    │ AGENT-THREE  │               │
+│   │ (Runner)     │    │ (Runner)     │    │ (Runner)     │               │
+│   │              │    │              │    │              │               │
+│   │ Executes     │    │ Evaluates    │    │ Tests        │               │
+│   │ resources    │    │ quality      │    │ correctness  │               │
+│   │ Emits spans  │    │ Scores       │    │ Scores       │               │
+│   └──────────────┘    └──────────────┘    └──────────────┘               │
+│                                                                            │
+│   ┌────────────────────────────────────────────────────────────────────┐  │
+│   │                      ADAPTERS (Trace → Feedback)                    │  │
+│   │  ├─ AgentAdapter (tool usage, task completion, turns)              │  │
+│   │  ├─ SkillAdapter (activation accuracy, execution success)          │  │
+│   │  ├─ PromptAdapter (output quality, hallucination rate)             │  │
+│   │  └─ CommandAdapter (parse success, execution results)              │  │
+│   └────────────────────────────────────────────────────────────────────┘  │
+│                                 │                                          │
+│                                 ▼                                          │
+│   ┌────────────────────────────────────────────────────────────────────┐  │
+│   │                      OPTIMIZATION ALGORITHMS                        │  │
+│   │  ├─ DSPy Bootstrap (few-shot example optimization)                 │  │
+│   │  ├─ TextGrad APO (textual gradient descent)                        │  │
+│   │  └─ Hybrid (DSPy for examples, TextGrad for prompts)               │  │
+│   └────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Patterns Adopted from Agent-Lightning
+
+| Pattern | Description | CGF Implementation |
+|---------|-------------|-------------------|
+| **Store Protocol** | Decoupled components communicate through central store | Redis-based `OptimizationStore` |
+| **Span-Based Tracing** | Rich execution data via OpenTelemetry | `src/harness/tracer/` module |
+| **Adapter Pattern** | Flexible trace → feedback transformation | `src/harness/optimization/adapters/` |
+| **Multi-Dimensional Rewards** | Composite scoring for nuanced optimization | `ResourceReward` dataclass |
+| **Resource Versioning** | Git-based history of all resource changes | Integration with existing checkpoint |
+
+### Phase 0 Deliverables
+
+| Sub-Phase | Description | Deliverables | Status |
+|-----------|-------------|--------------|--------|
+| **0.1** | OpenTelemetry Tracing | `src/harness/tracer/` module, SDK instrumentation | Not started |
+| **0.2** | Optimization Store | `src/harness/optimization/store/` with Redis backend | Not started |
+| **0.3** | Resource Registry | Multi-type resource management (agents, skills, prompts) | Not started |
+| **0.4** | Adapter Framework | Trace → Feedback adapters for each resource type | Not started |
+| **0.5** | Reward System | Multi-dimensional scoring with configurable weights | Not started |
+
+### Container Roles in CGF
+
+| Container | Role | Responsibilities |
+|-----------|------|------------------|
+| **main-agent** | Executor | Run resources against tasks, emit spans |
+| **agent-two** | Evaluator | Score output quality, code review (formerly reviewer-agent) |
+| **agent-three** | Validator | Run tests, check correctness (formerly tester-agent) |
+
+### Dependencies
+
+- **OpenTelemetry**: `opentelemetry-api>=1.27.0`, `opentelemetry-sdk>=1.27.0`
+- **DSPy**: `dspy-ai>=3.0.0`
+- **TextGrad**: `textgrad>=0.1.6`
+- **Redis**: Existing from multi-agent profile
+
+### Integration with Existing CGF Spec
+
+Phase 0 implements the infrastructure layer described in [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) Sections 1-2, enhanced with agent-lightning patterns. The existing CGF spec focuses on the optimization workflow; Phase 0 provides the underlying infrastructure that makes it possible.
+
+---
+
 ## Implementation Plans
 
-Two independent implementation tracks that can proceed in parallel:
+Three implementation tracks that proceed in order (Phase 0 first, then A/B in parallel):
 
-- **Plan A (Infrastructure)**: Wire Redis/messaging into working orchestration layer
+- **Phase 0 (CGF Infrastructure)**: OpenTelemetry tracing, store, adapters, rewards (PREREQUISITE)
+- **Plan A (Orchestration Infrastructure)**: Wire Redis/messaging into working orchestration layer
 - **Plan B (Tooling)**: Extend context-engineering plugin with orchestration resources
 
-**Recommended Approach**: Execute Plans A and B as separate tracks. Each plan has internal phase dependencies but can proceed independently. Integration points are documented below.
+**Recommended Approach**: Complete Phase 0 first to establish tracing infrastructure. Then execute Plans A and B as separate tracks. Each plan has internal phase dependencies but can proceed independently after Phase 0.
 
 ---
 
@@ -325,39 +444,49 @@ DSPy can optimize agent prompts automatically. TextGrad can provide gradient fee
 
 ## Implementation Timelines
 
-Plans A and B can proceed independently. Internal dependencies are within each plan.
+**Execution Order**: Phase 0 must complete first. Plans A and B can then proceed in parallel.
 
-### Plan A Timeline (Infrastructure)
+### Phase 0 Timeline (CGF Infrastructure) - PREREQUISITE
+
+| Sub-Phase | Feature | Dependencies | Status |
+|-----------|---------|--------------|--------|
+| **0.1** | OpenTelemetry Tracing (`src/harness/tracer/`) | None | Not started |
+| **0.2** | Optimization Store (`src/harness/optimization/store/`) | 0.1 | Not started |
+| **0.3** | Resource Registry (`src/harness/optimization/resources/`) | 0.2 | Not started |
+| **0.4** | Adapter Framework (`src/harness/optimization/adapters/`) | 0.3 | Not started |
+| **0.5** | Reward System (`src/harness/optimization/rewards.py`) | 0.4 | Not started |
+
+### Plan A Timeline (Orchestration Infrastructure)
 
 | Phase | Feature | Dependencies | Status |
 |-------|---------|--------------|--------|
-| A1 | Infrastructure foundation (`src/harness/orchestration/`) | None | Not started |
+| A1 | Infrastructure foundation (`src/harness/orchestration/`) | **Phase 0** | Not started |
 | A2 | Pattern integration (all 8 patterns) | A1 | Not started |
 | A3 | Container coordination (multi-agent profile) | A2 | Not started |
 | A4 | Production hardening (circuit breakers, checkpoints) | A3 | Not started |
-| A5 | CGF integration + orchestration metrics | A4 | Not started |
+| A5 | CGF optimization + orchestration metrics | A4 | Not started |
 
 ### Plan B Timeline (Tooling)
 
 | Phase | Feature | Dependencies | Status |
 |-------|---------|--------------|--------|
-| B1 | Context Engineering Workflow foundation | None | Not started |
+| B1 | Context Engineering Workflow foundation | **Phase 0** | Not started |
 | B2 | Skills & commands (`orchestration-definition`, `validate-context-spec`) | B1 | Not started |
 | B3 | Context engineer skill activation | B2 | Not started |
 | B4 | Agentic Examples documentation | B3 | Not started |
 
 ### Interdependencies
 
-While Plans A and B can proceed independently, the following integration points exist:
+**Phase 0 is prerequisite for all other phases.** After Phase 0 completes, Plans A and B can proceed independently:
 
-| Integration Point | Plan A Requires | Plan B Requires | Notes |
-|-------------------|-----------------|-----------------|-------|
-| Pattern definitions | - | B2 skills to reference patterns | B2 can use ORCHESTRATION_PATTERNS.md before A2 is complete |
-| CGF optimization | A5 orchestration metrics | B3 skill activation | Full CGF requires both; can test independently first |
-| Agentic examples | A2 pattern implementations | B4 example creation | Examples can be designed before patterns are implemented |
-| Container coordination | A3 multi-agent profile | B2 workflow definitions | Workflows can specify container needs before A3 is complete |
+| Integration Point | Phase 0 Provides | Plan A Uses | Plan B Uses |
+|-------------------|------------------|-------------|-------------|
+| Execution tracing | OpenTelemetry spans | Pattern debugging | Workflow monitoring |
+| Resource management | Store + Registry | Orchestration state | Resource generation |
+| Evaluation framework | Adapters + Rewards | Pattern selection metrics | Resource quality |
+| Container coordination | agent-two, agent-three roles | Distributed execution | Parallel evaluation |
 
-**Recommended integration**: Complete B1-B2 and A1-A2 first, then integrate. CGF integration (A5 + B3) should be the final integration point.
+**Recommended integration**: Complete Phase 0 in full. Then complete A1-A2 and B1-B2 in parallel. CGF optimization (A5 + B3) is the final integration point.
 
 ---
 
@@ -376,7 +505,17 @@ While Plans A and B can proceed independently, the following integration points 
 
 ### Implementation Phases
 
-**Plan A (Infrastructure)**
+**Phase 0 (CGF Infrastructure) - PREREQUISITE**
+
+| Sub-Phase | Description | Deliverables | Status |
+|-----------|-------------|--------------|--------|
+| 0.1 | OpenTelemetry Tracing | `src/harness/tracer/` module, SDK instrumentation | Not started |
+| 0.2 | Optimization Store | `src/harness/optimization/store/` with Redis backend | Not started |
+| 0.3 | Resource Registry | Multi-type resource management | Not started |
+| 0.4 | Adapter Framework | Trace → Feedback adapters | Not started |
+| 0.5 | Reward System | Multi-dimensional scoring | Not started |
+
+**Plan A (Orchestration Infrastructure)**
 
 | Phase | Description | Deliverables | Status |
 |-------|-------------|--------------|--------|
@@ -399,7 +538,29 @@ While Plans A and B can proceed independently, the following integration points 
 
 ## Next Actions
 
-Immediate priorities (can proceed in parallel):
+**Priority 1: Phase 0 (CGF Infrastructure)**
+
+Must complete before Plans A/B:
+
+1. **Phase 0.1**: Create `src/harness/tracer/` module
+   - OpenTelemetry integration
+   - Span schema and context propagation
+   - Redis and file exporters
+   - SDK client instrumentation
+
+2. **Phase 0.2**: Create `src/harness/optimization/store/`
+   - OptimizationStore protocol
+   - Redis implementation
+   - Memory fallback for testing
+
+3. **Phase 0.3-0.5**: Resource registry, adapters, rewards
+   - Multi-type resource management
+   - Trace → Feedback adapters
+   - Multi-dimensional scoring
+
+**Priority 2: Plans A/B (after Phase 0)**
+
+Can proceed in parallel after Phase 0 completes:
 
 **Plan A Track:**
 1. **Phase A1**: Create `src/harness/orchestration/` module

@@ -1,10 +1,14 @@
 # ContextGrad Framework (CGF)
 ## Meta-Optimization for AI Context Engineering Resources
 
-**Version:** 1.0.0-draft  
-**Author:** Andis A. Blukis  
-**Date:** December 15, 2025  
-**Status:** Design Specification
+**Version:** 1.1.0-draft
+**Author:** Andis A. Blukis
+**Date:** December 22, 2025
+**Status:** Design Specification (Enhanced with agent-lightning patterns)
+
+> **Related Documents:**
+> - [CGF-INFRASTRUCTURE.md](./CGF-INFRASTRUCTURE.md) - Detailed infrastructure specification
+> - [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md) - Phase 0 implementation plan
 
 ---
 
@@ -30,12 +34,25 @@ The ContextGrad Framework (CGF) is a meta-optimization system that uses DSPy and
 
 1. [Architecture Overview](#architecture-overview)
 2. [Core Components](#core-components)
+   - 2.1-2.6: Original components (Resource Manager, Test Harness, etc.)
+   - 2.7: [Optimization Store](#27-optimization-store-agent-lightning-pattern) (agent-lightning pattern)
+   - 2.8: [Tracer Manager](#28-tracer-manager-opentelemetry-integration) (OpenTelemetry)
+   - 2.9: [Adapter Registry](#29-adapter-registry-trace--feedback-transformation) (Trace → Feedback)
 3. [Data Models](#data-models)
+   - 3.1-3.3: Original models (Resource, Metrics, TestCase)
+   - 3.4: [Span](#34-span-agent-lightning-pattern) (OpenTelemetry spans)
+   - 3.5: [ResourceReward](#35-resourcereward-multi-dimensional-agent-lightning-pattern) (Multi-dimensional rewards)
+   - 3.6: OptimizationRun
 4. [Optimization Workflow](#optimization-workflow)
 5. [Git-Based Versioning Strategy](#git-based-versioning-strategy)
 6. [Evaluation Framework](#evaluation-framework)
 7. [Implementation Phases](#implementation-phases)
 8. [Technical Specifications](#technical-specifications)
+   - 8.1: Technology Stack
+   - 8.2: Directory Structure (updated with tracer/, store/, adapters/)
+   - 8.3: Configuration
+   - 8.4: [OpenTelemetry Configuration](#84-opentelemetry-configuration-agent-lightning-pattern)
+   - 8.5: [Redis Store Configuration](#85-redis-store-configuration-agent-lightning-pattern)
 9. [Example: AWS Infrastructure Agent Optimization](#example-aws-infrastructure-agent-optimization)
 10. [Resource Type Examples](#resource-type-examples)
 11. [Future Enhancements](#future-enhancements)
@@ -46,36 +63,75 @@ The ContextGrad Framework (CGF) is a meta-optimization system that uses DSPy and
 
 ### 1.1 High-Level System Design
 
+> **Note:** This architecture incorporates patterns from the agent-lightning project:
+> - **Store Protocol**: Decoupled central store for all optimization state
+> - **OpenTelemetry Tracing**: Span-based execution trace collection
+> - **Adapter Pattern**: Flexible trace → feedback transformation
+> - **Multi-Dimensional Rewards**: Composite scoring for nuanced optimization
+
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      ContextGrad Framework                           │
-│                  (Extension to casdk-harness)                        │
-└─────────────────────────────────────────────────────────────────────┘
-                                    │
-        ┌───────────────────────────┼───────────────────────────┐
-        │                           │                           │
-┌───────▼────────┐        ┌─────────▼─────────┐      ┌─────────▼─────────┐
-│   Resource     │        │   Test Harness    │      │   Optimization    │
-│   Manager      │        │   & Evaluation    │      │     Engine        │
-└───────┬────────┘        └─────────┬─────────┘      └─────────┬─────────┘
-        │                           │                           │
-        │ ┌─────────────────────────┼─────────────────────┐     │
-        │ │                         │                     │     │
-┌───────▼─▼──────┐        ┌─────────▼─────────┐ ┌──────▼─────▼──────┐
-│  Git Versioning│        │  Metrics Collector │ │ DSPy ↔ TextGrad  │
-│  & Checkpoints │        │  & Observability   │ │  Coordinator      │
-└────────────────┘        └────────────────────┘ └───────────────────┘
-        │                           │                           │
-        └───────────────────────────┴───────────────────────────┘
-                                    │
-                    ┌───────────────┴───────────────┐
-                    │                               │
-            ┌───────▼────────┐            ┌─────────▼────────┐
-            │  Test Case     │            │  Human Review    │
-            │  Generator     │            │   Interface      │
-            │  Agent         │            │  (Checkpoint)    │
-            └────────────────┘            └──────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        CONTEXTGRAD FRAMEWORK (CGF)                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌────────────────────────────────────────────────────────────────────┐   │
+│   │                     OPTIMIZATION ORCHESTRATOR                       │   │
+│   │  (Manages optimization loops, resource versioning, convergence)     │   │
+│   └─────────────────────────────┬──────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                      OPTIMIZATION STORE (Redis)                      │  │
+│   │  ├─ Task Queue (evaluations, resource versions)                     │  │
+│   │  ├─ Span Store (OpenTelemetry traces)                               │  │
+│   │  ├─ Resource Registry (agents, skills, prompts, commands)           │  │
+│   │  └─ Results Store (rewards, metrics, feedback)                      │  │
+│   └─────────────────────────────┬──────────────────────────────────────┘  │
+│              │                  │                  │                       │
+│              ▼                  ▼                  ▼                       │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐               │
+│   │ MAIN-AGENT   │    │ AGENT-TWO    │    │ AGENT-THREE  │               │
+│   │ (Executor)   │    │ (Evaluator)  │    │ (Validator)  │               │
+│   │              │    │              │    │              │               │
+│   │ Executes     │    │ Evaluates    │    │ Tests        │               │
+│   │ resources    │    │ quality      │    │ correctness  │               │
+│   │ Emits spans  │    │ Scores       │    │ Scores       │               │
+│   └──────────────┘    └──────────────┘    └──────────────┘               │
+│                                                                            │
+│   ┌────────────────────────────────────────────────────────────────────┐  │
+│   │                      ADAPTERS (Trace → Feedback)                    │  │
+│   │  ├─ AgentAdapter (tool usage, task completion, turns)              │  │
+│   │  ├─ SkillAdapter (activation accuracy, execution success)          │  │
+│   │  ├─ PromptAdapter (output quality, hallucination rate)             │  │
+│   │  └─ CommandAdapter (parse success, execution results)              │  │
+│   └────────────────────────────────────────────────────────────────────┘  │
+│                                 │                                          │
+│                                 ▼                                          │
+│   ┌────────────────────────────────────────────────────────────────────┐  │
+│   │                      OPTIMIZATION ALGORITHMS                        │  │
+│   │  ├─ DSPy Bootstrap (few-shot example optimization)                 │  │
+│   │  ├─ TextGrad APO (textual gradient descent)                        │  │
+│   │  └─ Hybrid (DSPy for examples, TextGrad for prompts)               │  │
+│   └────────────────────────────────────────────────────────────────────┘  │
+│                                 │                                          │
+│   ┌────────────────────────────────────────────────────────────────────┐  │
+│   │                      INFRASTRUCTURE LAYER                           │  │
+│   │  ├─ Git Versioning (branching, commits, tags)                      │  │
+│   │  ├─ Checkpoint Manager (recovery, auto-save)                       │  │
+│   │  ├─ Tracer Manager (OpenTelemetry spans)                           │  │
+│   │  └─ Metrics Collector (Prometheus integration)                     │  │
+│   └────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Key Architecture Patterns:**
+
+| Pattern | Source | Purpose |
+|---------|--------|---------|
+| **Store Protocol** | agent-lightning | Decouples algorithms from storage; enables distributed execution |
+| **Span Tracing** | agent-lightning | Rich execution data for optimization attribution |
+| **Adapter Pattern** | agent-lightning | Multiple algorithms can consume same trace data differently |
+| **Multi-Dim Rewards** | agent-lightning | Composite scoring prevents single-metric overfitting |
 
 ### 1.2 Integration with casdk-harness
 
@@ -477,9 +533,301 @@ system_prompt: |
   test scenarios for optimizing AI agents. For infrastructure agents,
   you should find or generate representative repositories, strip
   deployment configs, and create validation scripts.
-  
+
   Always confirm with the user before cloning external repos or
   generating synthetic data. Document your test case design.
+```
+
+### 2.7 Optimization Store (agent-lightning pattern)
+
+**Purpose:** Central store that decouples optimization algorithms from runners and storage.
+
+**Key Principle:** Algorithms and runners never communicate directly. All state flows through the store, enabling distributed execution without code changes.
+
+**Responsibilities:**
+- Task queue management (evaluations, resource versions)
+- Span storage and retrieval (OpenTelemetry traces)
+- Resource registry (agents, skills, prompts, commands)
+- Results storage (rewards, metrics, feedback)
+
+**Key Classes:**
+```python
+from typing import Protocol, TypeVar, Generic, List, Optional
+from dataclasses import dataclass
+from datetime import datetime
+
+T = TypeVar('T')
+
+class OptimizationStore(Protocol):
+    """Protocol for optimization state storage."""
+
+    # Task queue operations
+    def enqueue_evaluation(self, resource: 'Resource', config: 'EvalConfig') -> str:
+        """Enqueue a resource for evaluation. Returns evaluation ID."""
+        ...
+
+    def dequeue_evaluation(self, runner_id: str) -> Optional['EvaluationTask']:
+        """Dequeue next evaluation for a runner."""
+        ...
+
+    # Span operations
+    def store_spans(self, eval_id: str, spans: List['Span']) -> None:
+        """Store execution spans for an evaluation."""
+        ...
+
+    def get_spans(self, eval_id: str) -> List['Span']:
+        """Retrieve spans for an evaluation."""
+        ...
+
+    # Resource operations
+    def register_resource(self, resource: 'Resource') -> str:
+        """Register a resource version. Returns resource version ID."""
+        ...
+
+    def get_resource(self, resource_id: str, version: Optional[str] = None) -> 'Resource':
+        """Get a resource by ID, optionally at a specific version."""
+        ...
+
+    # Results operations
+    def record_result(self, eval_id: str, result: 'EvaluationResult') -> None:
+        """Record evaluation result with rewards."""
+        ...
+
+    def query_results(self, resource_id: str, limit: int = 100) -> List['EvaluationResult']:
+        """Query results for a resource."""
+        ...
+
+
+@dataclass
+class RedisOptimizationStore:
+    """Redis-backed implementation of OptimizationStore."""
+    redis_url: str
+
+    # Key prefixes
+    TASK_QUEUE = "cgf:tasks"
+    SPANS = "cgf:spans:{eval_id}"
+    RESOURCES = "cgf:resources:{resource_id}"
+    RESULTS = "cgf:results:{resource_id}"
+
+    def __post_init__(self):
+        import redis
+        self.client = redis.from_url(self.redis_url)
+
+
+@dataclass
+class MemoryOptimizationStore:
+    """In-memory implementation for development/testing."""
+    task_queue: list = None
+    spans: dict = None
+    resources: dict = None
+    results: dict = None
+
+    def __post_init__(self):
+        self.task_queue = self.task_queue or []
+        self.spans = self.spans or {}
+        self.resources = self.resources or {}
+        self.results = self.results or {}
+```
+
+### 2.8 Tracer Manager (OpenTelemetry Integration)
+
+**Purpose:** Collect rich execution traces from agent runs using OpenTelemetry.
+
+**Key Benefit:** Span-based tracing provides execution visibility that simple metrics cannot:
+- **Failure analysis**: Which step failed and why?
+- **Performance profiling**: Which tools are slow?
+- **Optimization attribution**: Which prompt change helped?
+
+**Responsibilities:**
+- Instrument SDK client calls automatically
+- Emit spans for tool calls with timing
+- Propagate trace context across agent boundaries
+- Export spans to store
+
+**Key Classes:**
+```python
+from typing import Protocol, Optional, Dict, Any
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+import time
+
+class TracerProtocol(Protocol):
+    """Protocol for execution tracing."""
+
+    def start_span(self, name: str, attributes: Dict[str, Any] = None) -> 'SpanContext':
+        """Start a new span."""
+        ...
+
+    def end_span(self, context: 'SpanContext', status: str = "ok") -> 'Span':
+        """End a span and return the completed span."""
+        ...
+
+    @contextmanager
+    def span(self, name: str, attributes: Dict[str, Any] = None):
+        """Context manager for automatic span lifecycle."""
+        ...
+
+
+@dataclass
+class SpanContext:
+    """Active span context for propagation."""
+    trace_id: str
+    span_id: str
+    parent_span_id: Optional[str]
+    start_time: float
+    name: str
+    attributes: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OpenTelemetryTracer:
+    """OpenTelemetry-based tracer implementation."""
+    service_name: str
+    store: 'OptimizationStore'
+
+    def __post_init__(self):
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.resources import Resource
+
+        resource = Resource.create({"service.name": self.service_name})
+        provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(provider)
+        self.tracer = trace.get_tracer(__name__)
+
+    @contextmanager
+    def span(self, name: str, attributes: Dict[str, Any] = None):
+        """Create and manage a span."""
+        with self.tracer.start_as_current_span(name) as span:
+            if attributes:
+                for key, value in attributes.items():
+                    span.set_attribute(key, value)
+            try:
+                yield span
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                raise
+```
+
+**Instrumentation Points:**
+```python
+# In agent.py - Example instrumentation
+class AgentSession:
+    async def execute(self, prompt: str):
+        with self.tracer.span("agent.execute", {
+            "agent.name": self.agent_name,
+            "prompt.length": len(prompt),
+        }) as span:
+            # Execute and trace
+            result = await self._sdk_execute(prompt)
+            span.set_attribute("result.tokens", result.token_count)
+            return result
+
+    async def _call_tool(self, tool_name: str, args: dict):
+        with self.tracer.span("tool.call", {
+            "tool.name": tool_name,
+            "tool.args": str(args),
+        }) as span:
+            result = await self._execute_tool(tool_name, args)
+            span.set_attribute("tool.success", result.success)
+            return result
+```
+
+### 2.9 Adapter Registry (Trace → Feedback Transformation)
+
+**Purpose:** Transform raw execution traces into structured feedback for optimization algorithms.
+
+**Key Benefit:** Different resource types and algorithms need different evaluation approaches. Adapters provide clean separation between trace collection and consumption.
+
+**Responsibilities:**
+- Register adapters for different resource types
+- Transform spans into feedback signals
+- Support multiple algorithms on same trace data
+
+**Key Classes:**
+```python
+from typing import Protocol, TypeVar, Generic, List, Sequence
+from dataclasses import dataclass
+
+T_trace = TypeVar('T_trace')
+T_feedback = TypeVar('T_feedback')
+
+class Adapter(Protocol[T_trace, T_feedback]):
+    """Protocol for trace → feedback transformation."""
+
+    def adapt(self, traces: Sequence[T_trace]) -> T_feedback:
+        """Transform traces into feedback."""
+        ...
+
+
+@dataclass
+class AgentFeedback:
+    """Feedback structure for agent optimization."""
+    task_completion: float      # 0.0-1.0, did it achieve the goal?
+    tool_usage_efficiency: float  # Optimal tool selection
+    turn_count: int              # Conversation turns used
+    token_usage: int             # Total tokens consumed
+    error_count: int             # Number of errors encountered
+    tool_calls: List[dict]       # Detailed tool call records
+
+
+class AgentAdapter(Adapter['Span', 'AgentFeedback']):
+    """Transform agent execution spans into AgentFeedback."""
+
+    def adapt(self, spans: Sequence['Span']) -> 'AgentFeedback':
+        tool_spans = [s for s in spans if s.name.startswith("tool.")]
+
+        return AgentFeedback(
+            task_completion=self._calculate_completion(spans),
+            tool_usage_efficiency=self._calculate_efficiency(tool_spans),
+            turn_count=len([s for s in spans if s.name == "agent.turn"]),
+            token_usage=sum(s.attributes.get("tokens", 0) for s in spans),
+            error_count=len([s for s in spans if s.status == "error"]),
+            tool_calls=[self._extract_tool_call(s) for s in tool_spans],
+        )
+
+
+@dataclass
+class SkillFeedback:
+    """Feedback structure for skill optimization."""
+    activation_accuracy: float   # Correct skill triggered?
+    execution_success: float     # Did skill complete successfully?
+    output_quality: float        # Quality of skill output
+
+
+class SkillAdapter(Adapter['Span', 'SkillFeedback']):
+    """Transform skill execution spans into SkillFeedback."""
+
+    def adapt(self, spans: Sequence['Span']) -> 'SkillFeedback':
+        skill_spans = [s for s in spans if s.name.startswith("skill.")]
+
+        return SkillFeedback(
+            activation_accuracy=self._calculate_activation(skill_spans),
+            execution_success=self._calculate_success(skill_spans),
+            output_quality=self._evaluate_output(skill_spans),
+        )
+
+
+class AdapterRegistry:
+    """Registry for resource-type-specific adapters."""
+
+    def __init__(self):
+        self._adapters: dict[str, Adapter] = {}
+
+    def register(self, resource_type: str, adapter: Adapter) -> None:
+        """Register an adapter for a resource type."""
+        self._adapters[resource_type] = adapter
+
+    def get(self, resource_type: str) -> Adapter:
+        """Get the adapter for a resource type."""
+        if resource_type not in self._adapters:
+            raise ValueError(f"No adapter registered for {resource_type}")
+        return self._adapters[resource_type]
+
+    def adapt(self, resource_type: str, spans: Sequence['Span']):
+        """Convenience method to adapt spans for a resource type."""
+        return self.get(resource_type).adapt(spans)
 ```
 
 ---
@@ -567,13 +915,192 @@ class TestCase:
     expected_outputs: List[str]  # Files to check
     validation_script: Optional[str]
     constraints: Dict[str, Any]  # {'max_cost_usd': 0.50, 'timeout_seconds': 120}
-    
+
     def validate(self, output_dir: str) -> bool:
         """Run validation script and check expected outputs."""
         pass
 ```
 
-### 3.4 OptimizationRun
+### 3.4 Span (agent-lightning pattern)
+
+```python
+from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from enum import Enum
+
+class SpanStatus(Enum):
+    """Status of a completed span."""
+    OK = "ok"
+    ERROR = "error"
+    TIMEOUT = "timeout"
+
+@dataclass
+class Span:
+    """OpenTelemetry-compatible execution span.
+
+    Spans capture discrete execution units (tool calls, agent turns, etc.)
+    with timing, attributes, and nested structure.
+    """
+    trace_id: str              # Unique ID for the entire trace
+    span_id: str               # Unique ID for this span
+    parent_span_id: Optional[str]  # Parent span ID for nesting
+    name: str                  # Span name (e.g., "tool.call", "agent.turn")
+
+    # Timing
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_ms: Optional[float] = None
+
+    # Status
+    status: SpanStatus = SpanStatus.OK
+    error_message: Optional[str] = None
+
+    # Attributes (flexible key-value data)
+    attributes: Dict[str, Any] = field(default_factory=dict)
+
+    # Events within the span
+    events: List[Dict[str, Any]] = field(default_factory=list)
+
+    def set_attribute(self, key: str, value: Any) -> None:
+        """Set a span attribute."""
+        self.attributes[key] = value
+
+    def add_event(self, name: str, attributes: Dict[str, Any] = None) -> None:
+        """Add an event to the span."""
+        self.events.append({
+            "name": name,
+            "timestamp": datetime.utcnow().isoformat(),
+            "attributes": attributes or {}
+        })
+
+    def finish(self, status: SpanStatus = SpanStatus.OK, error: str = None) -> None:
+        """Mark the span as finished."""
+        self.end_time = datetime.utcnow()
+        self.duration_ms = (self.end_time - self.start_time).total_seconds() * 1000
+        self.status = status
+        self.error_message = error
+
+    def to_otel_dict(self) -> Dict[str, Any]:
+        """Export to OpenTelemetry-compatible dictionary."""
+        return {
+            "traceId": self.trace_id,
+            "spanId": self.span_id,
+            "parentSpanId": self.parent_span_id,
+            "name": self.name,
+            "startTimeUnixNano": int(self.start_time.timestamp() * 1e9),
+            "endTimeUnixNano": int(self.end_time.timestamp() * 1e9) if self.end_time else None,
+            "status": {"code": self.status.value},
+            "attributes": [{"key": k, "value": {"stringValue": str(v)}} for k, v in self.attributes.items()],
+            "events": self.events,
+        }
+```
+
+### 3.5 ResourceReward (Multi-Dimensional, agent-lightning pattern)
+
+```python
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+
+@dataclass
+class ResourceReward:
+    """Multi-dimensional reward signal for optimization.
+
+    Agent quality isn't one-dimensional. This structure captures:
+    - Task completion (did it work?)
+    - Efficiency (token usage, turns taken)
+    - Quality (code quality, documentation)
+    - Safety (no security issues, no destructive actions)
+
+    Multi-dimensional rewards prevent single-metric overfitting.
+    """
+    # Core dimensions (all 0.0-1.0)
+    task_completion: float     # Did it achieve the stated goal?
+    efficiency: float          # Token/turn efficiency (lower is better, normalized)
+    quality: float             # Output quality score
+    safety: float              # Safety compliance score
+
+    # Primary metric for algorithm focus
+    primary_metric: str = "task_completion"
+
+    # Resource-type-specific dimensions
+    extra: Dict[str, float] = field(default_factory=dict)
+
+    # Weighting for composite score
+    weights: Dict[str, float] = field(default_factory=lambda: {
+        "task_completion": 0.4,
+        "efficiency": 0.2,
+        "quality": 0.3,
+        "safety": 0.1,
+    })
+
+    def composite_score(self) -> float:
+        """Calculate weighted combination of all dimensions."""
+        score = 0.0
+        for metric, weight in self.weights.items():
+            value = getattr(self, metric, None) or self.extra.get(metric, 0.0)
+            score += value * weight
+        return score
+
+    def get_primary(self) -> float:
+        """Get the primary metric value."""
+        return getattr(self, self.primary_metric, None) or self.extra.get(self.primary_metric, 0.0)
+
+    def improvement_over(self, baseline: 'ResourceReward') -> Dict[str, float]:
+        """Calculate percentage improvements over baseline."""
+        improvements = {}
+        for metric in ["task_completion", "efficiency", "quality", "safety"]:
+            baseline_val = getattr(baseline, metric, 0.0)
+            current_val = getattr(self, metric, 0.0)
+            if baseline_val > 0:
+                improvements[metric] = (current_val - baseline_val) / baseline_val
+            else:
+                improvements[metric] = float('inf') if current_val > 0 else 0.0
+        return improvements
+
+    @classmethod
+    def from_agent_feedback(cls, feedback: 'AgentFeedback') -> 'ResourceReward':
+        """Create reward from AgentFeedback."""
+        return cls(
+            task_completion=feedback.task_completion,
+            efficiency=cls._normalize_efficiency(feedback.token_usage, feedback.turn_count),
+            quality=feedback.tool_usage_efficiency,
+            safety=1.0 - (feedback.error_count / max(feedback.turn_count, 1)),
+        )
+
+    @staticmethod
+    def _normalize_efficiency(tokens: int, turns: int) -> float:
+        """Normalize efficiency to 0.0-1.0 (higher is better)."""
+        # Assuming 50k tokens and 20 turns as "inefficient" baseline
+        token_score = max(0, 1 - (tokens / 50000))
+        turn_score = max(0, 1 - (turns / 20))
+        return (token_score + turn_score) / 2
+```
+
+**Usage Example:**
+
+```python
+# Emit multi-dimensional reward after evaluation
+reward = ResourceReward(
+    task_completion=0.85,
+    efficiency=0.72,
+    quality=0.91,
+    safety=1.0,
+    extra={
+        "pydantic_usage": 0.80,
+        "async_pattern_usage": 0.65,
+    },
+    primary_metric="task_completion"
+)
+
+# Get composite score for algorithm
+score = reward.composite_score()  # Weighted average
+
+# Compare to baseline
+improvements = reward.improvement_over(baseline_reward)
+```
+
+### 3.6 OptimizationRun
 
 ```python
 @dataclass
@@ -1138,8 +1665,14 @@ class TerraformTestCase(TestCase):
 ```toml
 [project.optional-dependencies]
 optimization = [
-    "dspy>=3.0",
+    "dspy-ai>=3.0",
     "textgrad>=0.1.6",
+    # OpenTelemetry for tracing (agent-lightning pattern)
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp>=1.27.0",
+    # Redis for distributed store (agent-lightning pattern)
+    "redis>=5.0.0",
 ]
 ```
 
@@ -1163,16 +1696,56 @@ optimization = [
 ```
 casdk-harness/
 ├── src/harness/
+│   ├── tracer/                    # NEW: OpenTelemetry tracing (agent-lightning pattern)
+│   │   ├── __init__.py
+│   │   ├── base.py                # TracerProtocol, Span dataclasses
+│   │   ├── otel_tracer.py         # OpenTelemetry implementation
+│   │   ├── context.py             # Trace context propagation
+│   │   └── exporters/
+│   │       ├── __init__.py
+│   │       ├── redis.py           # Export to Redis store
+│   │       └── file.py            # Export to JSON files (debugging)
+│   │
 │   ├── optimization/              # NEW: CGF module
 │   │   ├── __init__.py
+│   │   ├── orchestrator.py        # Main optimization coordinator
 │   │   ├── resource_manager.py
 │   │   ├── test_harness.py
 │   │   ├── optimization_engine.py
 │   │   ├── checkpoint_manager.py
 │   │   ├── metrics.py
-│   │   ├── dspy_optimizer.py
-│   │   ├── textgrad_optimizer.py
-│   │   └── git_versioning.py
+│   │   ├── rewards.py             # NEW: Multi-dimensional reward system
+│   │   ├── git_versioning.py
+│   │   │
+│   │   ├── store/                 # NEW: Decoupled store (agent-lightning pattern)
+│   │   │   ├── __init__.py
+│   │   │   ├── protocol.py        # OptimizationStore protocol
+│   │   │   ├── redis_store.py     # Redis implementation (distributed)
+│   │   │   ├── memory_store.py    # In-memory (development/testing)
+│   │   │   └── models.py          # Pydantic models (Resource, Evaluation, Result)
+│   │   │
+│   │   ├── adapters/              # NEW: Trace → Feedback transformation
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py            # Adapter[T_from, T_to] protocol
+│   │   │   ├── agent_adapter.py   # Spans → AgentFeedback
+│   │   │   ├── skill_adapter.py   # Spans → SkillFeedback
+│   │   │   ├── prompt_adapter.py  # Spans → PromptFeedback
+│   │   │   └── triplet_adapter.py # Spans → (input, output, reward) for training
+│   │   │
+│   │   ├── resources/             # NEW: Resource type wrappers
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py            # Resource protocol, ResourceVersion
+│   │   │   ├── agent_resource.py  # Agent definition wrapper
+│   │   │   ├── skill_resource.py  # Skill wrapper
+│   │   │   ├── prompt_resource.py # Raw prompt wrapper
+│   │   │   └── command_resource.py # Command wrapper
+│   │   │
+│   │   └── algorithms/            # Optimization algorithms
+│   │       ├── __init__.py
+│   │       ├── base.py            # Algorithm protocol
+│   │       ├── dspy_bootstrap.py  # DSPy few-shot optimization
+│   │       ├── textgrad_apo.py    # TextGrad APO (beam search + gradients)
+│   │       └── hybrid.py          # Combined approach
 │   │
 │   ├── agents/
 │   │   └── configs/
@@ -1194,12 +1767,17 @@ casdk-harness/
 │           ├── optimization-logs/
 │           │   ├── iteration-001.json
 │           │   └── ...
+│           ├── spans/             # NEW: Execution traces
+│           │   ├── trace-001.json
+│           │   └── ...
 │           └── test-results/
 │               ├── simple-flask-app-iter001.json
 │               └── ...
 │
 ├── config/
-│   └── optimization-config.yaml   # NEW
+│   ├── optimization-config.yaml   # NEW
+│   └── tracing/                   # NEW: OpenTelemetry configuration
+│       └── otel-config.yaml
 │
 ├── Makefile
 │   # NEW targets:
@@ -1242,6 +1820,187 @@ CGF_STAGING_AWS_PROFILE=casdk-staging
 CGF_MAX_COST_PER_TEST=0.50  # USD
 CGF_TEST_TIMEOUT=300  # seconds
 ```
+
+### 8.4 OpenTelemetry Configuration (agent-lightning pattern)
+
+CGF uses OpenTelemetry for span-based execution tracing. This provides rich execution data for optimization attribution and debugging.
+
+**Configuration File:** `config/tracing/otel-config.yaml`
+
+```yaml
+# OpenTelemetry Configuration for CGF
+service:
+  name: cgf-tracer
+  version: 1.0.0
+
+# Tracer settings
+tracer:
+  # Enable/disable tracing
+  enabled: true
+
+  # Sampling rate (1.0 = trace everything, 0.1 = trace 10%)
+  sampling_rate: 1.0
+
+  # Maximum span attributes
+  max_attributes: 128
+
+  # Maximum events per span
+  max_events: 128
+
+# Exporter configuration
+exporters:
+  # Primary: Redis store (for CGF integration)
+  redis:
+    enabled: true
+    url: ${REDIS_URL:-redis://redis:6379}
+    key_prefix: "cgf:spans"
+    ttl_seconds: 86400  # 24 hours
+
+  # Secondary: File export (for debugging)
+  file:
+    enabled: ${CGF_TRACE_TO_FILE:-false}
+    path: workspace/optimization-runs/{run_id}/spans/
+    format: json
+
+  # Optional: OTLP export (for external collectors)
+  otlp:
+    enabled: ${CGF_OTLP_ENABLED:-false}
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4317}
+    headers: {}
+
+# Instrumentation points
+instrumentation:
+  # Auto-instrument these components
+  auto_instrument:
+    - agent.execute
+    - agent.turn
+    - tool.call
+    - skill.invoke
+    - subagent.spawn
+
+  # Custom span names
+  span_names:
+    agent_execute: "cgf.agent.execute"
+    tool_call: "cgf.tool.{tool_name}"
+    skill_invoke: "cgf.skill.{skill_name}"
+
+# Resource attributes (added to all spans)
+resource_attributes:
+  deployment.environment: ${ENVIRONMENT:-development}
+  service.namespace: cgf
+```
+
+**New `.env` variables for tracing:**
+
+```bash
+# OpenTelemetry settings
+CGF_TRACING_ENABLED=true
+CGF_TRACE_SAMPLING_RATE=1.0
+CGF_TRACE_TO_FILE=false
+CGF_OTLP_ENABLED=false
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+**Usage in Code:**
+
+```python
+from harness.tracer import get_tracer
+
+# Get the configured tracer
+tracer = get_tracer()
+
+# Manual span creation
+with tracer.span("custom.operation", {"key": "value"}) as span:
+    result = do_something()
+    span.set_attribute("result.size", len(result))
+
+# Decorator for automatic tracing
+@tracer.traced("my_function")
+async def my_function(arg1, arg2):
+    pass
+```
+
+### 8.5 Redis Store Configuration (agent-lightning pattern)
+
+CGF uses Redis as the central optimization store, following the agent-lightning decoupled store pattern. This enables distributed execution without code changes.
+
+**Redis Key Structure:**
+
+| Key Pattern | Purpose | TTL |
+|-------------|---------|-----|
+| `cgf:tasks` | Task queue (Redis Stream) | None |
+| `cgf:spans:{eval_id}` | Execution spans | 24h |
+| `cgf:resources:{resource_id}` | Resource registry | None |
+| `cgf:resources:{resource_id}:v{version}` | Resource versions | 30d |
+| `cgf:results:{resource_id}` | Evaluation results (sorted set by score) | None |
+| `cgf:locks:{resource_id}` | Distributed locks | 5min |
+
+**New `.env` variables for store:**
+
+```bash
+# Redis Store settings
+CGF_STORE_BACKEND=redis  # redis | memory
+CGF_REDIS_URL=redis://redis:6379
+CGF_REDIS_DB=1  # Separate DB from main Redis usage
+
+# Store behavior
+CGF_STORE_SPAN_TTL=86400  # 24 hours
+CGF_STORE_VERSION_TTL=2592000  # 30 days
+CGF_STORE_LOCK_TTL=300  # 5 minutes
+```
+
+**Store Protocol Usage:**
+
+```python
+from harness.optimization.store import get_store
+
+# Get the configured store (Redis or Memory based on CGF_STORE_BACKEND)
+store = get_store()
+
+# Enqueue an evaluation
+eval_id = store.enqueue_evaluation(
+    resource=agent_resource,
+    config=EvalConfig(test_cases=["tc1", "tc2"])
+)
+
+# Store spans after execution
+store.store_spans(eval_id, collected_spans)
+
+# Record results with multi-dimensional reward
+store.record_result(eval_id, EvaluationResult(
+    reward=ResourceReward(
+        task_completion=0.85,
+        efficiency=0.72,
+        quality=0.91,
+        safety=1.0
+    ),
+    spans_count=len(collected_spans),
+    duration_seconds=45.2
+))
+
+# Query historical results for optimization
+results = store.query_results(resource_id, limit=100)
+```
+
+**Container Role Integration:**
+
+| Container | Store Interaction |
+|-----------|-------------------|
+| main-agent (Executor) | Dequeue tasks, store spans, emit preliminary results |
+| agent-two (Evaluator) | Query spans, store quality scores |
+| agent-three (Validator) | Query spans, store test results |
+| Orchestrator | Enqueue tasks, query results, manage resources |
+
+**Memory Store for Development:**
+
+For local development without Redis, CGF falls back to an in-memory store:
+
+```bash
+# Use memory store for development
+CGF_STORE_BACKEND=memory
+```
+
+The memory store implements the same `OptimizationStore` protocol, enabling seamless switching between development and production environments.
 
 ---
 
