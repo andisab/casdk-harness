@@ -122,9 +122,9 @@ See [docs/SPEC.example.md](./docs/SPEC.example.md) for spec writing best practic
 | Profile | Command | Services |
 |---------|---------|----------|
 | Default | `make up` | main-agent, prometheus, grafana |
-| Multi-Agent | `make up-multi` | + reviewer-agent, tester-agent, redis |
+| Multi-Agent | `make up-multi` | + agent-two (evaluator), agent-three (validator), redis |
 
-Multi-agent mode enables parallel code review and testing agents.
+Multi-agent mode enables parallel evaluation and validation agents.
 
 ---
 

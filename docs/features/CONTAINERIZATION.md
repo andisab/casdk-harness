@@ -84,8 +84,8 @@
 | Current | Proposed |
 |---------|----------|
 | main-agent (port 8080) | main-agent (unchanged) |
-| reviewer-agent (port 8081, RO workspace) | worker-agent-1 (generic, RW) |
-| tester-agent (port 8082, RW workspace) | worker-agent-2 (generic, RW) |
+| agent-two (port 8081, RO workspace) | worker-agent-1 (generic, RW) |
+| agent-three (port 8082, RW workspace) | worker-agent-2 (generic, RW) |
 
 ---
 
@@ -119,22 +119,22 @@ How orchestration patterns map to container strategies. See [ORCHESTRATION_PATTE
 
 **Before (role-specific)**:
 ```yaml
-reviewer-agent:
+agent-two:
   image: casdk-agent:latest
   environment:
-    - AGENT_NAME=reviewer
-    - AGENT_PROMPT_FILE=reviewer-agent.md
+    - AGENT_NAME=agent-two
+    - AGENT_PROMPT_FILE=agent-two.md
     - CLAUDE_PERMISSION_MODE=default
   volumes:
     - ./workspace:/workspace:ro  # Read-only
   ports:
     - "8081:8080"
 
-tester-agent:
+agent-three:
   image: casdk-agent:latest
   environment:
-    - AGENT_NAME=tester
-    - AGENT_PROMPT_FILE=tester-agent.md
+    - AGENT_NAME=agent-three
+    - AGENT_PROMPT_FILE=agent-three.md
     - CLAUDE_PERMISSION_MODE=bypassPermissions
   volumes:
     - ./workspace:/workspace
@@ -468,7 +468,7 @@ async def test_worker_failure():
 If generic workers cause issues, rollback to role-specific containers:
 
 1. Revert docker-compose.yml changes
-2. Re-enable reviewer-agent and tester-agent
+2. Re-enable agent-two and agent-three
 3. Keep `AGENT_MODE=worker` code but don't use it
 
 The subagent path (`direct_agent.py`) remains unchanged and is always available.

@@ -258,8 +258,8 @@ Enabled with `make up-multi`:
 | Service | Permission | Workspace | Prompt |
 |---------|------------|-----------|--------|
 | main-agent | acceptEdits | Read-write | `main-interactivedev-agent.md` |
-| reviewer-agent | default | **Read-only** | `reviewer-agent.md` |
-| tester-agent | bypassPermissions | Read-write | `tester-agent.md` |
+| agent-two | default | **Read-only** | `agent-two.md` |
+| agent-three | bypassPermissions | Read-write | `agent-three.md` |
 
 Container agents communicate via Redis Streams (`src/harness/messaging.py`).
 
@@ -305,8 +305,8 @@ Container agents communicate via Redis Streams (`src/harness/messaging.py`).
 │         ┌─────────┴─────────┐               ┌───────────┴───────────┐        │
 │         ▼                   ▼               ▼                       ▼        │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐  │
-│  │   REVIEWER   │    │    TESTER    │    │   (future)   │    │  (future) │  │
-│  │   CONTAINER  │    │   CONTAINER  │    │   DEPLOYER   │    │  MONITOR  │  │
+│  │  AGENT-TWO   │    │ AGENT-THREE  │    │   (future)   │    │  (future) │  │
+│  │  (Evaluator) │    │  (Validator) │    │   DEPLOYER   │    │  MONITOR  │  │
 │  │              │    │              │    │              │    │           │  │
 │  │ Workspace:   │    │ Workspace:   │    │              │    │           │  │
 │  │  READ-ONLY   │    │ read-write   │    │              │    │           │  │
@@ -541,8 +541,8 @@ make up  # Starts these services
 ```bash
 make up-multi  # Adds these services
 ```
-- **reviewer-agent** (port 8081) - Code review (read-only workspace)
-- **tester-agent** (port 8082) - Test execution (full access)
+- **agent-two** (port 8081) - Evaluator (read-only workspace, default: code review)
+- **agent-three** (port 8082) - Validator (full access, default: testing)
 - **redis** (port 6379) - Inter-agent communication via Redis Streams
 
 ---

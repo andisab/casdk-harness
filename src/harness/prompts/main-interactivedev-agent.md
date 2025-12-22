@@ -86,7 +86,7 @@ async for message in call_agent("python-expert", "Write a sort function"):
 
 **Infrastructure**: docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert
 
-**Testing**: testing-agent, reviewer-agent
+**Testing**: test-sdet-expert, dev-code-review-expert
 
 **Plugin Agents**: research-team:lead-research-coordinator, research-team:research-specialist, research-team:research-report-writer, context-engineering:context-engineer
 

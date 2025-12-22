@@ -129,13 +129,13 @@ class TestPredefinedAgents:
         assert agent.model == "haiku"  # Should use cheaper model
         assert any("docker" in tool.lower() for tool in agent.tools)
 
-    def test_reviewer_agent(self) -> None:
-        """Test reviewer agent configuration."""
-        agent = get_agent_definition("reviewer-agent")
+    def test_code_review_expert(self) -> None:
+        """Test code review expert agent configuration."""
+        agent = get_agent_definition("dev-code-review-expert")
 
         assert agent is not None
         assert "review" in agent.description.lower()
-        # Reviewer should have read-only tools (no Write/Edit)
+        # Code review agent should have read-only tools (no Write/Edit)
         assert "Read" in agent.tools
         assert "Write" not in agent.tools
         assert "Edit" not in agent.tools

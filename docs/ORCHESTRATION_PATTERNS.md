@@ -375,7 +375,7 @@ async def example_code_review_pipeline():
             "prompt_template": "Security review based on analysis:\n{input}",
         },
         {
-            "agent_name": "reviewer-agent",
+            "agent_name": "dev-code-review-expert",
             "prompt_template": "Create final report from:\n{input}",
         },
     ])
@@ -1232,7 +1232,7 @@ class Mediator:
             "postgres-expert": ["database", "postgresql", "sql"],
             "docker-engineer": ["docker", "containers", "infrastructure"],
             "testing-agent": ["testing", "qa", "test_generation"],
-            "reviewer-agent": ["code_review", "quality_assurance"],
+            "dev-code-review-expert": ["code_review", "quality_assurance"],
         }
 
         for agent_id, capabilities in agent_capabilities.items():
@@ -1664,7 +1664,7 @@ class ReviewStage(PipelineStage):
 
         review_tasks = [
             call_agent_simple(
-                "reviewer-agent",
+                "dev-code-review-expert",
                 f"Review for quality:\n\nQuery: {query}\n\nSynthesis: {synthesis}"
             ),
             call_agent_simple(

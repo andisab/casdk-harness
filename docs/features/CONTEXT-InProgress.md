@@ -49,8 +49,8 @@ This specification proposes a comprehensive reorganization and enhancement plan.
 
 | Domain | Skill | Agent | Confusion Level |
 |--------|-------|-------|-----------------|
-| Code Review | `code-review` skill | `reviewer-agent` | High |
-| Testing | `testing-strategies` skill | `testing-agent` | High |
+| Code Review | `code-review` skill | `dev-code-review-expert` | High |
+| Testing | `testing-strategies` skill | `test-sdet-expert` | High |
 | Debugging | `debugging` skill | None | Low |
 | Python Development | None | `python-expert` | Medium |
 
@@ -194,8 +194,8 @@ description: Systematic debugging, troubleshooting, and problem-solving strategi
 | `sql-expert` | `sql-development` | `/app/src/harness/skills/sql-development/` |
 | `gitlab-ci-expert` | `gitlab-ci-operations` | `/app/src/harness/skills/gitlab-ci-operations/` |
 | `gcp-cloud-architect` | `gcp-architecture` | `/app/src/harness/skills/gcp-architecture/` |
-| `reviewer-agent` | *Merge into `code-review` skill* | `/app/src/harness/skills/code-review/` |
-| `testing-agent` | *Merge into `testing-strategies` skill* | `/app/src/harness/skills/testing-strategies/` |
+| `dev-code-review-expert` | *Merge into `code-review` skill* | `/app/src/harness/skills/code-review/` |
+| `test-sdet-expert` | *Merge into `testing-strategies` skill* | `/app/src/harness/skills/testing-strategies/` |
 | `refactor-agent` | `refactoring-strategies` | `/app/src/harness/skills/refactoring-strategies/` |
 
 **Migration Template:**
@@ -847,8 +847,8 @@ These agents will be deprecated after migration:
 - sql-expert → sql-development skill
 - gitlab-ci-expert → gitlab-ci-operations skill
 - gcp-cloud-architect → gcp-architecture skill
-- reviewer-agent → merged into code-review skill
-- testing-agent → merged into testing-strategies skill
+- dev-code-review-expert → merged into code-review skill
+- test-sdet-expert → merged into testing-strategies skill
 - refactor-agent → refactoring-strategies skill
 
 ### C. Example Migration
