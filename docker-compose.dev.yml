@@ -31,7 +31,7 @@ services:
           path: ./tests
           target: /app/tests
 
-  reviewer-agent:
+  agent-two:
     build:
       target: development
     environment:
@@ -45,7 +45,7 @@ services:
           path: ./src
           target: /app/src
 
-  tester-agent:
+  agent-three:
     build:
       target: development
     environment:

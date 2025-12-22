@@ -203,13 +203,13 @@ shell: ## Shell into main agent container
 shell-root: ## Root shell into main agent
 	docker compose $(COMPOSE_FILES) exec -u root main-agent /bin/bash
 
-.PHONY: shell-reviewer
-shell-reviewer: ## Shell into reviewer agent
-	docker compose $(COMPOSE_FILES) exec reviewer-agent /bin/bash
+.PHONY: shell-agent-two
+shell-agent-two: ## Shell into agent-two (evaluator)
+	docker compose $(COMPOSE_FILES) exec agent-two /bin/bash
 
-.PHONY: shell-tester
-shell-tester: ## Shell into tester agent
-	docker compose $(COMPOSE_FILES) exec tester-agent /bin/bash
+.PHONY: shell-agent-three
+shell-agent-three: ## Shell into agent-three (validator)
+	docker compose $(COMPOSE_FILES) exec agent-three /bin/bash
 
 # =============================================================================
 # Interactive Agent

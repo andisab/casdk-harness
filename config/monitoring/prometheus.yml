@@ -17,21 +17,21 @@ scrape_configs:
           agent: 'main'
           role: 'development'
 
-  # Reviewer Agent
-  - job_name: 'reviewer-agent'
+  # Agent Two (Default: Evaluator)
+  - job_name: 'agent-two'
     static_configs:
-      - targets: ['reviewer-agent:9090']
+      - targets: ['agent-two:9090']
         labels:
-          agent: 'reviewer'
-          role: 'review'
+          agent: 'agent-two'
+          role: 'evaluator'
 
-  # Tester Agent
-  - job_name: 'tester-agent'
+  # Agent Three (Default: Validator)
+  - job_name: 'agent-three'
     static_configs:
-      - targets: ['tester-agent:9090']
+      - targets: ['agent-three:9090']
         labels:
-          agent: 'tester'
-          role: 'testing'
+          agent: 'agent-three'
+          role: 'validator'
 
   # PostgreSQL
   - job_name: 'postgres'

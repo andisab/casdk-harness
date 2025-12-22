@@ -505,8 +505,8 @@ class AgentSession:
 
         Supports different prompts for different agent types:
         - main (default): main-interactivedev-agent.md
-        - reviewer: reviewer-agent.md
-        - tester: tester-agent.md
+        - agent-two: agent-two.md (Evaluator, default: code review)
+        - agent-three: agent-three.md (Validator, default: testing)
 
         Returns:
             System prompt content with plugin skills appended if any.
@@ -517,8 +517,8 @@ class AgentSession:
         # Map agent names to their prompt files
         prompt_map = {
             "main": "main-interactivedev-agent.md",
-            "reviewer": "reviewer-agent.md",
-            "tester": "tester-agent.md",
+            "agent-two": "agent-two.md",
+            "agent-three": "agent-three.md",
         }
 
         # Get agent name from environment (default: main)

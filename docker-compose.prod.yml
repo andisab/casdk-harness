@@ -49,7 +49,7 @@ services:
         max_attempts: 3
         window: 120s
 
-  reviewer-agent:
+  agent-two:
     build:
       target: production
     environment:
@@ -61,7 +61,7 @@ services:
           cpus: '2'
           memory: 4G
 
-  tester-agent:
+  agent-three:
     build:
       target: production
     environment:
