@@ -1,7 +1,7 @@
 # CGF Infrastructure Specification
 
-> **Version**: 1.1.0
-> **Status**: ✅ Complete (Phase 0.1-0.6)
+> **Version**: 1.2.0
+> **Status**: 🚧 Phase 1 In Progress (Phase 0 Complete)
 > **Related**: [CONTEXT-GRAD-SPEC.md](./CONTEXT-GRAD-SPEC.md) | [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md)
 > **Origin**: Patterns adopted from agent-lightning framework research
 
@@ -17,8 +17,9 @@
 | **0.4** | Adapter Framework | ✅ Complete | 87 tests |
 | **0.5** | Reward System | ✅ Complete | 50 tests |
 | **0.6** | Integration | ✅ Complete | 16 tests |
+| **1.0** | Single-Agent Optimization Validation | 🚧 In Progress | - |
 
-**Total**: 404 tests passing
+**Phase 0 Total**: 404 tests passing
 
 ### Phase 0.6 Integration Summary
 
@@ -34,6 +35,34 @@ AgentSession.execute() → tracer → StoreSpanExporter → OptimizationStore �
 - Tracer initialization in `AgentSession`
 - CGF Prometheus metrics in `monitoring.py`
 - Integration tests in `tests/integration/test_cgf_pipeline.py`
+
+### Phase 1: Single-Agent Optimization Validation
+
+**Status**: 🚧 In Progress
+**Goal**: Validate end-to-end optimization on single agent before multi-agent orchestration
+
+| Sub-Phase | Description | Status |
+|-----------|-------------|--------|
+| 1A | Test case infrastructure | Pending |
+| 1B | Agent runner with tracing | Pending |
+| 1C | DSPy MIPROv2 integration | Pending |
+| 1D | TextGrad TGD integration | Pending |
+| 1E | Pipeline orchestration + CLI | Pending |
+
+**New Modules:**
+- `src/harness/optimization/testcases/` - Test case loading and validation
+- `src/harness/optimization/runners/` - Agent execution with tracing
+- `src/harness/optimization/optimizers/` - DSPy and TextGrad wrappers
+- `src/harness/optimization/pipeline/` - End-to-end orchestration
+- `src/harness/optimization/cli/` - CLI entry points
+
+**CLI Usage (Target):**
+```bash
+python -m harness.optimization.cli.optimize \
+    --agent python-expert \
+    --test-suite tests/optimization/python_expert_tests.yaml \
+    --optimizer dspy
+```
 
 ---
 

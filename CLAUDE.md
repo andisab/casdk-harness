@@ -19,6 +19,15 @@ Technical reference for developers working on this repository and for Claude's o
 - Plugin system with agents, skills, commands, and hooks
 - 18 subagents (14 harness + 4 plugin) via direct invocation
 - 12 skills via Skill tool (6 base + 6 plugin)
+- CGF Phase 0 infrastructure (tracer, store, adapters, rewards) - 404 tests
+
+### In Progress
+- **CGF Phase 1: Single-Agent Optimization Validation**
+  - [ ] 1A: Test case infrastructure (YAML loader, validators)
+  - [ ] 1B: Agent runner with tracing
+  - [ ] 1C: DSPy MIPROv2 integration
+  - [ ] 1D: TextGrad TGD integration
+  - [ ] 1E: Pipeline orchestration + CLI
 
 ### Known Limitations
 - **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead
