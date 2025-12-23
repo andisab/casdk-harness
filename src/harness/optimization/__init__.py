@@ -108,6 +108,43 @@ from harness.optimization.rewards import (
     create_reward,
 )
 
+# Re-export test case components
+from harness.optimization.testcases import (
+    SuiteResult,
+    TestCase,
+    TestResult,
+    TestSuite,
+    TestSuiteLoader,
+    ValidationConfig,
+    ValidationType,
+)
+
+# Re-export runner components
+from harness.optimization.runners import (
+    AgentRunner,
+    BaseRunner,
+    BatchRunner,
+    RunContext,
+    RunnerConfig,
+    RunnerProtocol,
+)
+
+# Re-export optimizer components
+from harness.optimization.optimizers import (
+    DSPY_AVAILABLE,
+    BaseOptimizer,
+    DSPyAgentOptimizer,
+    IterationResult,
+    OptimizationConfig,
+    OptimizationResult,
+    OptimizerProtocol,
+    OptimizerType,
+    PromptCandidate,
+    get_dspy_optimizer,
+    suite_average_score,
+    validation_score_metric,
+)
+
 __all__ = [
     # Store Factory
     "get_store",
@@ -159,4 +196,33 @@ __all__ = [
     "aggregate_rewards",
     "compare_rewards",
     "create_reward",
+    # Test Cases
+    "TestCase",
+    "TestSuite",
+    "TestResult",
+    "SuiteResult",
+    "ValidationConfig",
+    "ValidationType",
+    "TestSuiteLoader",
+    # Runners
+    "RunnerProtocol",
+    "BaseRunner",
+    "RunnerConfig",
+    "RunContext",
+    "AgentRunner",
+    "BatchRunner",
+    # Optimizers
+    "OptimizerProtocol",
+    "OptimizerType",
+    "BaseOptimizer",
+    "OptimizationConfig",
+    "OptimizationResult",
+    "IterationResult",
+    "PromptCandidate",
+    "DSPyAgentOptimizer",
+    "get_dspy_optimizer",
+    "DSPY_AVAILABLE",
+    # Metrics
+    "validation_score_metric",
+    "suite_average_score",
 ]
