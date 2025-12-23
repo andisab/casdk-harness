@@ -6,7 +6,7 @@ through execution tracing, evaluation, and reward-based feedback.
 Core Components:
     - Store: Persistent storage for spans, resources, evaluations, and results
     - Resources: Wrapper types for optimizable resources
-    - Adapters: Transform execution spans into structured feedback (Phase 0.4)
+    - Adapters: Transform execution spans into structured feedback
     - Rewards: Multi-dimensional scoring system (Phase 0.5)
 
 Quick Start:
@@ -27,6 +27,16 @@ Quick Start:
 
     # Store results
     store.store_result(eval_id, "my-agent", {"accuracy": 0.9})
+
+Adapters:
+    from harness.optimization import get_adapter, AgentFeedback
+
+    # Transform spans to feedback
+    adapter = get_adapter("agent")
+    feedback = adapter.adapt(spans)
+
+    # Get reward dimensions
+    reward = feedback.to_reward()
 """
 
 from __future__ import annotations
@@ -57,6 +67,25 @@ from harness.optimization.resources import (
     ValidationError,
 )
 
+# Re-export adapter components
+from harness.optimization.adapters import (
+    AdapterProtocol,
+    AdapterRegistry,
+    AgentAdapter,
+    AgentFeedback,
+    BaseFeedback,
+    CommandAdapter,
+    CommandFeedback,
+    PromptAdapter,
+    PromptFeedback,
+    SkillAdapter,
+    SkillFeedback,
+    TrainingTriplet,
+    TripletAdapter,
+    get_adapter,
+    get_default_registry,
+)
+
 __all__ = [
     # Store Factory
     "get_store",
@@ -82,4 +111,23 @@ __all__ = [
     "ValidationError",
     # Resource Registry
     "ResourceRegistry",
+    # Adapter Protocol & Registry
+    "AdapterProtocol",
+    "AdapterRegistry",
+    "get_adapter",
+    "get_default_registry",
+    # Adapters
+    "AgentAdapter",
+    "SkillAdapter",
+    "PromptAdapter",
+    "CommandAdapter",
+    "TripletAdapter",
+    # Feedback Types
+    "BaseFeedback",
+    "AgentFeedback",
+    "SkillFeedback",
+    "PromptFeedback",
+    "CommandFeedback",
+    # Training Data
+    "TrainingTriplet",
 ]
