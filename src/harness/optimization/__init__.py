@@ -7,7 +7,7 @@ Core Components:
     - Store: Persistent storage for spans, resources, evaluations, and results
     - Resources: Wrapper types for optimizable resources
     - Adapters: Transform execution spans into structured feedback
-    - Rewards: Multi-dimensional scoring system (Phase 0.5)
+    - Rewards: Multi-dimensional scoring system for optimization
 
 Quick Start:
     from harness.optimization import get_store, ResourceRegistry
@@ -36,7 +36,19 @@ Adapters:
     feedback = adapter.adapt(spans)
 
     # Get reward dimensions
-    reward = feedback.to_reward()
+    reward_dict = feedback.to_reward()
+
+Rewards:
+    from harness.optimization import ResourceReward, create_reward
+
+    # Create reward from feedback
+    reward = ResourceReward.from_feedback(feedback)
+
+    # Compute composite score
+    score = reward.composite()
+
+    # Compare rewards
+    improvement = new_reward.improvement_over(baseline)
 """
 
 from __future__ import annotations
@@ -86,6 +98,16 @@ from harness.optimization.adapters import (
     get_default_registry,
 )
 
+# Re-export reward components
+from harness.optimization.rewards import (
+    DEFAULT_WEIGHTS,
+    WEIGHT_PRESETS,
+    ResourceReward,
+    aggregate_rewards,
+    compare_rewards,
+    create_reward,
+)
+
 __all__ = [
     # Store Factory
     "get_store",
@@ -130,4 +152,11 @@ __all__ = [
     "CommandFeedback",
     # Training Data
     "TrainingTriplet",
+    # Reward System
+    "ResourceReward",
+    "DEFAULT_WEIGHTS",
+    "WEIGHT_PRESETS",
+    "aggregate_rewards",
+    "compare_rewards",
+    "create_reward",
 ]
