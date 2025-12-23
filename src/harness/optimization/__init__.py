@@ -148,6 +148,15 @@ from harness.optimization.optimizers import (
     validation_score_metric,
 )
 
+# Re-export pipeline components
+from harness.optimization.pipeline import (
+    OptimizationRun,
+    OutputFormat,
+    PipelineConfig,
+    RunPhase,
+    RunStatus,
+)
+
 __all__ = [
     # Store Factory
     "get_store",
@@ -231,4 +240,10 @@ __all__ = [
     # Metrics
     "validation_score_metric",
     "suite_average_score",
+    # Pipeline
+    "PipelineConfig",
+    "OutputFormat",
+    "OptimizationRun",
+    "RunPhase",
+    "RunStatus",
 ]

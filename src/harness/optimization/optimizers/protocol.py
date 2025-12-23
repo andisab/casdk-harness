@@ -135,6 +135,7 @@ class OptimizationResult:
         agent_name: Name of the optimized agent.
         suite_name: Name of the test suite used.
         error: Error message if optimization failed.
+        metadata: Additional metadata about the optimization.
         timestamp: When optimization completed.
     """
 
@@ -152,6 +153,7 @@ class OptimizationResult:
     agent_name: str
     suite_name: str
     error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
 
     def to_dict(self) -> dict[str, Any]:
@@ -169,6 +171,7 @@ class OptimizationResult:
             "agent_name": self.agent_name,
             "suite_name": self.suite_name,
             "error": self.error,
+            "metadata": self.metadata,
             "timestamp": self.timestamp.isoformat(),
             "config": {
                 "max_iterations": self.config.max_iterations,
