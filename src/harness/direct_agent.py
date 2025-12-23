@@ -366,6 +366,7 @@ async def call_agent(
     cwd: str = "/workspace",
     verbose: bool | None = None,
     on_progress: Callable[[str], None] | None = None,
+    system_prompt_override: str | None = None,
     **extra_options: Any,
 ) -> AsyncIterator[Union[UserMessage, AssistantMessage, SystemMessage, ResultMessage, StreamEvent]]:
     """Call an agent directly, bypassing the Task tool.
@@ -381,6 +382,8 @@ async def call_agent(
         verbose: Print progress updates to stderr. None=inherit from
                  CLAUDE_AGENT_VERBOSE env var (defaults to True if unset)
         on_progress: Optional callback for progress updates
+        system_prompt_override: Optional system prompt to use instead of the
+                               agent's default. Used for prompt optimization.
         **extra_options: Additional ClaudeAgentOptions parameters
 
     Yields:
@@ -402,6 +405,14 @@ async def call_agent(
         ... ):
         ...     if isinstance(message, AssistantMessage):
         ...         print(message.content)
+
+        >>> # With custom system prompt for optimization
+        >>> async for message in call_agent(
+        ...     "python-expert",
+        ...     "Write a sort function",
+        ...     system_prompt_override="You are a Python expert. Always use type hints."
+        ... ):
+        ...     pass
     """
     agent_info = get_agent_info(agent_name)
     max_turns = agent_info.get("max_turns", 100)
@@ -426,8 +437,11 @@ async def call_agent(
     )
 
     # Build options
+    # Use override prompt if provided, otherwise use agent's default
+    effective_prompt = system_prompt_override if system_prompt_override else agent_info["prompt"]
+
     options_dict: dict[str, Any] = {
-        "system_prompt": agent_info["prompt"],
+        "system_prompt": effective_prompt,
         "model": agent_info["model"],
         "allowed_tools": agent_info["tools"] if agent_info["tools"] else None,
         "permission_mode": permission_mode,
@@ -489,6 +503,7 @@ async def call_agent_simple(
     agent_name: str,
     prompt: str,
     verbose: bool | None = None,
+    system_prompt_override: str | None = None,
     **kwargs: Any,
 ) -> str:
     """Call an agent and return just the text response.
@@ -500,6 +515,7 @@ async def call_agent_simple(
         agent_name: Name of the agent to invoke
         prompt: The prompt to send to the agent
         verbose: Print progress to stderr. None=inherit from CLAUDE_AGENT_VERBOSE
+        system_prompt_override: Optional system prompt to use instead of default.
         **kwargs: Additional options passed to call_agent()
 
     Returns:
@@ -515,10 +531,23 @@ async def call_agent_simple(
         ...     "Research quantum computing",
         ...     verbose=True
         ... )
+
+        >>> # With custom system prompt for optimization
+        >>> response = await call_agent_simple(
+        ...     "python-expert",
+        ...     "Write a sort function",
+        ...     system_prompt_override="You are a Python expert. Always use type hints."
+        ... )
     """
     responses: list[str] = []
 
-    async for message in call_agent(agent_name, prompt, verbose=verbose, **kwargs):
+    async for message in call_agent(
+        agent_name,
+        prompt,
+        verbose=verbose,
+        system_prompt_override=system_prompt_override,
+        **kwargs,
+    ):
         if isinstance(message, AssistantMessage) and hasattr(message, "content"):
             content = message.content
             if isinstance(content, str):
