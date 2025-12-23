@@ -132,6 +132,7 @@ from harness.optimization.runners import (
 # Re-export optimizer components
 from harness.optimization.optimizers import (
     DSPY_AVAILABLE,
+    TEXTGRAD_AVAILABLE,
     BaseOptimizer,
     DSPyAgentOptimizer,
     IterationResult,
@@ -140,7 +141,9 @@ from harness.optimization.optimizers import (
     OptimizerProtocol,
     OptimizerType,
     PromptCandidate,
+    TextGradAgentOptimizer,
     get_dspy_optimizer,
+    get_textgrad_optimizer,
     suite_average_score,
     validation_score_metric,
 )
@@ -222,6 +225,9 @@ __all__ = [
     "DSPyAgentOptimizer",
     "get_dspy_optimizer",
     "DSPY_AVAILABLE",
+    "TextGradAgentOptimizer",
+    "get_textgrad_optimizer",
+    "TEXTGRAD_AVAILABLE",
     # Metrics
     "validation_score_metric",
     "suite_average_score",

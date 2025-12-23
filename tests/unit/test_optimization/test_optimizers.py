@@ -10,6 +10,7 @@ import pytest
 
 from harness.optimization.optimizers import (
     DSPY_AVAILABLE,
+    TEXTGRAD_AVAILABLE,
     BaseOptimizer,
     IterationResult,
     OptimizationConfig,
@@ -603,3 +604,178 @@ class TestOptimizerProtocol:
         assert hasattr(optimizer, "evaluate")
         assert callable(optimizer.optimize)
         assert callable(optimizer.evaluate)
+
+    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
+    def test_textgrad_optimizer_implements_protocol(self) -> None:
+        """Verify TextGradAgentOptimizer implements OptimizerProtocol."""
+        from harness.optimization.optimizers import TextGradAgentOptimizer
+
+        optimizer = TextGradAgentOptimizer()
+
+        # Check required methods exist
+        assert hasattr(optimizer, "optimize")
+        assert hasattr(optimizer, "evaluate")
+        assert callable(optimizer.optimize)
+        assert callable(optimizer.evaluate)
+
+
+class TestTextGradOptimizerImport:
+    """Tests for TextGrad optimizer availability."""
+
+    def test_textgrad_available_flag(self) -> None:
+        """Test TEXTGRAD_AVAILABLE flag is set."""
+        # This test just verifies the flag exists
+        assert isinstance(TEXTGRAD_AVAILABLE, bool)
+
+    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
+    def test_textgrad_optimizer_import(self) -> None:
+        """Test TextGrad optimizer can be imported when available."""
+        from harness.optimization.optimizers import TextGradAgentOptimizer
+
+        assert TextGradAgentOptimizer is not None
+
+
+class TestTextGradOptimizerWithMock:
+    """Tests for TextGradAgentOptimizer with mocked TextGrad."""
+
+    @pytest.fixture
+    def test_suite(self) -> TestSuite:
+        """Create a test suite for optimization."""
+        return TestSuite(
+            name="test-optimization-suite",
+            agent_name="python-expert",
+            test_cases=[
+                TestCase(
+                    id="test-1",
+                    prompt="Write a function",
+                    expected_behavior="Function code",
+                    validation=ValidationConfig(
+                        type=ValidationType.CONTAINS,
+                        criteria="def ",
+                    ),
+                ),
+            ],
+        )
+
+    @pytest.fixture
+    def mock_agent_resource(self) -> MagicMock:
+        """Create a mock agent resource."""
+        resource = MagicMock()
+        resource.name = "python-expert"
+        resource.system_prompt = "You are a Python expert."
+        return resource
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
+    async def test_optimizer_evaluate(
+        self,
+        test_suite: TestSuite,
+    ) -> None:
+        """Test optimizer evaluate method."""
+        from harness.optimization.optimizers import TextGradAgentOptimizer
+
+        optimizer = TextGradAgentOptimizer()
+
+        with patch(
+            "harness.direct_agent.call_agent_simple",
+            new_callable=AsyncMock,
+            return_value="def my_function(): pass",
+        ):
+            score, result = await optimizer.evaluate(
+                "Test prompt",
+                test_suite,
+            )
+
+        assert score > 0.0
+        assert isinstance(result, SuiteResult)
+
+    @pytest.mark.asyncio
+    async def test_optimizer_not_available(
+        self,
+        mock_agent_resource: MagicMock,
+        test_suite: TestSuite,
+    ) -> None:
+        """Test optimizer returns error when TextGrad not available."""
+        # Force TEXTGRAD_AVAILABLE to False for this test
+        with patch(
+            "harness.optimization.optimizers.textgrad_optimizer.TEXTGRAD_AVAILABLE",
+            False,
+        ):
+            from harness.optimization.optimizers.textgrad_optimizer import (
+                TextGradAgentOptimizer,
+            )
+
+            optimizer = TextGradAgentOptimizer()
+            result = await optimizer.optimize(mock_agent_resource, test_suite)
+
+            assert result.success is False
+            assert "TextGrad not installed" in result.error
+
+    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
+    def test_textgrad_loss_text_creation(self) -> None:
+        """Test loss text generation for TextGrad backward pass."""
+        from harness.optimization.optimizers.textgrad_optimizer import (
+            TextGradAgentOptimizer,
+        )
+
+        optimizer = TextGradAgentOptimizer()
+
+        # Create a sample suite result with failures
+        suite_result = SuiteResult(
+            suite_name="test-suite",
+            agent_name="test-agent",
+            results=[
+                TestResult(
+                    test_case_id="test-1",
+                    agent_name="test-agent",
+                    success=True,
+                    score=0.9,
+                    output="Good output",
+                    trace_id="trace-1",
+                    execution_time_ms=100.0,
+                ),
+                TestResult(
+                    test_case_id="test-2",
+                    agent_name="test-agent",
+                    success=False,
+                    score=0.3,
+                    output="Bad output",
+                    trace_id="trace-2",
+                    execution_time_ms=100.0,
+                    error="Validation failed",
+                ),
+            ],
+        )
+
+        test_suite = TestSuite(
+            name="test-suite",
+            agent_name="test-agent",
+            test_cases=[
+                TestCase(
+                    id="test-1",
+                    prompt="Write code",
+                    expected_behavior="Working code",
+                    validation=ValidationConfig(
+                        type=ValidationType.CONTAINS,
+                        criteria="def",
+                    ),
+                ),
+                TestCase(
+                    id="test-2",
+                    prompt="Write async code",
+                    expected_behavior="Working async code",
+                    validation=ValidationConfig(
+                        type=ValidationType.CONTAINS,
+                        criteria="async def",
+                    ),
+                ),
+            ],
+        )
+
+        loss_text = optimizer._create_loss_text(suite_result, test_suite)
+
+        # Verify loss text contains failure information
+        assert "1 passed" in loss_text
+        assert "1 failed" in loss_text
+        assert "test-2" in loss_text
+        assert "Improve the system prompt" in loss_text

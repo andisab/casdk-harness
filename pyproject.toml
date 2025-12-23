@@ -105,7 +105,7 @@ cgf = [
     # DSPy for prompt optimization (Phase 1C)
     "dspy-ai>=2.5.0",
     # TextGrad for textual gradients (Phase 1D)
-    # "textgrad>=0.1.6",  # Uncomment when implementing Phase 1D
+    "textgrad>=0.1.6",
 ]
 
 [project.scripts]

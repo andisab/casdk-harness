@@ -77,6 +77,19 @@ except ImportError:
     get_dspy_optimizer = None  # type: ignore
     DSPY_AVAILABLE = False
 
+# Import TextGrad optimizer (may fail if textgrad not installed)
+try:
+    from harness.optimization.optimizers.textgrad_optimizer import (
+        TextGradAgentOptimizer,
+        get_textgrad_optimizer,
+    )
+
+    TEXTGRAD_AVAILABLE = True
+except ImportError:
+    TextGradAgentOptimizer = None  # type: ignore
+    get_textgrad_optimizer = None  # type: ignore
+    TEXTGRAD_AVAILABLE = False
+
 __all__ = [
     # Protocol and base types
     "OptimizerProtocol",
@@ -91,6 +104,10 @@ __all__ = [
     "DSPyAgentModule",
     "get_dspy_optimizer",
     "DSPY_AVAILABLE",
+    # TextGrad optimizer
+    "TextGradAgentOptimizer",
+    "get_textgrad_optimizer",
+    "TEXTGRAD_AVAILABLE",
     # Metrics
     "MetricFunction",
     "MetricRegistry",
