@@ -60,7 +60,7 @@ from harness.tracer.context import (
     extract_context,
     inject_context,
 )
-from harness.tracer.exporters import FileSpanExporter, RedisSpanExporter
+from harness.tracer.exporters import FileSpanExporter, RedisSpanExporter, StoreSpanExporter
 from harness.tracer.instrumentation import (
     TracedClass,
     get_global_tracer,
@@ -104,6 +104,7 @@ __all__ = [
     # Exporters
     "FileSpanExporter",
     "RedisSpanExporter",
+    "StoreSpanExporter",
     # Factory function
     "get_tracer",
     # Utilities
@@ -186,17 +187,22 @@ def _auto_configure_exporters(tracer: OTelTracer) -> None:
 
         config = get_config()
 
-        exporter_type = getattr(config, "cgf_tracing_exporter", "file")
+        # Use new field name with fallback to old name for compatibility
+        exporter_type = getattr(
+            config, "cgf_exporter", getattr(config, "cgf_tracing_exporter", "memory")
+        )
         retention_days = getattr(config, "cgf_span_retention_days", 7)
 
         if exporter_type in ("file", "both"):
-            # Configure file exporter
-            import os
-            from pathlib import Path
+            # Configure file exporter using config path or default
+            file_export_path = getattr(config, "cgf_file_export_path", None)
+            if file_export_path is None:
+                import os
+                from pathlib import Path
 
-            log_dir = Path(os.environ.get("LOG_DIR", "/logs"))
-            span_file = log_dir / "spans.jsonl"
+                file_export_path = Path(os.environ.get("LOG_DIR", "/logs")) / "spans"
 
+            span_file = file_export_path / "spans.jsonl"
             file_exporter = FileSpanExporter(
                 file_path=span_file,
                 max_file_size_mb=10.0,
@@ -213,6 +219,18 @@ def _auto_configure_exporters(tracer: OTelTracer) -> None:
                     ttl_seconds=retention_days * 24 * 3600,
                 )
                 tracer.add_exporter(redis_exporter)
+
+        if exporter_type == "memory":
+            # Configure store exporter for memory backend
+            # This exports spans directly to the optimization store
+            try:
+                from harness.tracer.exporters import StoreSpanExporter
+
+                store_exporter = StoreSpanExporter()
+                tracer.add_exporter(store_exporter)
+            except ImportError:
+                # StoreSpanExporter not yet implemented - will be added in Phase 0.6
+                pass
 
     except Exception as e:
         import structlog

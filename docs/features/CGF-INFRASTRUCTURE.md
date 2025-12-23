@@ -1,9 +1,39 @@
 # CGF Infrastructure Specification
 
-> **Version**: 1.0.0
-> **Status**: In Progress
+> **Version**: 1.1.0
+> **Status**: ✅ Complete (Phase 0.1-0.6)
 > **Related**: [CONTEXT-GRAD-SPEC.md](./CONTEXT-GRAD-SPEC.md) | [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md)
 > **Origin**: Patterns adopted from agent-lightning framework research
+
+---
+
+## Implementation Status
+
+| Phase | Description | Status | Tests |
+|-------|-------------|--------|-------|
+| **0.1** | OpenTelemetry Tracing | ✅ Complete | 97 tests |
+| **0.2** | Optimization Store | ✅ Complete | 89 tests |
+| **0.3** | Resource Registry | ✅ Complete | 65 tests |
+| **0.4** | Adapter Framework | ✅ Complete | 87 tests |
+| **0.5** | Reward System | ✅ Complete | 50 tests |
+| **0.6** | Integration | ✅ Complete | 16 tests |
+
+**Total**: 404 tests passing
+
+### Phase 0.6 Integration Summary
+
+Phase 0.6 validates the full CGF pipeline end-to-end:
+
+```
+AgentSession.execute() → tracer → StoreSpanExporter → OptimizationStore → adapters → rewards
+```
+
+**Key Components Added**:
+- `StoreSpanExporter` - Bridges tracer to OptimizationStore
+- CGF configuration in `config.py` (`cgf_enabled`, `cgf_exporter`, etc.)
+- Tracer initialization in `AgentSession`
+- CGF Prometheus metrics in `monitoring.py`
+- Integration tests in `tests/integration/test_cgf_pipeline.py`
 
 ---
 
@@ -117,15 +147,16 @@ Reward System (0.5)
 
 ```
 src/harness/tracer/
-├── __init__.py           # Public API
-├── base.py               # TracerProtocol, Span dataclasses
+├── __init__.py           # Public API: get_tracer(), SpanKind, Span
+├── base.py               # TracerProtocol, Span, SpanKind, SpanStatus
 ├── otel_tracer.py        # OpenTelemetry implementation
 ├── context.py            # Trace context propagation
 ├── instrumentation.py    # SDK client auto-instrumentation
 └── exporters/
     ├── __init__.py
+    ├── file.py           # Export to JSON files (debugging)
     ├── redis.py          # Export to Redis store
-    └── file.py           # Export to JSON files (debugging)
+    └── store.py          # Export to OptimizationStore (Phase 0.6)
 ```
 
 ### 2.2 Span Schema
@@ -1053,5 +1084,6 @@ async def test_full_optimization_cycle():
 
 ---
 
-**Last Updated**: December 2025
+**Last Updated**: December 23, 2025
 **Maintainer**: Andis A. Blukis
+**Phase 0 Complete**: All infrastructure components implemented and tested

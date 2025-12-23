@@ -253,9 +253,14 @@ class HarnessConfig(BaseSettings):
         default=True,
         description="Enable span tracing when CGF is enabled",
     )
-    cgf_tracing_exporter: Literal["file", "redis", "both"] = Field(
-        default="file",
-        description="Span exporter backend: file (debugging), redis (production), both",
+    cgf_exporter: Literal["memory", "redis", "file", "both"] = Field(
+        default="memory",
+        description=(
+            "Span exporter: memory (testing, exports to memory store), "
+            "redis (production, exports to Redis store), "
+            "file (debugging, exports to JSON file), "
+            "both (redis + file for production with debugging)"
+        ),
     )
     cgf_span_retention_days: int = Field(
         default=7,
@@ -264,6 +269,10 @@ class HarnessConfig(BaseSettings):
     cgf_span_buffer_size: int = Field(
         default=0,
         description="Number of spans to buffer before flushing (0 = immediate write)",
+    )
+    cgf_file_export_path: Path = Field(
+        default=Path("/logs/spans"),
+        description="Directory path for file span exports (when exporter=file or both)",
     )
 
     @property
@@ -293,15 +302,31 @@ class HarnessConfig(BaseSettings):
         """Get context directory path."""
         return self.memory_dir / "context"
 
+    @property
+    def cgf_store_backend(self) -> str:
+        """Determine store backend from exporter setting.
+
+        Returns:
+            "redis" if exporter is redis or both, otherwise "memory".
+        """
+        if self.cgf_exporter in ("redis", "both"):
+            return "redis"
+        return "memory"
+
     def ensure_directories(self) -> None:
         """Create necessary directories if they don't exist."""
-        for directory in [
+        directories = [
             self.workspace_dir,
             self.memory_dir,
             self.logs_dir,
             self.checkpoint_dir,
             self.context_dir,
-        ]:
+        ]
+        # Add CGF file export directory if CGF is enabled with file export
+        if self.cgf_enabled and self.cgf_exporter in ("file", "both"):
+            directories.append(self.cgf_file_export_path)
+
+        for directory in directories:
             directory.mkdir(parents=True, exist_ok=True)
 
 
