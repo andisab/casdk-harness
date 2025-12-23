@@ -34,20 +34,21 @@ User Objective → Context Engineering → Resource Generation → CGF Optimizat
                  context_spec.json    agents/skills/commands    optimized resources
 ```
 
-### Phase 1: Single-Agent Optimization Validation
+### Phase 1: Single-Agent Optimization Validation ✅
 
-Before implementing multi-agent orchestration (Plans A & B), Phase 1 validates the optimization loop works end-to-end on a single agent:
+Phase 1 validates the optimization loop works end-to-end on a single agent before implementing multi-agent orchestration (Plans A & B):
 
-| Sub-Phase | Description |
-|-----------|-------------|
-| 1A | Test case infrastructure - YAML-based test suites with validation |
-| 1B | Agent runner - Execute agent with full tracing |
-| 1C | DSPy integration - MIPROv2 prompt optimization |
-| 1D | TextGrad integration - Textual gradient refinement |
-| 1E | Pipeline CLI - `python -m harness.optimization.cli.optimize` |
+| Sub-Phase | Description | Status |
+|-----------|-------------|--------|
+| 1A | Test case infrastructure - YAML-based test suites with validation | ✅ Complete |
+| 1B | Agent runner - Execute agent with full tracing | ✅ Complete |
+| 1C | DSPy integration - MIPROv2 prompt optimization | ✅ Complete |
+| 1D | TextGrad integration - Textual gradient refinement | ✅ Complete |
+| 1E | Pipeline CLI - `python -m harness.optimization.cli.optimize` | ✅ Complete |
 
+**Total Tests**: 398 optimization tests passing
 **Target Agent**: `python-expert`
-**Success Criteria**: Run optimization end-to-end with measurable improvement metric.
+**Success Criteria**: Run optimization end-to-end with measurable improvement metric ✅
 
 ---
 
@@ -57,7 +58,7 @@ Detailed specifications for each major capability:
 
 | Feature | Specification | Status | Description |
 |---------|---------------|--------|-------------|
-| **CGF Infrastructure** | [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md) | **Phase 0 ✅, Phase 1 🚧** | Tracing, store, adapters, rewards (Phase 0) + Single-agent optimization (Phase 1) |
+| **CGF Infrastructure** | [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md) | **Phase 0 ✅, Phase 1 ✅** | Tracing, store, adapters, rewards (Phase 0) + Single-agent optimization (Phase 1) |
 | Context Engineering Workflow | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Refined | 4-stage workflow for resource generation |
 | ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | DSPy + TextGrad optimization system |
 | CGF Implementation Guide | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | Design Complete | Detailed implementation patterns |

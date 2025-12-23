@@ -1,7 +1,7 @@
 # CGF Infrastructure Specification
 
-> **Version**: 1.2.0
-> **Status**: 🚧 Phase 1 In Progress (Phase 0 Complete)
+> **Version**: 1.3.0
+> **Status**: ✅ Phase 1 Complete
 > **Related**: [CONTEXT-GRAD-SPEC.md](./CONTEXT-GRAD-SPEC.md) | [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md)
 > **Origin**: Patterns adopted from agent-lightning framework research
 
@@ -17,9 +17,9 @@
 | **0.4** | Adapter Framework | ✅ Complete | 87 tests |
 | **0.5** | Reward System | ✅ Complete | 50 tests |
 | **0.6** | Integration | ✅ Complete | 16 tests |
-| **1.0** | Single-Agent Optimization Validation | 🚧 In Progress | - |
+| **1.0** | Single-Agent Optimization Validation | ✅ Complete | 398 tests |
 
-**Phase 0 Total**: 404 tests passing
+**Phase 0 Total**: 404 tests | **Phase 1 Total**: 398 tests
 
 ### Phase 0.6 Integration Summary
 
@@ -38,16 +38,16 @@ AgentSession.execute() → tracer → StoreSpanExporter → OptimizationStore �
 
 ### Phase 1: Single-Agent Optimization Validation
 
-**Status**: 🚧 In Progress
+**Status**: ✅ Complete
 **Goal**: Validate end-to-end optimization on single agent before multi-agent orchestration
 
-| Sub-Phase | Description | Status |
-|-----------|-------------|--------|
-| 1A | Test case infrastructure | Pending |
-| 1B | Agent runner with tracing | Pending |
-| 1C | DSPy MIPROv2 integration | Pending |
-| 1D | TextGrad TGD integration | Pending |
-| 1E | Pipeline orchestration + CLI | Pending |
+| Sub-Phase | Description | Status | Tests |
+|-----------|-------------|--------|-------|
+| 1A | Test case infrastructure | ✅ Complete | 45 tests |
+| 1B | Agent runner with tracing | ✅ Complete | 20 tests |
+| 1C | DSPy MIPROv2 integration | ✅ Complete | 37 tests |
+| 1D | TextGrad TGD integration | ✅ Complete | 6 tests |
+| 1E | Pipeline orchestration + CLI | ✅ Complete | 22 tests |
 
 **New Modules:**
 - `src/harness/optimization/testcases/` - Test case loading and validation
@@ -56,12 +56,23 @@ AgentSession.execute() → tracer → StoreSpanExporter → OptimizationStore �
 - `src/harness/optimization/pipeline/` - End-to-end orchestration
 - `src/harness/optimization/cli/` - CLI entry points
 
-**CLI Usage (Target):**
+**CLI Usage:**
 ```bash
+# Basic optimization with DSPy
 python -m harness.optimization.cli.optimize \
-    --agent python-expert \
+    --agent agents/configs/python-expert.md \
     --test-suite tests/optimization/python_expert_tests.yaml \
     --optimizer dspy
+
+# TextGrad with custom settings
+python -m harness.optimization.cli.optimize \
+    --agent agents/configs/python-expert.md \
+    --test-suite tests/optimization/python_expert_tests.yaml \
+    --optimizer textgrad \
+    --iterations 20
+
+# Check optimizer availability
+python -m harness.optimization.cli.optimize --check-availability
 ```
 
 ---
