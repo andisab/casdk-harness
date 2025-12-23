@@ -5,17 +5,21 @@ through execution tracing, evaluation, and reward-based feedback.
 
 Core Components:
     - Store: Persistent storage for spans, resources, evaluations, and results
-    - Resources: Wrapper types for optimizable resources (Phase 0.3)
+    - Resources: Wrapper types for optimizable resources
     - Adapters: Transform execution spans into structured feedback (Phase 0.4)
     - Rewards: Multi-dimensional scoring system (Phase 0.5)
 
 Quick Start:
-    from harness.optimization import get_store
+    from harness.optimization import get_store, ResourceRegistry
 
     # Get configured store
     store = get_store()
 
-    # Register a resource
+    # Discover all resources
+    registry = ResourceRegistry.discover()
+    agents = registry.list_agents()
+
+    # Register a resource in the store
     version = store.register_resource("my-agent", "agent", content)
 
     # Queue for evaluation
@@ -42,15 +46,26 @@ from harness.optimization.store import (
     reset_store,
 )
 
+# Re-export resource components
+from harness.optimization.resources import (
+    AgentResource,
+    CommandResource,
+    PromptResource,
+    ResourceProtocol,
+    ResourceRegistry,
+    SkillResource,
+    ValidationError,
+)
+
 __all__ = [
-    # Factory
+    # Store Factory
     "get_store",
     "reset_store",
-    # Protocol
+    # Store Protocol
     "OptimizationStore",
-    # Implementations
+    # Store Implementations
     "MemoryOptimizationStore",
-    # Models
+    # Store Models
     "EvaluationTask",
     "EvaluationResult",
     "EvaluationStatus",
@@ -58,4 +73,13 @@ __all__ = [
     "ResourceVersion",
     "ResourceType",
     "StoreMetrics",
+    # Resource Types
+    "ResourceProtocol",
+    "AgentResource",
+    "SkillResource",
+    "PromptResource",
+    "CommandResource",
+    "ValidationError",
+    # Resource Registry
+    "ResourceRegistry",
 ]
