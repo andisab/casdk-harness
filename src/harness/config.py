@@ -244,6 +244,28 @@ class HarnessConfig(BaseSettings):
         description="Override context window size (useful for testing)",
     )
 
+    # CGF (ContextGrad Framework) Configuration
+    cgf_enabled: bool = Field(
+        default=False,
+        description="Enable CGF infrastructure (tracing, optimization store, rewards)",
+    )
+    cgf_tracing_enabled: bool = Field(
+        default=True,
+        description="Enable span tracing when CGF is enabled",
+    )
+    cgf_tracing_exporter: Literal["file", "redis", "both"] = Field(
+        default="file",
+        description="Span exporter backend: file (debugging), redis (production), both",
+    )
+    cgf_span_retention_days: int = Field(
+        default=7,
+        description="Number of days to retain spans in storage",
+    )
+    cgf_span_buffer_size: int = Field(
+        default=0,
+        description="Number of spans to buffer before flushing (0 = immediate write)",
+    )
+
     @property
     def redis_url(self) -> str:
         """Get Redis connection URL."""
