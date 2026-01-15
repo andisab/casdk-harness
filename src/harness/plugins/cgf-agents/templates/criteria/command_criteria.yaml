@@ -1,0 +1,86 @@
+# CGF Command Criteria Template
+# Guides criteria synthesis for command resources (e.g., /cgf, /create-agent)
+
+resource_type: command
+
+# What parts of the command can be optimized
+optimization_focus:
+  - help_text           # Description and usage documentation
+  - argument_handling   # Argument parsing and validation
+  - output_format       # Response structure and formatting
+  - error_messages      # Error handling and user feedback
+
+# Typical competencies for commands
+# Synthesizer should include relevant ones based on research findings
+typical_competencies:
+  argument_handling:
+    - name: "Argument parsing"
+      description: "Correctly parsing positional and named arguments"
+      importance: high
+    - name: "Argument validation"
+      description: "Rejecting invalid arguments with clear errors"
+      importance: high
+    - name: "Default handling"
+      description: "Sensible defaults for optional arguments"
+      importance: medium
+    - name: "Argument combinations"
+      description: "Handling mutually exclusive or dependent args"
+      importance: medium
+
+  documentation:
+    - name: "Help text clarity"
+      description: "Clear, actionable help documentation"
+      importance: high
+    - name: "Usage examples"
+      description: "Practical examples of command usage"
+      importance: medium
+    - name: "Error message clarity"
+      description: "Errors tell user what went wrong and how to fix"
+      importance: high
+
+  execution:
+    - name: "Command execution"
+      description: "Correctly performing the command's action"
+      importance: high
+    - name: "Output formatting"
+      description: "Well-structured, readable output"
+      importance: medium
+    - name: "Error recovery"
+      description: "Graceful handling of failures"
+      importance: medium
+    - name: "Progress feedback"
+      description: "Informing user of long-running operations"
+      importance: low
+
+# Aspects to evaluate when assessing command performance
+evaluation_aspects:
+  - aspect: usability_score
+    description: "How easy is the command to use correctly"
+    weight: high
+  - aspect: error_message_clarity
+    description: "How helpful are error messages"
+    weight: high
+  - aspect: completion_rate
+    description: "Rate of successful command execution"
+    weight: high
+  - aspect: help_effectiveness
+    description: "Can users learn from help alone"
+    weight: medium
+  - aspect: output_quality
+    description: "Quality and usefulness of command output"
+    weight: medium
+
+# Common command failure modes to check
+failure_modes:
+  - mode: "Argument rejection"
+    description: "Valid arguments incorrectly rejected"
+    detection: "Test all documented argument patterns"
+  - mode: "Silent failure"
+    description: "Command fails without clear error"
+    detection: "Test error paths produce clear messages"
+  - mode: "Help confusion"
+    description: "Help text doesn't match actual behavior"
+    detection: "Compare help examples to actual usage"
+  - mode: "Format breakage"
+    description: "Output format varies unexpectedly"
+    detection: "Validate output structure consistency"

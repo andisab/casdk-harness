@@ -112,26 +112,36 @@ When in a checkpoint state:
 
 **Actions:**
 1. Update run_state.json: research_started timestamp
-2. Spawn research-team:lead-research-coordinator via Task tool:
+2. Spawn cgf-agents:cgf-research-lead via Task tool:
    ```
-   "Research {optimization_goal} for optimizing {resource_id}.
-   Scope: DOCS
-   output_mode: cgf
+   "Research {optimization_goal} for optimizing {resource_id} {resource_type}.
 
-   Focus on:
-   1. Key competencies for {goal}
-   2. Best practices and patterns
-   3. Common mistakes to avoid
-   4. Edge cases requiring special handling
+   Resource context:
+   - resource_id: {resource_id}
+   - resource_type: {resource_type}
+   - optimization_goal: {optimization_goal}
 
+   Decompose into competency aspects and spawn parallel researchers.
    Save findings to workspace/{resource_id}/research/notes/"
    ```
-3. Wait for research completion (check for yaml files in research/notes/)
-4. Synthesize eval_criteria.yaml from research findings
-5. Update run_state.json: research_completed, artifacts.eval_criteria
-6. Transition to CHECKPOINT_RESEARCH (if review_mode) or TEST_GEN
+3. Wait for research completion (check for *_findings.yaml files in research/notes/)
+4. Spawn cgf-agents:cgf-criteria-synthesizer via Task tool:
+   ```
+   "Synthesize criteria from workspace/{resource_id}/research/notes/
 
-**Output:** research/notes/*.yaml, research/eval_criteria.yaml
+   Resource context:
+   - resource_id: {resource_id}
+   - resource_type: {resource_type}
+   - optimization_goal: {optimization_goal}
+
+   Merge findings into workspace/{resource_id}/research/eval_criteria.yaml"
+   ```
+5. Wait for eval_criteria.yaml generation
+6. Validate criteria against schema (3-25 competencies required)
+7. Update run_state.json: research_completed, artifacts.eval_criteria
+8. Transition to CHECKPOINT_RESEARCH (if review_mode) or TEST_GEN
+
+**Output:** research/notes/*_findings.yaml, research/eval_criteria.yaml
 
 ### TEST_GEN Phase
 
@@ -398,14 +408,31 @@ workspace/{resource_id}/
 
 Use Task tool with specific subagent types:
 
-**For Research:**
+**For Research (M2):**
 ```
-subagent_type: "research-team:lead-research-coordinator"
-prompt: "Research {goal} for {resource_id}. Scope: DOCS. output_mode: cgf..."
+subagent_type: "cgf-agents:cgf-research-lead"
+prompt: "Research {goal} for optimizing {resource_id} {resource_type}..."
 ```
 
-**For Future Phases (M2-M4):**
-- cgf-agents:cgf-criteria-synthesizer (M2)
+The cgf-research-lead agent will:
+- Decompose goal into 2-4 competency aspects
+- Spawn parallel researchers with CGF output mode
+- Auto-detect scope (DOCS, EXTERNAL, INTERNAL, MIXED)
+- Save findings to research/notes/*_findings.yaml
+
+**For Criteria Synthesis (M2):**
+```
+subagent_type: "cgf-agents:cgf-criteria-synthesizer"
+prompt: "Synthesize criteria from workspace/{resource_id}/research/notes/..."
+```
+
+The cgf-criteria-synthesizer agent will:
+- Read all *_findings.yaml files
+- Merge and deduplicate competencies
+- Produce eval_criteria.yaml (3-25 competencies)
+- Validate against schema
+
+**For Future Phases (M3-M4):**
 - cgf-agents:cgf-test-architect (M3)
 - cgf-agents:cgf-test-validator (M3)
 - cgf-agents:cgf-result-evaluator (M4)

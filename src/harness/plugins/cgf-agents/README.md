@@ -18,6 +18,8 @@ This plugin provides the orchestration layer for the CGF optimization framework.
 | Agent | Purpose |
 |-------|---------|
 | `cgf-orchestrator` | Pipeline coordinator with state machine |
+| `cgf-research-lead` | Competency-focused research coordinator (M2) |
+| `cgf-criteria-synthesizer` | Research findings to eval_criteria.yaml (M2) |
 
 ### Skills
 
@@ -168,13 +170,18 @@ JSON schemas are provided for validation:
 
 ## Development Status
 
-**M1 Implementation (Current)**:
+**M1 Implementation**:
 - Orchestrator agent with state machine
 - Run state management
 - CLI integration
 
+**M2 Implementation (Current)**:
+- cgf-research-lead agent - Competency-focused research coordination
+- cgf-criteria-synthesizer agent - Research-to-criteria transformation
+- Per-resource-type criteria templates (agent, skill, command)
+- Integration with research-team plugin researchers
+
 **Future Milestones**:
-- M2: Research Lead agent (cgf-research-lead)
 - M3: Test Architect agent (cgf-test-architect)
 - M4: Result Evaluator agent (cgf-result-evaluator)
 
@@ -202,6 +209,39 @@ JSON schemas are provided for validation:
 │  ┌──────────┐                                           │
 │  │ reviews/ │                                           │
 │  └──────────┘                                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+### RESEARCH Phase Detail (M2)
+
+```
+cgf-orchestrator
+      │
+      ▼ (spawn)
+┌─────────────────────────────────────────────────────────┐
+│              cgf-research-lead                           │
+│                                                          │
+│  1. Decompose goal into competency aspects               │
+│  2. Auto-detect scope (DOCS/EXTERNAL/INTERNAL/MIXED)    │
+│  3. Spawn 2-4 parallel researchers                       │
+│                                                          │
+│     ┌────────────┐  ┌────────────┐  ┌────────────┐     │
+│     │ researcher │  │ researcher │  │ researcher │     │
+│     │  (aspect1) │  │  (aspect2) │  │  (aspect3) │     │
+│     └─────┬──────┘  └─────┬──────┘  └─────┬──────┘     │
+│           │               │               │             │
+│           ▼               ▼               ▼             │
+│     *_findings.yaml *_findings.yaml *_findings.yaml     │
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼ (spawn)
+┌─────────────────────────────────────────────────────────┐
+│          cgf-criteria-synthesizer                        │
+│                                                          │
+│  1. Read all *_findings.yaml                             │
+│  2. Merge/deduplicate competencies (3-25)               │
+│  3. Aggregate edge cases, mistakes, practices            │
+│  4. Write eval_criteria.yaml                             │
 └─────────────────────────────────────────────────────────┘
 ```
 
