@@ -67,6 +67,12 @@ help: ## Show available targets
 	@echo "  autonomous-status    Show development progress"
 	@echo "  init-spec            Create SPEC.md template"
 	@echo ""
+	@echo "$(YELLOW)CGF Optimization:$(NC)"
+	@echo "  cgf-optimize         Start CGF optimization (RESOURCE=x GOAL=\"y\")"
+	@echo "  cgf-optimize-review  With human review checkpoints"
+	@echo "  cgf-status           Show optimization run status"
+	@echo "  cgf-clean            Remove run state files"
+	@echo ""
 	@echo "$(YELLOW)Testing:$(NC)"
 	@echo "  test                 Run full test suite"
 	@echo "  test-unit            Run unit tests only"
@@ -318,6 +324,73 @@ init-spec: ## Copy SPEC.example.md template to workspace/SPEC.md
 		cp docs/SPEC.example.md workspace/SPEC.md; \
 		echo "$(GREEN)Created workspace/SPEC.md from docs/SPEC.example.md$(NC)"; \
 		echo "Edit workspace/SPEC.md to describe your project, then run: make autonomous"; \
+	fi
+
+# =============================================================================
+# CGF Optimization
+# =============================================================================
+.PHONY: cgf-optimize
+cgf-optimize: ## Start CGF optimization (usage: make cgf-optimize RESOURCE=python-expert GOAL="async programming")
+	@echo "$(GREEN)Starting CGF optimization...$(NC)"
+	@if [ -z "$(RESOURCE)" ]; then \
+		echo "$(RED)Usage: make cgf-optimize RESOURCE=<agent-name> GOAL=\"<optimization goal>\"$(NC)"; \
+		echo "Example: make cgf-optimize RESOURCE=python-expert GOAL=\"async programming\""; \
+		exit 1; \
+	fi
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.direct_agent \
+		--agent cgf-agents:cgf-orchestrator \
+		--prompt "Optimize $(RESOURCE) for $(GOAL)" \
+		--verbose
+
+.PHONY: cgf-optimize-review
+cgf-optimize-review: ## Start CGF optimization with human review checkpoints
+	@echo "$(GREEN)Starting CGF optimization with review checkpoints...$(NC)"
+	@if [ -z "$(RESOURCE)" ]; then \
+		echo "$(RED)Usage: make cgf-optimize-review RESOURCE=<agent-name> GOAL=\"<optimization goal>\"$(NC)"; \
+		exit 1; \
+	fi
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.direct_agent \
+		--agent cgf-agents:cgf-orchestrator \
+		--prompt "Optimize $(RESOURCE) for $(GOAL) --review" \
+		--verbose
+
+.PHONY: cgf-status
+cgf-status: ## Show status of CGF optimization runs
+	@echo "$(GREEN)CGF Optimization Run Status$(NC)"
+	@echo ""
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		for state in workspace/*/run_state.json; do \
+			if [ -f "$$state" ]; then \
+				RESOURCE=$$(dirname "$$state" | xargs basename); \
+				STATE=$$(jq -r ".state // \"UNKNOWN\"" "$$state" 2>/dev/null); \
+				RUN_ID=$$(jq -r ".run_id // \"N/A\"" "$$state" 2>/dev/null); \
+				CREATED=$$(jq -r ".timestamps.created // \"N/A\"" "$$state" 2>/dev/null); \
+				echo "$(YELLOW)$$RESOURCE$(NC) ($$RUN_ID)"; \
+				echo "  State: $$STATE"; \
+				echo "  Created: $$CREATED"; \
+				echo ""; \
+			fi; \
+		done; \
+		if ! ls workspace/*/run_state.json >/dev/null 2>&1; then \
+			echo "No active CGF optimization runs"; \
+			echo "Start one with: make cgf-optimize RESOURCE=python-expert GOAL=\"async programming\""; \
+		fi'
+
+.PHONY: cgf-clean
+cgf-clean: ## Remove CGF run state files (keeps artifacts)
+	@echo "$(YELLOW)Removing CGF run state files...$(NC)"
+	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+		rm -f workspace/*/run_state.json 2>/dev/null; \
+		echo "$(GREEN)CGF run states cleared$(NC)"'
+
+.PHONY: cgf-reset
+cgf-reset: ## Remove all CGF workspaces (destructive)
+	@read -p "$(RED)This will delete all CGF workspace directories. Are you sure? [y/N] $(NC)" -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
+			rm -rf workspace/*/run_state.json workspace/*/run_config.yaml workspace/*/research workspace/*/tests workspace/*/reviews 2>/dev/null; \
+			echo "$(GREEN)CGF workspaces reset$(NC)"'; \
 	fi
 
 # =============================================================================

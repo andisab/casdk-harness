@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CGF Run State",
+  "description": "State persistence schema for CGF optimization runs",
+  "type": "object",
+  "required": ["run_id", "state", "resource", "timestamps"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^cgf-[a-f0-9]{8}$",
+      "description": "Unique run identifier"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "INIT",
+        "RESEARCH",
+        "CHECKPOINT_RESEARCH",
+        "TEST_GEN",
+        "CHECKPOINT_TEST_GEN",
+        "OPTIMIZE",
+        "EVALUATE",
+        "CHECKPOINT_EVALUATE",
+        "FINALIZE",
+        "COMPLETE"
+      ],
+      "description": "Current pipeline state"
+    },
+    "resource": {
+      "type": "object",
+      "required": ["id", "type", "path"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Resource identifier (e.g., agent name)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["agent", "skill", "command", "mcp", "workflow", "spec", "hook", "plugin"],
+          "description": "Type of resource being optimized"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to resource definition file"
+        },
+        "optimization_goal": {
+          "type": "string",
+          "description": "User-specified optimization objective"
+        }
+      }
+    },
+    "strategy": {
+      "type": "string",
+      "enum": ["prompt_optimization", "trigger_optimization", "schema_optimization", "workflow_optimization"],
+      "description": "Optimization strategy based on resource type"
+    },
+    "optimizer": {
+      "type": "string",
+      "enum": ["dspy", "textgrad"],
+      "description": "Optimizer implementation to use"
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "max_iterations": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1
+        },
+        "early_stopping_threshold": {
+          "type": "number",
+          "default": 0.01,
+          "minimum": 0
+        },
+        "learning_rate": {
+          "type": "number",
+          "default": 0.1,
+          "minimum": 0
+        },
+        "num_candidates": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1
+        },
+        "temperature": {
+          "type": "number",
+          "default": 0.7,
+          "minimum": 0,
+          "maximum": 2
+        },
+        "review_mode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable checkpoint pauses for human review"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Paths to generated artifacts",
+      "properties": {
+        "run_config": {"type": "string"},
+        "eval_criteria": {"type": "string"},
+        "test_suite": {"type": "string"},
+        "coverage_report": {"type": "string"},
+        "optimized_resource": {"type": "string"},
+        "summary": {"type": "string"},
+        "review_report": {"type": "string"},
+        "final_report": {"type": "string"}
+      }
+    },
+    "timestamps": {
+      "type": "object",
+      "required": ["created"],
+      "properties": {
+        "created": {"type": "string", "format": "date-time"},
+        "updated": {"type": "string", "format": "date-time"},
+        "research_started": {"type": "string", "format": "date-time"},
+        "research_completed": {"type": "string", "format": "date-time"},
+        "test_gen_started": {"type": "string", "format": "date-time"},
+        "test_gen_completed": {"type": "string", "format": "date-time"},
+        "optimize_started": {"type": "string", "format": "date-time"},
+        "optimize_completed": {"type": "string", "format": "date-time"},
+        "evaluate_started": {"type": "string", "format": "date-time"},
+        "evaluate_completed": {"type": "string", "format": "date-time"},
+        "completed": {"type": "string", "format": "date-time"}
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "description": "History of checkpoint interactions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "state": {"type": "string"},
+          "timestamp": {"type": "string", "format": "date-time"},
+          "user_action": {
+            "type": "string",
+            "enum": ["approved", "edited", "rejected"]
+          },
+          "notes": {"type": "string"}
+        }
+      }
+    },
+    "iterations": {
+      "type": "array",
+      "description": "Optimization iteration history",
+      "items": {
+        "type": "object",
+        "properties": {
+          "iteration": {"type": "integer"},
+          "recommendation": {
+            "type": "string",
+            "enum": ["ACCEPT", "REFINE", "REJECT"]
+          },
+          "refinement_hints": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "scores": {
+            "type": "object",
+            "properties": {
+              "original": {"type": "number"},
+              "optimized": {"type": "number"},
+              "improvement": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "description": "Error information if run failed",
+      "properties": {
+        "message": {"type": "string"},
+        "state_at_error": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "recoverable": {"type": "boolean"}
+      }
+    }
+  }
+}

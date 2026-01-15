@@ -1,0 +1,56 @@
+# CGF Evaluation Criteria Template
+# Synthesized from research findings by cgf-criteria-synthesizer
+
+resource_id: "{resource_id}"
+resource_type: "{resource_type}"
+optimization_goal: "{optimization_goal}"
+
+# Key competencies the resource should demonstrate
+# These become the basis for test case generation
+competencies:
+  - name: "{competency_name}"
+    description: "{what this competency means in practice}"
+    importance: high  # high | medium | low
+    positive_indicators:
+      - "{behavior that demonstrates competence}"
+      - "{another positive indicator}"
+    negative_indicators:
+      - "{behavior that indicates incompetence}"
+      - "{common mistake related to this competency}"
+    test_scenarios:
+      - "{scenario description that tests this competency}"
+      - "{another test scenario}"
+    sources:
+      - "{source: finding}"
+
+  # Add more competencies as needed...
+
+# Edge cases that require special handling
+# These become edge case test scenarios
+edge_cases:
+  - scenario: "{edge case description}"
+    importance: "{why this edge case matters}"
+    expected_handling: "{correct way to handle this}"
+    common_failure: "{how this is commonly mishandled}"
+
+# Common mistakes practitioners make
+# These inform negative test cases
+common_mistakes:
+  - mistake: "{what people commonly get wrong}"
+    correction: "{the correct approach}"
+    severity: high  # high | medium | low
+
+# Best practices extracted from research
+# These inform quality evaluation criteria
+best_practices:
+  - practice: "{best practice description}"
+    rationale: "{why this is important}"
+    source: "{where this came from}"
+
+# Synthesis metadata
+metadata:
+  synthesizer: "cgf-criteria-synthesizer"
+  timestamp: "{ISO timestamp}"
+  research_sources:
+    - "{research note filename}"
+  confidence: high  # high | medium | low - overall confidence in criteria
