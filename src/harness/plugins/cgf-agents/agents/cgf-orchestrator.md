@@ -151,16 +151,38 @@ When in a checkpoint state:
 
 **Actions:**
 1. Update run_state.json: test_gen_started timestamp
-2. For M1: Check if test_suite.yaml already exists (user-provided)
-3. If no test suite exists:
-   - Create placeholder test_suite.yaml with basic tests from criteria
-   - Log that full test generation requires M3 (cgf-test-architect)
-4. Validate test suite against schema
-5. Generate coverage_report.md
-6. Update run_state.json: test_gen_completed, artifacts
+2. Spawn cgf-agents:cgf-test-architect via Task tool:
+   ```
+   "Generate test suite from workspace/{resource_id}/research/eval_criteria.yaml
+
+   Resource context:
+   - resource_id: {resource_id}
+   - resource_type: {resource_type}
+   - optimization_goal: {optimization_goal}
+
+   Output to workspace/{resource_id}/tests/test_suite.yaml"
+   ```
+3. Wait for test_suite.yaml generation
+4. Spawn cgf-agents:cgf-test-validator via Task tool:
+   ```
+   "Validate test suite at workspace/{resource_id}/tests/test_suite.yaml
+
+   Check against:
+   - Schema: schemas/test_suite.schema.json
+   - Criteria: workspace/{resource_id}/research/eval_criteria.yaml
+
+   Output coverage report to workspace/{resource_id}/tests/coverage_report.md"
+   ```
+5. Check validation result:
+   - If PASS: Continue to next step
+   - If FAIL: Report issues, request architect retry (max 2 retries)
+6. Update run_state.json: test_gen_completed, artifacts.test_suite
 7. Transition to CHECKPOINT_TEST_GEN (if review_mode) or OPTIMIZE
 
-**M1 Limitation:** Full agentic test generation deferred to M3. For M1, accept user-provided test suites or generate basic tests from criteria.
+**Checkpoint behavior (CHECKPOINT_TEST_GEN):**
+- **proceed**: Accept generated tests, continue to OPTIMIZE
+- **edit**: User manually modifies test_suite.yaml, then proceed (tests NOT regenerated)
+- **abort**: Cancel optimization run
 
 **Output:** tests/test_suite.yaml, tests/coverage_report.md
 
@@ -432,9 +454,33 @@ The cgf-criteria-synthesizer agent will:
 - Produce eval_criteria.yaml (3-25 competencies)
 - Validate against schema
 
-**For Future Phases (M3-M4):**
-- cgf-agents:cgf-test-architect (M3)
-- cgf-agents:cgf-test-validator (M3)
+**For Test Generation (M3):**
+```
+subagent_type: "cgf-agents:cgf-test-architect"
+prompt: "Generate test suite from workspace/{resource_id}/research/eval_criteria.yaml..."
+```
+
+The cgf-test-architect agent will:
+- Read eval_criteria.yaml for competencies, edge cases, mistakes
+- Generate 10-50 test cases based on criteria depth
+- Select appropriate validation types per scenario
+- Cover all competencies with at least 1 test each
+- Save to tests/test_suite.yaml
+
+**For Test Validation (M3):**
+```
+subagent_type: "cgf-agents:cgf-test-validator"
+prompt: "Validate test suite at workspace/{resource_id}/tests/test_suite.yaml..."
+```
+
+The cgf-test-validator agent will:
+- Validate against test_suite.schema.json
+- Calculate coverage percentages
+- Assess quality metrics (difficulty distribution, validation types)
+- Generate coverage_report.md
+- Return PASS, PASS (with warnings), or FAIL
+
+**For Future Phases (M4):**
 - cgf-agents:cgf-result-evaluator (M4)
 
 **For Optimization CLI:**

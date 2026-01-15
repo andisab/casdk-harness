@@ -1,0 +1,212 @@
+# CGF Command Test Template
+# Guides test generation for command resources (e.g., /cgf, /create-agent)
+
+resource_type: command
+
+# Validation type preferences for command testing
+validation_preferences:
+  output: contains           # Check output contains expected text
+  error: regex               # Verify error message format
+  help: llm_judge            # Evaluate help text quality
+  format: regex              # Verify output structure
+
+# Test patterns for different source types
+test_patterns:
+  # Basic command invocation tests
+  basic_invocation_test:
+    id_prefix: "cmd"
+    prompt_templates:
+      simple:
+        structure: "/{command}"
+        validation:
+          type: contains
+          criteria: "{expected_output_indicator}"
+
+      with_positional:
+        structure: "/{command} {positional_arg}"
+        validation:
+          type: contains
+          criteria: "{expected_success_indicator}"
+
+      with_flags:
+        structure: "/{command} --{flag} {value}"
+        validation:
+          type: contains
+          criteria: "{expected_output_for_flag}"
+
+    tags: ["basic", "{importance}"]
+    metadata:
+      source_competency: "{competency.name}"
+      source_type: "competency"
+
+  # Argument handling tests
+  argument_test:
+    id_prefix: "arg"
+    prompt_templates:
+      valid_args:
+        structure: "/{command} {valid_argument_combination}"
+        validation:
+          type: contains
+          criteria: "{success_indicator}"
+
+      optional_args:
+        structure: "/{command} {optional_args_pattern}"
+        validation:
+          type: contains
+          criteria: "{default_behavior_indicator}"
+
+      mutually_exclusive:
+        structure: "/{command} --{flag1} --{flag2}"
+        validation:
+          type: contains
+          criteria: "(error|conflict|cannot use)"
+
+    tags: ["argument", "{importance}"]
+    metadata:
+      source_competency: "Argument handling"
+      source_type: "competency"
+
+  # Error handling tests
+  error_test:
+    id_prefix: "err"
+    prompt_templates:
+      invalid_arg:
+        structure: "/{command} {invalid_argument}"
+        validation:
+          type: regex
+          criteria: "(error|invalid|unrecognized|unknown)"
+
+      missing_required:
+        structure: "/{command}"  # When required arg missing
+        validation:
+          type: regex
+          criteria: "(required|missing|expected)"
+
+      wrong_type:
+        structure: "/{command} --{number_arg} not_a_number"
+        validation:
+          type: regex
+          criteria: "(invalid|expected.*number|type)"
+
+    tags: ["error_handling", "{severity}"]
+    metadata:
+      source_mistake: "{common_mistake.mistake}"
+      source_type: "common_mistake"
+
+  # Help text tests
+  help_test:
+    id_prefix: "help"
+    prompt_templates:
+      help_flag:
+        structure: "/{command} --help"
+        validation:
+          type: llm_judge
+          criteria: |
+            Verify help text:
+            1. Describes command purpose
+            2. Lists available options
+            3. Provides usage examples
+
+      help_implicit:
+        structure: "/{command} ?"  # If supported
+        validation:
+          type: contains
+          criteria: "(usage|options|help)"
+
+    tags: ["help", "documentation"]
+    metadata:
+      source_competency: "Help text clarity"
+      source_type: "competency"
+
+  # Edge case tests
+  edge_case_test:
+    id_prefix: "edge"
+    prompt_template: "/{command} {edge_case_input}"
+
+    validation:
+      type: llm_judge
+      criteria: |
+        Verify:
+        1. Handles: {scenario}
+        2. Approach: {expected_handling}
+        3. Does not: {common_failure}
+
+    tags: ["edge_case"]
+    metadata:
+      source_scenario: "{edge_case.scenario}"
+      source_type: "edge_case"
+
+  # Output format tests
+  format_test:
+    id_prefix: "fmt"
+    prompt_template: "/{command} {args_that_produce_output}"
+
+    validation:
+      type: regex
+      criteria: "{expected_format_pattern}"
+
+    tags: ["format", "{importance}"]
+    metadata:
+      source_competency: "Output formatting"
+      source_type: "competency"
+
+# Command-specific competency patterns
+typical_competencies:
+  argument_parsing:
+    test_approach: "argument_test with various patterns"
+    validation_type: contains
+
+  validation:
+    test_approach: "error_test with invalid inputs"
+    validation_type: regex
+
+  help_documentation:
+    test_approach: "help_test"
+    validation_type: llm_judge
+
+  output_format:
+    test_approach: "format_test"
+    validation_type: regex
+
+  error_messages:
+    test_approach: "error_test"
+    validation_type: contains
+
+# Common command failure modes to test
+failure_modes:
+  argument_rejection:
+    description: "Valid arguments incorrectly rejected"
+    test_type: basic_invocation_test
+    importance: high
+
+  silent_failure:
+    description: "Command fails without clear error"
+    test_type: error_test
+    importance: high
+
+  help_mismatch:
+    description: "Help text doesn't match actual behavior"
+    test_type: help_test
+    importance: medium
+
+  format_inconsistency:
+    description: "Output format varies unexpectedly"
+    test_type: format_test
+    importance: medium
+
+# Difficulty characteristics for commands
+difficulty_characteristics:
+  basic:
+    - Simple invocation
+    - Default arguments
+    - Expected success path
+
+  intermediate:
+    - Multiple arguments
+    - Flag combinations
+    - Error scenarios
+
+  advanced:
+    - Complex argument patterns
+    - Edge case inputs
+    - Multi-step operations

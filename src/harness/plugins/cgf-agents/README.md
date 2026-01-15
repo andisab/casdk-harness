@@ -20,6 +20,8 @@ This plugin provides the orchestration layer for the CGF optimization framework.
 | `cgf-orchestrator` | Pipeline coordinator with state machine |
 | `cgf-research-lead` | Competency-focused research coordinator (M2) |
 | `cgf-criteria-synthesizer` | Research findings to eval_criteria.yaml (M2) |
+| `cgf-test-architect` | Criteria-to-tests transformation (M3) |
+| `cgf-test-validator` | Test suite validation and coverage analysis (M3) |
 
 ### Skills
 
@@ -167,22 +169,29 @@ JSON schemas are provided for validation:
 
 - `schemas/run_state.schema.json` - Run state persistence
 - `schemas/eval_criteria.schema.json` - Evaluation criteria
+- `schemas/test_suite.schema.json` - Test suite structure (M3)
 
 ## Development Status
 
-**M1 Implementation**:
+**M1 Implementation** ✅:
 - Orchestrator agent with state machine
 - Run state management
 - CLI integration
 
-**M2 Implementation (Current)**:
+**M2 Implementation** ✅:
 - cgf-research-lead agent - Competency-focused research coordination
 - cgf-criteria-synthesizer agent - Research-to-criteria transformation
 - Per-resource-type criteria templates (agent, skill, command)
 - Integration with research-team plugin researchers
 
+**M3 Implementation** ✅:
+- cgf-test-architect agent - Generates test suites from eval_criteria.yaml
+- cgf-test-validator agent - Validates test suite quality and coverage
+- Per-resource-type test templates (agent, skill, command)
+- test_suite.schema.json for validation
+- Orchestrator TEST_GEN phase integration
+
 **Future Milestones**:
-- M3: Test Architect agent (cgf-test-architect)
 - M4: Result Evaluator agent (cgf-result-evaluator)
 
 ## Architecture
@@ -242,6 +251,43 @@ cgf-orchestrator
 │  2. Merge/deduplicate competencies (3-25)               │
 │  3. Aggregate edge cases, mistakes, practices            │
 │  4. Write eval_criteria.yaml                             │
+└─────────────────────────────────────────────────────────┘
+```
+
+### TEST_GEN Phase Detail (M3)
+
+```
+cgf-orchestrator
+      │
+      ▼ (spawn)
+┌─────────────────────────────────────────────────────────┐
+│              cgf-test-architect                          │
+│                                                          │
+│  1. Read eval_criteria.yaml (competencies, edge cases)  │
+│  2. Transform each competency → 1-3 test cases          │
+│  3. Generate edge case tests                             │
+│  4. Generate negative tests from common_mistakes         │
+│  5. Select validation types per scenario                 │
+│     - code/code_llm for code output                     │
+│     - llm_judge for text output                         │
+│     - contains/regex for pattern matching               │
+│  6. Write test_suite.yaml (10-50 tests)                 │
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼ (spawn)
+┌─────────────────────────────────────────────────────────┐
+│              cgf-test-validator                          │
+│                                                          │
+│  1. Validate against test_suite.schema.json             │
+│  2. Calculate coverage percentages                       │
+│     - Competency coverage (target: 100%)                │
+│     - Edge case coverage                                 │
+│     - Mistake coverage                                   │
+│  3. Assess quality metrics                               │
+│     - Difficulty distribution (40/40/20)                │
+│     - Validation type appropriateness                   │
+│  4. Write coverage_report.md                            │
+│  5. Return PASS/FAIL status                             │
 └─────────────────────────────────────────────────────────┘
 ```
 

@@ -1,0 +1,154 @@
+# CGF Agent Test Template
+# Guides test generation for agent resources (e.g., python-expert, code-review-expert)
+
+resource_type: agent
+
+# Validation type preferences based on expected output
+validation_preferences:
+  code_output: code          # For tests expecting code
+  code_with_reasoning: code_llm  # For code needing semantic evaluation
+  text_output: llm_judge     # For text/explanation responses
+  pattern_match: contains    # For simple keyword presence
+  format_check: regex        # For structural validation
+
+# Test patterns for different source types
+test_patterns:
+  # Tests derived from competencies
+  competency_test:
+    id_prefix: "comp"
+    difficulty_scaling:
+      high_importance: 2-3  # Generate 2-3 tests
+      medium_importance: 1-2
+      low_importance: 1
+
+    prompt_templates:
+      basic:
+        structure: |
+          {scenario_from_test_scenarios_or_description}
+
+          Requirements:
+          - {positive_indicator_1}
+        validation:
+          type: code  # or llm_judge for text
+          criteria: "{pattern_from_indicators}"
+
+      intermediate:
+        structure: |
+          {scenario_with_constraints}
+
+          Requirements:
+          - {positive_indicator_1}
+          - {positive_indicator_2}
+
+          Constraints:
+          - {constraint_from_context}
+        validation:
+          type: code_llm
+          criteria: |
+            Verify:
+            1. {positive_indicator_1}
+            2. {positive_indicator_2}
+
+      advanced:
+        structure: |
+          {complex_scenario_with_edge_cases}
+
+          Requirements:
+          - {multiple_indicators}
+
+          Edge cases to handle:
+          - {edge_case_from_criteria}
+        validation:
+          type: code_llm
+          criteria: |
+            Comprehensive check:
+            1. Core functionality works
+            2. Edge cases handled
+            3. Error handling present
+
+    tags: ["competency", "{importance}", "{difficulty}"]
+    metadata:
+      source_competency: "{competency.name}"
+      source_type: "competency"
+
+  # Tests derived from edge cases
+  edge_case_test:
+    id_prefix: "edge"
+    prompt_template: |
+      {scenario_description}
+
+      Expected behavior: {expected_handling}
+
+      Handle this edge case correctly.
+
+    validation:
+      type: code_llm  # Usually needs semantic evaluation
+      criteria: |
+        Verify the code:
+        1. Correctly handles: {scenario}
+        2. Follows approach: {expected_handling}
+        3. Avoids: {common_failure}
+
+    tags: ["edge_case"]
+    metadata:
+      source_scenario: "{edge_case.scenario}"
+      source_type: "edge_case"
+
+  # Tests derived from common mistakes (negative tests)
+  negative_test:
+    id_prefix: "neg"
+    prompt_template: |
+      {scenario_that_naturally_triggers_mistake}
+
+      Note: This should be done correctly following best practices.
+
+    validation:
+      type: code  # or code_llm if needs semantic check
+      criteria: "{pattern_that_avoids_mistake}"
+
+    tags: ["negative", "{severity}"]
+    metadata:
+      source_mistake: "{common_mistake.mistake}"
+      source_type: "common_mistake"
+
+# Typical agent competencies and their test approaches
+typical_competencies:
+  code_generation:
+    validation_type: code
+    criteria_pattern: "function|def|class"
+    timeout: 300
+
+  explanation:
+    validation_type: llm_judge
+    criteria_pattern: "Evaluate explanation quality"
+    timeout: 300
+
+  debugging:
+    validation_type: code_llm
+    criteria_pattern: "Verify fix is correct"
+    timeout: 600
+
+  refactoring:
+    validation_type: code_llm
+    criteria_pattern: "Verify code improved while maintaining behavior"
+    timeout: 600
+
+# Difficulty characteristics for agents
+difficulty_characteristics:
+  basic:
+    - Single function/concept
+    - Clear requirements
+    - No edge cases
+    - Standard patterns
+
+  intermediate:
+    - Multiple functions/concepts
+    - Error handling required
+    - Some constraints
+    - Real-world scenario
+
+  advanced:
+    - Integration of concepts
+    - Edge case handling
+    - Performance considerations
+    - Complex requirements
