@@ -1011,19 +1011,19 @@ hook:
 **Deliverables**:
 
 1. **Context7 Integration**
-   - [ ] Add Context7 tools to research-specialist
-   - [ ] Implement source router logic
-   - [ ] Add library detection heuristics
+   - [x] Add Context7 tools to research-specialist
+   - [x] Implement source router logic
+   - [x] Add library detection heuristics
 
 2. **CGF Output Mode**
-   - [ ] Define structured findings schema (YAML)
-   - [ ] Add output_mode parameter to research-specialist
-   - [ ] Create findings-to-criteria transformation
+   - [x] Define structured findings schema (YAML)
+   - [x] Add output_mode parameter to research-specialist
+   - [x] Create findings-to-criteria transformation
 
 3. **Testing**
-   - [ ] Test source routing with various topics
-   - [ ] Validate Context7 queries for common libraries
-   - [ ] Verify structured output format
+   - [x] Test source routing with various topics
+   - [x] Validate Context7 queries for common libraries
+   - [x] Verify structured output format
 
 
 ### Milestone 1: CGF Orchestrator
@@ -1033,20 +1033,20 @@ hook:
 **Deliverables**:
 
 1. **cgf-orchestrator Agent**
-   - [ ] State machine implementation
-   - [ ] Resource type detection
-   - [ ] Strategy selection logic
-   - [ ] Checkpoint handling (--review mode)
+   - [x] State machine implementation
+   - [x] Resource type detection
+   - [x] Strategy selection logic
+   - [x] Checkpoint handling (--review mode)
 
 2. **Run State Management**
-   - [ ] run_state.json schema
-   - [ ] State persistence/resume
-   - [ ] Artifact tracking
+   - [x] run_state.json schema
+   - [x] State persistence/resume
+   - [x] Artifact tracking
 
 3. **CLI Integration**
-   - [ ] `/cgf-optimize` skill
-   - [ ] Makefile targets
-   - [ ] Progress reporting
+   - [x] `/cgf-optimize` skill
+   - [x] Makefile targets
+   - [x] Progress reporting
 
 
 ### Milestone 2: Research Phase
@@ -1056,18 +1056,18 @@ hook:
 **Deliverables**:
 
 1. **cgf-research-lead Agent**
-   - [ ] Fork from lead-research-coordinator
-   - [ ] CGF-specific subtopic decomposition
-   - [ ] Source routing guidance for specialists
+   - [x] Fork from lead-research-coordinator
+   - [x] CGF-specific subtopic decomposition
+   - [x] Source routing guidance for specialists
 
 2. **cgf-criteria-synthesizer Agent**
-   - [ ] Research findings aggregation
-   - [ ] eval_criteria.yaml generation
-   - [ ] Coverage validation
+   - [x] Research findings aggregation
+   - [x] eval_criteria.yaml generation
+   - [x] Coverage validation
 
 3. **Templates**
-   - [ ] eval_criteria.yaml template
-   - [ ] Per-resource-type criteria templates
+   - [x] eval_criteria.yaml template
+   - [x] Per-resource-type criteria templates
 
 
 ### Milestone 3: Test Generation Phase
@@ -1077,18 +1077,18 @@ hook:
 **Deliverables**:
 
 1. **cgf-test-architect Agent**
-   - [ ] Criteria-to-tests transformation
-   - [ ] Resource-type-specific test patterns
-   - [ ] Validation rule selection logic
+   - [x] Criteria-to-tests transformation
+   - [x] Resource-type-specific test patterns
+   - [x] Validation rule selection logic
 
 2. **cgf-test-validator Agent**
-   - [ ] Schema compliance checking
-   - [ ] Coverage analysis
-   - [ ] Quality metrics
+   - [x] Schema compliance checking
+   - [x] Coverage analysis
+   - [x] Quality metrics
 
 3. **Test Suite Templates**
-   - [ ] Per-resource-type test templates
-   - [ ] Validation rule examples
+   - [x] Per-resource-type test templates
+   - [x] Validation rule examples
 
 
 ### Milestone 4: Evaluation Phase
@@ -1098,18 +1098,18 @@ hook:
 **Deliverables**:
 
 1. **cgf-result-evaluator Agent**
-   - [ ] Multi-dimensional evaluation
-   - [ ] Recommendation logic
-   - [ ] REFINE guidance generation
+   - [x] Multi-dimensional evaluation
+   - [x] Recommendation logic
+   - [x] REFINE guidance generation
 
 2. **Review Report Template**
-   - [ ] Structured report format
-   - [ ] Visualization of improvements/regressions
+   - [x] Structured report format
+   - [x] Visualization of improvements/regressions
 
 3. **Finalization Logic**
-   - [ ] ACCEPT workflow
-   - [ ] REFINE loop implementation
-   - [ ] REJECT archival
+   - [x] ACCEPT workflow
+   - [x] REFINE loop implementation
+   - [x] REJECT archival
 
 
 ### Milestone 5: Integration & Polish
@@ -1270,27 +1270,27 @@ cgf-agents/
 
 ## Timeline Summary
 
-| Phase | Duration | Key Deliverable |
-|-------|----------|-----------------|
-| **M0: Research Enhancement** | 1 week | Context7 in research-team, CGF output mode |
-| **M1: Orchestrator** | 1-2 weeks | State machine, resource detection, CLI |
-| **M2: Research Phase** | 1 week | Research agents, criteria synthesis |
-| **M3: Test Generation** | 1-2 weeks | Test generation, validation |
-| **M4: Evaluation** | 1 week | Result evaluation, recommendation |
-| **M5: Integration** | 1 week | E2E testing, documentation |
-| **Total** | 6-8 weeks | Full CGF 2.0 pipeline |
+| Phase | Duration | Key Deliverable | Status |
+|-------|----------|-----------------|--------|
+| **M0: Research Enhancement** | 1 week | Context7 in research-team, CGF output mode | ✅ |
+| **M1: Orchestrator** | 1-2 weeks | State machine, resource detection, CLI | ✅ |
+| **M2: Research Phase** | 1 week | Research agents, criteria synthesis | ✅ |
+| **M3: Test Generation** | 1-2 weeks | Test generation, validation | ✅ |
+| **M4: Evaluation** | 1 week | Result evaluation, recommendation | ✅ |
+| **M5: Integration** | 1 week | E2E testing, documentation | ⏳ |
+| **Total** | 6-8 weeks | Full CGF 2.0 pipeline | |
 
 
 ## Next Steps
 
-1. **Decide**: Confirm plugin structure (cgf-agents as standalone)
-2. **Start M0**: Enhance research-team with Context7 integration
-3. **Design**: Detail cgf-orchestrator state machine and transitions
-4. **Prototype**: Create orchestrator agent with minimal workflow
+1. **M5: Integration & Polish**: End-to-end testing, documentation, performance optimization
+2. **Testing**: Run full pipeline with agent, skill, command resource types
+3. **Documentation**: Complete user guide and example workflows
+4. **Performance**: Token usage optimization and caching for repeated runs
 
 ---
 
 **Author**: Andis A. Blukis
 **Created**: 2025-01-14
-**Last Updated**: 2025-01-14
-**Status**: Draft v2
+**Last Updated**: 2025-01-15
+**Status**: M0-M4 Complete, M5 Pending
