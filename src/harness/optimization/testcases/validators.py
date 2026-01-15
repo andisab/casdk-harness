@@ -5,6 +5,9 @@ Provides different validation strategies for agent outputs:
 - ContainsValidator: Substring match
 - RegexValidator: Regular expression match
 - LLMJudgeValidator: LLM-based evaluation
+- CodeValidator: Extract code from markdown, validate syntax and content
+- CodeSyntaxValidator: Extract code and validate syntax only
+- CodeLLMValidator: Extract code and use LLM judge on code only
 
 Example usage:
     from harness.optimization.testcases import (
@@ -13,15 +16,27 @@ Example usage:
         ValidationType,
     )
 
+    # Simple contains validation
     config = ValidationConfig(type=ValidationType.CONTAINS, criteria="def ")
     validator = get_validator(config)
     score = await validator.validate("def sort(lst): return sorted(lst)")
+
+    # Code validation with syntax checking
+    config = ValidationConfig(
+        type=ValidationType.CODE,
+        criteria="def ",  # Content to find in extracted code
+        require_syntax_valid=True,
+        min_code_lines=3,
+    )
+    validator = get_validator(config)
+    score = await validator.validate("```python\\ndef sort(lst):\\n    return sorted(lst)\\n```")
 """
 
 from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import structlog
@@ -32,6 +47,184 @@ if TYPE_CHECKING:
     pass
 
 logger = structlog.get_logger(__name__)
+
+
+# =============================================================================
+# Code Extraction Utilities
+# =============================================================================
+
+
+@dataclass
+class ExtractedCode:
+    """Result of code extraction from mixed text/code output."""
+
+    code: str
+    language: str | None
+    source: str  # "markdown_block", "indented", "raw"
+    line_count: int
+
+    @property
+    def is_empty(self) -> bool:
+        """Check if extracted code is empty or whitespace only."""
+        return not self.code.strip()
+
+
+class CodeExtractor:
+    """Extracts code from mixed text/code output (markdown blocks, etc.).
+
+    Handles common patterns in LLM output:
+    - Markdown code blocks (```python ... ```)
+    - Indented code blocks
+    - Raw code without markdown
+
+    Example:
+        extractor = CodeExtractor()
+        result = extractor.extract('''
+            Here's a solution:
+            ```python
+            def sort(lst):
+                return sorted(lst)
+            ```
+        ''')
+        print(result.code)  # "def sort(lst):\\n    return sorted(lst)"
+    """
+
+    # Pattern for markdown code blocks with optional language
+    MARKDOWN_PATTERN = re.compile(
+        r"```(?P<lang>\w+)?\s*\n(?P<code>.*?)\n\s*```",
+        re.DOTALL,
+    )
+
+    # Pattern for indented code (4+ spaces or tabs)
+    INDENTED_PATTERN = re.compile(
+        r"^(?:[ ]{4,}|\t+).+$",
+        re.MULTILINE,
+    )
+
+    def extract(
+        self,
+        output: str,
+        preferred_language: str = "python",
+    ) -> ExtractedCode:
+        """Extract code from mixed text/code output.
+
+        Priority order:
+        1. Markdown code blocks with matching language
+        2. Any markdown code block
+        3. Indented code blocks
+        4. Raw text as fallback
+
+        Args:
+            output: The mixed text/code output to extract from.
+            preferred_language: Preferred language for code blocks.
+
+        Returns:
+            ExtractedCode with the extracted code and metadata.
+        """
+        # Try markdown code blocks first
+        code_blocks = list(self.MARKDOWN_PATTERN.finditer(output))
+
+        if code_blocks:
+            # Prefer blocks with matching language
+            for match in code_blocks:
+                lang = match.group("lang")
+                if lang and lang.lower() == preferred_language.lower():
+                    code = match.group("code").strip()
+                    return ExtractedCode(
+                        code=code,
+                        language=lang,
+                        source="markdown_block",
+                        line_count=len(code.splitlines()),
+                    )
+
+            # Fall back to first code block
+            first = code_blocks[0]
+            code = first.group("code").strip()
+            return ExtractedCode(
+                code=code,
+                language=first.group("lang"),
+                source="markdown_block",
+                line_count=len(code.splitlines()),
+            )
+
+        # Try indented code blocks
+        indented_lines = self.INDENTED_PATTERN.findall(output)
+        if indented_lines:
+            # Join consecutive indented lines
+            code = "\n".join(line.lstrip() for line in indented_lines)
+            return ExtractedCode(
+                code=code,
+                language=None,
+                source="indented",
+                line_count=len(code.splitlines()),
+            )
+
+        # Fallback: return raw text (may not be actual code)
+        stripped = output.strip()
+        return ExtractedCode(
+            code=stripped,
+            language=None,
+            source="raw",
+            line_count=len(stripped.splitlines()),
+        )
+
+    def extract_all(
+        self,
+        output: str,
+        preferred_language: str = "python",
+    ) -> list[ExtractedCode]:
+        """Extract all code blocks from output.
+
+        Args:
+            output: The mixed text/code output to extract from.
+            preferred_language: Preferred language (used for sorting results).
+
+        Returns:
+            List of all extracted code blocks, with preferred language first.
+        """
+        results: list[ExtractedCode] = []
+
+        # Extract all markdown code blocks
+        for match in self.MARKDOWN_PATTERN.finditer(output):
+            code = match.group("code").strip()
+            lang = match.group("lang")
+            results.append(
+                ExtractedCode(
+                    code=code,
+                    language=lang,
+                    source="markdown_block",
+                    line_count=len(code.splitlines()),
+                )
+            )
+
+        # Sort: preferred language first
+        results.sort(
+            key=lambda x: (
+                x.language != preferred_language if x.language else True,
+                -x.line_count,  # Then by size (larger first)
+            )
+        )
+
+        return results
+
+
+def is_valid_python_syntax(code: str) -> tuple[bool, str | None]:
+    """Check if code is syntactically valid Python.
+
+    Args:
+        code: Python code to validate.
+
+    Returns:
+        Tuple of (is_valid, error_message).
+        error_message is None if valid.
+    """
+    try:
+        compile(code, "<string>", "exec")
+        return True, None
+    except SyntaxError as e:
+        return False, f"SyntaxError at line {e.lineno}: {e.msg}"
+    except Exception as e:
+        return False, str(e)
 
 
 class Validator(ABC):
@@ -216,6 +409,239 @@ Output ONLY the numeric score, nothing else."""
             return 0.0
 
 
+class CodeSyntaxValidator(Validator):
+    """Validates that output contains syntactically valid code.
+
+    Extracts code from markdown blocks or raw text and validates
+    that it is syntactically correct Python.
+    """
+
+    def __init__(self, config: ValidationConfig) -> None:
+        """Initialize code syntax validator.
+
+        Args:
+            config: Validation configuration with optional min_code_lines.
+        """
+        super().__init__(config)
+        self._extractor = CodeExtractor()
+
+    async def validate(self, output: str) -> float:
+        """Extract code and validate syntax.
+
+        Args:
+            output: Agent's output text (may contain markdown).
+
+        Returns:
+            1.0 if valid Python syntax, 0.0 otherwise.
+        """
+        extracted = self._extractor.extract(output, self.config.language)
+
+        if extracted.is_empty:
+            logger.debug("No code extracted from output")
+            return 0.0
+
+        # Check minimum line count
+        if (
+            self.config.min_code_lines > 0
+            and extracted.line_count < self.config.min_code_lines
+        ):
+            logger.debug(
+                "Code too short",
+                lines=extracted.line_count,
+                required=self.config.min_code_lines,
+            )
+            return 0.0
+
+        # Validate syntax
+        is_valid, error = is_valid_python_syntax(extracted.code)
+        if not is_valid:
+            logger.debug("Syntax validation failed", error=error)
+            return 0.0
+
+        return self._apply_partial_credit(1.0)
+
+
+class CodeValidator(Validator):
+    """Validates code with extraction, syntax check, and content validation.
+
+    This is a composite validator that:
+    1. Extracts code from markdown blocks
+    2. Validates Python syntax (if require_syntax_valid=True)
+    3. Checks that extracted code contains the criteria substring
+
+    Use this for tasks where the agent should produce working code
+    that contains specific patterns (e.g., "def ", "async def", etc.).
+    """
+
+    def __init__(self, config: ValidationConfig) -> None:
+        """Initialize code validator.
+
+        Args:
+            config: Validation configuration with criteria for content check.
+        """
+        super().__init__(config)
+        self._extractor = CodeExtractor()
+
+    async def validate(self, output: str) -> float:
+        """Extract code, validate syntax, and check content.
+
+        Args:
+            output: Agent's output text (may contain markdown).
+
+        Returns:
+            Score from 0.0 to 1.0 based on validation results.
+        """
+        extracted = self._extractor.extract(output, self.config.language)
+
+        if extracted.is_empty:
+            logger.debug("No code extracted from output")
+            return 0.0
+
+        # Check minimum line count
+        if (
+            self.config.min_code_lines > 0
+            and extracted.line_count < self.config.min_code_lines
+        ):
+            logger.debug(
+                "Code too short",
+                lines=extracted.line_count,
+                required=self.config.min_code_lines,
+            )
+            return 0.0
+
+        # Validate syntax if required
+        if self.config.require_syntax_valid:
+            is_valid, error = is_valid_python_syntax(extracted.code)
+            if not is_valid:
+                logger.debug("Syntax validation failed", error=error)
+                return 0.0
+
+        # Check that criteria is in the extracted code (not full output)
+        if self.config.criteria and self.config.criteria not in extracted.code:
+            logger.debug(
+                "Criteria not found in extracted code",
+                criteria=self.config.criteria,
+            )
+            return 0.0
+
+        return self._apply_partial_credit(1.0)
+
+
+class CodeLLMValidator(Validator):
+    """Validates extracted code using an LLM judge.
+
+    Extracts code from the output and sends only the code
+    (not the full output) to an LLM for evaluation.
+    This prevents the LLM from being confused by explanatory text.
+    """
+
+    def __init__(self, config: ValidationConfig) -> None:
+        """Initialize code LLM validator.
+
+        Args:
+            config: Validation configuration with LLM judge criteria.
+        """
+        super().__init__(config)
+        self._extractor = CodeExtractor()
+
+    async def validate(self, output: str) -> float:
+        """Extract code and evaluate with LLM judge.
+
+        Args:
+            output: Agent's output text (may contain markdown).
+
+        Returns:
+            Score from 0.0 to 1.0 based on LLM evaluation.
+        """
+        extracted = self._extractor.extract(output, self.config.language)
+
+        if extracted.is_empty:
+            logger.debug("No code extracted from output")
+            return 0.0
+
+        # Check minimum line count
+        if (
+            self.config.min_code_lines > 0
+            and extracted.line_count < self.config.min_code_lines
+        ):
+            logger.debug(
+                "Code too short",
+                lines=extracted.line_count,
+                required=self.config.min_code_lines,
+            )
+            return 0.0
+
+        # Validate syntax if required
+        if self.config.require_syntax_valid:
+            is_valid, error = is_valid_python_syntax(extracted.code)
+            if not is_valid:
+                logger.debug("Syntax validation failed", error=error)
+                return 0.0
+
+        try:
+            score = await self._call_llm_judge(extracted.code)
+            return self._apply_partial_credit(score)
+        except Exception as e:
+            logger.error("LLM judge evaluation failed", error=str(e))
+            return 0.0
+
+    async def _call_llm_judge(self, code: str) -> float:
+        """Call LLM to evaluate extracted code.
+
+        Args:
+            code: Extracted code to evaluate.
+
+        Returns:
+            Score from 0.0 to 1.0.
+        """
+        from anthropic import AsyncAnthropic
+
+        client = AsyncAnthropic()
+
+        system_prompt = """You are an evaluation judge for code quality.
+Evaluate the given code against the provided criteria.
+Respond with ONLY a score from 0.0 to 1.0, where:
+- 1.0 = Fully meets all criteria
+- 0.0 = Does not meet criteria at all
+- Values in between indicate partial fulfillment
+
+Output ONLY the numeric score, nothing else."""
+
+        user_prompt = f"""## Evaluation Criteria
+{self.config.criteria}
+
+## Code to Evaluate
+```{self.config.language}
+{code}
+```
+
+## Your Score (0.0 to 1.0):"""
+
+        response = await client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=10,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        # Extract score from response
+        score_text = response.content[0].text.strip()
+        try:
+            score = float(score_text)
+            return max(0.0, min(1.0, score))
+        except ValueError:
+            logger.warning(
+                "Could not parse LLM judge score",
+                response=score_text,
+            )
+            # Try to find a number in the response
+            numbers = re.findall(r"(\d+\.?\d*)", score_text)
+            if numbers:
+                score = float(numbers[0])
+                return max(0.0, min(1.0, score))
+            return 0.0
+
+
 class CompositeValidator(Validator):
     """Combines multiple validators with weighted scoring."""
 
@@ -269,11 +695,15 @@ def get_validator(config: ValidationConfig) -> Validator:
     Raises:
         ValueError: If validation type is not recognized.
     """
-    validator_map = {
+    validator_map: dict[ValidationType, type[Validator]] = {
         ValidationType.EXACT: ExactValidator,
         ValidationType.CONTAINS: ContainsValidator,
         ValidationType.REGEX: RegexValidator,
         ValidationType.LLM_JUDGE: LLMJudgeValidator,
+        # Code-specific validators
+        ValidationType.CODE: CodeValidator,
+        ValidationType.CODE_SYNTAX: CodeSyntaxValidator,
+        ValidationType.CODE_LLM: CodeLLMValidator,
     }
 
     validator_type = config.type

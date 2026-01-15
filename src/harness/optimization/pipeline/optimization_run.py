@@ -195,6 +195,9 @@ class OptimizationRun:
             self.resource = AgentResource.load(self.config.agent_path)
             self.test_suite = TestSuiteLoader.load(str(self.config.test_suite_path))
 
+            # Preserve original agent in workspace (if not already present)
+            self._preserve_original()
+
             # Phase 2: Validate
             self.phase = RunPhase.VALIDATE
             self._validate()
@@ -356,6 +359,9 @@ class OptimizationRun:
 
         logger.info("Result saved", path=str(output_path))
 
+        # Always save run summary JSON for tracking
+        self._save_run_summary(output_path)
+
         # Save iterations if requested
         if self.config.save_iterations and self.result.iterations:
             self._save_iterations()
@@ -401,12 +407,84 @@ class OptimizationRun:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.dump(data, default_flow_style=False))
 
+    def _preserve_original(self) -> None:
+        """Copy original agent definition to workspace if not already present.
+
+        Creates a copy named {agent}-orig.md in the workspace directory
+        to preserve the original state before optimization.
+        """
+        if self.resource is None:
+            return
+
+        agent_name = Path(self.config.agent_path).stem
+        workspace_dir = Path("workspace") / agent_name
+        original_path = workspace_dir / f"{agent_name}-orig.md"
+
+        # Only copy if not already present
+        if original_path.exists():
+            logger.debug("Original already preserved", path=str(original_path))
+            return
+
+        # Read original file content
+        source_content = Path(self.config.agent_path).read_text()
+
+        # Create workspace directory and copy
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        original_path.write_text(source_content)
+
+        logger.info("Original preserved", path=str(original_path))
+
+    def _save_run_summary(self, output_path: Path) -> None:
+        """Save run summary as JSON alongside the output file.
+
+        Creates a companion file {output}-summary.json with metadata
+        about the optimization run for tracking and analysis.
+
+        Args:
+            output_path: Path to the main output file.
+        """
+        if self.result is None:
+            return
+
+        summary_path = output_path.with_suffix(".summary.json")
+        summary_data = {
+            "run_id": self.run_id,
+            "timestamp": datetime.now().isoformat(),
+            "agent": {
+                "name": self.resource.name if self.resource else "",
+                "path": str(self.config.agent_path),
+            },
+            "test_suite": {
+                "name": self.test_suite.name if self.test_suite else "",
+                "path": str(self.config.test_suite_path),
+                "test_count": len(self.test_suite.test_cases) if self.test_suite else 0,
+            },
+            "optimizer": self.config.optimizer_type.value,
+            "scores": {
+                "original": self.result.original_score,
+                "final": self.result.final_score,
+                "improvement": self.result.improvement,
+                "improvement_percent": self.result.improvement_percent,
+            },
+            "iterations": self.result.total_iterations,
+            "duration_seconds": self.result.total_duration_seconds,
+            "output_path": str(output_path),
+            "config": {
+                "max_iterations": self.config.optimization_config.max_iterations if self.config.optimization_config else 10,
+                "learning_rate": self.config.optimization_config.learning_rate if self.config.optimization_config else 0.1,
+                "early_stopping_threshold": self.config.optimization_config.early_stopping_threshold if self.config.optimization_config else 0.01,
+            },
+        }
+
+        summary_path.write_text(json.dumps(summary_data, indent=2))
+        logger.info("Run summary saved", path=str(summary_path))
+
     def _save_iterations(self) -> None:
         """Save iteration results to separate files."""
-        if self.config.iterations_dir is None:
+        iterations_dir = self.config.get_iterations_dir()
+        if iterations_dir is None:
+            # Fallback if get_iterations_dir returns None (shouldn't happen if called correctly)
             iterations_dir = Path(f"{self.run_id}_iterations")
-        else:
-            iterations_dir = Path(self.config.iterations_dir)
 
         iterations_dir.mkdir(parents=True, exist_ok=True)
 
@@ -420,7 +498,7 @@ class OptimizationRun:
                 "best_prompt": iteration.best_prompt,
                 "candidates": [
                     {
-                        "prompt": c.prompt[:200] + "..." if len(c.prompt) > 200 else c.prompt,
+                        "prompt": c.prompt,  # Full prompt, no truncation
                         "score": c.score,
                         "metadata": c.metadata,
                     }

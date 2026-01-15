@@ -25,6 +25,7 @@ from harness.optimization.optimizers import (
     DSPY_AVAILABLE,
     TEXTGRAD_AVAILABLE,
     OptimizationConfig,
+    OptimizationResult,
     OptimizerType,
 )
 from harness.optimization.pipeline import OptimizationRun, OutputFormat, PipelineConfig
@@ -59,9 +60,8 @@ def print_availability() -> None:
     console.print(table)
 
 
-def print_result_summary(run: OptimizationRun) -> None:
+def print_result_summary(run: OptimizationRun, result: OptimizationResult) -> None:
     """Print optimization result summary."""
-    result = run.result
     summary = run.get_summary()
 
     status_style = "green" if result.success else "red"
@@ -122,7 +122,7 @@ def print_result_summary(run: OptimizationRun) -> None:
     "--output", "-O",
     type=click.Path(path_type=Path),
     default=None,
-    help="Output path for optimized prompt",
+    help="Output path for optimized prompt. Default: workspace/{agent}/{agent}-vN.md where N auto-increments",
 )
 @click.option(
     "--format", "-f",
@@ -176,7 +176,7 @@ def print_result_summary(run: OptimizationRun) -> None:
     "--iterations-dir",
     type=click.Path(path_type=Path),
     default=None,
-    help="Directory for iteration results",
+    help="Directory for iteration results. Default: workspace/{agent}/iterations/ (requires --save-iterations)",
 )
 @click.option(
     "--dry-run",
@@ -226,26 +226,32 @@ def cli(
     Optimizes an agent's system prompt using DSPy MIPROv2 or TextGrad TGD
     based on performance on a test suite.
 
+    Workspace Structure:
+        Output is organized in workspace/{agent}/ with versioned naming:
+        - {agent}-orig.md  : Auto-preserved original (created on first run)
+        - {agent}-v1.md    : First optimization run output
+        - {agent}-v2.md    : Second optimization run output (auto-incremented)
+        - iterations/      : Iteration history (with --save-iterations)
+
     Examples:
 
-        # Basic optimization with DSPy
+        # Basic optimization (outputs to workspace/python-expert/python-expert-v1.md)
         python -m harness.optimization.cli.optimize \\
-            --agent agents/configs/python-expert.md \\
-            --test-suite tests/optimization/python_expert_tests.yaml
+            --agent src/harness/agents/configs/python-expert.md \\
+            --test-suite workspace/python-expert/tests/tests.yaml
 
         # TextGrad with custom iterations
         python -m harness.optimization.cli.optimize \\
-            --agent agents/configs/python-expert.md \\
-            --test-suite tests/optimization/python_expert_tests.yaml \\
+            --agent src/harness/agents/configs/python-expert.md \\
+            --test-suite workspace/python-expert/tests/tests.yaml \\
             --optimizer textgrad \\
             --iterations 20
 
         # Save all intermediate results
         python -m harness.optimization.cli.optimize \\
-            --agent agents/configs/python-expert.md \\
-            --test-suite tests/optimization/python_expert_tests.yaml \\
-            --save-iterations \\
-            --iterations-dir ./optimization_history/
+            --agent src/harness/agents/configs/python-expert.md \\
+            --test-suite workspace/python-expert/tests/tests.yaml \\
+            --save-iterations
     """
     if not quiet:
         print_banner()
@@ -317,7 +323,7 @@ def cli(
 
         if not quiet:
             console.print()
-            print_result_summary(run)
+            print_result_summary(run, result)
 
         if not result.success:
             sys.exit(1)

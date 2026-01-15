@@ -109,7 +109,7 @@ test_cases:
             )
 
     def test_get_output_path_default(self, temp_files: tuple[Path, Path]) -> None:
-        """Test default output path generation."""
+        """Test default output path generation with versioned naming."""
         agent_path, suite_path = temp_files
 
         config = PipelineConfig(
@@ -118,7 +118,12 @@ test_cases:
         )
 
         output_path = config.get_output_path()
-        assert output_path.name == "agent_optimized.md"
+        # Versioned naming: workspace/{agent}/{agent}-vN.md
+        # Check pattern, not exact version (version depends on existing files)
+        import re
+        assert re.match(r"agent-v\d+\.md", output_path.name), f"Expected versioned name, got {output_path.name}"
+        assert output_path.parent.name == "agent"
+        assert output_path.parent.parent.name == "workspace"
 
     def test_get_output_path_custom(self, temp_files: tuple[Path, Path]) -> None:
         """Test custom output path."""

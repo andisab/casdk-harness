@@ -37,13 +37,19 @@ from harness.optimization.testcases.models import (
     ValidationType,
 )
 from harness.optimization.testcases.validators import (
+    CodeExtractor,
+    CodeLLMValidator,
+    CodeSyntaxValidator,
+    CodeValidator,
     CompositeValidator,
     ContainsValidator,
     ExactValidator,
+    ExtractedCode,
     LLMJudgeValidator,
     RegexValidator,
     Validator,
     get_validator,
+    is_valid_python_syntax,
 )
 
 __all__ = [
@@ -65,4 +71,11 @@ __all__ = [
     "LLMJudgeValidator",
     "CompositeValidator",
     "get_validator",
+    # Code validation utilities
+    "CodeExtractor",
+    "ExtractedCode",
+    "is_valid_python_syntax",
+    "CodeValidator",
+    "CodeSyntaxValidator",
+    "CodeLLMValidator",
 ]

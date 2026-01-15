@@ -1,0 +1,105 @@
+# Test suite for python-expert agent optimization
+# Used by CGF Phase 1 to validate the optimization pipeline
+#
+# Validation Types:
+# - code: Extract code from markdown, validate syntax, check criteria in code
+# - code_syntax: Extract code from markdown, validate syntax only
+# - code_llm: Extract code from markdown, validate syntax, use LLM to judge
+# - contains: Simple substring match (legacy, avoid for code tasks)
+# - regex: Pattern match (legacy, avoid for code tasks)
+# - llm_judge: LLM evaluation on full output
+
+name: python-expert-optimization-suite
+description: Test cases for optimizing the python-expert agent's system prompt
+agent_name: python-expert
+version: "2.0"
+
+test_cases:
+  - id: sort-function
+    prompt: "Write a Python function that sorts a list of integers in ascending order. Include type hints."
+    expected_behavior: "Returns a working Python function with proper type hints"
+    validation:
+      type: code
+      criteria: "def "
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 3
+    timeout_seconds: 120
+    tags:
+      - basic
+      - algorithms
+
+  - id: async-http-client
+    prompt: "Create an async function using aiohttp that fetches JSON from a URL and returns the parsed data. Include type hints and error handling."
+    expected_behavior: "Async function with proper error handling and type hints"
+    validation:
+      type: code
+      criteria: "async def"
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 3
+    timeout_seconds: 180
+    tags:
+      - async
+      - networking
+
+  - id: pydantic-model
+    prompt: "Create a Pydantic model for a User with email validation and age constraints (18-120). Use Pydantic v2 syntax with Field and field_validator."
+    expected_behavior: "Pydantic BaseModel with field validators"
+    validation:
+      type: code
+      criteria: "BaseModel"
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 3
+    timeout_seconds: 120
+    tags:
+      - pydantic
+      - validation
+
+  - id: fastapi-endpoint
+    prompt: "Create a FastAPI POST endpoint for user registration that accepts a Pydantic model and returns a 201 status. Include the Pydantic model definition."
+    expected_behavior: "FastAPI route with Pydantic input model and proper status codes"
+    validation:
+      type: code
+      criteria: ".post"  # Matches @app.post or @router.post
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 4
+    timeout_seconds: 180
+    tags:
+      - fastapi
+      - api
+
+  - id: sqlalchemy-query
+    prompt: "Write an async SQLAlchemy query function that fetches users with pagination (offset and limit parameters). Use SQLAlchemy 2.0 async syntax."
+    expected_behavior: "Async query with offset/limit and proper session handling"
+    validation:
+      type: code
+      criteria: "async def"
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 3
+    timeout_seconds: 180
+    tags:
+      - database
+      - sqlalchemy
+
+  - id: error-handling
+    prompt: |
+      Write a Python function that demonstrates proper error handling. Create a function called `safe_divide` that:
+      1. Takes two numbers as arguments
+      2. Returns the division result
+      3. Handles ZeroDivisionError and TypeError with specific messages
+      4. Includes type hints
+    expected_behavior: "Function with try/except blocks, specific exceptions, and proper return types"
+    validation:
+      type: code
+      criteria: "except"
+      language: python
+      require_syntax_valid: true
+      min_code_lines: 3
+    timeout_seconds: 120
+    tags:
+      - error-handling
+      - functions

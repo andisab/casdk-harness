@@ -363,7 +363,7 @@ async def call_agent(
     agent_name: str,
     prompt: str,
     permission_mode: str = "acceptEdits",
-    cwd: str = "/workspace",
+    cwd: str | None = None,
     verbose: bool | None = None,
     on_progress: Callable[[str], None] | None = None,
     system_prompt_override: str | None = None,
@@ -378,7 +378,7 @@ async def call_agent(
         agent_name: Name of the agent to invoke (e.g., "python-expert")
         prompt: The prompt to send to the agent
         permission_mode: Permission mode for tools (default: "acceptEdits")
-        cwd: Working directory for the agent (default: "/workspace")
+        cwd: Working directory for the agent (default: current directory)
         verbose: Print progress updates to stderr. None=inherit from
                  CLAUDE_AGENT_VERBOSE env var (defaults to True if unset)
         on_progress: Optional callback for progress updates
@@ -440,12 +440,16 @@ async def call_agent(
     # Use override prompt if provided, otherwise use agent's default
     effective_prompt = system_prompt_override if system_prompt_override else agent_info["prompt"]
 
+    # Resolve working directory - use current directory if not specified
+    import os
+    effective_cwd = cwd if cwd else os.getcwd()
+
     options_dict: dict[str, Any] = {
         "system_prompt": effective_prompt,
         "model": agent_info["model"],
         "allowed_tools": agent_info["tools"] if agent_info["tools"] else None,
         "permission_mode": permission_mode,
-        "cwd": cwd,
+        "cwd": effective_cwd,
         "max_turns": max_turns,
     }
     options_dict.update(extra_options)

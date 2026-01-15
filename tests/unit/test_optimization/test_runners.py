@@ -4,23 +4,21 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from harness.optimization.runners import (
     AgentRunner,
-    BatchRunner,
     BaseRunner,
+    BatchRunner,
     RunContext,
     RunnerConfig,
-    RunnerProtocol,
 )
 from harness.optimization.testcases import (
     TestCase,
     TestResult,
     TestSuite,
-    SuiteResult,
     ValidationConfig,
     ValidationType,
 )
@@ -34,7 +32,7 @@ class TestRunnerConfig:
         config = RunnerConfig(agent_name="test-agent")
         assert config.agent_name == "test-agent"
         assert config.permission_mode == "acceptEdits"
-        assert config.cwd == "/workspace"
+        assert config.cwd is None  # None means use current directory
         assert config.verbose is False
         assert config.collect_spans is True
         assert config.timeout_seconds == 300

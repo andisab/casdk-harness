@@ -39,7 +39,7 @@ class RunnerConfig:
 
     agent_name: str
     permission_mode: str = "acceptEdits"
-    cwd: str = "/workspace"
+    cwd: str | None = None  # None means use current directory
     verbose: bool = False
     collect_spans: bool = True
     timeout_seconds: int = 300

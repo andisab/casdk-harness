@@ -33,6 +33,10 @@ class ValidationType(str, Enum):
     CONTAINS = "contains"
     REGEX = "regex"
     LLM_JUDGE = "llm_judge"
+    # Code-specific validators
+    CODE = "code"  # Extract code, check syntax, then validate content
+    CODE_SYNTAX = "code_syntax"  # Extract code and verify syntax only
+    CODE_LLM = "code_llm"  # Extract code and use LLM judge on code only
 
 
 @dataclass
@@ -40,16 +44,23 @@ class ValidationConfig:
     """Configuration for output validation.
 
     Attributes:
-        type: Validation method (exact, contains, regex, llm_judge).
+        type: Validation method (exact, contains, regex, llm_judge, code, etc.).
         criteria: Match criteria - exact string, substring, regex pattern,
             or LLM judge prompt.
         partial_credit: If True, allows partial scores (0.0-1.0).
             If False, only 0.0 or 1.0.
+        language: Programming language for code validation (default: python).
+        require_syntax_valid: If True, code must be syntactically valid to pass.
+        min_code_lines: Minimum lines of code required (0 = no minimum).
     """
 
     type: ValidationType | str
     criteria: str
     partial_credit: bool = False
+    # Code-specific validation options
+    language: str = "python"
+    require_syntax_valid: bool = True
+    min_code_lines: int = 0
 
     def __post_init__(self) -> None:
         """Convert string type to enum if needed."""

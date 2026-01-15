@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,9 +11,14 @@ import pytest
 import yaml
 
 from harness.optimization.testcases import (
+    CodeExtractor,
+    CodeLLMValidator,
+    CodeSyntaxValidator,
+    CodeValidator,
     CompositeValidator,
     ContainsValidator,
     ExactValidator,
+    ExtractedCode,
     LLMJudgeValidator,
     RegexValidator,
     SuiteResult,
@@ -26,6 +30,7 @@ from harness.optimization.testcases import (
     ValidationConfig,
     ValidationType,
     get_validator,
+    is_valid_python_syntax,
 )
 
 
@@ -603,3 +608,572 @@ class TestLoadSampleSuite:
             assert suite.name == "python-expert-optimization-suite"
             assert suite.agent_name == "python-expert"
             assert len(suite) >= 6
+
+    def test_load_python_expert_tests_code_validation(self) -> None:
+        """Test that code validation types are loaded correctly."""
+        suite_path = Path(__file__).parent.parent.parent / "optimization" / "python_expert_tests.yaml"
+        if suite_path.exists():
+            suite = TestSuiteLoader.load(suite_path)
+            # Check that code validation type is used
+            sort_func = suite.get_by_id("sort-function")
+            assert sort_func is not None
+            assert sort_func.validation.type == ValidationType.CODE
+            assert sort_func.validation.require_syntax_valid is True
+            assert sort_func.validation.min_code_lines == 3
+            assert sort_func.validation.language == "python"
+
+
+# =============================================================================
+# Code Extraction Tests
+# =============================================================================
+
+
+class TestExtractedCode:
+    """Tests for ExtractedCode dataclass."""
+
+    def test_is_empty_true(self) -> None:
+        """Test is_empty returns True for empty code."""
+        extracted = ExtractedCode(code="", language=None, source="raw", line_count=0)
+        assert extracted.is_empty is True
+
+    def test_is_empty_whitespace(self) -> None:
+        """Test is_empty returns True for whitespace-only code."""
+        extracted = ExtractedCode(code="   \n\t  ", language=None, source="raw", line_count=1)
+        assert extracted.is_empty is True
+
+    def test_is_empty_false(self) -> None:
+        """Test is_empty returns False for non-empty code."""
+        extracted = ExtractedCode(
+            code="def foo(): pass",
+            language="python",
+            source="markdown_block",
+            line_count=1,
+        )
+        assert extracted.is_empty is False
+
+
+class TestCodeExtractor:
+    """Tests for CodeExtractor."""
+
+    @pytest.fixture
+    def extractor(self) -> CodeExtractor:
+        """Create a CodeExtractor instance."""
+        return CodeExtractor()
+
+    def test_extract_markdown_python_block(self, extractor: CodeExtractor) -> None:
+        """Test extracting Python code from markdown block."""
+        output = '''Here's a solution:
+```python
+def sort(lst):
+    return sorted(lst)
+```
+'''
+        result = extractor.extract(output)
+        assert result.source == "markdown_block"
+        assert result.language == "python"
+        assert "def sort(lst):" in result.code
+        assert result.line_count == 2
+
+    def test_extract_markdown_no_language(self, extractor: CodeExtractor) -> None:
+        """Test extracting code from markdown block without language."""
+        output = '''```
+def foo():
+    pass
+```'''
+        result = extractor.extract(output)
+        assert result.source == "markdown_block"
+        assert result.language is None
+        assert "def foo():" in result.code
+
+    def test_extract_prefers_matching_language(self, extractor: CodeExtractor) -> None:
+        """Test that extractor prefers blocks with matching language."""
+        output = '''```javascript
+console.log("hello");
+```
+
+```python
+def hello():
+    print("hello")
+```'''
+        result = extractor.extract(output, preferred_language="python")
+        assert result.language == "python"
+        assert "def hello():" in result.code
+
+    def test_extract_indented_code(self, extractor: CodeExtractor) -> None:
+        """Test extracting indented code when no markdown blocks."""
+        output = '''Here's the code:
+
+    def sort(lst):
+        return sorted(lst)
+
+That's all!'''
+        result = extractor.extract(output)
+        assert result.source == "indented"
+        assert "def sort(lst):" in result.code
+
+    def test_extract_raw_fallback(self, extractor: CodeExtractor) -> None:
+        """Test raw fallback when no patterns match."""
+        output = "def foo(): pass"
+        result = extractor.extract(output)
+        assert result.source == "raw"
+        assert result.code == "def foo(): pass"
+
+    def test_extract_empty_output(self, extractor: CodeExtractor) -> None:
+        """Test extraction from empty output."""
+        result = extractor.extract("")
+        assert result.is_empty
+
+    def test_extract_multiline_code_block(self, extractor: CodeExtractor) -> None:
+        """Test extracting multiline code from markdown."""
+        output = '''```python
+def complex_function(x, y, z):
+    """Docstring here."""
+    if x > 0:
+        return y + z
+    return y - z
+```'''
+        result = extractor.extract(output)
+        assert result.line_count == 5
+        assert "def complex_function" in result.code
+        assert "Docstring here" in result.code
+
+    def test_extract_all_multiple_blocks(self, extractor: CodeExtractor) -> None:
+        """Test extract_all with multiple code blocks."""
+        output = '''```python
+def first():
+    pass
+```
+
+```python
+def second():
+    pass
+```
+
+```javascript
+function third() {}
+```'''
+        results = extractor.extract_all(output, preferred_language="python")
+        assert len(results) == 3
+        # Python blocks should come first (sorted by preferred language)
+        assert results[0].language == "python"
+        assert results[1].language == "python"
+        assert results[2].language == "javascript"
+
+
+class TestIsValidPythonSyntax:
+    """Tests for is_valid_python_syntax function."""
+
+    def test_valid_function(self) -> None:
+        """Test valid Python function."""
+        code = """def sort(lst):
+    return sorted(lst)
+"""
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is True
+        assert error is None
+
+    def test_valid_class(self) -> None:
+        """Test valid Python class."""
+        code = """class User:
+    def __init__(self, name):
+        self.name = name
+"""
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is True
+
+    def test_invalid_syntax_missing_colon(self) -> None:
+        """Test invalid syntax - missing colon."""
+        code = "def foo()"  # Missing colon
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is False
+        assert error is not None
+        assert "SyntaxError" in error
+
+    def test_invalid_syntax_bad_indent(self) -> None:
+        """Test invalid syntax - bad indentation."""
+        code = """def foo():
+pass"""  # Missing indentation
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is False
+        assert "SyntaxError" in error
+
+    def test_valid_async_function(self) -> None:
+        """Test valid async function."""
+        code = """async def fetch_data(url):
+    async with aiohttp.ClientSession() as session:
+        return await session.get(url)
+"""
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is True
+
+    def test_valid_complex_code(self) -> None:
+        """Test valid complex code with decorators and type hints."""
+        code = '''from typing import List
+
+@dataclass
+class User:
+    name: str
+    age: int
+
+def get_adults(users: List[User]) -> List[User]:
+    return [u for u in users if u.age >= 18]
+'''
+        is_valid, error = is_valid_python_syntax(code)
+        assert is_valid is True
+
+
+# =============================================================================
+# Code Validator Tests
+# =============================================================================
+
+
+class TestCodeSyntaxValidator:
+    """Tests for CodeSyntaxValidator."""
+
+    @pytest.mark.asyncio
+    async def test_valid_python_in_markdown(self) -> None:
+        """Test valid Python in markdown block."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_SYNTAX,
+            criteria="",
+            language="python",
+        )
+        validator = CodeSyntaxValidator(config)
+        output = '''```python
+def sort(lst):
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_invalid_python_in_markdown(self) -> None:
+        """Test invalid Python syntax in markdown block."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_SYNTAX,
+            criteria="",
+            language="python",
+        )
+        validator = CodeSyntaxValidator(config)
+        output = '''```python
+def sort(lst)
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_empty_code_block(self) -> None:
+        """Test empty code block returns 0."""
+        config = ValidationConfig(type=ValidationType.CODE_SYNTAX, criteria="")
+        validator = CodeSyntaxValidator(config)
+        output = '''```python
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_min_code_lines_pass(self) -> None:
+        """Test min_code_lines validation passes."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_SYNTAX,
+            criteria="",
+            min_code_lines=3,
+        )
+        validator = CodeSyntaxValidator(config)
+        output = '''```python
+def sort(lst):
+    """Sort a list."""
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_min_code_lines_fail(self) -> None:
+        """Test min_code_lines validation fails."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_SYNTAX,
+            criteria="",
+            min_code_lines=5,
+        )
+        validator = CodeSyntaxValidator(config)
+        output = '''```python
+def sort(lst):
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+
+class TestCodeValidator:
+    """Tests for CodeValidator."""
+
+    @pytest.mark.asyncio
+    async def test_valid_code_with_criteria(self) -> None:
+        """Test valid code that contains criteria."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="def ",
+            require_syntax_valid=True,
+        )
+        validator = CodeValidator(config)
+        output = '''```python
+def sort(lst):
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 1.0
+
+    @pytest.mark.asyncio
+    async def test_valid_code_missing_criteria(self) -> None:
+        """Test valid code that does not contain criteria."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="class ",  # Looking for class, not def
+            require_syntax_valid=True,
+        )
+        validator = CodeValidator(config)
+        output = '''```python
+def sort(lst):
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_invalid_syntax_fails(self) -> None:
+        """Test that invalid syntax fails even with correct criteria."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="def ",
+            require_syntax_valid=True,
+        )
+        validator = CodeValidator(config)
+        output = '''```python
+def sort(lst)  # Missing colon
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_syntax_check_disabled(self) -> None:
+        """Test that syntax check can be disabled."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="def ",
+            require_syntax_valid=False,  # Disable syntax check
+        )
+        validator = CodeValidator(config)
+        output = '''```python
+def sort(lst)  # Missing colon - invalid syntax
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 1.0  # Passes because syntax check is disabled
+
+    @pytest.mark.asyncio
+    async def test_criteria_in_explanation_not_code(self) -> None:
+        """Test criteria found in explanation but not in code fails."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="async def",
+            require_syntax_valid=True,
+        )
+        validator = CodeValidator(config)
+        # "async def" is in the explanation, not the code
+        output = '''Here's an async def function example:
+```python
+def sort(lst):
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_min_lines_and_criteria(self) -> None:
+        """Test combined min_code_lines and criteria validation."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="return",
+            require_syntax_valid=True,
+            min_code_lines=5,
+        )
+        validator = CodeValidator(config)
+        output = '''```python
+def complex_sort(lst):
+    """Sort with logging."""
+    print("Sorting...")
+    result = sorted(lst)
+    return result
+```'''
+        score = await validator.validate(output)
+        assert score == 1.0
+
+
+class TestCodeLLMValidator:
+    """Tests for CodeLLMValidator."""
+
+    @pytest.mark.asyncio
+    async def test_llm_judge_success(self) -> None:
+        """Test LLM judge with mocked response."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_LLM,
+            criteria="Evaluate if this is a valid sorting function",
+            partial_credit=True,
+        )
+        validator = CodeLLMValidator(config)
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="0.95")]
+
+        with patch("anthropic.AsyncAnthropic") as mock:
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock.return_value = mock_client
+
+            output = '''```python
+def sort(lst):
+    return sorted(lst)
+```'''
+            score = await validator.validate(output)
+            assert score == 0.95
+
+    @pytest.mark.asyncio
+    async def test_llm_judge_with_syntax_validation(self) -> None:
+        """Test LLM judge with syntax validation enabled."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_LLM,
+            criteria="Check code quality",
+            require_syntax_valid=True,
+        )
+        validator = CodeLLMValidator(config)
+
+        # Invalid syntax should fail before reaching LLM
+        output = '''```python
+def sort(lst)  # Missing colon
+    return sorted(lst)
+```'''
+        score = await validator.validate(output)
+        assert score == 0.0  # Failed due to syntax, not LLM
+
+    @pytest.mark.asyncio
+    async def test_llm_judge_empty_code(self) -> None:
+        """Test LLM judge with empty code extraction."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_LLM,
+            criteria="Evaluate code",
+        )
+        validator = CodeLLMValidator(config)
+
+        output = "This is just text with no code."
+        score = await validator.validate(output)
+        assert score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_llm_judge_parse_error(self) -> None:
+        """Test LLM judge with unparseable response."""
+        config = ValidationConfig(
+            type=ValidationType.CODE_LLM,
+            criteria="Check quality",
+            partial_credit=True,
+        )
+        validator = CodeLLMValidator(config)
+
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="The score is 0.8 out of 1.0")]
+
+        with patch("anthropic.AsyncAnthropic") as mock:
+            mock_client = AsyncMock()
+            mock_client.messages.create = AsyncMock(return_value=mock_response)
+            mock.return_value = mock_client
+
+            output = '''```python
+def foo(): pass
+```'''
+            score = await validator.validate(output)
+            # Should extract 0.8 from the text
+            assert score == 0.8
+
+
+class TestGetValidatorCodeTypes:
+    """Tests for get_validator with code validation types."""
+
+    def test_get_validator_code(self) -> None:
+        """Test get_validator for CODE type."""
+        config = ValidationConfig(type=ValidationType.CODE, criteria="def ")
+        validator = get_validator(config)
+        assert isinstance(validator, CodeValidator)
+
+    def test_get_validator_code_syntax(self) -> None:
+        """Test get_validator for CODE_SYNTAX type."""
+        config = ValidationConfig(type=ValidationType.CODE_SYNTAX, criteria="")
+        validator = get_validator(config)
+        assert isinstance(validator, CodeSyntaxValidator)
+
+    def test_get_validator_code_llm(self) -> None:
+        """Test get_validator for CODE_LLM type."""
+        config = ValidationConfig(type=ValidationType.CODE_LLM, criteria="Evaluate")
+        validator = get_validator(config)
+        assert isinstance(validator, CodeLLMValidator)
+
+    def test_get_validator_code_with_all_options(self) -> None:
+        """Test get_validator with all code-specific options."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="async def",
+            partial_credit=True,
+            language="python",
+            require_syntax_valid=True,
+            min_code_lines=5,
+        )
+        validator = get_validator(config)
+        assert isinstance(validator, CodeValidator)
+        # Verify config was passed correctly
+        assert validator.config.language == "python"
+        assert validator.config.require_syntax_valid is True
+        assert validator.config.min_code_lines == 5
+
+
+class TestValidationConfigCodeOptions:
+    """Tests for ValidationConfig code-specific options."""
+
+    def test_default_code_options(self) -> None:
+        """Test default values for code options."""
+        config = ValidationConfig(type=ValidationType.CODE, criteria="def ")
+        assert config.language == "python"
+        assert config.require_syntax_valid is True
+        assert config.min_code_lines == 0
+
+    def test_custom_code_options(self) -> None:
+        """Test custom values for code options."""
+        config = ValidationConfig(
+            type=ValidationType.CODE,
+            criteria="def ",
+            language="javascript",
+            require_syntax_valid=False,
+            min_code_lines=10,
+        )
+        assert config.language == "javascript"
+        assert config.require_syntax_valid is False
+        assert config.min_code_lines == 10
+
+    def test_code_options_from_dict(self) -> None:
+        """Test code options loaded from dict."""
+        tc = TestCase(
+            id="test-1",
+            prompt="Write code",
+            expected_behavior="Returns code",
+            validation={
+                "type": "code",
+                "criteria": "def ",
+                "language": "python",
+                "require_syntax_valid": True,
+                "min_code_lines": 5,
+            },
+        )
+        assert tc.validation.type == ValidationType.CODE
+        assert tc.validation.language == "python"
+        assert tc.validation.require_syntax_valid is True
+        assert tc.validation.min_code_lines == 5

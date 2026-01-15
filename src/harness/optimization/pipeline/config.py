@@ -6,6 +6,7 @@ including paths, optimizer selection, and output settings.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -76,18 +77,64 @@ class PipelineConfig:
             raise FileNotFoundError(f"Test suite file not found: {self.test_suite_path}")
 
     def get_output_path(self) -> Path:
-        """Get the output path, generating a default if not specified.
+        """Get the output path, defaulting to workspace/{agent}/{agent}-vN.md.
+
+        Uses versioned naming: {agent}-v1.md, {agent}-v2.md, etc.
+        Finds the next available version number in the workspace directory.
 
         Returns:
             Path for the output file.
         """
         if self.output_path is not None:
-            return self.output_path
+            # After __post_init__, output_path is always a Path
+            return Path(self.output_path)
 
-        # Generate default output path based on agent name and optimizer
-        agent_name = self.agent_path.stem
+        # Default to workspace/{agent_name}/{agent_name}-vN.{ext}
+        agent_name = Path(self.agent_path).stem
+        workspace_dir = Path("workspace") / agent_name
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
         suffix = ".md" if self.output_format == OutputFormat.MARKDOWN else f".{self.output_format.value}"
-        return Path(f"{agent_name}_optimized{suffix}")
+
+        # Find next version number
+        next_version = self._get_next_version(workspace_dir, agent_name, suffix)
+        return workspace_dir / f"{agent_name}-v{next_version}{suffix}"
+
+    def _get_next_version(self, workspace_dir: Path, agent_name: str, suffix: str) -> int:
+        """Find the next available version number in workspace directory.
+
+        Args:
+            workspace_dir: Directory to search for existing versions.
+            agent_name: Base name of the agent.
+            suffix: File extension (e.g., '.md').
+
+        Returns:
+            Next available version number (starts at 1).
+        """
+        pattern = re.compile(rf"^{re.escape(agent_name)}-v(\d+){re.escape(suffix)}$")
+        max_version = 0
+
+        if workspace_dir.exists():
+            for file in workspace_dir.iterdir():
+                match = pattern.match(file.name)
+                if match:
+                    version = int(match.group(1))
+                    max_version = max(max_version, version)
+
+        return max_version + 1
+
+    def get_iterations_dir(self) -> Path | None:
+        """Get iterations directory, defaulting to sibling of output.
+
+        Returns:
+            Path for iterations directory, or None if save_iterations is False.
+        """
+        if not self.save_iterations:
+            return None
+        if self.iterations_dir is not None:
+            # After __post_init__, iterations_dir is always a Path
+            return Path(self.iterations_dir)
+        return self.get_output_path().parent / "iterations"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary for serialization.
