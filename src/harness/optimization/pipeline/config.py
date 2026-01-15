@@ -6,13 +6,25 @@ including paths, optimizer selection, and output settings.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from harness.optimization.optimizers import OptimizerType, OptimizationConfig
+from harness.optimization.optimizers import OptimizationConfig, OptimizerType
+
+
+def _env_bool(key: str, default: bool = False) -> bool:
+    """Read a boolean from environment variable.
+
+    Accepts: true, 1, yes, on (case-insensitive) as True.
+    """
+    val = os.environ.get(key, "").lower()
+    if not val:
+        return default
+    return val in ("true", "1", "yes", "on")
 
 
 class OutputFormat(str, Enum):
@@ -39,6 +51,14 @@ class PipelineConfig:
         verbose: Enable verbose logging.
         dry_run: Validate config without running optimization.
         metadata: Additional metadata for the run.
+        token_tracking_enabled: Enable token usage tracking (env: CGF_TOKEN_TRACKING).
+        cache_enabled: Enable caching for repeated runs (env: CGF_CACHE_ENABLED).
+        token_budget: Max tokens allowed (0 = unlimited).
+
+    Environment Variables:
+        CGF_TOKEN_TRACKING: Enable token tracking (default: false)
+        CGF_CACHE_ENABLED: Enable result caching (default: false)
+        CGF_TOKEN_BUDGET: Max token budget, 0 = unlimited (default: 0)
     """
 
     agent_path: str | Path
@@ -52,6 +72,16 @@ class PipelineConfig:
     verbose: bool = True
     dry_run: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Feature flags - default OFF for initial testing
+    token_tracking_enabled: bool = field(
+        default_factory=lambda: _env_bool("CGF_TOKEN_TRACKING", default=False)
+    )
+    cache_enabled: bool = field(
+        default_factory=lambda: _env_bool("CGF_CACHE_ENABLED", default=False)
+    )
+    token_budget: int = field(
+        default_factory=lambda: int(os.environ.get("CGF_TOKEN_BUDGET", "0"))
+    )
 
     def __post_init__(self) -> None:
         """Validate and normalize configuration."""
@@ -158,10 +188,16 @@ class PipelineConfig:
                 "verbose": self.optimization_config.verbose,
             } if self.optimization_config else None,
             "save_iterations": self.save_iterations,
-            "iterations_dir": str(self.iterations_dir) if self.iterations_dir else None,
+            "iterations_dir": (
+                str(self.iterations_dir) if self.iterations_dir else None
+            ),
             "verbose": self.verbose,
             "dry_run": self.dry_run,
             "metadata": self.metadata,
+            # Feature flags
+            "token_tracking_enabled": self.token_tracking_enabled,
+            "cache_enabled": self.cache_enabled,
+            "token_budget": self.token_budget,
         }
 
     @classmethod
@@ -199,4 +235,17 @@ class PipelineConfig:
             verbose=data.get("verbose", True),
             dry_run=data.get("dry_run", False),
             metadata=data.get("metadata", {}),
+            # Feature flags - use env defaults if not in dict
+            token_tracking_enabled=data.get(
+                "token_tracking_enabled",
+                _env_bool("CGF_TOKEN_TRACKING", False),
+            ),
+            cache_enabled=data.get(
+                "cache_enabled",
+                _env_bool("CGF_CACHE_ENABLED", False),
+            ),
+            token_budget=data.get(
+                "token_budget",
+                int(os.environ.get("CGF_TOKEN_BUDGET", "0")),
+            ),
         )

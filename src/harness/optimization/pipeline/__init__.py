@@ -29,6 +29,14 @@ from harness.optimization.pipeline.optimization_run import (
     RunPhase,
     RunStatus,
 )
+from harness.optimization.pipeline.parallel import (
+    BatchResult,
+    ParallelConfig,
+    ParallelExecutor,
+    TaskResult,
+    batch_process,
+    gather_with_concurrency,
+)
 
 __all__ = [
     # Config
@@ -38,4 +46,11 @@ __all__ = [
     "OptimizationRun",
     "RunPhase",
     "RunStatus",
+    # Parallel execution
+    "ParallelConfig",
+    "ParallelExecutor",
+    "TaskResult",
+    "BatchResult",
+    "gather_with_concurrency",
+    "batch_process",
 ]

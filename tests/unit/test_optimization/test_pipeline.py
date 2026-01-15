@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import yaml
 
 from harness.optimization.optimizers import OptimizationConfig, OptimizationResult, OptimizerType
 from harness.optimization.pipeline import (
@@ -166,6 +164,91 @@ test_cases:
         config = PipelineConfig.from_dict(data)
         assert config.optimizer_type == OptimizerType.TEXTGRAD
         assert config.output_format == OutputFormat.JSON
+
+    def test_feature_flags_default(
+        self, temp_files: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test feature flags default to OFF."""
+        agent_path, suite_path = temp_files
+
+        # Clear any env vars that might be set
+        monkeypatch.delenv("CGF_TOKEN_TRACKING", raising=False)
+        monkeypatch.delenv("CGF_CACHE_ENABLED", raising=False)
+        monkeypatch.delenv("CGF_TOKEN_BUDGET", raising=False)
+
+        config = PipelineConfig(
+            agent_path=agent_path,
+            test_suite_path=suite_path,
+        )
+
+        assert config.token_tracking_enabled is False
+        assert config.cache_enabled is False
+        assert config.token_budget == 0
+
+    def test_feature_flags_from_env(
+        self, temp_files: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test feature flags read from environment."""
+        agent_path, suite_path = temp_files
+
+        monkeypatch.setenv("CGF_TOKEN_TRACKING", "true")
+        monkeypatch.setenv("CGF_CACHE_ENABLED", "1")
+        monkeypatch.setenv("CGF_TOKEN_BUDGET", "100000")
+
+        config = PipelineConfig(
+            agent_path=agent_path,
+            test_suite_path=suite_path,
+        )
+
+        assert config.token_tracking_enabled is True
+        assert config.cache_enabled is True
+        assert config.token_budget == 100000
+
+    def test_feature_flags_in_to_dict(
+        self, temp_files: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test feature flags included in to_dict."""
+        agent_path, suite_path = temp_files
+
+        monkeypatch.delenv("CGF_TOKEN_TRACKING", raising=False)
+        monkeypatch.delenv("CGF_CACHE_ENABLED", raising=False)
+
+        config = PipelineConfig(
+            agent_path=agent_path,
+            test_suite_path=suite_path,
+            token_tracking_enabled=True,
+            cache_enabled=True,
+            token_budget=50000,
+        )
+
+        data = config.to_dict()
+
+        assert data["token_tracking_enabled"] is True
+        assert data["cache_enabled"] is True
+        assert data["token_budget"] == 50000
+
+    def test_feature_flags_from_dict(
+        self, temp_files: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test feature flags loaded from dict."""
+        agent_path, suite_path = temp_files
+
+        monkeypatch.delenv("CGF_TOKEN_TRACKING", raising=False)
+        monkeypatch.delenv("CGF_CACHE_ENABLED", raising=False)
+
+        data = {
+            "agent_path": str(agent_path),
+            "test_suite_path": str(suite_path),
+            "token_tracking_enabled": True,
+            "cache_enabled": True,
+            "token_budget": 75000,
+        }
+
+        config = PipelineConfig.from_dict(data)
+
+        assert config.token_tracking_enabled is True
+        assert config.cache_enabled is True
+        assert config.token_budget == 75000
 
 
 class TestRunPhaseAndStatus:
@@ -448,6 +531,7 @@ class TestCLIImports:
 
     def test_cli_function_exists(self) -> None:
         """Test that CLI function is a Click command."""
-        from harness.optimization.cli.optimize import cli
         import click
+
+        from harness.optimization.cli.optimize import cli
         assert isinstance(cli, click.Command)
