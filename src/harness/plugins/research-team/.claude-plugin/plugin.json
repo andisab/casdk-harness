@@ -1,7 +1,7 @@
 {
   "name": "research-team",
-  "version": "1.0.0",
-  "description": "Multi-agent research system for comprehensive topic investigation with parallel execution and Joplin integration",
+  "version": "1.1.0",
+  "description": "Multi-agent research system with intelligent source routing (Context7, WebSearch, Codebase) for comprehensive topic investigation",
   "author": {
     "name": "Andis A. Blukis",
     "email": "andis.blukis@gmail.com"

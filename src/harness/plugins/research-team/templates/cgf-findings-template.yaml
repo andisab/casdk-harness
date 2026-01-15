@@ -1,0 +1,110 @@
+# CGF Research Findings Template
+# Use this format when output_mode: cgf is specified
+# This structured output feeds into the CGF optimization pipeline
+
+topic: "{research topic - e.g., 'Python async programming'}"
+resource_context: "{optional: resource being optimized - e.g., 'python-expert agent'}"
+
+# Source attribution for traceability
+source_mix:
+  context7: 0  # percentage of findings from library documentation
+  websearch: 0  # percentage of findings from web search
+  codebase: 0  # percentage of findings from local codebase
+
+# Key competencies the resource should demonstrate
+# These become the basis for test case generation
+key_competencies:
+  - name: "{competency name - e.g., 'Async Context Manager Usage'}"
+    description: "{what this competency means in practice}"
+    importance: high  # high | medium | low
+    positive_indicators:
+      - "{behavior that demonstrates competence}"
+      - "{another positive indicator}"
+    negative_indicators:
+      - "{behavior that indicates incompetence}"
+      - "{common mistake related to this competency}"
+    test_scenarios:
+      - "{scenario description that tests this competency}"
+      - "{another test scenario}"
+    sources:
+      - "{source: finding}"
+
+  - name: "{competency 2}"
+    description: "{description}"
+    importance: medium
+    positive_indicators:
+      - "{indicator}"
+    negative_indicators:
+      - "{indicator}"
+    test_scenarios:
+      - "{scenario}"
+    sources:
+      - "{source}"
+
+# Edge cases that require special handling
+# These become edge case test scenarios
+edge_cases:
+  - scenario: "{edge case description - e.g., 'Nested async context managers'}"
+    importance: "{why this edge case matters}"
+    expected_handling: "{correct way to handle this}"
+    common_failure: "{how this is commonly mishandled}"
+
+  - scenario: "{edge case 2}"
+    importance: "{importance}"
+    expected_handling: "{handling}"
+    common_failure: "{failure mode}"
+
+# Common mistakes practitioners make
+# These inform negative test cases
+common_mistakes:
+  - mistake: "{what people commonly get wrong}"
+    correction: "{the correct approach}"
+    severity: high  # high | medium | low
+    example: "{optional: code example showing mistake and fix}"
+
+  - mistake: "{mistake 2}"
+    correction: "{correction}"
+    severity: medium
+
+# Best practices extracted from research
+# These inform quality evaluation criteria
+best_practices:
+  - practice: "{best practice description}"
+    rationale: "{why this is important}"
+    source: "{where this came from}"
+
+  - practice: "{practice 2}"
+    rationale: "{rationale}"
+    source: "{source}"
+
+# Full source attribution for audit trail
+sources:
+  - type: context7
+    library: "{library-id from Context7 - e.g., '/tiangolo/fastapi'}"
+    topics_queried:
+      - "{query 1}"
+      - "{query 2}"
+    key_findings:
+      - "{summary of what was learned}"
+
+  - type: websearch
+    queries:
+      - "{search query 1}"
+      - "{search query 2}"
+    top_sources:
+      - url: "{url}"
+        title: "{source title}"
+        relevance: "{why this source was useful}"
+
+  - type: codebase
+    files_examined:
+      - "{file path}"
+    patterns_found:
+      - "{pattern description}"
+
+# Metadata
+metadata:
+  researcher: "research-specialist"
+  timestamp: "{ISO timestamp}"
+  scope: "{EXTERNAL | INTERNAL | MIXED | DOCS}"
+  confidence: high  # high | medium | low - overall confidence in findings
