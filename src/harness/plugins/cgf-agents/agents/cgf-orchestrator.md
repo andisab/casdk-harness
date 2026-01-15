@@ -219,21 +219,34 @@ When in a checkpoint state:
 
 **Actions:**
 1. Update run_state.json: evaluate_started timestamp
-2. Read original and optimized resources
-3. Read summary.json for scores
-4. Compare scores: original_score vs final_score
-5. Determine recommendation:
-   - **ACCEPT** if: improvement > 5% AND no regressions detected
-   - **REFINE** if: improvement > 0% but < 5%, or mixed results
-   - **REJECT** if: no improvement or regressions
-6. Generate reviews/v{N}_review.md with:
-   - Score comparison
-   - Improvement analysis
-   - Recommendation with reasoning
-7. Update run_state.json: evaluate_completed, recommendation
-8. Transition to CHECKPOINT_EVALUATE (if review_mode) or FINALIZE
+2. Identify latest optimized resource version (v{N})
+3. Spawn cgf-agents:cgf-result-evaluator via Task tool:
+   ```
+   "Evaluate optimization results for workspace/{resource_id}
 
-**M1 Limitation:** Full qualitative evaluation deferred to M4. For M1, use quantitative scores from summary.json.
+   Artifacts to analyze:
+   - Optimized: {resource_id}-v{N}.md
+   - Summary: {resource_id}-v{N}.md.summary.json
+   - Original: {resource_id}-orig.md
+   - Criteria: research/eval_criteria.yaml
+
+   Output review to reviews/v{N}_review.md
+   Return recommendation: ACCEPT, REFINE, or REJECT"
+   ```
+4. Wait for evaluation completion
+5. Parse recommendation from agent response:
+   - Look for `RECOMMENDATION: {ACCEPT/REFINE/REJECT}`
+   - If REFINE, extract `REFINEMENT_HINTS:` list
+6. Update run_state.json:
+   - evaluate_completed timestamp
+   - recommendation (ACCEPT/REFINE/REJECT)
+   - refinement_hints (if REFINE)
+7. Transition to CHECKPOINT_EVALUATE (if review_mode) or FINALIZE
+
+**Checkpoint behavior (CHECKPOINT_EVALUATE):**
+- **proceed**: Accept recommendation, continue to FINALIZE
+- **override**: User can change recommendation before FINALIZE
+- **abort**: Cancel optimization run
 
 **Output:** reviews/v{N}_review.md
 
@@ -242,27 +255,68 @@ When in a checkpoint state:
 **Guards:**
 - Recommendation determined (ACCEPT, REFINE, or REJECT)
 
-**Actions based on recommendation:**
+**Actions:**
+1. Read recommendation from run_state.json
+2. Execute based on recommendation:
 
-**ACCEPT:**
-1. Move optimized resource to standard location (or keep in workspace)
-2. Generate changelog entry
-3. Update run_state.json: state=COMPLETE, completed timestamp
-4. Report success with improvement metrics
+**If ACCEPT:**
+1. Copy optimized resource `{resource_id}-v{N}.md` to final location
+2. Generate final_report.md with success summary:
+   ```markdown
+   # CGF Optimization Complete: {resource_id}
 
-**REFINE:**
-1. Extract refinement hints from evaluation
-2. Update eval_criteria.yaml with hints
-3. Increment iteration count in run_state.json
-4. Transition back to RESEARCH for another iteration
-5. Check max_iterations limit
+   **Outcome:** ACCEPTED
+   **Score:** {original_score} → {final_score} (+{improvement}%)
+   **Iterations:** {count}
+   **Duration:** {total_duration}
 
-**REJECT:**
+   The optimized resource has been accepted.
+   ```
+3. Update run_state.json:
+   - state: "COMPLETE"
+   - outcome: "ACCEPTED"
+   - completed timestamp
+4. Report success message to user
+
+**If REFINE:**
+1. Check iteration count against max_iterations (default: 3)
+2. If max_iterations reached:
+   - Treat as REJECT (too many attempts)
+   - Update run_state.json: outcome="MAX_ITERATIONS_REACHED"
+   - Transition to COMPLETE
+3. If iterations remaining:
+   - Extract refinement_hints from run_state.json
+   - Append hints to eval_criteria.yaml as `refinement_context`:
+     ```yaml
+     refinement_context:
+       iteration: {N}
+       previous_score: {score}
+       hints:
+         - {hint1}
+         - {hint2}
+     ```
+   - Increment iteration count in run_state.json
+   - Transition back to RESEARCH phase
+   - Log refinement message
+
+**If REJECT:**
 1. Keep original resource unchanged
-2. Archive optimization attempt
-3. Generate failure report
-4. Update run_state.json: state=COMPLETE, completed timestamp
-5. Report failure with analysis
+2. Archive optimization attempt to `workspace/{resource_id}/archive/v{N}/`
+3. Generate final_report.md with failure summary:
+   ```markdown
+   # CGF Optimization Complete: {resource_id}
+
+   **Outcome:** REJECTED
+   **Reason:** {rejection_reason_from_review}
+   **Score:** {original_score} → {final_score}
+
+   The original resource has been preserved.
+   ```
+4. Update run_state.json:
+   - state: "COMPLETE"
+   - outcome: "REJECTED"
+   - completed timestamp
+5. Report rejection with reasoning
 
 **Output:** final_report.md, updated run_state.json
 </phase_execution>
@@ -480,8 +534,18 @@ The cgf-test-validator agent will:
 - Generate coverage_report.md
 - Return PASS, PASS (with warnings), or FAIL
 
-**For Future Phases (M4):**
-- cgf-agents:cgf-result-evaluator (M4)
+**For Result Evaluation (M4):**
+```
+subagent_type: "cgf-agents:cgf-result-evaluator"
+prompt: "Evaluate optimization results for workspace/{resource_id}..."
+```
+
+The cgf-result-evaluator agent will:
+- Read optimized resource, summary JSON, original, and criteria
+- Perform 4-dimensional CAIR evaluation (Coherence, Alignment, Improvement, Regression)
+- Generate comprehensive review report
+- Return ACCEPT, REFINE, or REJECT recommendation
+- Provide refinement hints if REFINE
 
 **For Optimization CLI:**
 Use Bash tool instead of Task:

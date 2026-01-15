@@ -22,6 +22,7 @@ This plugin provides the orchestration layer for the CGF optimization framework.
 | `cgf-criteria-synthesizer` | Research findings to eval_criteria.yaml (M2) |
 | `cgf-test-architect` | Criteria-to-tests transformation (M3) |
 | `cgf-test-validator` | Test suite validation and coverage analysis (M3) |
+| `cgf-result-evaluator` | Qualitative result evaluation with CAIR framework (M4) |
 
 ### Skills
 
@@ -191,8 +192,12 @@ JSON schemas are provided for validation:
 - test_suite.schema.json for validation
 - Orchestrator TEST_GEN phase integration
 
-**Future Milestones**:
-- M4: Result Evaluator agent (cgf-result-evaluator)
+**M4 Implementation** ✅:
+- cgf-result-evaluator agent - Multi-dimensional evaluation (CAIR framework)
+- Review report template with structured format
+- ACCEPT/REFINE/REJECT recommendation logic
+- Orchestrator EVALUATE and FINALIZE phase integration
+- Refinement loop support with hints
 
 ## Architecture
 
@@ -288,6 +293,45 @@ cgf-orchestrator
 │     - Validation type appropriateness                   │
 │  4. Write coverage_report.md                            │
 │  5. Return PASS/FAIL status                             │
+└─────────────────────────────────────────────────────────┘
+```
+
+### EVALUATE Phase Detail (M4)
+
+```
+cgf-orchestrator
+      │
+      ▼ (spawn)
+┌─────────────────────────────────────────────────────────┐
+│              cgf-result-evaluator                        │
+│                                                          │
+│  Input:                                                  │
+│  - {resource_id}-v{N}.md (optimized)                    │
+│  - {resource_id}-v{N}.md.summary.json (metrics)         │
+│  - {resource_id}-orig.md (original)                     │
+│  - research/eval_criteria.yaml (goals)                  │
+│                                                          │
+│  CAIR Evaluation Framework:                              │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ 1. COHERENCE  - Structure, readability          │    │
+│  │ 2. ALIGNMENT  - Goal fidelity, criteria match   │    │
+│  │ 3. IMPROVEMENT - What got better                │    │
+│  │ 4. REGRESSION - What was lost                   │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                          │
+│  Output:                                                 │
+│  - reviews/v{N}_review.md                               │
+│  - Recommendation: ACCEPT / REFINE / REJECT             │
+│  - Refinement hints (if REFINE)                         │
+└─────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────┐
+│                    FINALIZE                              │
+│                                                          │
+│  ACCEPT  → Copy optimized resource, mark COMPLETE       │
+│  REFINE  → Add hints to criteria, loop to RESEARCH      │
+│  REJECT  → Keep original, archive attempt, mark COMPLETE│
 └─────────────────────────────────────────────────────────┘
 ```
 
