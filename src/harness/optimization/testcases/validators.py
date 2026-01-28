@@ -44,9 +44,59 @@ import structlog
 from harness.optimization.testcases.models import ValidationConfig, ValidationType
 
 if TYPE_CHECKING:
-    pass
+    from anthropic import AsyncAnthropic
 
 logger = structlog.get_logger(__name__)
+
+
+# Shared HTTP client instance for validators (lazy initialization)
+_shared_client: "AsyncAnthropic | None" = None
+
+# Default model for LLM validators, can be overridden via set_eval_model()
+DEFAULT_EVAL_MODEL = "claude-sonnet-4-20250514"
+_eval_model_override: str | None = None
+
+
+def set_eval_model(model: str | None) -> None:
+    """Set the model to use for LLM validators.
+
+    Args:
+        model: Model name (sonnet, haiku, opus) or full model ID.
+               None resets to default.
+    """
+    global _eval_model_override
+    if model is None:
+        _eval_model_override = None
+        return
+
+    # Map short names to full model IDs
+    model_map = {
+        "sonnet": "claude-sonnet-4-20250514",
+        "haiku": "claude-3-5-haiku-20241022",
+        "opus": "claude-opus-4-5-20250929",
+    }
+    _eval_model_override = model_map.get(model, model)
+
+
+def get_eval_model() -> str:
+    """Get the current eval model."""
+    return _eval_model_override or DEFAULT_EVAL_MODEL
+
+
+def get_shared_anthropic_client() -> "AsyncAnthropic":
+    """Get or create a shared AsyncAnthropic client.
+
+    Reuses a single client instance across all validators to avoid
+    the overhead of creating new HTTP connections for each validation call.
+
+    Returns:
+        Shared AsyncAnthropic client instance.
+    """
+    global _shared_client
+    if _shared_client is None:
+        from anthropic import AsyncAnthropic
+        _shared_client = AsyncAnthropic()
+    return _shared_client
 
 
 # =============================================================================
@@ -283,20 +333,49 @@ class ExactValidator(Validator):
 
 
 class ContainsValidator(Validator):
-    """Validates output contains the criteria substring."""
+    """Validates output contains the criteria substring(s).
+
+    If criteria contains comma-separated values (e.g., "foo, bar, baz"),
+    ALL values must be present in the output for full score.
+    With partial_credit=True, score is proportional to keywords found.
+    """
 
     async def validate(self, output: str) -> float:
-        """Check if output contains criteria substring.
+        """Check if output contains criteria substring(s).
+
+        If criteria contains ", " (comma+space), it's treated as a list
+        of required keywords - ALL must be present for full score.
 
         Args:
             output: Agent's output text.
 
         Returns:
-            1.0 if contains, 0.0 otherwise.
+            1.0 if all keywords present, 0.0 otherwise.
+            With partial_credit, returns proportion of keywords found.
         """
-        contains = self.config.criteria in output
-        score = 1.0 if contains else 0.0
-        return self._apply_partial_credit(score)
+        criteria = self.config.criteria
+
+        # Check if criteria is a comma-separated list
+        if ", " in criteria:
+            keywords = [kw.strip() for kw in criteria.split(", ") if kw.strip()]
+            if not keywords:
+                return 0.0
+
+            # Count how many keywords are found (case-insensitive)
+            output_lower = output.lower()
+            found = sum(1 for kw in keywords if kw.lower() in output_lower)
+
+            if self.config.partial_credit:
+                # Return proportion of keywords found
+                return found / len(keywords)
+            else:
+                # All-or-nothing: all keywords must be present
+                return 1.0 if found == len(keywords) else 0.0
+        else:
+            # Single keyword - exact substring match (case-sensitive)
+            contains = criteria in output
+            score = 1.0 if contains else 0.0
+            return self._apply_partial_credit(score)
 
 
 class RegexValidator(Validator):
@@ -362,9 +441,7 @@ class LLMJudgeValidator(Validator):
         Returns:
             Score from 0.0 to 1.0.
         """
-        from anthropic import AsyncAnthropic
-
-        client = AsyncAnthropic()
+        client = get_shared_anthropic_client()
 
         system_prompt = """You are an evaluation judge for AI agent outputs.
 Evaluate the given output against the provided criteria.
@@ -384,10 +461,15 @@ Output ONLY the numeric score, nothing else."""
 ## Your Score (0.0 to 1.0):"""
 
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=get_eval_model(),
             max_tokens=10,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        logger.debug(
+            "LLM judge evaluation",
+            model=get_eval_model(),
         )
 
         # Extract score from response
@@ -594,9 +676,7 @@ class CodeLLMValidator(Validator):
         Returns:
             Score from 0.0 to 1.0.
         """
-        from anthropic import AsyncAnthropic
-
-        client = AsyncAnthropic()
+        client = get_shared_anthropic_client()
 
         system_prompt = """You are an evaluation judge for code quality.
 Evaluate the given code against the provided criteria.
@@ -618,10 +698,15 @@ Output ONLY the numeric score, nothing else."""
 ## Your Score (0.0 to 1.0):"""
 
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=get_eval_model(),
             max_tokens=10,
             system=system_prompt,
             messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        logger.debug(
+            "Code LLM judge evaluation",
+            model=get_eval_model(),
         )
 
         # Extract score from response

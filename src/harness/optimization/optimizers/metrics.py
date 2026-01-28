@@ -200,13 +200,17 @@ def suite_composite_metric(
     )
 
 
-def create_dspy_metric(
+def create_threshold_metric(
     base_metric: MetricFunction = validation_score_metric,
     threshold: float = 0.5,
 ) -> Callable[[dict, dict], float]:
-    """Create a DSPy-compatible metric function.
+    """Create a DSPy-compatible metric function with threshold.
 
     DSPy metrics expect (example, prediction) -> float signature.
+    This wraps a base metric with threshold-based scoring.
+
+    Note: For test-suite-based metrics, use dspy_metrics.create_test_suite_metric
+    which integrates directly with CGF test validators.
 
     Args:
         base_metric: Base metric to use on TestResult.
@@ -245,6 +249,10 @@ def create_dspy_metric(
         return 0.0
 
     return metric
+
+
+# Backwards-compatible alias (deprecated)
+create_dspy_metric = create_threshold_metric
 
 
 def create_suite_metric(

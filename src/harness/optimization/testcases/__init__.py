@@ -48,8 +48,10 @@ from harness.optimization.testcases.validators import (
     LLMJudgeValidator,
     RegexValidator,
     Validator,
+    get_eval_model,
     get_validator,
     is_valid_python_syntax,
+    set_eval_model,
 )
 
 __all__ = [
@@ -78,4 +80,7 @@ __all__ = [
     "CodeValidator",
     "CodeSyntaxValidator",
     "CodeLLMValidator",
+    # Eval model configuration
+    "set_eval_model",
+    "get_eval_model",
 ]

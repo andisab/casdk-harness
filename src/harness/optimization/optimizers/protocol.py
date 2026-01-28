@@ -47,6 +47,8 @@ class OptimizationConfig:
         temperature: LLM temperature for generation.
         seed: Random seed for reproducibility.
         verbose: Whether to log detailed progress.
+        progress_dir: Directory to save progressive drafts and candidates.
+        eval_model: Override model for test evaluation (sonnet/haiku for speed).
         metadata: Additional optimizer-specific configuration.
     """
 
@@ -57,6 +59,8 @@ class OptimizationConfig:
     temperature: float = 0.7
     seed: int | None = None
     verbose: bool = True
+    progress_dir: str | None = None
+    eval_model: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

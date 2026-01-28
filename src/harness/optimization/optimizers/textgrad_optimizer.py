@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from harness.optimization.optimizers.metrics import suite_average_score
+from harness.optimization.optimizers.optimizer_utils import get_iteration_timeout
 from harness.optimization.optimizers.protocol import (
     BaseOptimizer,
     IterationResult,
@@ -33,6 +34,7 @@ from harness.optimization.optimizers.protocol import (
     PromptCandidate,
 )
 from harness.optimization.runners import BatchRunner, RunnerConfig
+from harness.optimization.templates import get_template_loader
 from harness.optimization.testcases import SuiteResult
 
 if TYPE_CHECKING:
@@ -77,6 +79,7 @@ class TextGradAgentOptimizer(BaseOptimizer):
         """
         super().__init__(default_config)
         self.learning_rate = learning_rate
+        self._eval_model: str | None = None  # Set during optimize()
 
         if not TEXTGRAD_AVAILABLE:
             logger.warning(
@@ -119,6 +122,7 @@ class TextGradAgentOptimizer(BaseOptimizer):
             )
 
         effective_config = self._get_config(config)
+        self._eval_model = effective_config.eval_model  # Store for evaluate()
         start_time = time.time()
 
         logger.info(
@@ -151,116 +155,189 @@ class TextGradAgentOptimizer(BaseOptimizer):
                 failed=baseline_result[1].failed_count,
             )
 
+            # Get structure guidance for template-aware optimization
+            loader = get_template_loader()
+            structure_guidance = loader.get_structure_guidance(resource.RESOURCE_TYPE)
+
+            # Build role description with structure requirements
+            base_role = (
+                "System prompt for the AI agent that should be optimized "
+                "to improve task completion, code quality, and accuracy."
+            )
+            if structure_guidance:
+                role_description = (
+                    f"{base_role}\n\n"
+                    "IMPORTANT: Preserve the following structure during optimization:\n"
+                    f"{structure_guidance}"
+                )
+            else:
+                role_description = base_role
+
             # Create trainable prompt variable
             system_prompt_var = tg.Variable(
                 resource.system_prompt,
                 requires_grad=True,
-                role_description=(
-                    "System prompt for the AI agent that should be optimized "
-                    "to improve task completion, code quality, and accuracy"
-                ),
+                role_description=role_description,
             )
 
             # Create TGD optimizer
             optimizer = tg.TGD(parameters=[system_prompt_var])
 
-            # Track optimization progress
+            # Track optimization progress with iteration timeout
             iterations: list[IterationResult] = []
             best_prompt = resource.system_prompt
             best_score = baseline_score
             previous_score = baseline_score
+            iteration_timeout = get_iteration_timeout()
 
             for iteration in range(effective_config.max_iterations):
                 iteration_start = time.time()
 
-                # Zero gradients
-                optimizer.zero_grad()
-
-                # Get current prompt value
-                current_prompt = system_prompt_var.value
-
-                # Evaluate current prompt
-                score, suite_result = await self.evaluate(current_prompt, test_suite)
-
-                # Compute loss (inverse of score for minimization)
-                # Create loss variable for backward pass
-                loss_text = self._create_loss_text(suite_result, test_suite)
-                loss_var = tg.Variable(
-                    loss_text,
-                    requires_grad=False,
-                    role_description="Evaluation feedback on agent performance",
+                logger.info(
+                    "Starting iteration",
+                    iteration=iteration,
+                    max_iterations=effective_config.max_iterations,
+                    current_best_score=best_score,
+                    timeout_seconds=iteration_timeout,
                 )
 
-                # Backward pass generates textual gradients
-                # The gradient will contain suggestions for improving the prompt
+                # Initialize variables for this iteration
+                candidates = []
+                iteration_best_prompt = best_prompt
+                iteration_best_score = best_score
+                improvement = 0.0
+                suite_result = None
+
                 try:
-                    loss_var.backward()
+                    async with asyncio.timeout(iteration_timeout):
+                        # Zero gradients
+                        optimizer.zero_grad()
 
-                    # Apply optimizer step
-                    optimizer.step()
+                        # Get current prompt value
+                        current_prompt = system_prompt_var.value
 
-                    # Get updated prompt
-                    updated_prompt = system_prompt_var.value
+                        # Evaluate current prompt
+                        score, suite_result = await self.evaluate(
+                            current_prompt, test_suite
+                        )
 
-                    # Evaluate updated prompt
-                    updated_score, updated_result = await self.evaluate(
-                        updated_prompt, test_suite
+                        # Compute loss (inverse of score for minimization)
+                        # Create loss variable for backward pass
+                        loss_text = self._create_loss_text(
+                            suite_result, test_suite, structure_guidance
+                        )
+                        loss_var = tg.Variable(
+                            loss_text,
+                            requires_grad=False,
+                            role_description="Evaluation feedback on agent performance",
+                        )
+
+                        # Backward pass generates textual gradients
+                        # The gradient will contain suggestions for improving the prompt
+                        try:
+                            loss_var.backward()
+
+                            # Apply optimizer step
+                            optimizer.step()
+
+                            # Get updated prompt
+                            updated_prompt = system_prompt_var.value
+
+                            # Evaluate updated prompt
+                            updated_score, updated_result = await self.evaluate(
+                                updated_prompt, test_suite
+                            )
+
+                        except Exception as e:
+                            logger.warning(
+                                "Backward pass failed, keeping current prompt",
+                                iteration=iteration,
+                                error=str(e),
+                            )
+                            updated_prompt = current_prompt
+                            updated_score = score
+
+                        # Create candidates for this iteration
+                        candidates = [
+                            PromptCandidate(
+                                prompt=current_prompt,
+                                score=score,
+                                iteration=iteration,
+                                metadata={"type": "current"},
+                            ),
+                            PromptCandidate(
+                                prompt=updated_prompt,
+                                score=updated_score,
+                                iteration=iteration,
+                                metadata={"type": "updated"},
+                            ),
+                        ]
+
+                        # Revert if performance decreased (validation revert)
+                        if updated_score < score:
+                            logger.info(
+                                "Reverting update (performance decreased)",
+                                iteration=iteration,
+                                before=score,
+                                after=updated_score,
+                            )
+                            system_prompt_var.set_value(current_prompt)
+                            iteration_best_prompt = current_prompt
+                            iteration_best_score = score
+                        else:
+                            iteration_best_prompt = updated_prompt
+                            iteration_best_score = updated_score
+
+                        # Track global best
+                        improvement = iteration_best_score - previous_score
+                        if iteration_best_score > best_score:
+                            best_prompt = iteration_best_prompt
+                            best_score = iteration_best_score
+                            logger.info(
+                                "New best prompt found",
+                                iteration=iteration,
+                                score=best_score,
+                                improvement=improvement,
+                            )
+
+                except TimeoutError:
+                    iteration_duration = time.time() - iteration_start
+                    logger.error(
+                        "Iteration timed out",
+                        iteration=iteration,
+                        timeout_seconds=iteration_timeout,
+                        elapsed_seconds=iteration_duration,
                     )
-
-                except Exception as e:
-                    logger.warning(
-                        "Backward pass failed, keeping current prompt",
-                        iteration=iteration,
-                        error=str(e),
+                    # Record the timeout in iteration results
+                    iterations.append(
+                        IterationResult(
+                            iteration=iteration,
+                            best_prompt=best_prompt,
+                            best_score=best_score,
+                            candidates=[],
+                            improvement=0.0,
+                            duration_seconds=iteration_duration,
+                        )
                     )
-                    updated_prompt = current_prompt
-                    updated_score = score
-
-                # Create candidates for this iteration
-                candidates = [
-                    PromptCandidate(
-                        prompt=current_prompt,
-                        score=score,
-                        iteration=iteration,
-                        metadata={"type": "current"},
-                    ),
-                    PromptCandidate(
-                        prompt=updated_prompt,
-                        score=updated_score,
-                        iteration=iteration,
-                        metadata={"type": "updated"},
-                    ),
-                ]
-
-                # Revert if performance decreased (validation revert)
-                if updated_score < score:
-                    logger.info(
-                        "Reverting update (performance decreased)",
-                        iteration=iteration,
-                        before=score,
-                        after=updated_score,
-                    )
-                    system_prompt_var.set_value(current_prompt)
-                    iteration_best_prompt = current_prompt
-                    iteration_best_score = score
-                else:
-                    iteration_best_prompt = updated_prompt
-                    iteration_best_score = updated_score
-
-                # Track global best
-                improvement = iteration_best_score - previous_score
-                if iteration_best_score > best_score:
-                    best_prompt = iteration_best_prompt
-                    best_score = iteration_best_score
-                    logger.info(
-                        "New best prompt found",
-                        iteration=iteration,
-                        score=best_score,
-                        improvement=improvement,
-                    )
+                    # Continue to next iteration or stop
+                    if iteration == 0:
+                        logger.error(
+                            "First iteration timed out, stopping optimization",
+                            iteration=iteration,
+                        )
+                        break
+                    continue
 
                 previous_score = iteration_best_score
                 iteration_duration = time.time() - iteration_start
+
+                logger.info(
+                    "Iteration completed",
+                    iteration=iteration,
+                    duration_seconds=f"{iteration_duration:.1f}",
+                    best_score=iteration_best_score,
+                    candidates_evaluated=len(candidates),
+                )
 
                 iterations.append(
                     IterationResult(
@@ -342,12 +419,14 @@ class TextGradAgentOptimizer(BaseOptimizer):
         self,
         prompt: str,
         test_suite: TestSuite,
+        verbose: bool = False,
     ) -> tuple[float, SuiteResult]:
         """Evaluate a prompt against the test suite.
 
         Args:
             prompt: The system prompt to evaluate.
             test_suite: Test cases for evaluation.
+            verbose: Whether to show progress output.
 
         Returns:
             Tuple of (score, suite_result).
@@ -356,6 +435,8 @@ class TextGradAgentOptimizer(BaseOptimizer):
             agent_name=test_suite.agent_name,
             collect_spans=False,
             max_concurrent=4,
+            verbose=verbose,
+            eval_model=self._eval_model,
         )
         runner = BatchRunner(runner_config)
 
@@ -368,6 +449,7 @@ class TextGradAgentOptimizer(BaseOptimizer):
         self,
         suite_result: SuiteResult,
         test_suite: TestSuite,
+        structure_guidance: str = "",
     ) -> str:
         """Create textual loss description from test results.
 
@@ -376,17 +458,27 @@ class TextGradAgentOptimizer(BaseOptimizer):
         Args:
             suite_result: Results from evaluating the current prompt.
             test_suite: The test suite being used.
+            structure_guidance: Optional structure requirements to preserve.
 
         Returns:
             Text describing failures and areas for improvement.
         """
         failed_results = suite_result.get_failed_results()
 
+        # Build structure reminder if available
+        structure_reminder = ""
+        if structure_guidance:
+            structure_reminder = (
+                "\n\nIMPORTANT: Any improvements must preserve the required "
+                "structure (YAML frontmatter fields, section headers, example blocks)."
+            )
+
         if not failed_results:
             return (
                 f"The agent performed well on all {len(suite_result.results)} tests. "
                 f"Average score: {suite_result.total_score:.2f}. "
-                "Consider if the prompt could be made more concise while maintaining quality."
+                "Consider if the prompt could be made more concise while "
+                f"maintaining quality.{structure_reminder}"
             )
 
         loss_parts = [
@@ -411,8 +503,14 @@ class TextGradAgentOptimizer(BaseOptimizer):
         loss_parts.append("\n")
         loss_parts.append(
             "Improve the system prompt to better handle these failure cases. "
-            "Focus on clearer instructions, edge case handling, and output format guidance."
+            "Focus on clearer instructions, edge case handling, and output format."
         )
+
+        if structure_guidance:
+            loss_parts.append(
+                "\nIMPORTANT: Preserve required structure (YAML frontmatter, "
+                "section headers, example blocks) during optimization."
+            )
 
         return "\n".join(loss_parts)
 

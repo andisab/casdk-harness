@@ -1,38 +1,36 @@
 """Optimization algorithms for agent prompt improvement.
 
-This module provides optimizer implementations for improving agent system prompts
-using various techniques including DSPy MIPROv2 and TextGrad.
+This module provides optimizer implementations for improving agent system prompts.
+
+**Primary approach**: Agentic optimization (LLM self-critique based on research
+and conventions). This is the default and recommended approach.
+
+**Optional**: Programmatic optimization (DSPy MIPROv2, TextGrad) is available
+but disabled by default. Set CGF_ENABLE_PROGRAMMATIC=true to enable.
 
 Example usage:
     from harness.optimization.optimizers import (
-        DSPyAgentOptimizer,
-        OptimizationConfig,
-        OptimizationResult,
-    )
-    from harness.optimization.resources import AgentResource
-    from harness.optimization.testcases import TestSuiteLoader
-
-    # Load agent and test suite
-    resource = AgentResource.load(Path("agents/configs/python-expert.md"))
-    suite = TestSuiteLoader.load("tests/optimization/python_expert_tests.yaml")
-
-    # Configure optimization
-    config = OptimizationConfig(
-        max_iterations=10,
-        num_candidates=5,
+        AgenticSectionOptimizer,
+        AgenticOptimizationConfig,
+        get_agentic_optimizer,
     )
 
-    # Run optimization
-    optimizer = DSPyAgentOptimizer()
-    result = await optimizer.optimize(resource, suite, config)
+    # Agentic optimization (default, recommended)
+    optimizer = get_agentic_optimizer()
+    result = await optimizer.optimize_section(
+        section_content="...",
+        section=optimizable_section,
+        criteria=eval_criteria,
+    )
 
-    if result.success:
-        print(f"Improved score: {result.final_score:.2f}")
-        print(f"Improvement: {result.improvement_percent:.1f}%")
-
-    # Save optimized prompt
-    result.save("optimization_result.json")
+    # Programmatic optimization (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
+    from harness.optimization.optimizers import get_mipro_optimizer, PROGRAMMATIC_ENABLED
+    if PROGRAMMATIC_ENABLED:
+        optimizer = get_mipro_optimizer()
+        result = await optimizer.optimize(resource, suite, config)
 """
+
+import os
 
 from harness.optimization.optimizers.metrics import (
     MetricFunction,
@@ -62,35 +60,62 @@ from harness.optimization.optimizers.protocol import (
     PromptCandidate,
 )
 
-# Import DSPy optimizer (may fail if dspy not installed)
-try:
-    from harness.optimization.optimizers.dspy_optimizer import (
-        DSPyAgentModule,
-        DSPyAgentOptimizer,
-        get_dspy_optimizer,
-    )
+# =============================================================================
+# CONFIGURATION: Programmatic optimization is disabled by default
+# =============================================================================
+# Set CGF_ENABLE_PROGRAMMATIC=true to enable DSPy/TextGrad optimizers.
+# Agentic optimization (LLM self-critique) is the default and recommended approach.
+PROGRAMMATIC_ENABLED = os.environ.get("CGF_ENABLE_PROGRAMMATIC", "false").lower() == "true"
 
-    DSPY_AVAILABLE = True
-except ImportError:
-    DSPyAgentModule = None  # type: ignore
-    DSPyAgentOptimizer = None  # type: ignore
-    get_dspy_optimizer = None  # type: ignore
-    DSPY_AVAILABLE = False
+# =============================================================================
+# AGENTIC OPTIMIZER (Primary - Always Available)
+# =============================================================================
+from harness.optimization.optimizers.agentic_optimizer import (
+    AgenticSectionOptimizer,
+    AgenticOptimizationConfig,
+    AgenticOptimizationResult,
+    CritiqueResult,
+    get_agentic_optimizer,
+)
 
-# Import TextGrad optimizer (may fail if textgrad not installed)
-try:
-    from harness.optimization.optimizers.textgrad_optimizer import (
-        TextGradAgentOptimizer,
-        get_textgrad_optimizer,
-    )
+# =============================================================================
+# PROGRAMMATIC OPTIMIZERS (Optional - Disabled by Default)
+# =============================================================================
+# DSPy MIPROv2 optimizer (replaces legacy dspy_optimizer.py)
+MIPRO_AVAILABLE = False
+MIPROv2AgentOptimizer = None  # type: ignore
+MIPROv2Config = None  # type: ignore
+get_mipro_optimizer = None  # type: ignore
 
-    TEXTGRAD_AVAILABLE = True
-except ImportError:
-    TextGradAgentOptimizer = None  # type: ignore
-    get_textgrad_optimizer = None  # type: ignore
-    TEXTGRAD_AVAILABLE = False
+if PROGRAMMATIC_ENABLED:
+    try:
+        from harness.optimization.optimizers.dspy_mipro_optimizer import (
+            MIPROv2AgentOptimizer,
+            MIPROv2Config,
+            get_mipro_optimizer,
+        )
+        MIPRO_AVAILABLE = True
+    except ImportError:
+        pass
+
+# TextGrad TGD optimizer
+TEXTGRAD_AVAILABLE = False
+TextGradAgentOptimizer = None  # type: ignore
+get_textgrad_optimizer = None  # type: ignore
+
+if PROGRAMMATIC_ENABLED:
+    try:
+        from harness.optimization.optimizers.textgrad_optimizer import (
+            TextGradAgentOptimizer,
+            get_textgrad_optimizer,
+        )
+        TEXTGRAD_AVAILABLE = True
+    except ImportError:
+        pass
 
 __all__ = [
+    # Configuration
+    "PROGRAMMATIC_ENABLED",
     # Protocol and base types
     "OptimizerProtocol",
     "OptimizerType",
@@ -99,12 +124,18 @@ __all__ = [
     "OptimizationResult",
     "IterationResult",
     "PromptCandidate",
-    # DSPy optimizer
-    "DSPyAgentOptimizer",
-    "DSPyAgentModule",
-    "get_dspy_optimizer",
-    "DSPY_AVAILABLE",
-    # TextGrad optimizer
+    # Agentic optimizer (PRIMARY - always available)
+    "AgenticSectionOptimizer",
+    "AgenticOptimizationConfig",
+    "AgenticOptimizationResult",
+    "CritiqueResult",
+    "get_agentic_optimizer",
+    # MIPROv2 optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
+    "MIPROv2AgentOptimizer",
+    "MIPROv2Config",
+    "get_mipro_optimizer",
+    "MIPRO_AVAILABLE",
+    # TextGrad optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
     "TextGradAgentOptimizer",
     "get_textgrad_optimizer",
     "TEXTGRAD_AVAILABLE",
