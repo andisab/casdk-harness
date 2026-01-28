@@ -296,6 +296,61 @@ Guide user through testing:
 - Check for naming conflicts
 - Test with team members
 
+### Step 8: Offer Optimization
+
+After creating any resource, **always offer optimization options**:
+
+```
+Resource created successfully! Would you like to:
+
+1. [Generate Tests] - Auto-generate test suite for this resource
+2. [Run Optimization] - Run CGF optimization pipeline
+3. [Coherence Check] - Analyze structure and consistency
+4. [Deploy As-Is] - Use the resource without optimization
+```
+
+**For each option:**
+
+**Generate Tests** (recommended first step):
+- Invoke `resource-optimization` skill with `--tests-only`
+- Creates test suite based on cgf-test-architect patterns
+- Produces `workspace/{resource-name}/tests/tests.yaml`
+- Enables future optimization runs
+
+**Run Optimization** (for production resources):
+- Invoke `resource-optimization` skill with full pipeline
+- Includes research phase (eval_criteria.yaml)
+- Runs baseline evaluation → optimization → comparison
+- Outputs optimized resource with before/after metrics
+
+**Coherence Check** (quick validation):
+- Analyzes section ordering and detail flow
+- Detects inversions (detail before overview)
+- Suggests structural improvements
+- Fast, no test suite required
+
+**Deploy As-Is** (for simple resources):
+- Skip optimization for straightforward resources
+- Suitable for resources < 500 words
+- User can always optimize later
+
+**Automatic Recommendations:**
+
+| Resource Complexity | Recommendation |
+|---------------------|----------------|
+| Simple (< 500 words) | Deploy As-Is or Generate Tests |
+| Standard (500-1500 words) | Generate Tests then optional optimization |
+| Complex (> 1500 words) | Full optimization pipeline recommended |
+
+**Integration with Hooks:**
+
+After resource creation, the PostToolUse hook will automatically suggest:
+```
+[CGF] Resource created at {path}. Consider running /resource-optimization to generate tests and optimize.
+```
+
+This provides a seamless path from creation to optimization within the same workflow.
+
 ## Best Practices
 
 ### Discovery Optimization
