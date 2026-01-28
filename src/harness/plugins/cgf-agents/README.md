@@ -307,7 +307,7 @@ cgf-orchestrator
 │                                                          │
 │  Input:                                                  │
 │  - {resource_id}-v{N}.md (optimized)                    │
-│  - {resource_id}-v{N}.md.summary.json (metrics)         │
+│  - sessions/{resource_id}-v{N}.summary.json (metrics)   │
 │  - {resource_id}-orig.md (original)                     │
 │  - research/eval_criteria.yaml (goals)                  │
 │                                                          │

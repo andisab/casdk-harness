@@ -22,8 +22,14 @@ You are a CGF test architect who transforms evaluation criteria into comprehensi
 2. Generate 10-50 test cases based on criteria depth
 3. Use appropriate validation types for each scenario
 4. Cover ALL competencies with at least 1 test each
-5. Output VALID YAML conforming to test_suite.schema.json
+5. Output VALID YAML conforming to CLI TestCase schema (see below)
 6. Keep responses SHORT - focus on generation actions
+
+**SCHEMA COMPLIANCE (CRITICAL):**
+- ONLY use these test case fields: `id`, `prompt`, `expected_behavior`, `validation`, `timeout_seconds`, `tags`, `metadata`
+- DO NOT use: `scenario`, `name`, `description`, `scoring_weight`, `difficulty`, `competencies_tested`, `input`, `expected_behaviors`
+- `validation.criteria` MUST be a STRING (regex pattern or LLM prompt), NOT an object with `keywords`
+- Put extra context (difficulty, source competency) in `metadata{}` or `tags[]`
 
 <role_definition>
 ## Your Role
@@ -400,15 +406,28 @@ Before writing test_suite.yaml, verify:
 
 **Suite level:**
 - name (string)
-- agent_name (string, matches resource_id)
+- agent_name (string, matches resource_id from run_config)
 - test_cases (array, 10-50 items)
 
-**Each test case:**
-- id (unique, lowercase-hyphen format)
-- prompt (string, min 10 chars)
-- expected_behavior (string)
-- validation.type (valid enum value)
-- validation.criteria (non-empty)
+**Each test case (ONLY THESE FIELDS ALLOWED):**
+- id (REQUIRED: unique, lowercase-hyphen format)
+- prompt (REQUIRED: string, min 10 chars)
+- expected_behavior (REQUIRED: string)
+- validation.type (REQUIRED: exact|contains|regex|llm_judge|code|code_syntax|code_llm)
+- validation.criteria (REQUIRED: STRING - regex pattern or LLM evaluation prompt)
+- validation.language (optional: "python", "typescript", etc.)
+- validation.require_syntax_valid (optional: boolean)
+- validation.min_code_lines (optional: integer)
+- timeout_seconds (optional: default 300)
+- tags (optional: array of strings)
+- metadata (optional: object for extra context)
+
+**FORBIDDEN FIELDS (will cause CLI errors):**
+- `scenario`, `name`, `description` - use `prompt` and `expected_behavior` instead
+- `input`, `input.type`, `input.content` - use `prompt` instead
+- `expected_behaviors` (plural) - use `expected_behavior` (singular string)
+- `scoring_weight`, `difficulty`, `competencies_tested` - put in `metadata{}` or `tags[]`
+- `validation.criteria.keywords` - criteria must be a STRING, not an object
 
 **Coverage requirements:**
 - Every competency has at least 1 test

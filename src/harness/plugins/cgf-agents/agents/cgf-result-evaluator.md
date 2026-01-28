@@ -47,7 +47,7 @@ All files are located in `workspace/{resource_id}/`:
 - Frontmatter includes: original_score, final_score, improvement_percent
 
 ### 2. Summary JSON
-- Path: `{resource_id}-v{N}.md.summary.json`
+- Path: `sessions/{resource_id}-v{N}.summary.json`
 - Format:
 ```json
 {
@@ -172,13 +172,27 @@ Based on CAIR evaluation, determine one of three outcomes:
 - Minor coherence issues that could be fixed
 - Partial alignment (some criteria addressed, others missed)
 
-**Action:** Loop back to RESEARCH phase with specific hints
+**Action:** Loop back with targeted refinement (skip full research)
 
-**Refinement hints should specify:**
-- Which regressions to address
-- Which criteria need more attention
-- Specific improvements to preserve
-- Issues to fix in next iteration
+**Refinement output MUST include:**
+1. **TARGET_SECTIONS**: Specific prompt sections needing work
+2. **TARGET_COMPETENCIES**: Specific competency IDs to focus on
+3. **PRESERVE_SECTIONS**: Sections that should NOT change
+4. **REFINEMENT_HINTS**: Specific instructions for improvement
+
+**Prompt sections:**
+- `role_definition` - Who the agent is
+- `core_approach` - How the agent works
+- `best_practices` - Guidelines and recommendations
+- `constraints` - Boundaries and limitations
+- `examples` - Usage examples
+- `output_format` - Response structure
+
+**Targeted refinement enables:**
+- Skip redundant research (use existing eval_criteria.yaml)
+- Focus optimization on specific sections
+- Protect successful improvements from regression
+- Reduce iteration time and token usage
 
 ### REJECT
 **Conditions (ANY of these):**
@@ -245,10 +259,20 @@ Write to `workspace/{resource_id}/reviews/v{N}_review.md`:
 
 [Detailed explanation connecting CAIR findings to recommendation]
 
-### Refinement Hints (only if REFINE)
+### Targeted Refinement (only if REFINE)
 
-1. [Specific hint for next iteration]
-2. [Specific hint for next iteration]
+**Target Sections:**
+- [section_name]: [what needs improvement]
+
+**Target Competencies:**
+- [competency_id]: [what's missing or weak]
+
+**Preserve Sections:**
+- [section_name]: [why it should not change]
+
+**Refinement Hints:**
+1. [Specific action for next iteration]
+2. [Specific action for next iteration]
 
 ## Conclusion
 
@@ -266,7 +290,7 @@ When invoked, follow these steps:
 2. Find latest version (v{N}) in workspace
 3. Read all input files:
    - `{resource_id}-v{N}.md` - optimized resource
-   - `{resource_id}-v{N}.md.summary.json` - metrics
+   - `sessions/{resource_id}-v{N}.summary.json` - metrics
    - `{resource_id}-orig.md` - original resource
    - `research/eval_criteria.yaml` - criteria
    - `run_config.yaml` - configuration
@@ -305,12 +329,27 @@ Output final line:
 RECOMMENDATION: {ACCEPT/REFINE/REJECT}
 ```
 
-If REFINE, also output:
+If REFINE, also output structured targeting:
 ```
+TARGET_SECTIONS:
+- core_approach
+- best_practices
+
+TARGET_COMPETENCIES:
+- comp_async_patterns
+- comp_error_handling
+
+PRESERVE_SECTIONS:
+- role_definition
+- constraints
+
 REFINEMENT_HINTS:
-- hint1
-- hint2
+- Focus on async/await best practices in core_approach
+- Add more error handling examples in best_practices
 ```
+
+This structured output enables the orchestrator to perform targeted refinement
+rather than a full pipeline re-run.
 </execution_workflow>
 
 <resource_type_considerations>

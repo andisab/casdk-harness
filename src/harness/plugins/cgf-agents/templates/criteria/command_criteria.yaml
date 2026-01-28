@@ -1,56 +1,169 @@
 # CGF Command Criteria Template
 # Guides criteria synthesis for command resources (e.g., /cgf, /create-agent)
+#
+# Reference: templates/command-guidelines.md for detailed optimization guidance
 
 resource_type: command
 
 # What parts of the command can be optimized
 optimization_focus:
+  - frontmatter         # YAML configuration (description, argument-hint, etc.)
   - help_text           # Description and usage documentation
-  - argument_handling   # Argument parsing and validation
+  - argument_handling   # Argument parsing, defaults, and validation
   - output_format       # Response structure and formatting
   - error_messages      # Error handling and user feedback
+  - tool_restrictions   # allowed-tools security scoping
+
+# Required frontmatter structure
+frontmatter_structure:
+  required:
+    - description       # Brief (1 sentence) explanation for /help
+  recommended:
+    - argument-hint     # Shows expected arguments (<required> [optional])
+    - allowed-tools     # Tool restrictions for security
+  optional:
+    - model             # Override model (haiku/sonnet/opus)
+    - disable-model-invocation  # Prevent SlashCommand tool access
 
 # Typical competencies for commands
 # Synthesizer should include relevant ones based on research findings
 typical_competencies:
+  structure:
+    - name: "Frontmatter completeness"
+      description: "Has description and argument-hint when using arguments"
+      importance: high
+      positive_indicators:
+        - "description field is present and descriptive"
+        - "argument-hint uses correct syntax (<required> [optional])"
+        - "allowed-tools restricts to necessary tools"
+      negative_indicators:
+        - "Missing frontmatter entirely"
+        - "Vague or missing description"
+        - "No argument-hint when using $1, $2, etc."
+
+    - name: "Tool restrictions"
+      description: "Uses specific allowed-tools patterns, not broad wildcards"
+      importance: high
+      positive_indicators:
+        - "Bash patterns are specific: Bash(git:*), Bash(npm:test)"
+        - "Only necessary tools are listed"
+        - "No Bash(*) wildcard"
+      negative_indicators:
+        - "Using Bash(*) instead of specific patterns"
+        - "Allowing tools not used by command"
+
   argument_handling:
     - name: "Argument parsing"
-      description: "Correctly parsing positional and named arguments"
+      description: "Correctly using $1, $2, $ARGUMENTS, and @$1 syntax"
       importance: high
+      positive_indicators:
+        - "Positional args match argument-hint order"
+        - "File references use @$N syntax correctly"
+        - "Defaults use ${N:-default} syntax"
+      negative_indicators:
+        - "Referencing undefined arguments ($3 when only 2 expected)"
+        - "Mixing $ARGUMENTS with positional args incorrectly"
+
     - name: "Argument validation"
-      description: "Rejecting invalid arguments with clear errors"
+      description: "Handling missing or invalid arguments gracefully"
       importance: high
+      positive_indicators:
+        - "Prompt handles missing optional args"
+        - "Clear error guidance for invalid input"
+      negative_indicators:
+        - "Undefined args produce confusing output"
+        - "No handling for edge cases"
+
     - name: "Default handling"
       description: "Sensible defaults for optional arguments"
       importance: medium
-    - name: "Argument combinations"
-      description: "Handling mutually exclusive or dependent args"
-      importance: medium
+      positive_indicators:
+        - "Defaults are documented or obvious"
+        - "Defaults are safe (non-destructive)"
+      negative_indicators:
+        - "No defaults for optional args"
+        - "Unsafe defaults"
 
   documentation:
     - name: "Help text clarity"
       description: "Clear, actionable help documentation"
       importance: high
+      positive_indicators:
+        - "Description explains what, not how"
+        - "argument-hint is accurate and complete"
+        - "Users can succeed from help alone"
+      negative_indicators:
+        - "Vague or technical jargon"
+        - "Help doesn't match actual behavior"
+
     - name: "Usage examples"
-      description: "Practical examples of command usage"
+      description: "Practical examples embedded in prompt or referenced"
       importance: medium
+      positive_indicators:
+        - "Common use cases are covered"
+        - "Examples show expected output format"
+      negative_indicators:
+        - "No examples for complex commands"
+
     - name: "Error message clarity"
       description: "Errors tell user what went wrong and how to fix"
       importance: high
+      positive_indicators:
+        - "Prompt includes error handling guidance"
+        - "Suggests corrective actions"
+      negative_indicators:
+        - "Silent failures"
+        - "Technical error messages without context"
 
   execution:
     - name: "Command execution"
       description: "Correctly performing the command's action"
       importance: high
+      positive_indicators:
+        - "Clear instruction for what action to perform"
+        - "Handles both success and failure paths"
+      negative_indicators:
+        - "Ambiguous instructions"
+        - "No failure handling"
+
     - name: "Output formatting"
       description: "Well-structured, readable output"
       importance: medium
-    - name: "Error recovery"
-      description: "Graceful handling of failures"
-      importance: medium
+      positive_indicators:
+        - "Specifies output format in prompt"
+        - "Uses markdown structure for clarity"
+      negative_indicators:
+        - "No output format guidance"
+        - "Inconsistent formatting"
+
     - name: "Progress feedback"
       description: "Informing user of long-running operations"
       importance: low
+      positive_indicators:
+        - "Prompts Claude to indicate progress for long ops"
+      negative_indicators:
+        - "No feedback for multi-step commands"
+
+  safety:
+    - name: "Bash command safety"
+      description: "Bash commands are specific and safe"
+      importance: high
+      positive_indicators:
+        - "!commands are scoped to allowed-tools patterns"
+        - "Destructive commands have warnings in prompt"
+        - "No arbitrary command execution"
+      negative_indicators:
+        - "Using commands not in allowed-tools"
+        - "rm -rf without confirmation guidance"
+
+    - name: "File operation safety"
+      description: "File operations are safe and scoped"
+      importance: medium
+      positive_indicators:
+        - "@file references validated in prompt"
+        - "Write operations have backup guidance"
+      negative_indicators:
+        - "Overwriting without warning"
 
 # Aspects to evaluate when assessing command performance
 evaluation_aspects:
@@ -63,11 +176,17 @@ evaluation_aspects:
   - aspect: completion_rate
     description: "Rate of successful command execution"
     weight: high
+  - aspect: frontmatter_quality
+    description: "Completeness and accuracy of YAML frontmatter"
+    weight: high
   - aspect: help_effectiveness
     description: "Can users learn from help alone"
     weight: medium
   - aspect: output_quality
     description: "Quality and usefulness of command output"
+    weight: medium
+  - aspect: tool_scoping
+    description: "Appropriateness of allowed-tools restrictions"
     weight: medium
 
 # Common command failure modes to check
@@ -84,3 +203,34 @@ failure_modes:
   - mode: "Format breakage"
     description: "Output format varies unexpectedly"
     detection: "Validate output structure consistency"
+  - mode: "Undefined arguments"
+    description: "$N references args that weren't provided"
+    detection: "Test with fewer args than referenced"
+  - mode: "Tool permission error"
+    description: "Command uses tools not in allowed-tools"
+    detection: "Verify all !commands match allowed patterns"
+  - mode: "Missing frontmatter"
+    description: "No YAML frontmatter when using arguments"
+    detection: "Check for --- delimiters and required fields"
+
+# Anti-patterns to avoid during optimization
+anti_patterns:
+  - pattern: "Undefined argument references"
+    example: "Compare $1 with $2  # but only $1 is provided"
+    fix: "Use ${2:-default} or document as required"
+
+  - pattern: "Broad tool permissions"
+    example: "allowed-tools: Bash(*)"
+    fix: "Use specific patterns: Bash(git:*), Bash(npm:*)"
+
+  - pattern: "No error handling"
+    example: "!risky-command  # with no failure guidance"
+    fix: "Add prompt text explaining what to do if command fails"
+
+  - pattern: "Complex logic in commands"
+    example: "If $1 is production then... else if staging..."
+    fix: "Commands should be templates, use agents for complex logic"
+
+  - pattern: "Missing help text"
+    example: "Do something with $1  # no frontmatter"
+    fix: "Add ---\\ndescription: ...\\nargument-hint: ...\\n---"

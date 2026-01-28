@@ -1,7 +1,7 @@
 ---
-description: CGF (Claude Gradient Feedback) optimization command - start, resume, check status, or abort runs
+description: CGF (Claude Gradient Feedback) optimization command - create, optimize, resume, check status, or abort runs
 allowed-tools: Read, Write, Bash, Task, Glob, Grep
-argument-hint: <optimize|status|resume|abort> [args]
+argument-hint: <create|optimize|status|resume|abort> [args]
 ---
 
 # CGF Command
@@ -9,6 +9,40 @@ argument-hint: <optimize|status|resume|abort> [args]
 Command interface for CGF (Claude Gradient Feedback) optimization pipeline.
 
 ## Subcommands
+
+### create
+
+Create and optimize a new resource from description:
+
+```
+/cgf create <description> [--review] [--type agent|skill|command] [--optimizer dspy|textgrad]
+```
+
+**Arguments:**
+- `description` - Natural language description of desired resource
+- `--review` - Enable checkpoint mode for human review
+- `--type` - Resource type to create (default: agent)
+- `--optimizer` - Choose optimizer (default: dspy)
+
+**Examples:**
+```
+/cgf create Python async expert that helps with asyncio patterns
+/cgf create Kubernetes deployment agent --review
+/cgf create Code review skill for security-focused reviews --type skill
+/cgf create Database migration command --type command
+```
+
+**What happens:**
+1. Parses description to extract domain, capabilities, use cases
+2. Spawns context-engineer to create initial resource draft
+3. Runs full optimization pipeline on the draft
+4. Outputs optimized resource with test suite and eval criteria
+
+**Shorthand:**
+```
+/cgf-create <description>
+```
+Equivalent to `/cgf create <description>`.
 
 ### optimize
 

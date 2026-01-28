@@ -10,7 +10,7 @@ description: >
   - "Merge research findings for typescript-expert into eval_criteria.yaml"
   </examples>
 tools: Read, Write, Glob
-model: sonnet
+model: opus
 max_turns: 50
 color: "#b16286"
 ---

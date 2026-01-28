@@ -19,7 +19,17 @@
     "textgrad",
     "agentic"
   ],
+  "dependencies": {
+    "context-engineering": ">=1.0.0",
+    "research-team": ">=0.1.0"
+  },
   "agents": ["./agents"],
   "skills": ["./skills"],
-  "commands": ["./commands"]
+  "commands": ["./commands"],
+  "configuration": {
+    "thresholds": {
+      "min_deterministic_tests_for_programmatic": 6,
+      "note": "Synchronized with orchestrator.py:min_tests_for_programmatic"
+    }
+  }
 }
