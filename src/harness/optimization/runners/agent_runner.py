@@ -234,6 +234,7 @@ class AgentRunner(BaseRunner):
                     cwd=self.config.cwd,
                     verbose=self.config.verbose,
                     system_prompt_override=system_prompt_override,
+                    model_override=self.config.eval_model,
                 )
 
                 span.set_attribute("output.length", len(output))
@@ -247,6 +248,7 @@ class AgentRunner(BaseRunner):
                 cwd=self.config.cwd,
                 verbose=self.config.verbose,
                 system_prompt_override=system_prompt_override,
+                model_override=self.config.eval_model,
             )
 
     async def run_suite(

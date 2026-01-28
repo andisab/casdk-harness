@@ -21,6 +21,8 @@ Example usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import sys
 import time
 from typing import TYPE_CHECKING, Callable
 
@@ -30,10 +32,129 @@ from harness.optimization.runners.agent_runner import AgentRunner
 from harness.optimization.runners.base import BaseRunner, RunnerConfig
 from harness.optimization.testcases.models import SuiteResult, TestResult
 
+
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time for display."""
+    if seconds < 60:
+        return f"{seconds:05.1f}s"
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}m{secs:02d}s"
+
 if TYPE_CHECKING:
     from harness.optimization.testcases import TestCase, TestSuite
 
 logger = structlog.get_logger(__name__)
+
+
+class TestResultCache:
+    """In-memory cache for test execution results.
+
+    Caches results based on test case ID and system prompt hash
+    to avoid re-running identical tests.
+    """
+
+    def __init__(self, enabled: bool = True, max_size: int = 1000) -> None:
+        """Initialize the cache.
+
+        Args:
+            enabled: Whether caching is enabled.
+            max_size: Maximum number of entries to store.
+        """
+        self._enabled = enabled
+        self._max_size = max_size
+        self._cache: dict[str, TestResult] = {}
+        self._hits = 0
+        self._misses = 0
+
+    def _make_key(self, test_id: str, prompt_hash: str) -> str:
+        """Create cache key from test ID and prompt hash."""
+        return f"{test_id}:{prompt_hash}"
+
+    def _hash_prompt(self, prompt: str) -> str:
+        """Create hash of system prompt for cache key."""
+        return hashlib.sha256(prompt.encode()).hexdigest()[:16]
+
+    def get(
+        self,
+        test_id: str,
+        system_prompt: str,
+    ) -> TestResult | None:
+        """Get cached result if available.
+
+        Args:
+            test_id: Test case identifier.
+            system_prompt: System prompt used for test.
+
+        Returns:
+            Cached TestResult or None if not cached.
+        """
+        if not self._enabled:
+            return None
+
+        prompt_hash = self._hash_prompt(system_prompt)
+        key = self._make_key(test_id, prompt_hash)
+
+        result = self._cache.get(key)
+        if result:
+            self._hits += 1
+            logger.debug("Cache hit", test_id=test_id, prompt_hash=prompt_hash)
+        else:
+            self._misses += 1
+
+        return result
+
+    def put(
+        self,
+        test_id: str,
+        system_prompt: str,
+        result: TestResult,
+    ) -> None:
+        """Store test result in cache.
+
+        Args:
+            test_id: Test case identifier.
+            system_prompt: System prompt used for test.
+            result: Test result to cache.
+        """
+        if not self._enabled:
+            return
+
+        # Evict oldest entries if at capacity
+        if len(self._cache) >= self._max_size:
+            # Simple FIFO eviction - remove first 10%
+            keys_to_remove = list(self._cache.keys())[: self._max_size // 10]
+            for key in keys_to_remove:
+                del self._cache[key]
+
+        prompt_hash = self._hash_prompt(system_prompt)
+        key = self._make_key(test_id, prompt_hash)
+        self._cache[key] = result
+
+    def get_stats(self) -> dict:
+        """Get cache statistics."""
+        total = self._hits + self._misses
+        return {
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate": self._hits / total if total > 0 else 0.0,
+            "size": len(self._cache),
+        }
+
+    def clear(self) -> None:
+        """Clear all cached results."""
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
+
+
+# Global cache instance (shared across runner instances)
+_global_cache = TestResultCache()
+
+
+def get_test_result_cache() -> TestResultCache:
+    """Get the global test result cache."""
+    return _global_cache
 
 
 ProgressCallback = Callable[[int, int, TestResult], None]
@@ -57,17 +178,20 @@ class BatchRunner(BaseRunner):
         self,
         config: RunnerConfig,
         on_progress: ProgressCallback | None = None,
+        cache: TestResultCache | None = None,
     ) -> None:
         """Initialize the batch runner.
 
         Args:
             config: Runner configuration with max_concurrent setting.
             on_progress: Optional callback for progress updates.
+            cache: Optional test result cache (uses global cache if None).
         """
         super().__init__(config)
         self._agent_runner = AgentRunner(config)
         self._on_progress = on_progress
         self._semaphore: asyncio.Semaphore | None = None
+        self._cache = cache if cache is not None else get_test_result_cache()
 
     async def run_test_case(
         self,
@@ -105,13 +229,23 @@ class BatchRunner(BaseRunner):
 
         start_time = time.time()
         total = len(suite.test_cases)
+        verbose = self.config.verbose
 
         logger.info(
             "Starting batch execution",
             suite_name=suite.name,
             test_count=total,
             max_concurrent=self.config.max_concurrent,
+            verbose=verbose,
         )
+
+        if verbose:
+            print(
+                f"\n[Batch] Starting {total} tests "
+                f"(max_concurrent={self.config.max_concurrent})",
+                file=sys.stderr,
+                flush=True,
+            )
 
         # Create semaphore for concurrency control
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent)
@@ -121,18 +255,53 @@ class BatchRunner(BaseRunner):
         results: list[TestResult] = [None] * total  # Pre-allocate for ordering
 
         async def run_with_semaphore(index: int, test_case: TestCase) -> None:
-            """Run a test case with semaphore limiting."""
+            """Run a test case with semaphore limiting and caching."""
             nonlocal completed
 
-            async with self._semaphore:
-                result = await self._agent_runner.run_test_case(
-                    test_case, system_prompt_override
-                )
-                results[index] = result
+            test_start = time.time()
+            prompt = system_prompt_override or ""
+            from_cache = False
 
-                completed += 1
-                if self._on_progress:
-                    self._on_progress(completed, total, result)
+            # Check cache first
+            cached_result = self._cache.get(test_case.id, prompt)
+            if cached_result:
+                result = cached_result
+                from_cache = True
+            else:
+                if verbose:
+                    elapsed = _format_elapsed(time.time() - start_time)
+                    print(
+                        f"[{elapsed}] Test {index + 1}/{total}: "
+                        f"{test_case.id} - evaluating...",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+
+                async with self._semaphore:
+                    result = await self._agent_runner.run_test_case(
+                        test_case, system_prompt_override
+                    )
+                    # Store in cache
+                    self._cache.put(test_case.id, prompt, result)
+
+            results[index] = result
+            completed += 1
+
+            if verbose:
+                elapsed = _format_elapsed(time.time() - start_time)
+                test_duration = time.time() - test_start
+                status = "✓" if result.success else "✗"
+                cache_indicator = " (cached)" if from_cache else ""
+                print(
+                    f"[{elapsed}] Test {completed}/{total}: "
+                    f"{test_case.id} - {status} score={result.score:.2f}"
+                    f"{cache_indicator} ({test_duration:.1f}s)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+            if self._on_progress:
+                self._on_progress(completed, total, result)
 
         # Create tasks for all test cases
         tasks = [
@@ -162,6 +331,16 @@ class BatchRunner(BaseRunner):
             average_score=suite_result.total_score,
             duration=f"{duration_seconds:.2f}s",
         )
+
+        if verbose:
+            elapsed = _format_elapsed(duration_seconds)
+            print(
+                f"[{elapsed}] Batch complete: "
+                f"{suite_result.passed_count}/{total} passed, "
+                f"avg_score={suite_result.total_score:.2f}",
+                file=sys.stderr,
+                flush=True,
+            )
 
         return suite_result
 

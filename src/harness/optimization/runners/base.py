@@ -35,6 +35,7 @@ class RunnerConfig:
         collect_spans: Whether to collect spans for feedback.
         timeout_seconds: Default timeout per test case.
         max_concurrent: Max concurrent test case executions.
+        eval_model: Override model for test evaluation (sonnet/haiku/opus).
     """
 
     agent_name: str
@@ -44,6 +45,7 @@ class RunnerConfig:
     collect_spans: bool = True
     timeout_seconds: int = 300
     max_concurrent: int = 1
+    eval_model: str | None = None  # Override model for test evaluation
 
 
 @dataclass

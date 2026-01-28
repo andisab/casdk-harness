@@ -7,6 +7,8 @@ to provide a complete optimization pipeline.
 from __future__ import annotations
 
 import json
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -16,10 +18,20 @@ from typing import Any
 import structlog
 import yaml
 
+
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed time for display."""
+    if seconds < 60:
+        return f"{seconds:05.1f}s"
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}m{secs:02d}s"
+
 from harness.optimization.optimizers import (
-    DSPY_AVAILABLE,
+    MIPRO_AVAILABLE,
+    PROGRAMMATIC_ENABLED,
     TEXTGRAD_AVAILABLE,
-    DSPyAgentOptimizer,
+    MIPROv2AgentOptimizer,
     OptimizationResult,
     OptimizerType,
     TextGradAgentOptimizer,
@@ -169,6 +181,15 @@ class OptimizationRun:
         agent_name = Path(self.config.agent_path).stem
         return f"opt_{agent_name}_{timestamp}"
 
+    def _log_phase(self, phase_name: str, message: str = "") -> None:
+        """Log phase progress if verbose mode is enabled."""
+        if self.config.verbose:
+            elapsed = time.time() - self._exec_start_time
+            msg = f"[{_format_elapsed(elapsed)}] {phase_name}"
+            if message:
+                msg += f": {message}"
+            print(msg, file=sys.stderr, flush=True)
+
     async def execute(self) -> OptimizationResult:
         """Execute the complete optimization pipeline.
 
@@ -179,11 +200,13 @@ class OptimizationRun:
             RuntimeError: If optimization fails.
         """
         self.start_time = datetime.now()
+        self._exec_start_time = time.time()
         self.status = RunStatus.RUNNING
 
         try:
             # Phase 1: Load resources
             self.phase = RunPhase.LOAD_RESOURCES
+            self._log_phase("LOAD_RESOURCES", "Loading agent and test suite")
             logger.info(
                 "Loading resources",
                 run_id=self.run_id,
@@ -193,15 +216,26 @@ class OptimizationRun:
 
             self.resource = AgentResource.load(self.config.agent_path)
             self.test_suite = TestSuiteLoader.load(str(self.config.test_suite_path))
+            self._log_phase(
+                "LOAD_RESOURCES",
+                f"Loaded {self.resource.name} with "
+                f"{len(self.test_suite.test_cases)} test cases"
+            )
 
             # Preserve original agent in workspace (if not already present)
             self._preserve_original()
 
             # Phase 2: Validate
             self.phase = RunPhase.VALIDATE
+            self._log_phase("VALIDATE", "Validating configuration")
             self._validate()
 
+            # Register workspace agent for optimization
+            # This allows workspace agents to be used with call_agent_simple()
+            self._register_workspace_agent()
+
             if self.config.dry_run:
+                self._log_phase("DRY_RUN", "Complete")
                 logger.info("Dry run complete", run_id=self.run_id)
                 self.phase = RunPhase.COMPLETE
                 self.status = RunStatus.COMPLETED
@@ -209,9 +243,18 @@ class OptimizationRun:
 
             # Phase 3: Create optimizer
             self.phase = RunPhase.OPTIMIZE
+            self._log_phase(
+                "OPTIMIZE",
+                f"Creating {self.config.optimizer_type.value} optimizer"
+            )
             self._create_optimizer()
 
             # Phase 4: Run optimization
+            self._log_phase(
+                "OPTIMIZE",
+                f"Starting optimization "
+                f"(max_iterations={self.config.optimization_config.max_iterations})"
+            )
             logger.info(
                 "Starting optimization",
                 run_id=self.run_id,
@@ -227,6 +270,7 @@ class OptimizationRun:
 
             # Phase 5: Save results
             self.phase = RunPhase.SAVE
+            self._log_phase("SAVE", "Saving optimization results")
             if self.config.output_path or self.result.success:
                 self._save_result()
 
@@ -235,6 +279,11 @@ class OptimizationRun:
             self.status = RunStatus.COMPLETED
             self.end_time = datetime.now()
 
+            self._log_phase(
+                "COMPLETE",
+                f"Success={self.result.success}, "
+                f"improvement={self.result.improvement_percent:.1f}%"
+            )
             logger.info(
                 "Optimization complete",
                 run_id=self.run_id,
@@ -251,6 +300,7 @@ class OptimizationRun:
             self.error = str(e)
             self.end_time = datetime.now()
 
+            self._log_phase("FAILED", f"Error: {str(e)}")
             logger.error(
                 "Optimization failed",
                 run_id=self.run_id,
@@ -282,17 +332,29 @@ class OptimizationRun:
     def _validate(self) -> None:
         """Validate configuration and resources."""
         # Check optimizer availability
-        if self.config.optimizer_type == OptimizerType.DSPY and not DSPY_AVAILABLE:
-            raise RuntimeError(
-                "DSPy optimizer requested but dspy-ai not installed. "
-                "Install with: pip install 'dspy-ai>=2.5.0'"
-            )
+        if self.config.optimizer_type == OptimizerType.DSPY:
+            if not PROGRAMMATIC_ENABLED:
+                raise RuntimeError(
+                    "DSPy/MIPRO optimizer requested but programmatic optimization "
+                    "is disabled. Set CGF_ENABLE_PROGRAMMATIC=true to enable."
+                )
+            if not MIPRO_AVAILABLE:
+                raise RuntimeError(
+                    "DSPy optimizer requested but dspy-ai not installed. "
+                    "Install with: pip install 'dspy-ai>=2.5.0'"
+                )
 
-        if self.config.optimizer_type == OptimizerType.TEXTGRAD and not TEXTGRAD_AVAILABLE:
-            raise RuntimeError(
-                "TextGrad optimizer requested but textgrad not installed. "
-                "Install with: pip install 'textgrad>=0.1.6'"
-            )
+        if self.config.optimizer_type == OptimizerType.TEXTGRAD:
+            if not PROGRAMMATIC_ENABLED:
+                raise RuntimeError(
+                    "TextGrad optimizer requested but programmatic optimization "
+                    "is disabled. Set CGF_ENABLE_PROGRAMMATIC=true to enable."
+                )
+            if not TEXTGRAD_AVAILABLE:
+                raise RuntimeError(
+                    "TextGrad optimizer requested but textgrad not installed. "
+                    "Install with: pip install 'textgrad>=0.1.6'"
+                )
 
         # Validate resource
         if not self.resource.system_prompt:
@@ -309,10 +371,33 @@ class OptimizationRun:
             test_cases=len(self.test_suite.test_cases),
         )
 
+    def _register_workspace_agent(self) -> None:
+        """Register the workspace agent for optimization.
+
+        This allows workspace agents (not in AGENT_DEFINITIONS) to be used
+        with call_agent_simple() during test execution.
+        """
+        from harness.direct_agent import register_workspace_agent
+
+        register_workspace_agent(
+            name=self.resource.name,
+            system_prompt=self.resource.system_prompt,
+            description=self.resource.description,
+            model=self.resource.model,
+            tools=self.resource.tools,
+            max_turns=self.resource.max_turns,
+        )
+
+        logger.info(
+            "Registered workspace agent",
+            agent=self.resource.name,
+            model=self.resource.model,
+        )
+
     def _create_optimizer(self) -> None:
         """Create the appropriate optimizer instance."""
         if self.config.optimizer_type == OptimizerType.DSPY:
-            self.optimizer = DSPyAgentOptimizer(
+            self.optimizer = MIPROv2AgentOptimizer(
                 default_config=self.config.optimization_config
             )
         elif self.config.optimizer_type == OptimizerType.TEXTGRAD:
@@ -366,20 +451,41 @@ class OptimizationRun:
             self._save_iterations()
 
     def _save_markdown(self, path: Path) -> None:
-        """Save result as markdown file (optimized prompt)."""
-        # Create YAML frontmatter with metadata
-        metadata = {
+        """Save result as markdown file (optimized prompt).
+
+        Preserves original frontmatter fields (description with examples,
+        color, max_turns) while adding optimization metadata.
+        """
+        # Build metadata preserving original fields
+        metadata: dict[str, Any] = {
             "name": f"{self.resource.name}-optimized",
-            "description": f"Optimized version of {self.resource.name}",
-            "model": self.resource.model,
-            "tools": self.resource.tools,
-            "optimization": {
-                "original_score": self.result.original_score,
-                "final_score": self.result.final_score,
-                "improvement_percent": f"{self.result.improvement_percent:.1f}%",
-                "iterations": self.result.total_iterations,
-                "optimizer": self.config.optimizer_type.value,
-            },
+        }
+
+        # Preserve original description with examples (full_description)
+        # This contains the <example> blocks needed for agent discovery
+        full_desc = self.resource._metadata.get("full_description", "")
+        if full_desc:
+            metadata["description"] = full_desc
+        else:
+            metadata["description"] = self.resource.description
+
+        # Preserve model and tools
+        metadata["model"] = self.resource.model
+        metadata["tools"] = self.resource.tools
+
+        # Preserve optional fields if present
+        if self.resource.max_turns != 100:  # Only include if non-default
+            metadata["max_turns"] = self.resource.max_turns
+        if self.resource.color:
+            metadata["color"] = self.resource.color
+
+        # Add optimization metadata
+        metadata["optimization"] = {
+            "original_score": self.result.original_score,
+            "final_score": self.result.final_score,
+            "improvement_percent": f"{self.result.improvement_percent:.1f}%",
+            "iterations": self.result.total_iterations,
+            "optimizer": self.config.optimizer_type.value,
         }
 
         content = f"""---
@@ -434,9 +540,9 @@ class OptimizationRun:
         logger.info("Original preserved", path=str(original_path))
 
     def _save_run_summary(self, output_path: Path) -> None:
-        """Save run summary as JSON alongside the output file.
+        """Save run summary as JSON in the sessions folder.
 
-        Creates a companion file {output}-summary.json with metadata
+        Creates a file sessions/{resource}-v{N}.summary.json with metadata
         about the optimization run for tracking and analysis.
 
         Args:
@@ -445,7 +551,13 @@ class OptimizationRun:
         if self.result is None:
             return
 
-        summary_path = output_path.with_suffix(".summary.json")
+        # Save to sessions/ folder for machine consumption
+        sessions_dir = output_path.parent / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create summary filename: {resource}-v{N}.summary.json (without .md)
+        summary_filename = output_path.stem + ".summary.json"
+        summary_path = sessions_dir / summary_filename
         summary_data = {
             "run_id": self.run_id,
             "timestamp": datetime.now().isoformat(),

@@ -22,7 +22,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from harness.optimization.optimizers import (
-    DSPY_AVAILABLE,
+    MIPRO_AVAILABLE,
+    PROGRAMMATIC_ENABLED,
     TEXTGRAD_AVAILABLE,
     OptimizationConfig,
     OptimizationResult,
@@ -46,15 +47,47 @@ def print_banner() -> None:
 
 def print_availability() -> None:
     """Print optimizer availability status."""
+    # Show programmatic enable status
+    prog_status = (
+        "[green]✓ Enabled[/green]"
+        if PROGRAMMATIC_ENABLED
+        else "[yellow]○ Disabled (set CGF_ENABLE_PROGRAMMATIC=true)[/yellow]"
+    )
+    console.print(f"Programmatic Optimization: {prog_status}\n")
+
     table = Table(title="Optimizer Availability", show_header=True)
     table.add_column("Optimizer", style="cyan")
     table.add_column("Status", style="green")
     table.add_column("Install Command", style="dim")
 
-    dspy_status = "[green]✓ Available[/green]" if DSPY_AVAILABLE else "[red]✗ Not installed[/red]"
-    textgrad_status = "[green]✓ Available[/green]" if TEXTGRAD_AVAILABLE else "[red]✗ Not installed[/red]"
+    # Agentic is always available
+    table.add_row(
+        "Agentic (default)",
+        "[green]✓ Available[/green]",
+        "(built-in)"
+    )
 
-    table.add_row("DSPy MIPROv2", dspy_status, "pip install 'dspy-ai>=2.5.0'")
+    # MIPRO availability
+    if PROGRAMMATIC_ENABLED:
+        mipro_status = (
+            "[green]✓ Available[/green]"
+            if MIPRO_AVAILABLE
+            else "[red]✗ Not installed[/red]"
+        )
+    else:
+        mipro_status = "[dim]○ Requires CGF_ENABLE_PROGRAMMATIC=true[/dim]"
+
+    # TextGrad availability
+    if PROGRAMMATIC_ENABLED:
+        textgrad_status = (
+            "[green]✓ Available[/green]"
+            if TEXTGRAD_AVAILABLE
+            else "[red]✗ Not installed[/red]"
+        )
+    else:
+        textgrad_status = "[dim]○ Requires CGF_ENABLE_PROGRAMMATIC=true[/dim]"
+
+    table.add_row("DSPy MIPROv2", mipro_status, "pip install 'dspy-ai>=2.5.0'")
     table.add_row("TextGrad TGD", textgrad_status, "pip install 'textgrad>=0.1.6'")
 
     console.print(table)
@@ -179,6 +212,12 @@ def print_result_summary(run: OptimizationRun, result: OptimizationResult) -> No
     help="Directory for iteration results. Default: workspace/{agent}/iterations/ (requires --save-iterations)",
 )
 @click.option(
+    "--progress-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Directory to save progressive drafts and candidates. Default: workspace/{agent}/progress/",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     default=False,
@@ -216,6 +255,7 @@ def cli(
     seed: int | None,
     save_iterations: bool,
     iterations_dir: Path | None,
+    progress_dir: Path | None,
     dry_run: bool,
     verbose: bool,
     quiet: bool,
@@ -268,6 +308,12 @@ def cli(
         console.print("[red]Error:[/red] --test-suite is required")
         sys.exit(1)
 
+    # Compute default progress_dir if not provided
+    effective_progress_dir = progress_dir
+    if effective_progress_dir is None:
+        agent_name = Path(agent).stem
+        effective_progress_dir = Path("workspace") / agent_name / "progress"
+
     # Create optimization config
     opt_config = OptimizationConfig(
         max_iterations=iterations,
@@ -277,6 +323,7 @@ def cli(
         temperature=temperature,
         seed=seed,
         verbose=verbose,
+        progress_dir=str(effective_progress_dir),
     )
 
     # Create pipeline config
@@ -306,6 +353,7 @@ def cli(
         console.print(f"[cyan]Test Suite:[/cyan] {test_suite}")
         console.print(f"[cyan]Optimizer:[/cyan] {optimizer}")
         console.print(f"[cyan]Max Iterations:[/cyan] {iterations}")
+        console.print(f"[cyan]Progress Dir:[/cyan] {effective_progress_dir}")
         console.print()
 
     try:

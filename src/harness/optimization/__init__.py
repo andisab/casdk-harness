@@ -131,19 +131,32 @@ from harness.optimization.runners import (
 
 # Re-export optimizer components
 from harness.optimization.optimizers import (
-    DSPY_AVAILABLE,
+    # Configuration
+    PROGRAMMATIC_ENABLED,
+    MIPRO_AVAILABLE,
     TEXTGRAD_AVAILABLE,
+    # Protocol and base types
     BaseOptimizer,
-    DSPyAgentOptimizer,
     IterationResult,
     OptimizationConfig,
     OptimizationResult,
     OptimizerProtocol,
     OptimizerType,
     PromptCandidate,
+    # Agentic optimizer (primary)
+    AgenticSectionOptimizer,
+    AgenticOptimizationConfig,
+    AgenticOptimizationResult,
+    CritiqueResult,
+    get_agentic_optimizer,
+    # MIPROv2 optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
+    MIPROv2AgentOptimizer,
+    MIPROv2Config,
+    get_mipro_optimizer,
+    # TextGrad optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
     TextGradAgentOptimizer,
-    get_dspy_optimizer,
     get_textgrad_optimizer,
+    # Metrics
     suite_average_score,
     validation_score_metric,
 )
@@ -155,6 +168,15 @@ from harness.optimization.pipeline import (
     PipelineConfig,
     RunPhase,
     RunStatus,
+)
+
+# Re-export orchestration components
+from harness.optimization.orchestrator import (
+    OrchestrationResult,
+    SectionOptimizationConfig,
+    SectionOptimizer,
+    SectionResult,
+    run_section_optimization,
 )
 
 __all__ = [
@@ -223,7 +245,11 @@ __all__ = [
     "RunContext",
     "AgentRunner",
     "BatchRunner",
-    # Optimizers
+    # Optimizers - Configuration
+    "PROGRAMMATIC_ENABLED",
+    "MIPRO_AVAILABLE",
+    "TEXTGRAD_AVAILABLE",
+    # Optimizers - Protocol and base types
     "OptimizerProtocol",
     "OptimizerType",
     "BaseOptimizer",
@@ -231,12 +257,19 @@ __all__ = [
     "OptimizationResult",
     "IterationResult",
     "PromptCandidate",
-    "DSPyAgentOptimizer",
-    "get_dspy_optimizer",
-    "DSPY_AVAILABLE",
+    # Optimizers - Agentic (primary)
+    "AgenticSectionOptimizer",
+    "AgenticOptimizationConfig",
+    "AgenticOptimizationResult",
+    "CritiqueResult",
+    "get_agentic_optimizer",
+    # Optimizers - MIPROv2 (optional)
+    "MIPROv2AgentOptimizer",
+    "MIPROv2Config",
+    "get_mipro_optimizer",
+    # Optimizers - TextGrad (optional)
     "TextGradAgentOptimizer",
     "get_textgrad_optimizer",
-    "TEXTGRAD_AVAILABLE",
     # Metrics
     "validation_score_metric",
     "suite_average_score",
@@ -246,4 +279,10 @@ __all__ = [
     "OptimizationRun",
     "RunPhase",
     "RunStatus",
+    # Orchestration
+    "SectionOptimizationConfig",
+    "SectionOptimizer",
+    "SectionResult",
+    "OrchestrationResult",
+    "run_section_optimization",
 ]
