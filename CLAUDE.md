@@ -17,17 +17,21 @@ Technical reference for developers working on this repository and for Claude's o
 - 5 MCP servers (3 in-process + 2 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
-- 18 subagents (14 harness + 4 plugin) via direct invocation
-- 12 skills via Skill tool (6 base + 6 plugin)
-- CGF Phase 0 infrastructure (tracer, store, adapters, rewards) - 404 tests
+- 25 subagents (14 harness + 11 plugin) via direct invocation
+- 13 skills via Skill tool (6 base + 7 plugin)
+- **CGF Optimization Framework** (600+ tests):
+  - Phase 0: Infrastructure (tracer, store, adapters, rewards)
+  - Phase 1: Single-agent optimization (test cases, runners, DSPy, TextGrad, CLI)
+  - Phase 2: Section-based optimization (agentic, coherence, MIPROv2)
 
-### In Progress
-- **CGF Phase 1: Single-Agent Optimization Validation**
-  - [ ] 1A: Test case infrastructure (YAML loader, validators)
-  - [ ] 1B: Agent runner with tracing
-  - [ ] 1C: DSPy MIPROv2 integration
-  - [ ] 1D: TextGrad TGD integration
-  - [ ] 1E: Pipeline orchestration + CLI
+### Completed Recently
+- **CGF Phase 4: End-to-End Pipeline**
+  - [x] Creation mode: Create + optimize new resources from description (`/cgf create`)
+  - [x] Targeted refinement loop: Skip full research, focus on specific sections
+  - [x] Cross-section regression detection with automatic rollback
+  - [x] Post-synthesis validation against full test suite
+  - [x] Updated threshold: 6+ deterministic tests for PROGRAMMATIC strategy
+  - [x] DSPy Metric Bridge: `TestSuiteMetric` bridges CGF validators to DSPy
 
 ### Known Limitations
 - **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead
@@ -60,9 +64,17 @@ casdk-harness/
 │   │   ├── plugin_manager.py       # Plugin discovery and loading
 │   │   ├── progress.py             # Task list and session tracking
 │   │   ├── agents/configs/         # 14 agent definition files
-│   │   ├── prompts/                # 8 prompt files (5 container modes + 3 autonomous workflow)
-│   │   ├── plugins/                # 2 plugins (context-engineering, research-team)
+│   │   ├── prompts/                # 5 prompt files (3 container + 2 autonomous)
+│   │   ├── plugins/                # 3 plugins (cgf-agents, context-engineering, research-team)
 │   │   ├── skills/                 # 6 base skills
+│   │   ├── optimization/           # CGF optimization framework
+│   │   │   ├── cli/                # optimize.py, section_optimize.py
+│   │   │   ├── analysis/           # competency_mapper, coherence, synthesizer
+│   │   │   ├── optimizers/         # dspy, textgrad, mipro, agentic
+│   │   │   ├── testcases/          # loader, validators, models
+│   │   │   ├── runners/            # agent_runner, batch_runner
+│   │   │   ├── resources/          # agent, prompt, skill resources
+│   │   │   └── orchestrator.py     # Section-based optimization
 │   │   └── config/.mcp.json        # MCP subprocess server config
 │   └── mcp_servers/                # 3 in-process MCP servers
 │       ├── context7/               # Library documentation lookup
@@ -171,6 +183,408 @@ When running inside the harness container:
 | **Progress tracking** | Checkpoints only | ProgressManager + checkpoints |
 | **Multiple sessions** | No | Yes (loop until done) |
 
+---
+
+## CGF Optimization Framework
+
+The ContextGrad Framework (CGF) provides prompt optimization with **agentic (LLM-based) optimization as the default**. Programmatic optimization (DSPy MIPROv2, TextGrad) is available but disabled by default.
+
+**Default Mode (Agentic)**: Uses LLM self-critique and research heuristics. No test suite required.
+**Programmatic Mode**: Requires `CGF_ENABLE_PROGRAMMATIC=true` and 6+ deterministic tests.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        CGF OPTIMIZATION ARCHITECTURE                             │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                      PRE-OPTIMIZATION SETUP                               │  │
+│  │                                                                           │  │
+│  │  1. Load Agent ───────────► workspace/AGENT/AGENT.md                     │  │
+│  │  2. Generate Tests ───────► cgf-test-architect → tests/tests.yaml        │  │
+│  │  3. Generate Criteria ────► cgf-criteria-synthesizer → eval_criteria.yaml│  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                  │                                               │
+│                                  ▼                                               │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                   FIVE-PHASE ORCHESTRATION                                │  │
+│  │  orchestrator.py (SectionOptimizer)                                       │  │
+│  │                                                                           │  │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌───────────┐  ┌──────────┐     │  │
+│  │  │ ANALYZE │→ │  PLAN   │→ │ EXECUTE │→ │ SYNTHESIZE│→ │ VALIDATE │     │  │
+│  │  └────┬────┘  └────┬────┘  └────┬────┘  └─────┬─────┘  └────┬─────┘     │  │
+│  │       │            │            │             │              │           │  │
+│  │   Load agent   Create      Run optimizer  Merge sections  Full suite    │  │
+│  │   Load tests   focused     per section    Coherence pass  validation    │  │
+│  │   Map tests→   test        Cross-section  Auto-reorder    Rollback on   │  │
+│  │   competencies suites      regression     (if enabled)    regression    │  │
+│  │   Set eval_model           detection                                     │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                  │                                               │
+│              ┌───────────────────┼───────────────────┐                          │
+│              ▼                   ▼                   ▼                          │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                    │
+│  │  PROGRAMMATIC  │  │    AGENTIC     │  │    PRESERVE    │                    │
+│  │  (6+ determ)   │  │  (qualitative) │  │  (no coverage) │                    │
+│  │                │  │                │  │                │                    │
+│  │  ┌──────────┐  │  │  Self-critique │  │  Keep original │                    │
+│  │  │  DSPy    │  │  │  LLM-based     │  │  section       │                    │
+│  │  │  MIPROv2 │  │  │  improvement   │  │                │                    │
+│  │  └──────────┘  │  │                │  │                │                    │
+│  │  ┌──────────┐  │  │                │  │                │                    │
+│  │  │ TextGrad │  │  │                │  │                │                    │
+│  │  │   TGD    │  │  │                │  │                │                    │
+│  │  └──────────┘  │  │                │  │                │                    │
+│  └────────────────┘  └────────────────┘  └────────────────┘                    │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                      VALIDATORS & EVAL MODEL                              │  │
+│  │                                                                           │  │
+│  │  Deterministic (→ PROGRAMMATIC):   LLM-Based (→ AGENTIC):                │  │
+│  │    exact, contains, regex            llm_judge                            │  │
+│  │    code, code_syntax                 code_llm                             │  │
+│  │                                                                           │  │
+│  │  Eval Model (default: Sonnet): LLMJudgeValidator, CodeLLMValidator       │  │
+│  │    Override: --eval-model haiku/sonnet/opus                              │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐  │
+│  │                      ANALYSIS & SYNTHESIS                                 │  │
+│  │                                                                           │  │
+│  │  competency_mapper.py ──► Map tests → competencies → sections            │  │
+│  │  test_subset.py ────────► Create focused test suites per section         │  │
+│  │  synthesizer.py ────────► Merge optimized sections into final prompt     │  │
+│  │  coherence.py ──────────► Detect inversions, reorder for flow            │  │
+│  └───────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Optimization Strategies
+
+| Strategy | Trigger | Optimizer | Validators |
+|----------|---------|-----------|------------|
+| **AGENTIC** (default) | Default mode, no tests required | Self-critique LLM | llm_judge, code_llm (optional) |
+| **PROGRAMMATIC** | `CGF_ENABLE_PROGRAMMATIC=true` + ≥6 deterministic tests | DSPy MIPROv2 / TextGrad | exact, contains, regex, code, code_syntax |
+| **PRESERVE** | No test coverage (programmatic mode only) | None | - |
+
+**Default (Agentic)**: Uses research heuristics + LLM self-critique. Fastest, no test suite needed.
+**Programmatic**: Requires explicit opt-in. Tests provide gradient signal for DSPy/TextGrad optimization.
+
+### Eval Model Configuration
+
+The eval model is used by `LLMJudgeValidator` and `CodeLLMValidator` for test scoring:
+
+| Model | ID | Use Case |
+|-------|-----|----------|
+| **Sonnet** (default) | `claude-sonnet-4-20250514` | Balance of speed and quality |
+| Haiku | `claude-3-5-haiku-20241022` | Fastest/cheapest evaluation |
+| Opus | `claude-opus-4-5-20250929` | Highest quality evaluation |
+
+Override via `--eval-model` CLI flag or `EVAL_MODEL` env var.
+
+### Make Targets
+
+The unified entry point `make optimize` runs in Docker (like `make autonomous`) and provides a two-phase workflow:
+1. **Q&A Phase**: Interactive `cgf-initializer` agent gathers optimization requirements
+2. **Optimization Phase**: Autonomous `cgf-orchestrator` runs optimization
+
+**Key Principle:** SPEC.md location defines the workspace root. All files are created relative to its location.
+
+```bash
+# Discover SPEC.md automatically (preferred)
+make optimize
+
+# Explicit workspace path (when multiple SPEC.md exist)
+make optimize WORKSPACE=workspace/python-expert
+
+# Legacy mode with agent name
+make optimize AGENT=python-expert
+
+# Skip Q&A with direct goal
+make optimize AGENT=python-expert GOAL="improve async guidance"
+
+# Validate setup and show configuration
+make optimize-dryrun                          # Discover mode
+make optimize-dryrun WORKSPACE=workspace/x    # Explicit path
+make optimize-dryrun AGENT=python-expert
+```
+
+**Workspace Structure (SPEC.md location = workspace root):**
+```
+{workspace_root}/                  # Directory containing SPEC.md
+├── SPEC.md                        # Optimization spec (user OR Q&A-generated)
+├── CHANGELOG.md                   # Human-readable optimization history (accumulates)
+├── {resource}.md                  # Original resource (NEVER modified)
+├── {resource}-v1.md               # First optimization
+├── {resource}-v2.md               # Second optimization (if REFINE)
+├── research/                      # Created during RESEARCH phase
+│   ├── notes/
+│   │   └── *.yaml                 # Research findings
+│   ├── eval_criteria.yaml         # Evaluation criteria
+│   └── reviews/                   # Created during EVALUATE phase
+│       └── v1_review.md
+└── sessions/                      # Runtime state (delete to reset)
+    ├── task_list.json             # Phase tracking
+    ├── qa_session.json            # Q&A history
+    └── *.summary.json             # Machine-readable summaries (for debugging)
+```
+
+**File Naming:**
+| Resource Type | Original | Optimized Versions |
+|---------------|----------|-------------------|
+| Agent | `{name}.md` | `{name}-v1.md`, `{name}-v2.md` |
+| Skill | `SKILL.md` | `SKILL-v1.md`, `SKILL-v2.md` |
+| Command | `{name}.md` | `{name}-v1.md`, `{name}-v2.md` |
+
+**The original file is NEVER modified.** Delete `sessions/` to reset state without losing artifacts.
+
+**Configuration** (`.env` or command line):
+```bash
+# Optimization mode
+CGF_OPTIMIZER_MODE=agentic    # agentic (default), python, or both
+CGF_ITERATIONS=10             # max optimization iterations per section
+CGF_ITERATION_REVIEW=false    # pause for review after each iteration
+CGF_EVAL_MODEL=sonnet         # sonnet (default), haiku, or opus
+CGF_VERBOSE=true              # show progress output
+
+# Programmatic mode settings (when CGF_OPTIMIZER_MODE=python or both)
+CGF_OPTIMIZER=mipro           # mipro or textgrad
+CGF_CANDIDATES=5              # candidates per iteration
+CGF_LEARNING_RATE=0.1         # optimizer learning rate
+CGF_EARLY_STOP=0.01           # early stopping threshold
+```
+
+**Q&A Flow Example:**
+```
+$ make optimize AGENT=python-expert
+
+CGF Optimization Q&A
+====================
+
+[cgf-initializer] Analyzing resource: python-expert.md
+[cgf-initializer] Detected: Agent (705 lines, 12 sections)
+
+Question 1/5: What do you want to improve?
+> Better async/await patterns and error handling
+
+Question 2/5: Focus on specific sections? (2, 3, 5 or "all")
+> 2, 3, 5
+
+Question 3/5: Optimization mode? (1=agentic, 2=python, 3=both)
+> 1
+
+Question 4/5: Review after each iteration? (y/n)
+> y
+
+Question 5/5: Number of iterations? (default: 10)
+> 5
+
+[cgf-initializer] Saved: workspace/python-expert/cgf_spec.yaml
+[SPEC_READY]
+
+CGF Optimization Phase
+======================
+Goal: Better async/await patterns and error handling
+Mode: agentic | Iterations: 5 | Review: enabled
+
+[cgf-orchestrator] Starting optimization...
+```
+
+### Quick Start
+
+```bash
+# Initialize a new CGF workspace with template SPEC.md
+make cgf-init NAME=my-agent
+
+# Copy your resource file
+cp path/to/agent.md workspace/my-agent/my-agent.md
+
+# Edit SPEC.md with your optimization goals
+# Then run optimization
+make optimize WORKSPACE=workspace/my-agent
+```
+
+See `docs/examples/CGF_SPEC.example.md` for the full template with examples.
+
+### Workspace Management
+
+```bash
+# Check optimization status (discovers all workspaces)
+make cgf-status
+
+# Clean session state files (keeps research and optimized files)
+# Equivalent to: rm -rf workspace/*/sessions/
+make cgf-clean
+
+# Remove all CGF artifacts (destructive)
+make cgf-reset
+```
+
+**Reset Strategies:**
+- Delete `sessions/` only → Resume from appropriate phase
+- Delete `research/` → Re-run research phase
+- `make cgf-clean` → Clear all session states, keep artifacts
+- `make cgf-reset` → Full reset (destructive)
+
+### Advanced CLI (Section-Based)
+
+Default mode (agentic - no tests required):
+```bash
+# Default agentic optimization (no test suite needed)
+uv run python -m harness.optimization.cli.section_optimize \
+  --agent src/harness/agents/configs/dev-python-expert.md \
+  --criteria workspace/dev-python-expert/research/eval_criteria.yaml \
+  --workspace workspace/dev-python-expert \
+  --iterations 2 \
+  --verbose
+```
+
+Programmatic mode (requires `CGF_ENABLE_PROGRAMMATIC=true`):
+```bash
+# Enable test-based optimization
+CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_optimize \
+  --agent src/harness/agents/configs/dev-python-expert.md \
+  --test-suite workspace/dev-python-expert/tests/tests.yaml \
+  --criteria workspace/dev-python-expert/research/eval_criteria.yaml \
+  --workspace workspace/dev-python-expert \
+  --optimizer mipro \
+  --iterations 2 \
+  --verbose
+
+# Dry run (analyze test coverage)
+CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_optimize \
+  --agent ... --test-suite ... --criteria ... --workspace ... \
+  --dry-run
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `cli/optimize.py` | Single-agent optimization CLI |
+| `cli/section_optimize.py` | Section-based optimization CLI |
+| `orchestrator.py` | Section optimization orchestrator |
+| `analysis/competency_mapper.py` | Map tests → competencies → sections |
+| `analysis/coherence.py` | Detect and fix structural issues |
+| `analysis/synthesizer.py` | Merge optimized sections |
+| `optimizers/agentic_optimizer.py` | Self-critique optimizer (DEFAULT) |
+| `optimizers/dspy_mipro_optimizer.py` | MIPROv2 Bayesian optimizer (requires CGF_ENABLE_PROGRAMMATIC) |
+| `optimizers/textgrad_optimizer.py` | TextGrad TGD optimizer (requires CGF_ENABLE_PROGRAMMATIC) |
+| `optimizers/dspy_metrics.py` | DSPy metric bridge for validators |
+
+### Test Coverage
+
+| Phase | Component | Tests |
+|-------|-----------|-------|
+| 0.1 | OpenTelemetry Tracing | 97 |
+| 0.2 | Optimization Store | 89 |
+| 0.3 | Resource Registry | 65 |
+| 0.4 | Adapter Framework | 87 |
+| 0.5 | Reward System | 50 |
+| 0.6 | Integration | 16 |
+| 1.0 | Single-Agent Optimization | 398 |
+| **Total** | | **802+** |
+
+### DSPy MIPROv2 Integration
+
+The DSPy optimizer uses MIPROv2 (Bayesian optimization with TPE) via the metric bridge:
+
+```python
+# TestSuiteMetric bridges CGF validators to DSPy
+metric = TestSuiteMetric(
+    test_suite=suite,
+    resource=resource,
+    pass_threshold=0.5,
+    cache_validators=True,
+)
+
+# Create trainset from test cases
+trainset = create_trainset_from_suite(suite, include_expected=True)
+
+# MIPROv2 three-stage optimization:
+# 1. Bootstrapping: Collect high-quality traces
+# 2. Grounded proposal: Draft instructions from task data
+# 3. Discrete search: Bayesian TPE optimization
+```
+
+### TextGrad TGD Integration
+
+TextGrad uses textual gradient descent with structure-aware optimization:
+
+```python
+# Trainable prompt variable
+system_prompt_var = tg.Variable(
+    prompt,
+    requires_grad=True,
+    role_description=f"{base_role}\n\n{structure_guidance}",
+)
+
+# TGD optimizer with validation revert
+optimizer = tg.TGD(parameters=[system_prompt_var])
+
+# Loss text from test failures drives backward pass
+loss_var = tg.Variable(loss_text, requires_grad=False)
+loss_var.backward()  # Generates textual gradients
+optimizer.step()     # Applies improvements
+```
+
+### Orchestration Workflows
+
+**Default (Agentic Mode)**:
+1. **LOAD**: Load agent, criteria, and research findings
+2. **ITERATE**: LLM self-critique (1-3 rounds)
+3. **OUTPUT**: Merge sections, run coherence analysis, save
+
+**Programmatic Mode** (CGF_ENABLE_PROGRAMMATIC=true):
+1. **ANALYZE**: Map tests to competencies, assign strategies per section
+2. **PLAN**: Create focused test suites for programmatic sections
+3. **EXECUTE**: Run optimizers (MIPROv2/TextGrad/Agentic) per section
+4. **SYNTHESIZE**: Merge sections, run coherence analysis, auto-reorder
+5. **VALIDATE**: Post-synthesis full test suite validation with rollback
+
+**Cross-Section Regression Detection** (programmatic mode): After optimizing section N, re-runs tests for sections 1..(N-1). If score drops > 5%, automatically rolls back.
+
+### Creation Mode
+
+Create and optimize new resources from natural language description:
+
+```bash
+/cgf create "Python async expert that helps with asyncio patterns"
+```
+
+Pipeline: INIT → CREATE (context-engineer) → RESEARCH → TEST_GEN → OPTIMIZE → EVALUATE → FINALIZE
+
+### Targeted Refinement
+
+After REFINE recommendation, orchestrator can skip full research and focus on specific sections:
+
+```
+RECOMMENDATION: REFINE
+
+TARGET_SECTIONS:
+- core_approach
+- best_practices
+
+TARGET_COMPETENCIES:
+- comp_async_patterns
+- comp_error_handling
+
+PRESERVE_SECTIONS:
+- role_definition
+- constraints
+
+REFINEMENT_HINTS:
+- Focus on async/await best practices in core_approach
+- Add more error handling examples
+```
+
+Max refinement iterations: 3 before escalating to human review.
+
+---
+
 ### Autonomous Mode Workflow
 
 **Workspace State Detection:**
@@ -211,16 +625,24 @@ When running inside the harness container:
 | **Plugin Agents** | `src/harness/plugins/*/agents/*.md` | `harness.direct_agent` | Same process |
 | **Container Agents** | `docker-compose.yml` services | Docker | Separate containers |
 
-### Subagents (14 harness + 4 plugin)
+### Subagents (14 harness + 11 plugin)
 
 Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 
+**Harness Agents** (14):
 | Category | Agents |
 |----------|--------|
 | **Development** (7) | python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent, code-review-expert |
 | **Database** (2) | postgres-expert, sql-expert |
 | **Infrastructure** (4) | docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert |
 | **Testing** (1) | sdet-expert |
+
+**Plugin Agents** (11):
+| Plugin | Agents |
+|--------|--------|
+| **cgf-agents** (7) | cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer |
+| **context-engineering** (1) | context-engineer |
+| **research-team** (3) | lead-research-coordinator, research-specialist, research-report-writer |
 
 **Definition files**: `src/harness/agents/configs/` with YAML frontmatter:
 ```markdown
@@ -453,18 +875,24 @@ Lifecycle hook infrastructure:
 | Type | Count | Invocation | Status |
 |------|-------|------------|--------|
 | Harness Agents | 14 | `harness.direct_agent.call_agent()` | Working |
-| Plugin Agents | 4 | `harness.direct_agent.call_agent()` | Working |
+| Plugin Agents | 11 | `harness.direct_agent.call_agent()` | Working |
 | Base Skills | 6 | `Skill(skill="...")` | Working |
-| Plugin Skills | 6 | `Skill(skill="plugin:name")` | Working |
+| Plugin Skills | 7 | `Skill(skill="plugin:name")` | Working |
 | Commands | 2 | CommandRegistry | Working |
 | Hooks | 2 | HookRegistry | Working |
 
-### Plugins (2 total)
+### Plugins (3 total)
+
+**cgf-agents** (`src/harness/plugins/cgf-agents/`):
+- 7 agents: cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer
+- 1 skill: cgf-optimize
+- 1 command: cgf (with subcommands: create, optimize, status)
+- Dependencies: context-engineering, research-team
+- Orchestrates multi-agent optimization workflows
 
 **context-engineering** (`src/harness/plugins/context-engineering/`):
 - 1 agent: context-engineer
 - 5 skills: agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration
-- 1 command: create-agent
 - Hook configuration for lifecycle events
 
 **research-team** (`src/harness/plugins/research-team/`):
@@ -476,7 +904,7 @@ Lifecycle hook infrastructure:
 
 All plugin resources use `plugin-name:resource-name` format:
 - Skills: `context-engineering:skill-creation`
-- Commands: `context-engineering:create-agent`
+- Commands: `cgf-agents:cgf`, `research-team:research`
 
 ### Hook Events
 

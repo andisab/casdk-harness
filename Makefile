@@ -68,10 +68,11 @@ help: ## Show available targets
 	@echo "  init-spec            Create SPEC.md template"
 	@echo ""
 	@echo "$(YELLOW)CGF Optimization:$(NC)"
-	@echo "  cgf-optimize         Start CGF optimization (RESOURCE=x GOAL=\"y\")"
-	@echo "  cgf-optimize-review  With human review checkpoints"
+	@echo "  cgf-init             Initialize CGF workspace (NAME=x)"
+	@echo "  optimize             Run CGF optimization (discovers SPEC.md)"
+	@echo "  optimize-dryrun      Validate setup (WORKSPACE=x or AGENT=x)"
 	@echo "  cgf-status           Show optimization run status"
-	@echo "  cgf-clean            Remove run state files"
+	@echo "  cgf-clean            Remove session state files"
 	@echo ""
 	@echo "$(YELLOW)Testing:$(NC)"
 	@echo "  test                 Run full test suite"
@@ -321,67 +322,92 @@ init-spec: ## Copy SPEC.example.md template to workspace/SPEC.md
 		echo "$(YELLOW)workspace/SPEC.md already exists$(NC)"; \
 		echo "Remove it first or edit directly: rm workspace/SPEC.md"; \
 	else \
-		cp docs/SPEC.example.md workspace/SPEC.md; \
-		echo "$(GREEN)Created workspace/SPEC.md from docs/SPEC.example.md$(NC)"; \
+		cp docs/examples/SPEC.example.md workspace/SPEC.md; \
+		echo "$(GREEN)Created workspace/SPEC.md from docs/examples/SPEC.example.md$(NC)"; \
 		echo "Edit workspace/SPEC.md to describe your project, then run: make autonomous"; \
 	fi
 
 # =============================================================================
 # CGF Optimization
 # =============================================================================
-.PHONY: cgf-optimize
-cgf-optimize: ## Start CGF optimization (usage: make cgf-optimize RESOURCE=python-expert GOAL="async programming")
-	@echo "$(GREEN)Starting CGF optimization...$(NC)"
-	@if [ -z "$(RESOURCE)" ]; then \
-		echo "$(RED)Usage: make cgf-optimize RESOURCE=<agent-name> GOAL=\"<optimization goal>\"$(NC)"; \
-		echo "Example: make cgf-optimize RESOURCE=python-expert GOAL=\"async programming\""; \
+
+.PHONY: cgf-init
+cgf-init: ## Initialize CGF workspace (usage: make cgf-init NAME=my-agent)
+	@if [ -z "$(NAME)" ]; then \
+		echo "$(RED)Usage: make cgf-init NAME=<workspace-name>$(NC)"; \
+		echo ""; \
+		echo "Example:"; \
+		echo "  make cgf-init NAME=python-expert"; \
+		echo ""; \
+		echo "This creates workspace/python-expert/ with:"; \
+		echo "  - SPEC.md (CGF optimization template)"; \
 		exit 1; \
 	fi
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.direct_agent \
-		--agent cgf-agents:cgf-orchestrator \
-		--prompt "Optimize $(RESOURCE) for $(GOAL)" \
-		--verbose
-
-.PHONY: cgf-optimize-review
-cgf-optimize-review: ## Start CGF optimization with human review checkpoints
-	@echo "$(GREEN)Starting CGF optimization with review checkpoints...$(NC)"
-	@if [ -z "$(RESOURCE)" ]; then \
-		echo "$(RED)Usage: make cgf-optimize-review RESOURCE=<agent-name> GOAL=\"<optimization goal>\"$(NC)"; \
-		exit 1; \
+	@if [ -d "workspace/$(NAME)" ]; then \
+		echo "$(YELLOW)workspace/$(NAME)/ already exists$(NC)"; \
+		if [ -f "workspace/$(NAME)/SPEC.md" ]; then \
+			echo "SPEC.md exists. Edit it or remove to start fresh."; \
+		else \
+			cp docs/examples/CGF_SPEC.example.md workspace/$(NAME)/SPEC.md; \
+			echo "$(GREEN)Created workspace/$(NAME)/SPEC.md$(NC)"; \
+		fi; \
+	else \
+		mkdir -p workspace/$(NAME); \
+		cp docs/examples/CGF_SPEC.example.md workspace/$(NAME)/SPEC.md; \
+		echo "$(GREEN)Created workspace/$(NAME)/$(NC)"; \
+		echo "$(GREEN)Created workspace/$(NAME)/SPEC.md$(NC)"; \
 	fi
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.direct_agent \
-		--agent cgf-agents:cgf-orchestrator \
-		--prompt "Optimize $(RESOURCE) for $(GOAL) --review" \
-		--verbose
-
+	@echo ""
+	@echo "$(YELLOW)Next steps:$(NC)"
+	@echo "  1. Copy your resource file to workspace/$(NAME)/"
+	@echo "  2. Edit workspace/$(NAME)/SPEC.md with your optimization goals"
+	@echo "  3. Run: make optimize WORKSPACE=workspace/$(NAME)"
 .PHONY: cgf-status
 cgf-status: ## Show status of CGF optimization runs
 	@echo "$(GREEN)CGF Optimization Run Status$(NC)"
 	@echo ""
 	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
-		for state in workspace/*/run_state.json; do \
+		found=0; \
+		for state in workspace/*/sessions/task_list.json workspace/*/task_list.json; do \
 			if [ -f "$$state" ]; then \
-				RESOURCE=$$(dirname "$$state" | xargs basename); \
-				STATE=$$(jq -r ".state // \"UNKNOWN\"" "$$state" 2>/dev/null); \
-				RUN_ID=$$(jq -r ".run_id // \"N/A\"" "$$state" 2>/dev/null); \
-				CREATED=$$(jq -r ".timestamps.created // \"N/A\"" "$$state" 2>/dev/null); \
-				echo "$(YELLOW)$$RESOURCE$(NC) ($$RUN_ID)"; \
-				echo "  State: $$STATE"; \
+				found=1; \
+				WORKSPACE=$$(dirname "$$state"); \
+				if [ "$$(basename $$WORKSPACE)" = "sessions" ]; then \
+					WORKSPACE=$$(dirname "$$WORKSPACE"); \
+				fi; \
+				RESOURCE=$$(basename "$$WORKSPACE"); \
+				PHASE=$$(jq -r ".current_phase // \"UNKNOWN\"" "$$state" 2>/dev/null); \
+				SPEC_PATH=$$(jq -r ".spec_path // \"N/A\"" "$$state" 2>/dev/null); \
+				CREATED=$$(jq -r ".created_at // \"N/A\"" "$$state" 2>/dev/null); \
+				ITERATION=$$(jq -r ".iteration // 0" "$$state" 2>/dev/null); \
+				echo "$(YELLOW)$$RESOURCE$(NC)"; \
+				echo "  Phase: $$PHASE (iteration $$ITERATION)"; \
 				echo "  Created: $$CREATED"; \
+				if [ -f "$$WORKSPACE/SPEC.md" ]; then \
+					echo "  Spec: SPEC.md $(GREEN)✓$(NC)"; \
+				elif [ -f "$$WORKSPACE/cgf_spec.yaml" ]; then \
+					echo "  Spec: cgf_spec.yaml $(GREEN)✓$(NC)"; \
+				fi; \
 				echo ""; \
 			fi; \
 		done; \
-		if ! ls workspace/*/run_state.json >/dev/null 2>&1; then \
+		if [ $$found -eq 0 ]; then \
 			echo "No active CGF optimization runs"; \
-			echo "Start one with: make cgf-optimize RESOURCE=python-expert GOAL=\"async programming\""; \
+			echo ""; \
+			echo "Start one with:"; \
+			echo "  make optimize                           # Discover SPEC.md"; \
+			echo "  make optimize PATH=workspace/my-agent   # Specific path"; \
+			echo "  make optimize AGENT=python-expert       # Legacy mode"; \
 		fi'
 
 .PHONY: cgf-clean
 cgf-clean: ## Remove CGF run state files (keeps artifacts)
-	@echo "$(YELLOW)Removing CGF run state files...$(NC)"
+	@echo "$(YELLOW)Removing CGF run state files (sessions/ directories)...$(NC)"
 	@docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
-		rm -f workspace/*/run_state.json 2>/dev/null; \
-		echo "$(GREEN)CGF run states cleared$(NC)"'
+		rm -rf workspace/*/sessions 2>/dev/null; \
+		rm -f workspace/*/task_list.json workspace/*/qa_session.json 2>/dev/null; \
+		echo "$(GREEN)CGF session states cleared$(NC)"; \
+		echo "Research and optimized files preserved."'
 
 .PHONY: cgf-reset
 cgf-reset: ## Remove all CGF workspaces (destructive)
@@ -389,8 +415,122 @@ cgf-reset: ## Remove all CGF workspaces (destructive)
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		docker compose $(COMPOSE_FILES) exec -T main-agent bash -c '\
-			rm -rf workspace/*/run_state.json workspace/*/run_config.yaml workspace/*/research workspace/*/tests workspace/*/reviews 2>/dev/null; \
+			rm -rf workspace/*/sessions workspace/*/research workspace/*/reviews 2>/dev/null; \
+			rm -f workspace/*/task_list.json workspace/*/qa_session.json workspace/*/cgf_spec.yaml 2>/dev/null; \
+			rm -f workspace/*/*-v*.md workspace/*/*-orig.md 2>/dev/null; \
 			echo "$(GREEN)CGF workspaces reset$(NC)"'; \
+	fi
+
+# =============================================================================
+# CGF Optimization CLI
+# =============================================================================
+# Usage:
+#   make optimize                       # Discover SPEC.md automatically
+#   make optimize WORKSPACE=workspace/x # Use specific workspace path
+#   make optimize AGENT=x [GOAL=y]      # Legacy mode with agent name
+#
+# Two-phase optimization session (runs in Docker like autonomous mode):
+#   1. Q&A Phase: cgf-initializer gathers requirements interactively
+#   2. Optimization Phase: cgf-orchestrator runs autonomous optimization
+#
+# Workspace Structure (SPEC.md location = workspace root):
+#   {workspace}/
+#   ├── SPEC.md                      # Optimization spec (defines workspace root)
+#   ├── {resource}.md                # Original resource (never modified)
+#   ├── {resource}-v1.md             # First optimization
+#   ├── research/                    # Research artifacts
+#   └── sessions/                    # Runtime state (delete to reset)
+#
+# Environment variables (set in .env or override):
+#   CGF_OPTIMIZER_MODE   - agentic | python | both (default: agentic)
+#   CGF_ITERATIONS       - max iterations per section (default: 10)
+#   CGF_ITERATION_REVIEW - pause for review after each (default: false)
+#   CGF_EVAL_MODEL       - sonnet | haiku | opus (default: sonnet)
+#   CGF_VERBOSE          - show progress (default: true)
+
+.PHONY: optimize
+optimize: ## Run CGF optimization (discovers SPEC.md or use AGENT=x / WORKSPACE=x)
+	@if [ -n "$(WORKSPACE)" ]; then \
+		echo "$(GREEN)Starting CGF optimization using workspace: $(WORKSPACE)$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.cgf_session --path "$(WORKSPACE)"; \
+	elif [ -n "$(AGENT)" ]; then \
+		echo "$(GREEN)Starting CGF optimization for $(AGENT)...$(NC)"; \
+		if [ -n "$(GOAL)" ]; then \
+			docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.cgf_session --agent "$(AGENT)" --goal "$(GOAL)"; \
+		else \
+			docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.cgf_session --agent "$(AGENT)"; \
+		fi; \
+	else \
+		echo "$(GREEN)Discovering SPEC.md in workspace...$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.cgf_session; \
+	fi
+
+.PHONY: optimize-dryrun
+optimize-dryrun: ## Validate optimization setup (WORKSPACE=x or AGENT=x)
+	@echo "$(GREEN)CGF Optimization Setup Check$(NC)"
+	@echo ""
+	@if [ -n "$(WORKSPACE)" ]; then \
+		if [ -f "$(WORKSPACE)/SPEC.md" ]; then \
+			echo "  SPEC.md:      $(WORKSPACE)/SPEC.md $(GREEN)✓$(NC)"; \
+			echo "  Workspace:    $(WORKSPACE)/"; \
+		else \
+			echo "  SPEC.md:      $(RED)NOT FOUND at $(WORKSPACE)/SPEC.md$(NC)"; \
+			exit 1; \
+		fi; \
+	elif [ -n "$(AGENT)" ]; then \
+		AGENT_FILE=""; \
+		if [ -f "workspace/$(AGENT)/$(AGENT).md" ]; then \
+			AGENT_FILE="workspace/$(AGENT)/$(AGENT).md"; \
+		elif [ -f "src/harness/agents/configs/$(AGENT).md" ]; then \
+			AGENT_FILE="src/harness/agents/configs/$(AGENT).md"; \
+		fi; \
+		if [ -n "$$AGENT_FILE" ]; then \
+			echo "  Agent:        $$AGENT_FILE $(GREEN)✓$(NC)"; \
+		else \
+			echo "  Agent:        $(RED)NOT FOUND$(NC)"; \
+			echo "  Searched in:"; \
+			echo "    - workspace/$(AGENT)/$(AGENT).md"; \
+			echo "    - src/harness/agents/configs/$(AGENT).md"; \
+			exit 1; \
+		fi; \
+		echo "  Workspace:    workspace/$(AGENT)/"; \
+		if [ -f "workspace/$(AGENT)/SPEC.md" ]; then \
+			echo "  SPEC.md:      workspace/$(AGENT)/SPEC.md $(GREEN)✓$(NC)"; \
+		elif [ -f "workspace/$(AGENT)/cgf_spec.yaml" ]; then \
+			echo "  Spec:         workspace/$(AGENT)/cgf_spec.yaml $(GREEN)✓$(NC)"; \
+		else \
+			echo "  Spec:         $(YELLOW)Will be created during Q&A$(NC)"; \
+		fi; \
+	else \
+		echo "  Discovering SPEC.md files in workspace/..."; \
+		SPEC_COUNT=$$(find workspace -name "SPEC.md" 2>/dev/null | wc -l | tr -d ' '); \
+		if [ "$$SPEC_COUNT" -eq 0 ]; then \
+			echo "  $(YELLOW)No SPEC.md found. Create one to start optimization.$(NC)"; \
+		elif [ "$$SPEC_COUNT" -eq 1 ]; then \
+			SPEC_PATH=$$(find workspace -name "SPEC.md" 2>/dev/null); \
+			echo "  SPEC.md:      $$SPEC_PATH $(GREEN)✓$(NC)"; \
+		else \
+			echo "  $(YELLOW)Multiple SPEC.md found ($$SPEC_COUNT). Use WORKSPACE= to specify.$(NC)"; \
+			find workspace -name "SPEC.md" 2>/dev/null | sed 's/^/    - /'; \
+		fi; \
+	fi
+	@echo ""
+	@echo "$(GREEN)Environment Settings:$(NC)"
+	@echo "  CGF_OPTIMIZER_MODE:   $${CGF_OPTIMIZER_MODE:-agentic}"
+	@echo "  CGF_ITERATIONS:       $${CGF_ITERATIONS:-10}"
+	@echo "  CGF_ITERATION_REVIEW: $${CGF_ITERATION_REVIEW:-false}"
+	@echo "  CGF_EVAL_MODEL:       $${CGF_EVAL_MODEL:-sonnet}"
+	@echo "  CGF_VERBOSE:          $${CGF_VERBOSE:-true}"
+	@echo ""
+	@if [ -n "$(WORKSPACE)" ]; then \
+		echo "$(GREEN)Ready to optimize. Run:$(NC)"; \
+		echo "  make optimize WORKSPACE=$(WORKSPACE)"; \
+	elif [ -n "$(AGENT)" ]; then \
+		echo "$(GREEN)Ready to optimize. Run:$(NC)"; \
+		echo "  make optimize AGENT=$(AGENT)"; \
+	else \
+		echo "$(GREEN)Ready to optimize. Run:$(NC)"; \
+		echo "  make optimize"; \
 	fi
 
 # =============================================================================

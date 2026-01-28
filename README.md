@@ -97,7 +97,7 @@ make autonomous-status
 
 If interrupted with Ctrl+C, run `make autonomous` again to resume.
 
-See [docs/SPEC.example.md](./docs/SPEC.example.md) for spec writing best practices.
+See [docs/examples/SPEC.example.md](./docs/examples/SPEC.example.md) for spec writing best practices.
 
 ---
 
@@ -155,6 +155,77 @@ Keys are dedicated to this project, mounted read-only into containers.
 
 ---
 
+## CGF Prompt Optimization
+
+The ContextGrad Framework (CGF) optimizes agent prompts through a two-phase workflow: interactive Q&A to gather requirements, then autonomous optimization.
+
+### Quick Start
+
+```bash
+# Interactive optimization with Q&A (runs in Docker like autonomous mode)
+make optimize AGENT=python-expert
+
+# Skip Q&A with direct goal (faster)
+make optimize AGENT=python-expert GOAL="improve async programming guidance"
+
+# Validate setup without running
+make optimize-dryrun AGENT=python-expert
+```
+
+### How It Works
+
+**Two-Phase Workflow:**
+
+1. **Q&A Phase** (`cgf-initializer` agent):
+   - Analyzes the resource file
+   - Asks 5 clarifying questions about optimization goals
+   - Generates `cgf_spec.yaml` specification
+   - Supports resume if interrupted
+
+2. **Optimization Phase** (`cgf-orchestrator` agent):
+   - Runs autonomously using the spec
+   - Researches domain best practices
+   - Generates test cases and criteria
+   - Optimizes with LLM self-critique (default) or DSPy/TextGrad
+   - Produces versioned output with review
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `make optimize AGENT=<name>` | Interactive optimization with Q&A |
+| `make optimize AGENT=<name> GOAL="..."` | Skip Q&A, use provided goal |
+| `make optimize-dryrun AGENT=<name>` | Validate setup |
+| `make cgf-init NAME=<name>` | Initialize new CGF workspace |
+| `make cgf-status` | Show optimization run status |
+| `make cgf-clean` | Remove run state files |
+| `make cgf-reset` | Full reset (remove all workspaces) |
+| `/cgf create <description>` | Create + optimize new resource |
+
+### Output
+
+Results saved to `workspace/{agent}/`:
+- `CHANGELOG.md` - Human-readable optimization history (accumulates)
+- `cgf_spec.yaml` - Optimization specification (from Q&A)
+- `{agent}-v1.md` - Optimized version
+- `reviews/v1_review.md` - Evaluation report
+- `research/eval_criteria.yaml` - Evaluation criteria
+- `sessions/` - Runtime state (delete to reset)
+
+For detailed documentation on resource types, goal writing, and troubleshooting, see [docs/features/CGF-USER-GUIDE.md](./docs/features/CGF-USER-GUIDE.md).
+
+### Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CGF_OPTIMIZER_MODE` | `agentic`, `python`, or `both` | `agentic` |
+| `CGF_ITERATIONS` | Max optimization iterations | `10` |
+| `CGF_ITERATION_REVIEW` | Pause for review each iteration | `false` |
+| `CGF_EVAL_MODEL` | Eval model (`sonnet`/`haiku`/`opus`) | `sonnet` |
+| `CGF_VERBOSE` | Show progress output | `true` |
+
+---
+
 ## Working with Plugins
 
 The harness includes a plugin system for extending capabilities with custom agents, skills, commands, and hooks.
@@ -163,6 +234,7 @@ The harness includes a plugin system for extending capabilities with custom agen
 
 | Plugin | Agents | Skills | Purpose |
 |--------|--------|--------|---------|
+| cgf-agents | 7 | 1 | Prompt optimization pipeline |
 | context-engineering | 1 | 5 | Agent/skill creation toolkit |
 | research-team | 3 | 1 | Research and documentation |
 

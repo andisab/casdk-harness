@@ -75,6 +75,7 @@ Run `make doctor` to diagnose setup issues.
 ```bash
 make interactive      # Chat with the agent
 make autonomous       # Run automated development
+make optimize AGENT=x # Optimize agent prompts (interactive Q&A)
 make logs            # View logs
 make shell           # Shell into container
 make down            # Stop everything
@@ -86,4 +87,5 @@ make doctor          # Diagnose setup issues
 - **Full documentation**: [README.md](./README.md)
 - **Troubleshooting**: [README.md#troubleshooting](./README.md#troubleshooting)
 - **Autonomous mode**: Run `make init-spec` to create a SPEC.md template
+- **Prompt optimization**: `make optimize AGENT=python-expert` (interactive Q&A) or `make optimize AGENT=python-expert GOAL="async patterns"` (direct)
 - **Technical details**: [CLAUDE.md](./CLAUDE.md)
