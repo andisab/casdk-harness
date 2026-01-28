@@ -377,15 +377,29 @@ test_cases:
         assert result.metadata.get("dry_run") is True
 
     @pytest.mark.asyncio
-    async def test_execute_dspy_not_available(self, config: PipelineConfig) -> None:
-        """Test execution when DSPy is not available."""
+    async def test_execute_mipro_not_available(self, config: PipelineConfig) -> None:
+        """Test execution when MIPRO is not available."""
         run = OptimizationRun(config)
 
-        with patch("harness.optimization.pipeline.optimization_run.DSPY_AVAILABLE", False):
+        # Enable programmatic but not MIPRO
+        with patch("harness.optimization.pipeline.optimization_run.PROGRAMMATIC_ENABLED", True), \
+             patch("harness.optimization.pipeline.optimization_run.MIPRO_AVAILABLE", False):
             result = await run.execute()
 
         assert result.success is False
         assert "not installed" in result.error.lower()
+        assert run.status == RunStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_execute_programmatic_disabled(self, config: PipelineConfig) -> None:
+        """Test execution when programmatic optimization is disabled."""
+        run = OptimizationRun(config)
+
+        with patch("harness.optimization.pipeline.optimization_run.PROGRAMMATIC_ENABLED", False):
+            result = await run.execute()
+
+        assert result.success is False
+        assert "disabled" in result.error.lower()
         assert run.status == RunStatus.FAILED
 
     @pytest.mark.asyncio
@@ -431,8 +445,9 @@ test_cases:
         mock_optimizer = MagicMock()
         mock_optimizer.optimize = AsyncMock(return_value=mock_result)
 
-        with patch("harness.optimization.pipeline.optimization_run.DSPY_AVAILABLE", True), \
-             patch("harness.optimization.pipeline.optimization_run.DSPyAgentOptimizer") as mock_class:
+        with patch("harness.optimization.pipeline.optimization_run.PROGRAMMATIC_ENABLED", True), \
+             patch("harness.optimization.pipeline.optimization_run.MIPRO_AVAILABLE", True), \
+             patch("harness.optimization.pipeline.optimization_run.MIPROv2AgentOptimizer") as mock_class:
             mock_class.return_value = mock_optimizer
             result = await run.execute()
 
@@ -456,11 +471,15 @@ test_cases:
         config.output_path = tmp_path / "output.md"
         run = OptimizationRun(config)
 
-        # Simulate a successful run
+        # Simulate a successful run with all required resource attributes
         run.resource = MagicMock()
         run.resource.name = "test-agent"
         run.resource.model = "sonnet"
         run.resource.tools = ["Read", "Write"]
+        run.resource.description = "Test agent description"
+        run.resource.max_turns = 100
+        run.resource.color = None
+        run.resource._metadata = {"full_description": "Test agent with examples"}
 
         run.result = OptimizationResult(
             success=True,
@@ -495,6 +514,10 @@ test_cases:
         run.resource.name = "test-agent"
         run.resource.model = "sonnet"
         run.resource.tools = ["Read", "Write"]
+        run.resource.description = "Test agent description"
+        run.resource.max_turns = 100
+        run.resource.color = None
+        run.resource._metadata = {"full_description": "Test agent with examples"}
 
         run.result = OptimizationResult(
             success=True,

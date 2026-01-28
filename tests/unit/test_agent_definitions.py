@@ -40,7 +40,7 @@ class TestAgentDefinition:
             system_prompt="Test",
         )
 
-        assert agent.max_turns == 50  # Default
+        assert agent.max_turns == 100  # Default
 
 
 class TestAgentRegistry:
@@ -103,7 +103,7 @@ class TestPredefinedAgents:
         assert "python" in agent.description.lower()
         assert "Bash" in agent.tools
         assert "Write" in agent.tools
-        assert "Skill" in agent.tools
+        assert "Read" in agent.tools
 
     def test_typescript_expert_agent(self) -> None:
         """Test TypeScript expert agent configuration."""
@@ -121,17 +121,9 @@ class TestPredefinedAgents:
         assert agent.model == "haiku"  # Should use cheaper model
         assert "test" in agent.description.lower()
 
-    def test_deployment_agent(self) -> None:
-        """Test deployment agent configuration."""
-        agent = get_agent_definition("deployment-agent")
-
-        assert agent is not None
-        assert agent.model == "haiku"  # Should use cheaper model
-        assert any("docker" in tool.lower() for tool in agent.tools)
-
     def test_code_review_expert(self) -> None:
         """Test code review expert agent configuration."""
-        agent = get_agent_definition("dev-code-review-expert")
+        agent = get_agent_definition("code-review-expert")
 
         assert agent is not None
         assert "review" in agent.description.lower()

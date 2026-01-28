@@ -371,8 +371,8 @@ class TestAgentToolSets:
         assert "Bash" in tools
 
     def test_code_review_expert_has_read_only_tools(self) -> None:
-        """Test that dev-code-review-expert doesn't have write tools."""
-        info = get_agent_info("dev-code-review-expert")
+        """Test that code-review-expert doesn't have write tools."""
+        info = get_agent_info("code-review-expert")
         tools = info["tools"]
 
         # Should have read access

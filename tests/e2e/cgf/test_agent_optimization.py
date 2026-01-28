@@ -232,8 +232,8 @@ class TestAgentOptimizePhase:
         ws = cgf_agent_workspace
         ws.write_optimized_resource(version=1, score=0.82)
 
-        summary_file = f"{ws.resource_id}-v1.md.summary.json"
-        summary_path = ws.workspace_dir / summary_file
+        summary_file = f"{ws.resource_id}-v1.summary.json"
+        summary_path = ws.workspace_dir / "sessions" / summary_file
         assert summary_path.exists()
 
         summary = json.loads(summary_path.read_text())

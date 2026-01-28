@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from harness.optimization.optimizers import (
-    DSPY_AVAILABLE,
+    MIPRO_AVAILABLE,
+    PROGRAMMATIC_ENABLED,
     TEXTGRAD_AVAILABLE,
     BaseOptimizer,
     IterationResult,
@@ -496,24 +497,31 @@ class TestDSPyMetricCreation:
         assert score == 0.0
 
 
-class TestDSPyOptimizerImport:
-    """Tests for DSPy optimizer availability."""
+class TestMIPROOptimizerImport:
+    """Tests for MIPRO optimizer availability."""
 
-    def test_dspy_available_flag(self) -> None:
-        """Test DSPY_AVAILABLE flag is set."""
+    def test_mipro_available_flag(self) -> None:
+        """Test MIPRO_AVAILABLE flag is set."""
         # This test just verifies the flag exists
-        assert isinstance(DSPY_AVAILABLE, bool)
+        assert isinstance(MIPRO_AVAILABLE, bool)
 
-    @pytest.mark.skipif(not DSPY_AVAILABLE, reason="DSPy not installed")
-    def test_dspy_optimizer_import(self) -> None:
-        """Test DSPy optimizer can be imported when available."""
-        from harness.optimization.optimizers import DSPyAgentOptimizer
+    def test_programmatic_enabled_flag(self) -> None:
+        """Test PROGRAMMATIC_ENABLED flag is set."""
+        assert isinstance(PROGRAMMATIC_ENABLED, bool)
 
-        assert DSPyAgentOptimizer is not None
+    @pytest.mark.skipif(
+        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
+        reason="Programmatic optimization disabled or DSPy not installed"
+    )
+    def test_mipro_optimizer_import(self) -> None:
+        """Test MIPRO optimizer can be imported when available."""
+        from harness.optimization.optimizers import MIPROv2AgentOptimizer
+
+        assert MIPROv2AgentOptimizer is not None
 
 
-class TestDSPyOptimizerWithMock:
-    """Tests for DSPyAgentOptimizer with mocked DSPy."""
+class TestMIPROOptimizerWithMock:
+    """Tests for MIPROv2AgentOptimizer with mocked DSPy."""
 
     @pytest.fixture
     def test_suite(self) -> TestSuite:
@@ -543,15 +551,18 @@ class TestDSPyOptimizerWithMock:
         return resource
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(not DSPY_AVAILABLE, reason="DSPy not installed")
+    @pytest.mark.skipif(
+        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
+        reason="Programmatic optimization disabled or DSPy not installed"
+    )
     async def test_optimizer_evaluate(
         self,
         test_suite: TestSuite,
     ) -> None:
         """Test optimizer evaluate method."""
-        from harness.optimization.optimizers import DSPyAgentOptimizer
+        from harness.optimization.optimizers import MIPROv2AgentOptimizer
 
-        optimizer = DSPyAgentOptimizer()
+        optimizer = MIPROv2AgentOptimizer()
 
         with patch(
             "harness.direct_agent.call_agent_simple",
@@ -572,17 +583,17 @@ class TestDSPyOptimizerWithMock:
         mock_agent_resource: MagicMock,
         test_suite: TestSuite,
     ) -> None:
-        """Test optimizer returns error when DSPy not available."""
-        # Force DSPY_AVAILABLE to False for this test
+        """Test optimizer returns error when MIPRO not available."""
+        # Force MIPRO_AVAILABLE to False for this test
         with patch(
-            "harness.optimization.optimizers.dspy_optimizer.DSPY_AVAILABLE",
+            "harness.optimization.optimizers.dspy_mipro_optimizer.DSPY_AVAILABLE",
             False,
         ):
-            from harness.optimization.optimizers.dspy_optimizer import (
-                DSPyAgentOptimizer,
+            from harness.optimization.optimizers.dspy_mipro_optimizer import (
+                MIPROv2AgentOptimizer,
             )
 
-            optimizer = DSPyAgentOptimizer()
+            optimizer = MIPROv2AgentOptimizer()
             result = await optimizer.optimize(mock_agent_resource, test_suite)
 
             assert result.success is False
@@ -592,12 +603,15 @@ class TestDSPyOptimizerWithMock:
 class TestOptimizerProtocol:
     """Tests for OptimizerProtocol compliance."""
 
-    @pytest.mark.skipif(not DSPY_AVAILABLE, reason="DSPy not installed")
-    def test_dspy_optimizer_implements_protocol(self) -> None:
-        """Verify DSPyAgentOptimizer implements OptimizerProtocol."""
-        from harness.optimization.optimizers import DSPyAgentOptimizer
+    @pytest.mark.skipif(
+        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
+        reason="Programmatic optimization disabled or DSPy not installed"
+    )
+    def test_mipro_optimizer_implements_protocol(self) -> None:
+        """Verify MIPROv2AgentOptimizer implements OptimizerProtocol."""
+        from harness.optimization.optimizers import MIPROv2AgentOptimizer
 
-        optimizer = DSPyAgentOptimizer()
+        optimizer = MIPROv2AgentOptimizer()
 
         # Check required methods exist
         assert hasattr(optimizer, "optimize")

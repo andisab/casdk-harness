@@ -301,7 +301,11 @@ It has been enhanced through CGF optimization.
                 "optimizer": "dspy",
             },
         }
-        summary_path = resource_path.with_suffix(".md.summary.json")
+        # Save summary to sessions/ folder
+        sessions_dir = self.workspace_dir / "sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        summary_filename = resource_path.stem + ".summary.json"
+        summary_path = sessions_dir / summary_filename
         summary_path.write_text(json.dumps(summary, indent=2))
 
         return resource_path
