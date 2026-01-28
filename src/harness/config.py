@@ -314,7 +314,12 @@ class HarnessConfig(BaseSettings):
         return "memory"
 
     def ensure_directories(self) -> None:
-        """Create necessary directories if they don't exist."""
+        """Create necessary directories if they don't exist.
+
+        Skips directories that can't be created (e.g., Docker paths when
+        running locally). This allows the same config to work in both
+        Docker and local environments.
+        """
         directories = [
             self.workspace_dir,
             self.memory_dir,
@@ -327,7 +332,12 @@ class HarnessConfig(BaseSettings):
             directories.append(self.cgf_file_export_path)
 
         for directory in directories:
-            directory.mkdir(parents=True, exist_ok=True)
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                # Skip directories that can't be created (e.g., Docker paths
+                # like /workspace when running locally)
+                pass
 
 
 # Global config instance

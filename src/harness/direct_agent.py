@@ -30,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import time
@@ -41,6 +42,24 @@ import structlog
 
 # Environment variable for verbose mode inheritance
 VERBOSE_ENV_VAR = "CLAUDE_AGENT_VERBOSE"
+
+# Environment variable for query timeout (in seconds)
+QUERY_TIMEOUT_ENV_VAR = "CLAUDE_QUERY_TIMEOUT"
+DEFAULT_QUERY_TIMEOUT = 600  # 10 minutes default
+
+# Heartbeat warning interval (seconds without messages before warning)
+HEARTBEAT_WARNING_INTERVAL = 60
+
+
+def _get_query_timeout() -> float:
+    """Get query timeout from environment or use default."""
+    env_val = os.environ.get(QUERY_TIMEOUT_ENV_VAR, "")
+    if env_val:
+        try:
+            return float(env_val)
+        except ValueError:
+            pass
+    return DEFAULT_QUERY_TIMEOUT
 
 
 def _get_default_verbose() -> bool:
@@ -71,6 +90,10 @@ logger = structlog.get_logger(__name__)
 # Module-level cache for plugin agents
 _plugin_agents_cache: dict[str, SDKAgentDefinition] | None = None
 _plugin_manager: PluginManager | None = None
+
+# Module-level cache for dynamically registered workspace agents
+# These are agents loaded from workspace files (not in AGENT_DEFINITIONS)
+_workspace_agents_cache: dict[str, dict[str, Any]] = {}
 
 
 # ANSI color codes for terminal output
@@ -275,8 +298,82 @@ def _load_plugin_agents() -> dict[str, Any]:
     return _plugin_agents_cache
 
 
+def register_workspace_agent(
+    name: str,
+    system_prompt: str,
+    description: str = "",
+    model: str = "sonnet",
+    tools: list[str] | None = None,
+    max_turns: int = 100,
+) -> None:
+    """Register a workspace agent dynamically for optimization.
+
+    This allows agents defined in workspace .md files to be used with
+    call_agent() and call_agent_simple() without being in AGENT_DEFINITIONS.
+
+    The registration is session-scoped (cleared when Python process ends).
+
+    Args:
+        name: Agent name (must match test suite agent_name).
+        system_prompt: The agent's system prompt content.
+        description: Agent description.
+        model: Model to use (sonnet, opus, haiku).
+        tools: List of allowed tools, or None for all tools.
+        max_turns: Maximum conversation turns.
+
+    Example:
+        >>> from harness.optimization.resources import AgentResource
+        >>> resource = AgentResource.load("workspace/agent/agent-orig.md")
+        >>> register_workspace_agent(
+        ...     name=resource.name,
+        ...     system_prompt=resource.system_prompt,
+        ...     description=resource.description,
+        ...     model=resource.model,
+        ...     tools=resource.tools,
+        ...     max_turns=resource.max_turns,
+        ... )
+    """
+    _workspace_agents_cache[name] = {
+        "name": name,
+        "description": description,
+        "model": model,
+        "tools": tools,
+        "prompt": system_prompt,
+        "max_turns": max_turns,
+        "source": "workspace",
+    }
+    logger.debug(
+        "Registered workspace agent",
+        name=name,
+        model=model,
+        tools=tools,
+    )
+
+
+def unregister_workspace_agent(name: str) -> bool:
+    """Unregister a workspace agent.
+
+    Args:
+        name: Agent name to unregister.
+
+    Returns:
+        True if agent was unregistered, False if not found.
+    """
+    if name in _workspace_agents_cache:
+        del _workspace_agents_cache[name]
+        logger.debug("Unregistered workspace agent", name=name)
+        return True
+    return False
+
+
+def clear_workspace_agents() -> None:
+    """Clear all registered workspace agents."""
+    _workspace_agents_cache.clear()
+    logger.debug("Cleared all workspace agents")
+
+
 def list_available_agents() -> dict[str, str]:
-    """List all available agents (harness + plugin).
+    """List all available agents (harness + plugin + workspace).
 
     Returns:
         Dictionary mapping agent names to their descriptions.
@@ -296,6 +393,10 @@ def list_available_agents() -> dict[str, str]:
     plugin_agents = _load_plugin_agents()
     for name, agent in plugin_agents.items():
         agents[name] = agent.description
+
+    # Workspace agents
+    for name, agent in _workspace_agents_cache.items():
+        agents[name] = agent.get("description", "")
 
     return agents
 
@@ -353,6 +454,10 @@ def get_agent_info(agent_name: str) -> dict[str, Any]:
             "source": "plugin",
         }
 
+    # Check workspace agents (dynamically registered)
+    if agent_name in _workspace_agents_cache:
+        return _workspace_agents_cache[agent_name].copy()
+
     available = list(list_available_agents().keys())
     raise ValueError(
         f"Agent '{agent_name}' not found. Available agents: {available}"
@@ -367,6 +472,7 @@ async def call_agent(
     verbose: bool | None = None,
     on_progress: Callable[[str], None] | None = None,
     system_prompt_override: str | None = None,
+    model_override: str | None = None,
     **extra_options: Any,
 ) -> AsyncIterator[Union[UserMessage, AssistantMessage, SystemMessage, ResultMessage, StreamEvent]]:
     """Call an agent directly, bypassing the Task tool.
@@ -384,6 +490,8 @@ async def call_agent(
         on_progress: Optional callback for progress updates
         system_prompt_override: Optional system prompt to use instead of the
                                agent's default. Used for prompt optimization.
+        model_override: Override the agent's default model (sonnet/haiku/opus).
+                       Useful for faster test evaluation.
         **extra_options: Additional ClaudeAgentOptions parameters
 
     Yields:
@@ -427,11 +535,14 @@ async def call_agent(
         progress = AgentProgress(agent_name=agent_name, max_turns=max_turns)
         progress.print_status(progress.format_header())
 
+    # Determine effective model (override takes precedence)
+    effective_model = model_override if model_override else agent_info["model"]
+
     logger.info(
         "Invoking agent directly",
         agent=agent_name,
         source=agent_info["source"],
-        model=agent_info["model"],
+        model=effective_model,
         max_turns=max_turns,
         verbose=verbose,
     )
@@ -446,7 +557,7 @@ async def call_agent(
 
     options_dict: dict[str, Any] = {
         "system_prompt": effective_prompt,
-        "model": agent_info["model"],
+        "model": effective_model,
         "allowed_tools": agent_info["tools"] if agent_info["tools"] else None,
         "permission_mode": permission_mode,
         "cwd": effective_cwd,
@@ -456,46 +567,74 @@ async def call_agent(
 
     options = ClaudeAgentOptions(**options_dict)
 
-    # Call the agent
+    # Call the agent with timeout protection
+    query_timeout = _get_query_timeout()
+
+    logger.debug(
+        "Starting agent query with timeout",
+        agent=agent_name,
+        timeout_seconds=query_timeout,
+    )
+
     try:
-        async for message in query(prompt=prompt, options=options):
-            # Track progress
-            if progress:
-                msg_type = type(message).__name__
+        async with asyncio.timeout(query_timeout):
+            async for message in query(prompt=prompt, options=options):
+                # Track progress
+                if progress:
+                    # Check for tool use
+                    tool_info = _extract_tool_info(message)
+                    if tool_info:
+                        tool_name, args_summary = tool_info
+                        progress.tool_calls += 1
 
-                # Check for tool use
-                tool_info = _extract_tool_info(message)
-                if tool_info:
-                    tool_name, args_summary = tool_info
-                    progress.tool_calls += 1
+                        # Track subagent spawns
+                        if tool_name == "Task" and "subagent_type=" in args_summary:
+                            subagent = args_summary.replace("subagent_type=", "")
+                            progress.subagents_spawned.append(subagent)
+                            progress.print_status(progress.format_subagent(subagent))
+                        else:
+                            progress.print_status(progress.format_tool_call(tool_name, args_summary))
 
-                    # Track subagent spawns
-                    if tool_name == "Task" and "subagent_type=" in args_summary:
-                        subagent = args_summary.replace("subagent_type=", "")
-                        progress.subagents_spawned.append(subagent)
-                        progress.print_status(progress.format_subagent(subagent))
-                    else:
-                        progress.print_status(progress.format_tool_call(tool_name, args_summary))
+                    elif isinstance(message, AssistantMessage):
+                        progress.turn_count += 1
+                        preview = _extract_text_preview(message)
+                        if preview:
+                            progress.print_status(
+                                progress.format_turn("AssistantMessage", preview)
+                            )
 
-                elif isinstance(message, AssistantMessage):
-                    progress.turn_count += 1
-                    preview = _extract_text_preview(message)
-                    if preview:
+                    elif isinstance(message, ResultMessage):
+                        progress.turn_count += 1
                         progress.print_status(
-                            progress.format_turn("AssistantMessage", preview)
+                            progress.format_turn("ResultMessage", "Tool result received")
                         )
 
-                elif isinstance(message, ResultMessage):
-                    progress.turn_count += 1
-                    progress.print_status(
-                        progress.format_turn("ResultMessage", "Tool result received")
-                    )
+                # Call progress callback if provided
+                if on_progress:
+                    on_progress(f"{type(message).__name__}")
 
-            # Call progress callback if provided
-            if on_progress:
-                on_progress(f"{type(message).__name__}")
+                yield message
 
-            yield message
+    except TimeoutError:
+        elapsed = time.time() - progress.start_time if progress else 0
+        logger.error(
+            "Agent query timed out",
+            agent=agent_name,
+            timeout_seconds=query_timeout,
+            elapsed_seconds=elapsed,
+            turns_completed=progress.turn_count if progress else 0,
+            tool_calls=progress.tool_calls if progress else 0,
+        )
+        if progress:
+            progress.print_status(
+                f"{Colors.RED}{Colors.BOLD}✗ [{agent_name}]{Colors.RESET} "
+                f"{Colors.DIM}Timed out after {progress.elapsed()} "
+                f"(timeout: {query_timeout}s){Colors.RESET}"
+            )
+        raise TimeoutError(
+            f"Agent '{agent_name}' query timed out after {query_timeout}s. "
+            f"Set {QUERY_TIMEOUT_ENV_VAR} env var to increase timeout."
+        )
 
     finally:
         # Print completion summary
@@ -508,6 +647,7 @@ async def call_agent_simple(
     prompt: str,
     verbose: bool | None = None,
     system_prompt_override: str | None = None,
+    model_override: str | None = None,
     **kwargs: Any,
 ) -> str:
     """Call an agent and return just the text response.
@@ -520,6 +660,7 @@ async def call_agent_simple(
         prompt: The prompt to send to the agent
         verbose: Print progress to stderr. None=inherit from CLAUDE_AGENT_VERBOSE
         system_prompt_override: Optional system prompt to use instead of default.
+        model_override: Override the agent's model (sonnet/haiku for faster eval).
         **kwargs: Additional options passed to call_agent()
 
     Returns:
@@ -550,6 +691,7 @@ async def call_agent_simple(
         prompt,
         verbose=verbose,
         system_prompt_override=system_prompt_override,
+        model_override=model_override,
         **kwargs,
     ):
         if isinstance(message, AssistantMessage) and hasattr(message, "content"):

@@ -560,7 +560,8 @@ class AgentSession:
                 agent_name=agent_name,
                 expected_path=str(prompt_file),
             )
-            system_prompt = "Work in /workspace directory. Use absolute paths."
+            workspace = str(self.config.workspace_dir)
+            system_prompt = f"Work in {workspace} directory. Use absolute paths."
 
         # Append discovered skills info if any
         if self.discovered_skills:
