@@ -4,88 +4,98 @@ Technical reference for the Context Gradient Feedback (CGF) optimization pipelin
 
 ## CLI Reference
 
-### cgf optimize
+### Make Targets
 
-Run the optimization pipeline on a resource.
+Primary interface for running CGF optimization.
 
 ```bash
-cgf optimize <resource_path> --goal <optimization_goal> [options]
+# Initialize a new workspace
+make cgf-init NAME=<agent-name>
+
+# Run optimization (discovers SPEC.md automatically)
+make optimize
+
+# Run optimization with explicit workspace
+make optimize WORKSPACE=<workspace_path>
+
+# Run optimization with direct goal (skips Q&A)
+make optimize WORKSPACE=<workspace_path> GOAL="<optimization_goal>"
+
+# Validate setup without executing
+make optimize-dryrun WORKSPACE=<workspace_path>
+
+# Check optimization status
+make cgf-status
+
+# Clean session state files
+make cgf-clean
+
+# Full reset (remove all workspaces)
+make cgf-reset
 ```
 
-#### Required Arguments
+### Environment Variables
 
-| Argument | Description |
-|----------|-------------|
-| `resource_path` | Path to the resource file to optimize |
-| `--goal` | Optimization goal describing desired improvements |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `CGF_OPTIMIZER_MODE` | string | `agentic` | Optimization mode: `agentic`, `python`, `both` |
+| `CGF_ITERATIONS` | int | `10` | Maximum optimization iterations per section |
+| `CGF_ITERATION_REVIEW` | bool | `false` | Pause for review after each iteration |
+| `CGF_EVAL_MODEL` | string | `sonnet` | Eval model for LLM validators: `haiku`, `sonnet`, `opus` |
+| `CGF_VERBOSE` | bool | `true` | Show progress output |
+| `CGF_ENABLE_PROGRAMMATIC` | bool | `false` | Enable test-based optimization (DSPy/TextGrad) |
+| `CGF_OPTIMIZER` | string | `mipro` | Programmatic optimizer: `mipro`, `textgrad` |
+| `CGF_CANDIDATES` | int | `5` | Candidates per iteration (programmatic mode) |
+| `CGF_LEARNING_RATE` | float | `0.1` | Optimizer learning rate (programmatic mode) |
+| `CGF_EARLY_STOP` | float | `0.01` | Early stopping threshold |
 
-#### Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--optimizer` | string | `dspy` | Optimizer to use: `dspy`, `textgrad` |
-| `--review` | flag | `false` | Enable review mode with checkpoints |
-| `--max-iterations` | int | `10` | Maximum optimization iterations |
-| `--early-stop` | float | `0.01` | Early stopping threshold (score improvement) |
-| `--output` | path | auto | Output path for optimized resource |
-| `--output-format` | string | `markdown` | Output format: `markdown`, `json`, `yaml` |
-| `--save-iterations` | flag | `false` | Save each iteration's results |
-| `--dry-run` | flag | `false` | Validate configuration without executing |
-| `--verbose` | flag | `false` | Enable verbose logging |
-
-#### Examples
+### Examples
 
 ```bash
-# Basic optimization
-cgf optimize agents/python-expert.md --goal "async programming"
+# Initialize workspace and copy resource
+make cgf-init NAME=python-expert
+cp src/harness/agents/configs/python-expert.md workspace/python-expert/
 
-# With review mode and custom output
-cgf optimize agents/python-expert.md \
-  --goal "error handling" \
-  --review \
-  --output workspace/python-expert-v2.md
+# Run optimization with Q&A phase
+make optimize WORKSPACE=workspace/python-expert
 
-# Using TextGrad optimizer with more iterations
-cgf optimize skills/research.md \
-  --goal "trigger accuracy" \
-  --optimizer textgrad \
-  --max-iterations 20
+# Skip Q&A with direct goal
+make optimize WORKSPACE=workspace/python-expert \
+  GOAL="improve async/await pattern explanations"
 
-# Dry run to validate configuration
-cgf optimize commands/deploy.md \
-  --goal "validation errors" \
-  --dry-run
+# Enable review mode (pause after each iteration)
+CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert
+
+# Use programmatic optimization (requires 6+ deterministic tests)
+CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/python-expert
+
+# Validate setup
+make optimize-dryrun WORKSPACE=workspace/python-expert
 ```
 
-### cgf resume
+### Resuming Optimization
 
-Resume a paused optimization run from checkpoint.
+Optimization state is tracked in `sessions/`. To resume from checkpoint:
 
 ```bash
-cgf resume --workspace <workspace_path> [options]
+# Re-run with same workspace (auto-resumes from checkpoint)
+make optimize WORKSPACE=workspace/python-expert
+
+# To reset and start over, delete sessions directory
+rm -rf workspace/python-expert/sessions/
+make optimize WORKSPACE=workspace/python-expert
 ```
 
-#### Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `--workspace` | path | Path to workspace directory (required) |
-| `--accept` | flag | Accept current recommendation and continue |
-| `--refine` | flag | Request refinement iteration |
-| `--reject` | flag | Reject optimization and stop |
-
-### cgf status
-
-Check status of an optimization run.
+### Optimization Status
 
 ```bash
-cgf status --workspace <workspace_path>
+make cgf-status
 ```
 
 #### Output
 
 ```
-Run ID: opt_python-expert_20250115_120000
+Workspace: workspace/python-expert
 Status: RUNNING
 Phase: OPTIMIZE
 Progress: Iteration 3/10
@@ -96,37 +106,42 @@ Scores: 0.65 → 0.78 (+20.0%)
 
 ## State Machine
 
-### States
+### Pipeline Phases (RunPhase)
 
-| State | Description | Transitions To |
+| Phase | Description | Transitions To |
 |-------|-------------|----------------|
-| `INIT` | Pipeline initialized | `RESEARCH`, `FAILED` |
-| `RESEARCH` | Analyzing resource and goal | `TEST_GEN`, `FAILED` |
-| `TEST_GEN` | Generating test suite | `OPTIMIZE`, `FAILED` |
-| `OPTIMIZE` | Running optimization iterations | `EVALUATE`, `FAILED` |
-| `EVALUATE` | Reviewing optimization results | `FINALIZE`, `OPTIMIZE`, `FAILED` |
-| `FINALIZE` | Processing evaluation decision | `COMPLETE`, `OPTIMIZE`, `FAILED` |
+| `INIT` | Pipeline initialized | `LOAD_RESOURCES`, `FAILED` |
+| `LOAD_RESOURCES` | Loading agent and test suite | `VALIDATE`, `FAILED` |
+| `VALIDATE` | Validating configuration | `BASELINE`, `FAILED` |
+| `BASELINE` | Computing baseline scores | `OPTIMIZE`, `FAILED` |
+| `OPTIMIZE` | Running optimization iterations | `SAVE`, `FAILED` |
+| `SAVE` | Saving optimized resource | `COMPLETE`, `FAILED` |
 | `COMPLETE` | Pipeline completed successfully | - |
 | `FAILED` | Pipeline failed | - |
 
-### State Diagram
+### Run Status
+
+| Status | Description |
+|--------|-------------|
+| `PENDING` | Run created but not started |
+| `RUNNING` | Run currently executing |
+| `COMPLETED` | Run finished successfully |
+| `FAILED` | Run encountered an error |
+
+### Phase Diagram
 
 ```
-INIT → RESEARCH → TEST_GEN → OPTIMIZE → EVALUATE → FINALIZE → COMPLETE
-   ↓       ↓          ↓          ↓         ↓   ↑        ↓
- FAILED  FAILED    FAILED     FAILED    FAILED ←    FAILED
-                                           ↓
-                                      (REFINE)
-                                           ↓
-                                       OPTIMIZE
+INIT → LOAD_RESOURCES → VALIDATE → BASELINE → OPTIMIZE → SAVE → COMPLETE
+  ↓          ↓             ↓          ↓          ↓        ↓
+FAILED     FAILED       FAILED     FAILED     FAILED   FAILED
 ```
 
 ### State Events
 
 | Event | Trigger | Data |
 |-------|---------|------|
-| `state_changed` | State transition | `{from: str, to: str, timestamp: str}` |
-| `checkpoint_created` | Checkpoint saved | `{state: str, path: str}` |
+| `phase_changed` | Phase transition | `{from: str, to: str, timestamp: str}` |
+| `checkpoint_created` | Checkpoint saved | `{phase: str, path: str}` |
 | `iteration_completed` | Optimization iteration done | `{iteration: int, score: float}` |
 | `artifact_created` | New artifact generated | `{type: str, path: str}` |
 
@@ -141,15 +156,16 @@ Tracks pipeline execution state.
 ```json
 {
   "run_id": "opt_python-expert_20250115_120000",
-  "state": "OPTIMIZE",
+  "phase": "OPTIMIZE",
+  "status": "RUNNING",
   "resource": {
     "id": "python-expert",
     "type": "agent",
-    "path": "agents/configs/python-expert.md",
+    "path": "workspace/python-expert/python-expert.md",
     "optimization_goal": "improve async programming guidance"
   },
   "strategy": "prompt_optimization",
-  "optimizer": "dspy",
+  "optimizer_mode": "agentic",
   "options": {
     "max_iterations": 10,
     "early_stopping_threshold": 0.01,
@@ -188,20 +204,19 @@ Pipeline configuration.
 
 ```yaml
 resource:
-  path: agents/configs/python-expert.md
+  path: workspace/python-expert/python-expert.md
   type: agent
   id: python-expert
   optimization_goal: improve async programming guidance
 
 strategy: prompt_optimization
-optimizer: dspy
+optimizer_mode: agentic  # agentic (default), python, or both
 
 options:
   max_iterations: 10
   early_stopping_threshold: 0.01
   review_mode: false
-  learning_rate: 0.1
-  batch_size: 4
+  eval_model: sonnet  # haiku, sonnet, or opus
 ```
 
 ### eval_criteria.yaml
@@ -304,18 +319,23 @@ test_cases:
 
 ### Validation Types
 
-| Type | Description | Criteria Format |
-|------|-------------|-----------------|
-| `contains` | Check if response contains text | Substring to find |
-| `not_contains` | Check if response does NOT contain text | Substring to exclude |
-| `regex` | Match response against regex | Regex pattern |
-| `llm_judge` | AI evaluation of response | Natural language criteria |
-| `exact` | Exact string match | Expected string |
-| `json_schema` | Validate JSON structure | JSON Schema |
+| Type | Description | Criteria Format | Mode |
+|------|-------------|-----------------|------|
+| `exact` | Exact string match | Expected string | Deterministic |
+| `contains` | Check if response contains text | Substring to find | Deterministic |
+| `regex` | Match response against regex | Regex pattern | Deterministic |
+| `code` | Execute Python code to validate | Python expression returning bool | Deterministic |
+| `code_syntax` | Validate code syntax | Language identifier | Deterministic |
+| `llm_judge` | AI evaluation of response | Natural language criteria | LLM-based |
+| `code_llm` | LLM-based code quality assessment | Natural language criteria | LLM-based |
 
-### {resource}-v{n}.md.summary.json
+> **Note**: Deterministic validators (exact, contains, regex, code, code_syntax) are required for
+> programmatic optimization (DSPy/TextGrad). A minimum of 6 deterministic tests enables
+> `CGF_ENABLE_PROGRAMMATIC=true` mode.
 
-Optimization run summary.
+### sessions/{resource}-v{n}.summary.json
+
+Optimization run summary (machine-readable, stored in sessions/ folder).
 
 ```json
 {
@@ -323,14 +343,14 @@ Optimization run summary.
   "timestamp": "2025-01-15T12:10:00Z",
   "agent": {
     "name": "python-expert",
-    "path": "agents/configs/python-expert.md"
+    "path": "workspace/python-expert/python-expert.md"
   },
   "test_suite": {
     "name": "python-expert-async-tests",
-    "path": "workspace/python-expert/tests/test_suite.yaml",
+    "path": "workspace/python-expert/tests/tests.yaml",
     "test_count": 15
   },
-  "optimizer": "dspy",
+  "optimizer_mode": "agentic",
   "scores": {
     "original": 0.65,
     "final": 0.82,
@@ -342,7 +362,7 @@ Optimization run summary.
   "output_path": "workspace/python-expert/python-expert-v1.md",
   "config": {
     "max_iterations": 10,
-    "learning_rate": 0.1,
+    "eval_model": "sonnet",
     "early_stopping_threshold": 0.01
   }
 }
@@ -352,26 +372,29 @@ Optimization run summary.
 
 ## Python API
 
-### OptimizationRun
+### Agentic Optimization (Default)
 
-Main pipeline orchestrator.
+The default and recommended approach uses the agentic optimizer with LLM self-critique.
 
 ```python
-from harness.optimization.pipeline import OptimizationRun, PipelineConfig
-from harness.optimization.optimizers import OptimizerType
-
-# Configure pipeline
-config = PipelineConfig(
-    agent_path="agents/configs/python-expert.md",
-    test_suite_path="tests/optimization/python_expert_tests.yaml",
-    optimizer_type=OptimizerType.DSPY,
-    max_iterations=10,
-    early_stopping_threshold=0.01,
+from harness.optimization import (
+    get_agentic_optimizer,
+    AgentResource,
+    AgenticOptimizationConfig,
 )
 
-# Create and execute run
-run = OptimizationRun(config)
-result = await run.execute()
+# Load resource
+resource = AgentResource.load("workspace/python-expert/python-expert.md")
+
+# Configure agentic optimization
+config = AgenticOptimizationConfig(
+    max_iterations=10,
+    eval_model="sonnet",  # haiku, sonnet, or opus
+)
+
+# Get optimizer and run
+optimizer = get_agentic_optimizer()
+result = await optimizer.optimize(resource, config)
 
 # Check results
 if result.success:
@@ -379,11 +402,65 @@ if result.success:
     print(f"Optimized prompt:\n{result.optimized_prompt}")
 else:
     print(f"Optimization failed: {result.error}")
+```
+
+### Programmatic Optimization (Optional)
+
+For test-driven optimization with DSPy MIPROv2 or TextGrad:
+
+```python
+import os
+os.environ["CGF_ENABLE_PROGRAMMATIC"] = "true"
+
+from harness.optimization import (
+    get_mipro_optimizer,  # or get_textgrad_optimizer
+    AgentResource,
+    TestSuiteLoader,
+    MIPROv2Config,
+)
+
+# Load resource and test suite (requires 6+ deterministic tests)
+resource = AgentResource.load("workspace/python-expert/python-expert.md")
+suite = TestSuiteLoader.load("workspace/python-expert/tests/tests.yaml")
+
+# Configure MIPROv2
+config = MIPROv2Config(
+    max_iterations=10,
+    num_candidates=5,
+    early_stopping_threshold=0.01,
+)
+
+# Run optimization
+optimizer = get_mipro_optimizer()
+result = await optimizer.optimize(resource, suite, config)
+```
+
+### OptimizationRun (Pipeline)
+
+Full pipeline orchestrator for workspace-based optimization.
+
+```python
+from harness.optimization.pipeline import OptimizationRun, PipelineConfig, OutputFormat
+
+# Configure pipeline
+config = PipelineConfig(
+    agent_path="workspace/python-expert/python-expert.md",
+    test_suite_path="workspace/python-expert/tests/tests.yaml",  # optional for agentic
+    output_path="workspace/python-expert/python-expert-v1.md",
+    output_format=OutputFormat.MARKDOWN,
+    dry_run=False,
+    save_iterations=False,
+)
+
+# Create and execute run
+run = OptimizationRun(config)
+result = await run.execute()
 
 # Get run summary
 summary = run.get_summary()
 print(f"Run ID: {summary.run_id}")
 print(f"Status: {summary.status}")
+print(f"Phase: {summary.phase}")
 ```
 
 ### PipelineConfig
@@ -394,8 +471,7 @@ Configuration dataclass.
 @dataclass
 class PipelineConfig:
     agent_path: str | Path
-    test_suite_path: str | Path
-    optimizer_type: OptimizerType = OptimizerType.DSPY
+    test_suite_path: str | Path | None = None  # Optional for agentic mode
     output_path: str | Path | None = None
     output_format: OutputFormat = OutputFormat.MARKDOWN
     dry_run: bool = False
@@ -484,62 +560,50 @@ modified.save("workspace/python-expert-v1.md")
 
 ## Extension Points
 
-### Custom Validators
+### Built-in Validators
 
-Add custom validation types for test cases.
+CGF provides seven built-in validators. Custom validators are not currently supported via
+a registry pattern, but you can extend the framework by modifying the validator module.
 
 ```python
 from harness.optimization.testcases.validators import (
-    ValidatorRegistry,
-    BaseValidator,
-    ValidationResult,
+    ExactValidator,
+    ContainsValidator,
+    RegexValidator,
+    CodeValidator,
+    CodeSyntaxValidator,
+    LLMJudgeValidator,
+    CodeLLMValidator,
 )
 
-class CustomValidator(BaseValidator):
-    """Custom validation implementation."""
+# Example: Using validators programmatically
+validator = ContainsValidator()
+result = await validator.validate(
+    response="The answer is asyncio.gather()",
+    criteria="asyncio.gather",
+)
+print(f"Passed: {result.passed}, Score: {result.score}")
 
-    name = "custom_check"
-
-    async def validate(
-        self,
-        response: str,
-        criteria: str,
-        context: dict[str, Any] | None = None,
-    ) -> ValidationResult:
-        # Implement custom validation logic
-        passed = self._check_custom_criteria(response, criteria)
-
-        return ValidationResult(
-            passed=passed,
-            score=1.0 if passed else 0.0,
-            reasoning="Custom validation result",
-            details={"criteria": criteria},
-        )
-
-# Register validator
-ValidatorRegistry.register(CustomValidator())
-
-# Use in test cases
-test_case = {
-    "id": "custom-001",
-    "prompt": "Test prompt",
-    "expected_behavior": "Expected behavior",
-    "validation": {
-        "type": "custom_check",
-        "criteria": "custom criteria"
-    }
-}
+# LLM-based validation with eval model
+llm_validator = LLMJudgeValidator(model="sonnet")
+result = await llm_validator.validate(
+    response="Use asyncio.gather() for concurrent execution...",
+    criteria="Explains concurrent async patterns clearly",
+)
+print(f"Score: {result.score}, Reasoning: {result.reasoning}")
 ```
 
 ### Custom Optimizers
 
-Implement custom optimization strategies.
+Implement custom optimization strategies by following the `OptimizerProtocol`.
 
 ```python
 from harness.optimization.optimizers.protocol import (
     OptimizerProtocol,
     OptimizationResult,
+    OptimizationConfig,
 )
+from harness.optimization import AgentResource, TestSuite
 
 class CustomOptimizer(OptimizerProtocol):
     """Custom optimizer implementation."""
@@ -547,7 +611,7 @@ class CustomOptimizer(OptimizerProtocol):
     async def optimize(
         self,
         resource: AgentResource,
-        test_suite: TestSuite,
+        test_suite: TestSuite | None,
         config: OptimizationConfig,
     ) -> OptimizationResult:
         # Implement custom optimization logic
@@ -577,19 +641,20 @@ class CustomOptimizer(OptimizerProtocol):
             optimized_prompt=best_prompt,
             original_score=original_score,
             final_score=best_score,
-            ...
+            # ... other fields
         )
 
-# Register optimizer
-from harness.optimization.optimizers import OptimizerRegistry
-OptimizerRegistry.register("custom", CustomOptimizer)
+# Use custom optimizer directly (no registry pattern)
+optimizer = CustomOptimizer()
+result = await optimizer.optimize(resource, test_suite, config)
 ```
 
 ### Custom Resource Types
 
-Add support for new resource types.
+Add support for new resource types by extending `BaseResource`.
 
 ```python
+from pathlib import Path
 from harness.optimization.resources.base import BaseResource
 
 class CustomResource(BaseResource):
@@ -627,9 +692,12 @@ class CustomResource(BaseResource):
             system_prompt=new_prompt,
         )
 
-# Register resource type
+# Register in ResourceRegistry
 from harness.optimization.resources import ResourceRegistry
-ResourceRegistry.register("custom", CustomResource)
+
+registry = ResourceRegistry()
+custom_resource = CustomResource.load("path/to/custom.md")
+registry.register(custom_resource)  # Register instance, not type
 ```
 
 ---

@@ -10,20 +10,31 @@ Run your first optimization in 5 minutes.
 
 - Python 3.10+
 - Anthropic API key configured
-- DSPy or TextGrad installed (optional, for advanced optimization)
+- DSPy or TextGrad installed (optional, for programmatic optimization)
 
 ### Basic Optimization
 
 ```bash
-# Optimize an agent for a specific goal
-cgf optimize agents/configs/python-expert.md --goal "improve async programming guidance"
+# Initialize a new CGF workspace
+make cgf-init NAME=python-expert
 
-# Run with review mode for human oversight
-cgf optimize agents/configs/python-expert.md --goal "better error handling" --review
+# Copy your agent to the workspace
+cp src/harness/agents/configs/python-expert.md workspace/python-expert/
 
-# Use a specific optimizer
-cgf optimize agents/configs/python-expert.md --goal "clearer examples" --optimizer dspy
+# Run optimization with a specific goal
+make optimize WORKSPACE=workspace/python-expert \
+  GOAL="improve async programming guidance"
+
+# Run with review mode (pauses after each iteration)
+CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert \
+  GOAL="better error handling"
+
+# Use programmatic optimizer (requires 6+ deterministic tests)
+CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/python-expert \
+  GOAL="clearer examples"
 ```
+
+> **Note**: For detailed examples and walkthroughs, see [CGF-EXAMPLES.md](./CGF-EXAMPLES.md).
 
 ### What Happens
 
@@ -48,7 +59,7 @@ Agent resources define AI assistant behaviors with system prompts.
 
 **Example**:
 ```bash
-cgf optimize agents/configs/python-expert.md --goal "async programming"
+make optimize WORKSPACE=workspace/python-expert GOAL="async programming"
 ```
 
 **File Structure**:
@@ -71,7 +82,7 @@ Skills define triggered behaviors activated by user commands or phrases.
 
 **Example**:
 ```bash
-cgf optimize skills/joplin-research.md --goal "better trigger detection"
+make optimize WORKSPACE=workspace/joplin-research GOAL="better trigger detection"
 ```
 
 **File Structure**:
@@ -95,7 +106,7 @@ Commands define slash commands with argument schemas.
 
 **Example**:
 ```bash
-cgf optimize commands/optimize.md --goal "clearer error messages"
+make optimize WORKSPACE=workspace/optimize GOAL="clearer error messages"
 ```
 
 **File Structure**:
@@ -121,7 +132,7 @@ Workflows define multi-step processes with state machines.
 
 **Example**:
 ```bash
-cgf optimize workflows/deployment.md --goal "reliability improvements"
+make optimize WORKSPACE=workspace/deployment GOAL="reliability improvements"
 ```
 
 **File Structure**:
@@ -163,30 +174,30 @@ Writing effective optimization goals is crucial for good results.
 
 ```bash
 # Good: Specific capability
---goal "improve async/await pattern explanations with practical examples"
+GOAL="improve async/await pattern explanations with practical examples"
 
 # Bad: Too vague
---goal "make it better"
+GOAL="make it better"
 ```
 
 **Be Measurable**: Include criteria that can be evaluated.
 
 ```bash
 # Good: Measurable outcome
---goal "reduce false positive trigger rate for similar commands"
+GOAL="reduce false positive trigger rate for similar commands"
 
 # Bad: Subjective
---goal "feel more natural"
+GOAL="feel more natural"
 ```
 
 **Be Achievable**: Stay within the resource's scope.
 
 ```bash
 # Good: Within scope
---goal "add error recovery guidance for database operations"
+GOAL="add error recovery guidance for database operations"
 
 # Bad: Outside scope
---goal "add support for a new programming language"
+GOAL="add support for a new programming language"
 ```
 
 ### Example Goals by Resource Type
@@ -251,7 +262,7 @@ Runs iterative optimization using the selected optimizer.
 
 **Artifacts Created**:
 - `{resource}-v{n}.md` - Optimized resource version
-- `{resource}-v{n}.md.summary.json` - Optimization metrics
+- `sessions/{resource}-v{n}.summary.json` - Optimization metrics (machine-readable)
 
 ### EVALUATE
 
@@ -298,7 +309,8 @@ Use `--review` flag for human oversight at key decision points.
 ### Enabling Review Mode
 
 ```bash
-cgf optimize resource.md --goal "optimization goal" --review
+CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/resource \
+  GOAL="optimization goal"
 ```
 
 ### Checkpoint Behavior
@@ -311,14 +323,12 @@ In review mode, the pipeline pauses at:
 ### Resuming from Checkpoint
 
 ```bash
-# Resume from last checkpoint
-cgf resume --workspace workspace/resource-id/
+# Resume from last checkpoint (re-run with same workspace)
+make optimize WORKSPACE=workspace/resource
 
-# Accept current recommendation and continue
-cgf resume --workspace workspace/resource-id/ --accept
-
-# Request refinement
-cgf resume --workspace workspace/resource-id/ --refine
+# To reset and start over, delete sessions directory
+rm -rf workspace/resource/sessions/
+make optimize WORKSPACE=workspace/resource
 ```
 
 ### When to Use Review Mode
@@ -332,16 +342,16 @@ cgf resume --workspace workspace/resource-id/ --refine
 
 ## Configuration
 
-### CLI Options
+### Make Targets
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--goal` | Optimization goal (required) | - |
-| `--optimizer` | Optimizer type: `dspy`, `textgrad` | `dspy` |
-| `--review` | Enable review mode | `false` |
-| `--max-iterations` | Maximum optimization iterations | `10` |
-| `--early-stop` | Early stopping threshold | `0.01` |
-| `--output` | Output path for optimized resource | Auto-generated |
+| Target | Description |
+|--------|-------------|
+| `make cgf-init NAME=<name>` | Initialize new CGF workspace |
+| `make optimize WORKSPACE=<path>` | Run optimization |
+| `make optimize-dryrun WORKSPACE=<path>` | Validate setup without running |
+| `make cgf-status` | Check optimization status |
+| `make cgf-clean` | Clean session state files |
+| `make cgf-reset` | Full reset (remove all workspaces) |
 
 ### Environment Variables
 
@@ -349,28 +359,43 @@ cgf resume --workspace workspace/resource-id/ --refine
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Optional
-CGF_MAX_ITERATIONS=10
-CGF_EARLY_STOPPING_THRESHOLD=0.01
-CGF_DEFAULT_OPTIMIZER=dspy
+# Optimization settings
+CGF_ITERATIONS=10                  # Max iterations per section
+CGF_ITERATION_REVIEW=false         # Pause after each iteration
+CGF_EVAL_MODEL=sonnet              # sonnet (default), haiku, opus
+CGF_VERBOSE=true                   # Show progress output
+
+# Programmatic mode (DSPy/TextGrad)
+CGF_ENABLE_PROGRAMMATIC=false      # Enable test-based optimization
+CGF_OPTIMIZER=mipro                # mipro or textgrad
+CGF_CANDIDATES=5                   # Candidates per iteration
+CGF_LEARNING_RATE=0.1              # Optimizer learning rate
+CGF_EARLY_STOP=0.01                # Early stopping threshold
 ```
 
-### run_config.yaml
+### SPEC.md
 
-```yaml
-resource:
-  path: agents/configs/python-expert.md
-  type: agent
-  id: python-expert
-  optimization_goal: improve async programming guidance
+The SPEC.md file defines your optimization goals. It's created by `make cgf-init` and can be edited manually:
 
-strategy: prompt_optimization
-optimizer: dspy
+```markdown
+# Optimization Specification
 
-options:
-  max_iterations: 10
-  early_stopping_threshold: 0.01
-  review_mode: false
+## Resource
+- **Path**: python-expert.md
+- **Type**: agent
+
+## Goal
+Improve async programming guidance with practical concurrent examples.
+
+## Focus Areas
+- asyncio event loop fundamentals
+- async/await patterns
+- concurrent execution with gather()
+
+## Success Criteria
+- Clear examples of async patterns
+- Error handling guidance
+- Common pitfall documentation
 ```
 
 ---
@@ -381,15 +406,19 @@ options:
 
 #### "Optimizer not available"
 
-**Symptom**: Error about DSPy or TextGrad not installed.
+**Symptom**: Error about DSPy or TextGrad not installed when using programmatic mode.
 
 **Solution**:
 ```bash
-# For DSPy
+# Programmatic mode is optional - agentic mode works without these
+# For DSPy MIPROv2
 pip install 'dspy-ai>=2.5.0'
 
 # For TextGrad
 pip install 'textgrad>=0.1.6'
+
+# Then enable programmatic mode
+CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/agent
 ```
 
 #### "Empty system prompt"
@@ -425,26 +454,26 @@ pip install 'textgrad>=0.1.6'
 - Review the review report for specific issues
 - Adjust optimization goal
 - Check for regression in critical capabilities
-- Consider running with `--review` for more control
+- Consider running with `CGF_ITERATION_REVIEW=true` for more control
 
 ### Debug Mode
 
 ```bash
 # Enable verbose logging
-cgf optimize resource.md --goal "goal" --verbose
+CGF_VERBOSE=true make optimize WORKSPACE=workspace/resource
 
 # Dry run (validate without executing)
-cgf optimize resource.md --goal "goal" --dry-run
+make optimize-dryrun WORKSPACE=workspace/resource
 ```
 
 ### Getting Help
 
 ```bash
-# Show all options
-cgf optimize --help
-
 # Check pipeline status
-cgf status --workspace workspace/resource-id/
+make cgf-status
+
+# View workspace structure
+ls -la workspace/resource/
 ```
 
 ---
@@ -455,7 +484,7 @@ cgf status --workspace workspace/resource-id/
 
 1. **Backup original**: Keep a copy of the original resource
 2. **Define clear goal**: Write specific, measurable optimization goal
-3. **Start with review mode**: Use `--review` for first optimization
+3. **Start with review mode**: Use `CGF_ITERATION_REVIEW=true` for first optimization
 
 ### During Optimization
 
@@ -473,7 +502,7 @@ cgf status --workspace workspace/resource-id/
 ### Iteration Strategy
 
 ```
-First run: Broad goal, review mode
+First run: Broad goal, CGF_ITERATION_REVIEW=true
    ↓
 Review: Check competencies and test cases
    ↓
@@ -481,3 +510,11 @@ Refine: Narrow goal based on results
    ↓
 Final: Automatic mode with specific goal
 ```
+
+---
+
+## See Also
+
+- [CGF-EXAMPLES.md](./CGF-EXAMPLES.md) - Practical examples and walkthroughs
+- [CGF-API-REFERENCE.md](./CGF-API-REFERENCE.md) - API reference documentation
+- [README.md](../../README.md) - Quick start and overview

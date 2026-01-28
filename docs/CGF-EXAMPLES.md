@@ -2,6 +2,10 @@
 
 Practical examples demonstrating CGF optimization workflows.
 
+> **Note**: CGF uses a SPEC.md-based workflow via `make optimize`. The Q&A phase
+> captures your optimization goals interactively, or you can provide a goal directly.
+> See [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md) for detailed documentation.
+
 ## Example 1: Basic Agent Optimization
 
 Optimize the python-expert agent for better async programming guidance.
@@ -31,9 +35,13 @@ You are a Python expert specializing in modern Python development...
 ### Run Optimization
 
 ```bash
-cgf optimize agents/configs/python-expert.md \
-  --goal "improve async/await pattern explanations with practical concurrent examples" \
-  --max-iterations 10
+# Initialize workspace and set up SPEC.md
+make cgf-init NAME=python-expert
+cp src/harness/agents/configs/python-expert.md workspace/python-expert/
+
+# Edit SPEC.md with your goal, or run with direct goal
+make optimize WORKSPACE=workspace/python-expert \
+  GOAL="improve async/await pattern explanations with practical concurrent examples"
 ```
 
 ### Expected Output
@@ -44,7 +52,7 @@ CGF Optimization Pipeline
 Resource: python-expert (agent)
 Goal: improve async/await pattern explanations with practical concurrent examples
 Strategy: prompt_optimization
-Optimizer: dspy
+Optimizer: agentic (default)
 
 Phase: INIT ✓
 Phase: RESEARCH ✓
@@ -122,9 +130,13 @@ When triggered, search for information and create Joplin notes...
 ### Run Optimization
 
 ```bash
-cgf optimize skills/joplin-research.md \
-  --goal "reduce false positive activations while maintaining recall for valid research requests" \
-  --review
+# Initialize workspace
+make cgf-init NAME=joplin-research
+cp skills/joplin-research.md workspace/joplin-research/
+
+# Run with review mode (set CGF_ITERATION_REVIEW=true)
+CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/joplin-research \
+  GOAL="reduce false positive activations while maintaining recall for valid research requests"
 ```
 
 ### Review Mode Interaction
@@ -174,22 +186,30 @@ test_cases:
     tags: [positive, natural]
 
   # Negative cases - should NOT activate
+  # Negative cases - should NOT activate (use llm_judge for semantic evaluation)
   - id: trigger-neg-001
     prompt: "My research indicates the bug is in line 42"
     expected_behavior: Skill does NOT activate
     validation:
-      type: not_contains
-      criteria: "Researching"
+      type: llm_judge
+      criteria: |
+        Response should NOT indicate skill activation.
+        Should not start with "Researching..." or similar.
     tags: [negative, false-positive]
 
   - id: trigger-neg-002
     prompt: "This is a research paper about ML"
     expected_behavior: Skill does NOT activate
     validation:
-      type: not_contains
-      criteria: "Researching"
+      type: llm_judge
+      criteria: |
+        Response should NOT indicate skill activation.
+        Should treat "research paper" as content reference, not command.
     tags: [negative, false-positive]
 ```
+
+> **Note**: Available validation types are: `exact`, `contains`, `regex`, `llm_judge`,
+> `code`, `code_syntax`, `code_llm`. Use `llm_judge` for semantic evaluation.
 
 ### Results
 
@@ -241,29 +261,37 @@ Users report that error messages are unclear when they provide invalid arguments
 
 **Current Error**:
 ```
-$ cgf optimize --goal "test"
-Error: missing required argument
+$ make optimize
+Error: No SPEC.md found. Run 'make cgf-init NAME=<name>' first.
 ```
 
 **Desired Error**:
 ```
-$ cgf optimize --goal "test"
-Error: Missing required argument 'resource_path'
+$ make optimize
+Error: No SPEC.md found in workspace.
 
-Usage: cgf optimize <resource_path> --goal <goal>
+To start optimization:
+  1. Run: make cgf-init NAME=<agent-name>
+  2. Copy your resource to the workspace
+  3. Edit SPEC.md with your optimization goal
+  4. Run: make optimize WORKSPACE=workspace/<name>
 
 Example:
-  cgf optimize agents/python-expert.md --goal "improve async handling"
-
-Run 'cgf optimize --help' for more information.
+  make cgf-init NAME=python-expert
+  cp agents/python-expert.md workspace/python-expert/
+  make optimize WORKSPACE=workspace/python-expert
 ```
 
 ### Run Optimization
 
 ```bash
-cgf optimize commands/cgf-optimize.md \
-  --goal "provide clear, actionable error messages with usage examples" \
-  --max-iterations 15
+# Initialize workspace for the command resource
+make cgf-init NAME=cgf-optimize
+cp commands/cgf-optimize.md workspace/cgf-optimize/
+
+# Run optimization with specific goal
+make optimize WORKSPACE=workspace/cgf-optimize \
+  GOAL="provide clear, actionable error messages with usage examples"
 ```
 
 ### Generated Test Cases
@@ -297,14 +325,14 @@ test_cases:
 
   # Invalid optimizer
   - id: err-opt-001
-    prompt: "cgf optimize agent.md --goal 'test' --optimizer invalid"
+    prompt: "make optimize OPTIMIZER=invalid"
     expected_behavior: |
       Error lists valid optimizer options,
       suggests correct usage
     validation:
       type: llm_judge
       criteria: |
-        Lists valid optimizers (dspy, textgrad),
+        Lists valid optimizers (agentic, mipro, textgrad),
         shows correct option syntax
 ```
 
@@ -348,9 +376,13 @@ Optimizing an agent, but first attempt has regression in code quality guidance.
 ### Initial Run
 
 ```bash
-cgf optimize agents/configs/code-reviewer.md \
-  --goal "improve feedback specificity" \
-  --review
+# Initialize workspace
+make cgf-init NAME=code-reviewer
+cp agents/configs/code-reviewer.md workspace/code-reviewer/
+
+# Run with review mode
+CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/code-reviewer \
+  GOAL="improve feedback specificity"
 ```
 
 ### First Evaluation
@@ -517,81 +549,32 @@ test_cases:
     difficulty: basic
 ```
 
-### Run with Custom Tests
+### Run with Custom Tests (Programmatic Mode)
+
+To use a custom test suite with programmatic optimization (DSPy MIPROv2 or TextGrad),
+enable programmatic mode:
 
 ```bash
-cgf optimize agents/configs/financial-analyst.md \
-  --goal "improve accuracy of financial analysis explanations" \
-  --test-suite tests/optimization/financial-analyst-tests.yaml
+# Initialize workspace
+make cgf-init NAME=financial-analyst
+cp agents/configs/financial-analyst.md workspace/financial-analyst/
+
+# Copy custom test suite to workspace
+cp tests/optimization/financial-analyst-tests.yaml workspace/financial-analyst/tests/tests.yaml
+
+# Enable programmatic mode and run with MIPROv2
+CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/financial-analyst \
+  GOAL="improve accuracy of financial analysis explanations"
 ```
 
-### Custom Validation Function
+> **Note**: Programmatic mode (DSPy MIPROv2, TextGrad) requires:
+> - `CGF_ENABLE_PROGRAMMATIC=true` environment variable
+> - At least 6 deterministic tests (exact, contains, regex, code, code_syntax)
+> - DSPy or TextGrad installed: `pip install 'dspy-ai>=2.5.0'` or `pip install 'textgrad>=0.1.6'`
 
-For very domain-specific validation, implement a custom validator:
+### Domain-Specific Validation with llm_judge
 
-```python
-# validators/financial_validator.py
-from harness.optimization.testcases.validators import (
-    BaseValidator,
-    ValidationResult,
-    ValidatorRegistry,
-)
-
-class FinancialAccuracyValidator(BaseValidator):
-    """Validate financial calculations and terminology."""
-
-    name = "financial_accuracy"
-
-    # Known financial formulas for validation
-    FORMULAS = {
-        "EBITDA": "Net Income + Interest + Taxes + Depreciation + Amortization",
-        "ROE": "Net Income / Shareholders Equity",
-        "Current Ratio": "Current Assets / Current Liabilities",
-    }
-
-    async def validate(
-        self,
-        response: str,
-        criteria: str,
-        context: dict | None = None,
-    ) -> ValidationResult:
-        term = criteria.upper()
-
-        if term not in self.FORMULAS:
-            return ValidationResult(
-                passed=False,
-                score=0.0,
-                reasoning=f"Unknown financial term: {term}",
-            )
-
-        # Check if response contains correct formula
-        expected = self.FORMULAS[term]
-        formula_components = expected.lower().split()
-
-        matches = sum(
-            1 for comp in formula_components
-            if comp in response.lower()
-        )
-
-        score = matches / len(formula_components)
-        passed = score >= 0.7
-
-        return ValidationResult(
-            passed=passed,
-            score=score,
-            reasoning=f"Formula accuracy: {score:.0%}",
-            details={
-                "term": term,
-                "expected": expected,
-                "component_matches": matches,
-            },
-        )
-
-# Register validator
-ValidatorRegistry.register(FinancialAccuracyValidator())
-```
-
-### Use Custom Validator in Tests
+For domain-specific validation, use `llm_judge` with detailed criteria:
 
 ```yaml
 test_cases:
@@ -599,11 +582,21 @@ test_cases:
     prompt: "How do you calculate EBITDA?"
     expected_behavior: Shows correct EBITDA formula
     validation:
-      type: financial_accuracy
-      criteria: EBITDA
+      type: llm_judge
+      criteria: |
+        Response must include the correct EBITDA formula:
+        Net Income + Interest + Taxes + Depreciation + Amortization
+
+        Also acceptable: Revenue - Operating Expenses (excluding D&A)
+
+        Should mention that EBITDA is a non-GAAP metric.
     tags: [formula, validation]
     difficulty: basic
 ```
+
+The `llm_judge` validator uses Claude to evaluate responses against your criteria,
+providing semantic understanding for domain-specific validation without needing
+custom code.
 
 ---
 
@@ -613,28 +606,31 @@ test_cases:
 
 ```bash
 # Good: Specific and measurable
---goal "improve error message clarity with actionable guidance"
+GOAL="improve error message clarity with actionable guidance"
 
 # Good: Targeted capability
---goal "better explain async/await with concurrent execution examples"
+GOAL="better explain async/await with concurrent execution examples"
 
 # Bad: Too vague
---goal "make it better"
+GOAL="make it better"
 
 # Bad: Multiple unrelated goals
---goal "improve errors and add new features and fix bugs"
+GOAL="improve errors and add new features and fix bugs"
 ```
 
 ### Test Suite Design
 
 1. **Balance coverage**: Include basic, intermediate, and advanced cases
 2. **Test boundaries**: Add edge cases and negative cases
-3. **Use appropriate validators**: `contains` for simple checks, `llm_judge` for nuanced evaluation
+3. **Use appropriate validators**:
+   - `exact` / `contains` / `regex` - Deterministic checks (enable programmatic mode)
+   - `llm_judge` - Nuanced semantic evaluation (agentic mode)
+   - `code` / `code_syntax` - Code validation
 4. **Tag tests**: Enable filtering and analysis by category
 
 ### Review Mode Strategy
 
-1. **First run**: Always use `--review` for new optimizations
+1. **First run**: Always use `CGF_ITERATION_REVIEW=true` for new optimizations
 2. **Check competencies**: Verify research identified right focus areas
 3. **Review test cases**: Ensure tests target your goals
 4. **Inspect regressions**: Pay attention to what might be lost
@@ -645,3 +641,11 @@ test_cases:
 2. **Check regressions**: Often the issue is losing important capabilities
 3. **Consider constraints**: Sometimes it's better to narrow the goal
 4. **Know when to stop**: After 2-3 REFINE cycles, reassess the goal
+
+### Optimizer Selection
+
+| Optimizer | Best For | Requirements |
+|-----------|----------|--------------|
+| `agentic` (default) | Most use cases, LLM self-critique | None |
+| `mipro` | Large test suites, Bayesian optimization | CGF_ENABLE_PROGRAMMATIC=true, 6+ deterministic tests |
+| `textgrad` | Gradient-based refinement | CGF_ENABLE_PROGRAMMATIC=true, 6+ deterministic tests |

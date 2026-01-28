@@ -58,12 +58,12 @@ Detailed specifications for each major capability:
 
 | Feature | Specification | Status | Description |
 |---------|---------------|--------|-------------|
-| **CGF Infrastructure** | [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md) | **Phase 0 ✅, Phase 1 ✅** | Tracing, store, adapters, rewards (Phase 0) + Single-agent optimization (Phase 1) |
-| Context Engineering Workflow | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Refined | 4-stage workflow for resource generation |
+| **CGF Infrastructure** | See [CLAUDE.md](../CLAUDE.md#cgf-optimization-framework) | **Phase 0 ✅, Phase 1 ✅** | Tracing, store, adapters, rewards (Phase 0) + Single-agent optimization (Phase 1) |
+| Context Engineering Workflow | Superseded | - | Q&A workflow integrated into cgf-orchestrator |
 | ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | DSPy + TextGrad optimization system |
 | CGF Implementation Guide | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | Design Complete | Detailed implementation patterns |
 | Container Architecture | [CONTAINERIZATION.md](./features/CONTAINERIZATION.md) | Decided | Subagent-first Docker model |
-| Agentic Examples | [AGENTIC_EXAMPLES.md](./features/AGENTIC_EXAMPLES.md) | Extracted | 8+ working multi-agent examples |
+| Agentic Examples | Superseded | - | Merged into ORCHESTRATION_PATTERNS.md |
 | Observability | [OBSERVABILITY.md](./features/OBSERVABILITY.md) | Planning | Grafana dashboards, session reports |
 
 **Pattern Reference**: See [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md) for the 8 core orchestration patterns with production implementations.
@@ -131,9 +131,9 @@ Use these business signals to select the appropriate orchestration pattern:
 
 ## Phase 0: CGF Infrastructure (Foundation)
 
-> **Status**: In Progress
-> **Specification**: [CGF-INFRASTRUCTURE.md](./features/CGF-INFRASTRUCTURE.md)
-> **Origin**: Patterns adopted from [agent-lightning](https://github.com/...) framework research
+> **Status**: Complete
+> **Specification**: See [CLAUDE.md](../CLAUDE.md#cgf-optimization-framework) and [CGF-USER-GUIDE.md](./features/CGF-USER-GUIDE.md)
+> **Origin**: Patterns adopted from agent-lightning framework research
 
 ### Objective
 
@@ -604,7 +604,7 @@ The following amendments have been merged into their respective feature specific
 | Former Amendment | Merged Into | Section |
 |------------------|-------------|---------|
 | Amendment 4: Validation Mechanism | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | "Context Spec Validation" |
-| Amendment 5: Pattern Inference | [CONTEXT_ENG_WF.md](./features/CONTEXT_ENG_WF.md) | Integrated into orchestration-definition skill |
+| Amendment 5: Pattern Inference | Superseded | Integrated into cgf-orchestrator agent |
 | Amendment 7: Feedback Loop | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Section 11.7 "Orchestration Pattern Learning" |
 
 This section preserved for historical reference. All active content is now in the feature specifications linked above.

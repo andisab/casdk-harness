@@ -1,15 +1,18 @@
 # Repository Hardening Plan
 
-> **Status**: Active | **Last Updated**: December 9, 2025 | **Test Coverage**: 73%
+> **Status**: Active | **Last Updated**: January 28, 2026 | **Test Coverage**: ~65-70%
 
 ## Current State
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| **Test Coverage** | 73% | 80% |
-| **Security Posture** | 7.5/10 | 8/10 |
+| **Test Coverage** | ~65-70% | 80% |
+| **Security Posture** | 6/10 | 8/10 |
 
-**Blocking Issues**: 2 Critical security vulnerabilities + God object in agent.py
+**Blocking Issues**:
+- 2 Critical security vulnerabilities (unchanged)
+- God object in agent.py (now 1706 LOC, worse than originally assessed)
+- CGF orchestrator untested (1,335 LOC, 0 tests)
 
 ---
 
@@ -30,11 +33,11 @@
 | Priority | Remaining | Effort |
 |----------|-----------|--------|
 | **P0 Critical** | 3 issues | ~20h |
-| **P1 High** | 2 issues | ~6h |
+| **P1 High** | 3 issues | ~22h |
 | **P2 Medium** | 6 issues | ~16h |
 | **P3 Low** | 4 issues | ~11h |
 
-**Total Remaining**: ~53 hours
+**Total Remaining**: ~69 hours (includes CGF testing gaps)
 
 ---
 
@@ -68,9 +71,9 @@ SSH private keys mounted directly into containers at `/home/claude/.ssh:ro`. All
 - [ ] Implement container-level secret injection
 
 ### God Object Refactoring
-**Location**: `agent.py` (1000+ LOC) | **Effort**: 8h
+**Location**: `agent.py` (1706 LOC) | **Effort**: 8h
 
-`AgentSession` handles 9+ responsibilities, causing poor testability and maintenance burden.
+`AgentSession` handles 9+ responsibilities, causing poor testability and maintenance burden. **Note**: Situation has worsened from original 1000+ LOC assessment.
 
 **Proposed Structure**:
 ```
@@ -90,6 +93,27 @@ AgentSession (~300 LOC)
 |-------|------|----------|--------|
 | Missing rate limiting | 7.5 | `autonomous.py` | 4h |
 | Redis password in env vars | 7.0 | `.env.example:162` | 2h |
+| CGF framework testing gaps | - | `src/harness/optimization/` | 16h |
+
+### CGF Framework Testing Gaps
+**Priority**: P1 | **Location**: `src/harness/optimization/` | **Effort**: ~16h
+
+Critical modules lack test coverage while being the default optimization path:
+
+| Module | LOC | Tests | Status |
+|--------|-----|-------|--------|
+| `orchestrator.py` | 1,335 | 0 | CRITICAL - Core orchestration untested |
+| `api.py` | 434 | 0 | Public API untested |
+| `cli/optimize.py` | ~200 | 0 | Entry point untested |
+| `cli/section_optimize.py` | ~300 | 0 | Entry point untested |
+| `agentic_optimizer.py` | ~400 | 7 | Default strategy, lightest coverage |
+
+**Impact**: Default optimization path (agentic) significantly under-tested while programmatic path (DSPy/TextGrad) is well-tested (47+ tests).
+
+**Remediation**:
+- [ ] Add orchestrator unit tests (8h)
+- [ ] Add API layer tests (4h)
+- [ ] Add CLI integration tests (4h)
 
 ---
 
@@ -121,10 +145,32 @@ AgentSession (~300 LOC)
 
 | Module | Coverage | Notes |
 |--------|----------|-------|
-| cli.py | 45% | Deferred (UI work) |
-| interactive.py | 0% | Deferred (UI work) |
+| `orchestrator.py` | 0% | CRITICAL - 1,335 LOC untested |
+| `api.py` | 0% | 434 LOC, public API untested |
+| `cli/*.py` | 0% | Entry points untested |
+| `agentic_optimizer.py` | ~10% | Only 7 tests, default strategy |
+| `cli.py` | 45% | Deferred (UI work) |
+| `interactive.py` | 0% | Deferred (UI work) |
 
-To reach 80% overall: cli.py and interactive.py tests (~8h total, deferred)
+**Test Count Reconciliation** (726 total, not 802+):
+- Unit tests: 628 across 16 files
+- E2E tests: 82 across 4 files
+- Integration tests: 16 in test_cgf_pipeline.py
+
+To reach 80%: orchestrator + api + CLI tests (~16h), then cli.py/interactive.py (~8h)
+
+---
+
+## Production-Ready Components
+
+### Programmatic Optimization (DSPy/TextGrad)
+**Status**: ✅ Production Ready
+
+- MIPROv2 optimizer: Complete (637 LOC, well-tested)
+- TextGrad optimizer: Complete (534 LOC, well-tested)
+- Feature gating via `CGF_ENABLE_PROGRAMMATIC` env var
+- Graceful degradation if libraries not installed
+- 47+ optimizer-related tests with good coverage
 
 ---
 
@@ -144,4 +190,4 @@ To reach 80% overall: cli.py and interactive.py tests (~8h total, deferred)
 
 ---
 
-*Last Updated: December 9, 2025*
+*Last Updated: January 28, 2026*
