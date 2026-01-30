@@ -136,14 +136,24 @@ When `programmatic_mode: false` (default) in run_config.yaml, use this workflow:
 
 **Phase R3: OUTPUT**
 1. Merge improved sections preserving template structure
-2. Write to workspace/{resource_id}/{resource_id}-v{N}.md
+2. Write to workspace/{resource_id}/{resource_id}-v{N}.md (same directory as original!)
 3. Generate improvement summary JSON: sessions/{resource_id}-v{N}.summary.json (machine consumption)
-4. **Update CHANGELOG.md** (human-readable changelog):
-   - If iteration 1: Create new file with header + first iteration entry
-   - If iteration N>1: Read existing, insert new entry after header (before previous iterations)
-   - Extract top 3-5 improvements ranked by impact (prioritize security, deprecation fixes, major features)
-   - Calculate metrics delta from previous version (word count, code examples, best practices, security warnings)
-   - Use markdown format specified in `<changelog_format>` section below
+4. **Emit completion signals** (for orchestrator to parse):
+   ```
+   [ITERATE_COMPLETE:{resource_path}]
+   version: {N}
+   quality_overall: {0.0-1.0}
+   word_count: {count}
+   [SUMMARY]
+   {1-2 sentence summary of key improvements}
+   [/SUMMARY]
+   ```
+5. **CHANGELOG management** - depends on context:
+   - **Multi-resource mode** (orchestrator manages CHANGELOG): Skip direct CHANGELOG writes.
+     Detect by checking: `task_list.json` exists with multiple resources OR
+     prompt mentions "multi-resource" OR workspace has multiple resource directories.
+   - **Single-resource mode** (agent manages CHANGELOG): Update CHANGELOG.md directly.
+     Use markdown format specified in `<changelog_format>` section below.
 
 ---
 
@@ -385,10 +395,12 @@ Self-check:
 <changelog_format>
 ## CHANGELOG.md Format
 
-The CHANGELOG.md is a single accumulating file updated after each iteration. Newest entries appear first.
+The CHANGELOG.md is a single accumulating file updated after each iteration. For multi-resource,
+entries are organized by resource path. Newest entries appear first within each resource section.
 
 ### Header (created on first iteration)
 
+**Single-resource:**
 ```markdown
 # CGF Optimization Changelog: {resource_id}
 
@@ -400,14 +412,52 @@ The CHANGELOG.md is a single accumulating file updated after each iteration. New
 ---
 ```
 
-### Iteration Entry (prepended after each iteration)
+**Multi-resource:**
+```markdown
+# CGF Optimization Changelog: {plugin_name}
+
+**Plugin:** {plugin_name}
+**Resources:** 4 agents, 1 command
+**Mode:** agentic
+**Started:** {start_timestamp}
+**Status:** IN_PROGRESS
+
+---
+
+## Resource: agents/iac-analyzer.md
+
+### Iteration 1 (2026-01-29)
+...
+
+---
+
+## Resource: agents/iac-generator.md
+
+### Iteration 1 (2026-01-29)
+...
+```
+
+### Iteration Entry Format
 
 ```markdown
-## Iteration {N} ({date})
+### Iteration {N} ({date})
 
-**Output:** {resource_id}-v{N}.md
+**Output:** {parent_dir}/{resource_id}-v{N}.md
+**Quality:** {prev_quality} → {new_quality} ({+/-}{percent}%)
 **Words:** {prev_count} → {new_count} ({+/-}{percent}%)
 
+#### Summary
+
+{1-2 sentence summary of key improvements}
+
+---
+```
+
+**Note:** For single-resource, the full "Top Changes", "Metrics Delta", and "Removed Antipatterns" sections can be included. For multi-resource (orchestrator-managed), the entry is more compact.
+
+### Detailed Single-Resource Entry (optional additions)
+
+```markdown
 ### Top Changes
 
 1. **{Change Title 1}**: {Brief description of improvement}
@@ -422,15 +472,8 @@ The CHANGELOG.md is a single accumulating file updated after each iteration. New
 | Best Practices | {prev} | {new} | {+/-}{n} |
 | Security Warnings | {prev} | {new} | {+/-}{n} |
 
-### New Sections/Subsections
-- {New section or subsection name}
-- {Another new section}
-
 ### Removed Antipatterns
 - ❌ {Deprecated pattern removed}
-- ❌ {Another antipattern}
-
----
 ```
 
 ### Impact Ranking Logic
@@ -441,32 +484,14 @@ Rank improvements for "Top Changes" by:
 3. Number of changes in the category (medium)
 4. Word count/significance of the description (lower)
 
-### Update Logic
+### Multi-Resource Detection
 
-**On iteration 1:**
-1. Create CHANGELOG.md with header
-2. Append first iteration entry
+Skip direct CHANGELOG writes when operating in multi-resource mode. Detect by:
+1. Prompt contains "multi-resource plugin" or similar phrasing
+2. Workspace has `sessions/optimization-state.json` with multiple resources
+3. Workspace has multiple resource directories (agents/, skills/, commands/)
 
-**On iteration N > 1:**
-1. Read existing CHANGELOG.md
-2. Find insertion point (after header `---`, before previous `## Iteration`)
-3. Insert new iteration entry
-4. Write updated file
-
-Example insertion:
-```
-# CGF Optimization Changelog: python-expert
-...header...
----
-
-## Iteration 2 (2026-01-28)     <-- NEW: inserted here
-...new entry...
-
----
-
-## Iteration 1 (2026-01-28)     <-- existing entry
-...existing entry...
-```
+When multi-resource detected, the orchestrator (`multi_resource_orchestrator.py`) manages CHANGELOG centrally. Just emit the summary signal and skip CHANGELOG file operations.
 </changelog_format>
 
 <synthesis_rules>
