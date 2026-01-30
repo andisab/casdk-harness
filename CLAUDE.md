@@ -17,7 +17,7 @@ Technical reference for developers working on this repository and for Claude's o
 - 5 MCP servers (3 in-process + 2 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
-- 25 subagents (14 harness + 11 plugin) via direct invocation
+- 26 subagents (14 harness + 12 plugin) via direct invocation
 - 13 skills via Skill tool (6 base + 7 plugin)
 - **CGF Optimization Framework** (600+ tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
@@ -25,6 +25,23 @@ Technical reference for developers working on this repository and for Claude's o
   - Phase 2: Section-based optimization (agentic, coherence, MIPROv2)
 
 ### Completed Recently
+- **Multi-Resource Pipeline Improvements (2026-01-29)**
+  - [x] Full skills support: parse from SPEC, route to context-engineer, proper directory structure
+  - [x] Final naming convention: `{resource}.md` final, `{resource}-v0.md` original, `{resource}-v{N}.md` history
+  - [x] Path enforcement: `PathViolationError` raised if writes escape workspace
+  - [x] Signal parsing improvements: more permissive regex, file existence fallback
+  - [x] Reduced refinement sensitivity: max 1 refinement, only FAIL-level issues trigger
+  - [x] Quality dimension parsing: propagate completeness/accuracy/clarity to state
+  - [x] Progress streaming: `progress_callback` for real-time updates
+  - [x] Agent-skill separation documentation: `docs/patterns/agent-skill-separation.md`
+- **Multi-Resource Optimization (Generative Pipeline)**
+  - [x] Requirements-driven SPEC.md schema with optional structure proposals
+  - [x] Multi-resource spec parser (`multi_resource_spec.py`)
+  - [x] Quality evaluator with agentic assessment (`quality_evaluator.py`)
+  - [x] Multi-resource orchestrator for pipeline coordination (`multi_resource_orchestrator.py`)
+  - [x] State tracking for resumption via `optimization-state.json`
+  - [x] `make optimize` auto-detects single vs multi-resource SPEC
+  - [x] Resource type guide for context-engineering plugin
 - **CGF Phase 4: End-to-End Pipeline**
   - [x] Creation mode: Create + optimize new resources from description (`/cgf create`)
   - [x] Targeted refinement loop: Skip full research, focus on specific sections
@@ -74,7 +91,10 @@ casdk-harness/
 │   │   │   ├── testcases/          # loader, validators, models
 │   │   │   ├── runners/            # agent_runner, batch_runner
 │   │   │   ├── resources/          # agent, prompt, skill resources
-│   │   │   └── orchestrator.py     # Section-based optimization
+│   │   │   ├── orchestrator.py     # Section-based optimization
+│   │   │   ├── multi_resource_spec.py      # Multi-resource SPEC parser
+│   │   │   ├── multi_resource_orchestrator.py  # Multi-resource pipeline
+│   │   │   └── quality_evaluator.py        # Agentic quality assessment
 │   │   └── config/.mcp.json        # MCP subprocess server config
 │   └── mcp_servers/                # 3 in-process MCP servers
 │       ├── context7/               # Library documentation lookup
@@ -293,23 +313,17 @@ The unified entry point `make optimize` runs in Docker (like `make autonomous`) 
 
 **Key Principle:** SPEC.md location defines the workspace root. All files are created relative to its location.
 
+**SPEC.md Auto-Discovery:**
+- Exactly one SPEC.md must exist in `workspace/`
+- If multiple found, an error is thrown (user must delete extras)
+- If none found, user is prompted to create one with `make cgf-init`
+
 ```bash
-# Discover SPEC.md automatically (preferred)
+# Run optimization (auto-discovers SPEC.md)
 make optimize
 
-# Explicit workspace path (when multiple SPEC.md exist)
-make optimize WORKSPACE=workspace/python-expert
-
-# Legacy mode with agent name
-make optimize AGENT=python-expert
-
-# Skip Q&A with direct goal
-make optimize AGENT=python-expert GOAL="improve async guidance"
-
 # Validate setup and show configuration
-make optimize-dryrun                          # Discover mode
-make optimize-dryrun WORKSPACE=workspace/x    # Explicit path
-make optimize-dryrun AGENT=python-expert
+make optimize-dryrun
 ```
 
 **Workspace Structure (SPEC.md location = workspace root):**
@@ -359,7 +373,10 @@ CGF_EARLY_STOP=0.01           # early stopping threshold
 
 **Q&A Flow Example:**
 ```
-$ make optimize AGENT=python-expert
+$ make optimize
+
+Discovering SPEC.md in workspace...
+Found: workspace/python-expert/SPEC.md
 
 CGF Optimization Q&A
 ====================
@@ -404,7 +421,7 @@ cp path/to/agent.md workspace/my-agent/my-agent.md
 
 # Edit SPEC.md with your optimization goals
 # Then run optimization
-make optimize WORKSPACE=workspace/my-agent
+make optimize
 ```
 
 See `docs/examples/CGF_SPEC.example.md` for the full template with examples.
@@ -583,6 +600,36 @@ REFINEMENT_HINTS:
 
 Max refinement iterations: 3 before escalating to human review.
 
+### Multi-Resource Optimization (Agent Delegation)
+
+For multi-resource SPEC.md files (plugins, skill-sets, workflows), the orchestrator delegates work to specialized agents:
+
+**State Machine:**
+```
+PLANNING → RESEARCH → GENERATE → ITERATE → VALIDATE → COMPLETE
+    │           │           │          │           │
+    │     cgf-research  context-   cgf-prompt  cgf-coherence
+    │        -lead      engineer   -optimizer   -validator
+    │           │           │          │           │
+    │      [RESEARCH_   [GENERATE_  [ITERATE_  [VALIDATE_
+    │      COMPLETE]    COMPLETE]   COMPLETE]  COMPLETE]
+```
+
+**Phase-to-Agent Mapping:**
+
+| Phase | Agent | Signal |
+|-------|-------|--------|
+| PLANNING | None (Python only) | State file created |
+| RESEARCH | `cgf-agents:cgf-research-lead` | `[RESEARCH_COMPLETE]` |
+| GENERATE | `context-engineering:context-engineer` | `[GENERATE_COMPLETE:{path}]` |
+| ITERATE | `cgf-agents:cgf-prompt-optimizer` | `[ITERATE_COMPLETE:{path}]` |
+| EVALUATE | `cgf-agents:cgf-result-evaluator` | `RECOMMENDATION: ACCEPT/REFINE/REJECT` |
+| VALIDATE | `cgf-agents:cgf-coherence-validator` | `[VALIDATE_COMPLETE]` or `[VALIDATE_ISSUES:{count}]` |
+
+**Core Principle:** Python is a thin state coordinator; agents do all the work. Each agent emits structured signals that Python parses to transition state.
+
+**Resume Support:** State tracked in `sessions/optimization-state.json`. Delete to restart; keeps research/artifacts.
+
 ---
 
 ### Autonomous Mode Workflow
@@ -637,10 +684,10 @@ Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 | **Infrastructure** (4) | docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert |
 | **Testing** (1) | sdet-expert |
 
-**Plugin Agents** (11):
+**Plugin Agents** (12):
 | Plugin | Agents |
 |--------|--------|
-| **cgf-agents** (7) | cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer |
+| **cgf-agents** (8) | cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator |
 | **context-engineering** (1) | context-engineer |
 | **research-team** (3) | lead-research-coordinator, research-specialist, research-report-writer |
 
@@ -884,11 +931,11 @@ Lifecycle hook infrastructure:
 ### Plugins (3 total)
 
 **cgf-agents** (`src/harness/plugins/cgf-agents/`):
-- 7 agents: cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer
+- 8 agents: cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator
 - 1 skill: cgf-optimize
 - 1 command: cgf (with subcommands: create, optimize, status)
 - Dependencies: context-engineering, research-team
-- Orchestrates multi-agent optimization workflows
+- Orchestrates multi-agent optimization workflows (single and multi-resource)
 
 **context-engineering** (`src/harness/plugins/context-engineering/`):
 - 1 agent: context-engineer

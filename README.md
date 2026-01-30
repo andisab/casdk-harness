@@ -162,14 +162,17 @@ The ContextGrad Framework (CGF) optimizes agent prompts through a two-phase work
 ### Quick Start
 
 ```bash
-# Interactive optimization with Q&A (runs in Docker like autonomous mode)
-make optimize AGENT=python-expert
+# Initialize a CGF workspace
+make cgf-init NAME=my-agent
 
-# Skip Q&A with direct goal (faster)
-make optimize AGENT=python-expert GOAL="improve async programming guidance"
+# Copy your resource file and edit SPEC.md
+cp path/to/agent.md workspace/my-agent/my-agent.md
+
+# Run optimization (auto-discovers SPEC.md)
+make optimize
 
 # Validate setup without running
-make optimize-dryrun AGENT=python-expert
+make optimize-dryrun
 ```
 
 ### How It Works
@@ -193,10 +196,9 @@ make optimize-dryrun AGENT=python-expert
 
 | Command | Description |
 |---------|-------------|
-| `make optimize AGENT=<name>` | Interactive optimization with Q&A |
-| `make optimize AGENT=<name> GOAL="..."` | Skip Q&A, use provided goal |
-| `make optimize-dryrun AGENT=<name>` | Validate setup |
 | `make cgf-init NAME=<name>` | Initialize new CGF workspace |
+| `make optimize` | Run optimization (auto-discovers SPEC.md) |
+| `make optimize-dryrun` | Validate setup |
 | `make cgf-status` | Show optimization run status |
 | `make cgf-clean` | Remove run state files |
 | `make cgf-reset` | Full reset (remove all workspaces) |
@@ -213,6 +215,29 @@ Results saved to `workspace/{agent}/`:
 - `sessions/` - Runtime state (delete to reset)
 
 For detailed documentation on resource types, goal writing, and troubleshooting, see [docs/features/CGF-USER-GUIDE.md](./docs/features/CGF-USER-GUIDE.md).
+
+### Multi-Resource Optimization
+
+Generate and optimize entire plugins, skill-sets, or workflows from a single SPEC.md:
+
+```bash
+# Create a multi-resource SPEC.md
+mkdir -p workspace/my-plugin
+cp docs/examples/MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
+
+# Run optimization (auto-discovers and detects multi-resource)
+make optimize
+```
+
+**Pipeline:** RESEARCH → Q&A → GENERATE → ITERATE → VALIDATE → COMPLETE
+
+Each phase delegates to specialized agents:
+- **RESEARCH**: `cgf-research-lead` gathers domain best practices
+- **GENERATE**: `context-engineer` creates each resource
+- **ITERATE**: `cgf-prompt-optimizer` improves until quality >= 0.85
+- **VALIDATE**: `cgf-coherence-validator` checks cross-resource consistency
+
+See [docs/examples/MULTI_RESOURCE_SPEC.example.md](./docs/examples/MULTI_RESOURCE_SPEC.example.md) for template.
 
 ### Configuration
 
@@ -234,7 +259,7 @@ The harness includes a plugin system for extending capabilities with custom agen
 
 | Plugin | Agents | Skills | Purpose |
 |--------|--------|--------|---------|
-| cgf-agents | 7 | 1 | Prompt optimization pipeline |
+| cgf-agents | 8 | 1 | Prompt optimization pipeline (single + multi-resource) |
 | context-engineering | 1 | 5 | Agent/skill creation toolkit |
 | research-team | 3 | 1 | Research and documentation |
 
