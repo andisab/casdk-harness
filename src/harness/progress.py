@@ -142,6 +142,7 @@ class TaskItem:
     - "PASS": Task completed successfully
     - "FAIL": Task failed/blocked
     """
+
     id: str
     title: str
     description: str
@@ -287,6 +288,7 @@ class SessionData:
     Stored as session_N.json in the sessions directory.
     Includes all metadata and the full conversation transcript.
     """
+
     session_number: int
     started_at: str
     ended_at: str | None = None
@@ -528,3 +530,416 @@ class ProgressManager:
 
         # Save session data
         return self.save_session(session)
+
+    # --- Multi-Resource Optimization State ---
+
+    def get_optimization_state_path(self) -> Path:
+        """Get path to multi-resource optimization state file."""
+        return self.sessions_dir / "optimization-state.json"
+
+    def has_optimization_state(self) -> bool:
+        """Check if multi-resource optimization state exists."""
+        return self.get_optimization_state_path().exists()
+
+    def load_optimization_state(self) -> "MultiResourceState | None":
+        """Load multi-resource optimization state.
+
+        Returns:
+            MultiResourceState or None if not found.
+        """
+        state_path = self.get_optimization_state_path()
+        if not state_path.exists():
+            return None
+
+        with open(state_path) as f:
+            data = json.load(f)
+
+        return MultiResourceState.from_dict(data)
+
+    def save_optimization_state(self, state: "MultiResourceState") -> None:
+        """Save multi-resource optimization state.
+
+        Args:
+            state: State to save.
+        """
+        state_path = self.get_optimization_state_path()
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(state_path, "w") as f:
+            json.dump(state.to_dict(), f, indent=2)
+
+
+# --- Multi-Resource Optimization State Classes ---
+
+
+class OptimizationPhase(Enum):
+    """Phase in multi-resource optimization pipeline.
+
+    The pipeline progresses through these phases:
+    RESEARCH → QA → GENERATE → ITERATE → VALIDATE → COMPLETE
+    """
+
+    RESEARCH = auto()  # Determine optimal structure
+    QA = auto()  # Gather user input on decisions
+    GENERATE = auto()  # Create resources based on research + input
+    ITERATE = auto()  # Quality-based improvement of each resource
+    VALIDATE = auto()  # Cross-resource coherence check
+    COMPLETE = auto()  # Pipeline finished
+
+
+@dataclass
+class ResourceQuality:
+    """Quality scores for a single resource.
+
+    Attributes:
+        completeness: Coverage of required capabilities (0.0-1.0)
+        accuracy: Correctness of patterns/examples (0.0-1.0)
+        clarity: Organization and readability (0.0-1.0)
+        overall: Weighted average score
+    """
+
+    completeness: float = 0.0
+    accuracy: float = 0.0
+    clarity: float = 0.0
+    overall: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "completeness": self.completeness,
+            "accuracy": self.accuracy,
+            "clarity": self.clarity,
+            "overall": self.overall,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ResourceQuality":
+        """Create from dictionary."""
+        return cls(
+            completeness=data.get("completeness", 0.0),
+            accuracy=data.get("accuracy", 0.0),
+            clarity=data.get("clarity", 0.0),
+            overall=data.get("overall", 0.0),
+        )
+
+
+@dataclass
+class ResourceStatus:
+    """Status of a single resource in multi-resource optimization.
+
+    Attributes:
+        path: Relative path to resource (e.g., "agents/iac-analyzer.md")
+        resource_type: Type of resource (agent, skill, command)
+        status: Current status (pending, in_progress, generated, optimized, needs_refinement, failed)
+        version: Current version number (0 = original, 1+ = optimized)
+        quality: Quality scores (None if not yet evaluated)
+        iterations: Number of optimization iterations completed
+        refinement_count: Number of targeted refinement loops
+        depends_on: List of resource paths this resource depends on
+        depended_by: List of resource paths that depend on this resource
+        error: Error message if failed
+    """
+
+    path: str
+    resource_type: str
+    status: Literal[
+        "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+    ] = "pending"
+    version: int = 0
+    quality: ResourceQuality | None = None
+    iterations: int = 0
+    refinement_count: int = 0
+    depends_on: list[str] = field(default_factory=list)
+    depended_by: list[str] = field(default_factory=list)
+    error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "path": self.path,
+            "resource_type": self.resource_type,
+            "status": self.status,
+            "version": self.version,
+            "quality": self.quality.to_dict() if self.quality else None,
+            "iterations": self.iterations,
+            "refinement_count": self.refinement_count,
+            "depends_on": self.depends_on,
+            "depended_by": self.depended_by,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ResourceStatus":
+        """Create from dictionary."""
+        quality = None
+        if data.get("quality"):
+            quality = ResourceQuality.from_dict(data["quality"])
+
+        return cls(
+            path=data["path"],
+            resource_type=data["resource_type"],
+            status=data.get("status", "pending"),
+            version=data.get("version", 0),
+            quality=quality,
+            iterations=data.get("iterations", 0),
+            refinement_count=data.get("refinement_count", 0),
+            depends_on=data.get("depends_on", []),
+            depended_by=data.get("depended_by", []),
+            error=data.get("error", ""),
+        )
+
+
+@dataclass
+class MultiResourceState:
+    """State for multi-resource optimization pipeline.
+
+    Tracks progress through the optimization pipeline including:
+    - Current phase and completed phases
+    - Per-resource status, version, and quality scores
+    - References to artifacts (research findings, user decisions)
+
+    Attributes:
+        spec_path: Path to SPEC.md file
+        spec_type: Type of spec (plugin, skill-set, workflow)
+        spec_hash: Hash of SPEC.md for change detection
+        current_phase: Current pipeline phase
+        phases_completed: List of completed phases
+        resources: Dictionary mapping resource path to status
+        research_findings_path: Path to research findings YAML
+        user_decisions_path: Path to Q&A decisions JSON
+        quality_threshold: Target quality score (default: 0.85)
+        max_iterations: Max iterations per resource (default: 5)
+        started_at: ISO timestamp when optimization started
+        updated_at: ISO timestamp of last update
+    """
+
+    spec_path: str
+    spec_type: str
+    spec_hash: str
+    current_phase: OptimizationPhase
+    phases_completed: list[OptimizationPhase] = field(default_factory=list)
+    resources: dict[str, ResourceStatus] = field(default_factory=dict)
+    research_findings_path: str = ""
+    user_decisions_path: str = ""
+    quality_threshold: float = 0.85
+    max_iterations: int = 5
+    started_at: str = ""
+    updated_at: str = ""
+
+    def __post_init__(self) -> None:
+        """Set timestamps if not provided."""
+        now = datetime.now(UTC).isoformat()
+        if not self.started_at:
+            self.started_at = now
+        if not self.updated_at:
+            self.updated_at = now
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "spec_path": self.spec_path,
+            "spec_type": self.spec_type,
+            "spec_hash": self.spec_hash,
+            "current_phase": self.current_phase.name,
+            "phases_completed": [p.name for p in self.phases_completed],
+            "resources": {path: status.to_dict() for path, status in self.resources.items()},
+            "research_findings_path": self.research_findings_path,
+            "user_decisions_path": self.user_decisions_path,
+            "quality_threshold": self.quality_threshold,
+            "max_iterations": self.max_iterations,
+            "started_at": self.started_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MultiResourceState":
+        """Create from dictionary."""
+        return cls(
+            spec_path=data["spec_path"],
+            spec_type=data["spec_type"],
+            spec_hash=data["spec_hash"],
+            current_phase=OptimizationPhase[data["current_phase"]],
+            phases_completed=[OptimizationPhase[p] for p in data.get("phases_completed", [])],
+            resources={
+                path: ResourceStatus.from_dict(status)
+                for path, status in data.get("resources", {}).items()
+            },
+            research_findings_path=data.get("research_findings_path", ""),
+            user_decisions_path=data.get("user_decisions_path", ""),
+            quality_threshold=data.get("quality_threshold", 0.85),
+            max_iterations=data.get("max_iterations", 5),
+            started_at=data.get("started_at", ""),
+            updated_at=data.get("updated_at", ""),
+        )
+
+    def advance_phase(self, next_phase: OptimizationPhase) -> None:
+        """Advance to the next phase.
+
+        Args:
+            next_phase: Phase to advance to.
+        """
+        if self.current_phase not in self.phases_completed:
+            self.phases_completed.append(self.current_phase)
+        self.current_phase = next_phase
+        self.updated_at = datetime.now(UTC).isoformat()
+
+    def add_resource(
+        self,
+        path: str,
+        resource_type: str,
+    ) -> ResourceStatus:
+        """Add a resource to track.
+
+        Args:
+            path: Relative path to resource.
+            resource_type: Type of resource.
+
+        Returns:
+            Created ResourceStatus.
+        """
+        status = ResourceStatus(path=path, resource_type=resource_type)
+        self.resources[path] = status
+        self.updated_at = datetime.now(UTC).isoformat()
+        return status
+
+    def update_resource(
+        self,
+        path: str,
+        status: Literal[
+            "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+        ]
+        | None = None,
+        version: int | None = None,
+        quality: ResourceQuality | None = None,
+        iterations: int | None = None,
+        refinement_count: int | None = None,
+        depends_on: list[str] | None = None,
+        depended_by: list[str] | None = None,
+        error: str | None = None,
+    ) -> ResourceStatus | None:
+        """Update a resource's status.
+
+        Args:
+            path: Resource path.
+            status: New status.
+            version: New version number.
+            quality: New quality scores.
+            iterations: Number of iterations.
+            refinement_count: Number of refinement loops.
+            depends_on: List of dependencies.
+            depended_by: List of dependents.
+            error: Error message.
+
+        Returns:
+            Updated ResourceStatus or None if not found.
+        """
+        if path not in self.resources:
+            return None
+
+        resource = self.resources[path]
+        if status is not None:
+            resource.status = status
+        if version is not None:
+            resource.version = version
+        if quality is not None:
+            resource.quality = quality
+        if iterations is not None:
+            resource.iterations = iterations
+        if refinement_count is not None:
+            resource.refinement_count = refinement_count
+        if depends_on is not None:
+            resource.depends_on = depends_on
+        if depended_by is not None:
+            resource.depended_by = depended_by
+        if error is not None:
+            resource.error = error
+
+        self.updated_at = datetime.now(UTC).isoformat()
+        return resource
+
+    def get_pending_resources(self) -> list[ResourceStatus]:
+        """Get resources that haven't been processed yet."""
+        return [r for r in self.resources.values() if r.status == "pending"]
+
+    def get_in_progress_resources(self) -> list[ResourceStatus]:
+        """Get resources currently being processed."""
+        return [r for r in self.resources.values() if r.status == "in_progress"]
+
+    def get_optimized_resources(self) -> list[ResourceStatus]:
+        """Get resources that have been optimized."""
+        return [r for r in self.resources.values() if r.status == "optimized"]
+
+    def get_failed_resources(self) -> list[ResourceStatus]:
+        """Get resources that failed optimization."""
+        return [r for r in self.resources.values() if r.status == "failed"]
+
+    def all_resources_complete(self) -> bool:
+        """Check if all resources are optimized or failed."""
+        return all(
+            r.status in ("optimized", "failed") for r in self.resources.values()
+        )
+
+    def get_generated_resources(self) -> list[ResourceStatus]:
+        """Get resources that have been generated but not yet optimized."""
+        return [r for r in self.resources.values() if r.status == "generated"]
+
+    def get_needs_refinement_resources(self) -> list[ResourceStatus]:
+        """Get resources that need targeted refinement."""
+        return [r for r in self.resources.values() if r.status == "needs_refinement"]
+
+    def all_resources_generated(self) -> bool:
+        """Check if all resources have been generated (status >= generated)."""
+        generated_states = ("generated", "in_progress", "optimized", "needs_refinement")
+        return all(
+            r.status in generated_states or r.status == "failed"
+            for r in self.resources.values()
+        )
+
+    def get_resources_by_status(self, status: str) -> list[ResourceStatus]:
+        """Get resources with a specific status."""
+        return [r for r in self.resources.values() if r.status == status]
+
+    def add_dependency(self, resource_path: str, depends_on_path: str) -> bool:
+        """Add a dependency relationship between resources.
+
+        Args:
+            resource_path: The resource that has the dependency.
+            depends_on_path: The resource being depended upon.
+
+        Returns:
+            True if dependency was added, False if resources not found.
+        """
+        if resource_path not in self.resources or depends_on_path not in self.resources:
+            return False
+
+        resource = self.resources[resource_path]
+        target = self.resources[depends_on_path]
+
+        if depends_on_path not in resource.depends_on:
+            resource.depends_on.append(depends_on_path)
+        if resource_path not in target.depended_by:
+            target.depended_by.append(resource_path)
+
+        self.updated_at = datetime.now(UTC).isoformat()
+        return True
+
+    def get_completion_stats(self) -> dict[str, Any]:
+        """Get completion statistics."""
+        total = len(self.resources)
+        optimized = len(self.get_optimized_resources())
+        failed = len(self.get_failed_resources())
+        pending = len(self.get_pending_resources())
+        in_progress = len(self.get_in_progress_resources())
+        generated = len(self.get_generated_resources())
+        needs_refinement = len(self.get_needs_refinement_resources())
+
+        return {
+            "total": total,
+            "optimized": optimized,
+            "failed": failed,
+            "pending": pending,
+            "in_progress": in_progress,
+            "generated": generated,
+            "needs_refinement": needs_refinement,
+            "completion_percent": (optimized / total * 100) if total > 0 else 0,
+        }

@@ -36,7 +36,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import structlog
 
@@ -74,10 +74,41 @@ def _versioned_path(resource_path: str | Path, version: int) -> Path:
     return p.parent / f"{p.stem}-v{version}{p.suffix}"
 
 
+class PathViolationError(ValueError):
+    """Raised when a file operation targets a path outside workspace."""
+
+    pass
+
+
+def validate_write_path(path: Path, workspace_root: Path) -> None:
+    """Validate that a path is within the workspace root.
+
+    Used to enforce that all file operations stay within the workspace
+    directory, preventing accidental writes to the repository root or
+    other system locations.
+
+    Args:
+        path: Path to validate (can be relative or absolute).
+        workspace_root: Workspace root directory.
+
+    Raises:
+        PathViolationError: If path is outside workspace root.
+    """
+    resolved = path.resolve()
+    root_resolved = workspace_root.resolve()
+
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        raise PathViolationError(
+            f"Path violation: {path} is outside workspace {workspace_root}"
+        ) from None
+
+
 # Default configuration values
 DEFAULT_QUALITY_THRESHOLD = 0.85
 DEFAULT_MAX_ITERATIONS = 5
-DEFAULT_MAX_REFINEMENT = 3
+DEFAULT_MAX_REFINEMENT = 1  # Reduced from 3 to limit refinement loops
 
 # Agent names for delegation
 AGENT_RESEARCH = "cgf-agents:cgf-research-lead"
@@ -99,6 +130,7 @@ class MultiResourceConfig:
         verbose: Enable verbose output
         skip_research: Skip research phase (use existing findings)
         skip_qa: Skip Q&A phase (use existing decisions or defaults)
+        skip_refinement: Skip refinement loops entirely (fast mode)
         eval_model: Model for quality evaluation
         parallel_generation: Generate independent resources in parallel
     """
@@ -110,8 +142,10 @@ class MultiResourceConfig:
     verbose: bool = False
     skip_research: bool = False
     skip_qa: bool = False
+    skip_refinement: bool = False
     eval_model: str | None = None
     parallel_generation: bool = True
+    progress_callback: Callable[[str, str, str], None] | None = None
 
 
 @dataclass
@@ -342,6 +376,9 @@ class MultiResourceOrchestrator:
             elif phase == OptimizationPhase.VALIDATE:
                 await self._delegate_validation()
                 # _delegate_validation handles phase transition
+                # If transitioning to COMPLETE, finalize resources
+                if self._state.current_phase == OptimizationPhase.COMPLETE:
+                    self._finalize_resources()
 
             phase = self._state.current_phase
 
@@ -364,6 +401,109 @@ class MultiResourceOrchestrator:
         if self._state and self._progress:
             self._state.updated_at = datetime.now(UTC).isoformat()
             self._progress.save_optimization_state(self._state)
+
+    def _emit_progress(
+        self, phase: str, resource: str, status: str, quality: float | None = None
+    ) -> None:
+        """Emit progress update via callback.
+
+        Args:
+            phase: Current phase (RESEARCH, GENERATE, ITERATE, VALIDATE).
+            resource: Resource path or identifier.
+            status: Status message (complete, in_progress, failed, etc.).
+            quality: Optional quality score.
+        """
+        if self.config.progress_callback:
+            if quality is not None:
+                msg = f"[{phase}] {resource}: {status} (quality: {quality:.2f})"
+            else:
+                msg = f"[{phase}] {resource}: {status}"
+            self.config.progress_callback(phase, resource, msg)
+        # Also log for non-callback usage
+        if self.config.verbose:
+            if quality is not None:
+                logger.info(
+                    f"Progress: {phase}",
+                    resource=resource,
+                    status=status,
+                    quality=f"{quality:.2f}",
+                )
+            else:
+                logger.info(
+                    f"Progress: {phase}",
+                    resource=resource,
+                    status=status,
+                )
+
+    def _backup_original_resource(self, resource_path: str) -> None:
+        """Backup original resource to -v0 before generation.
+
+        If a file exists at the resource path (e.g., from a previous run),
+        rename it to {name}-v0.md to preserve the original.
+
+        Args:
+            resource_path: Relative path like "agents/iac-analyzer.md"
+
+        Raises:
+            PathViolationError: If path is outside workspace.
+        """
+        workspace = self.config.workspace_dir
+        original = workspace / resource_path
+        v0_path = workspace / _versioned_path(resource_path, 0)
+
+        # Validate paths are within workspace
+        validate_write_path(original, workspace)
+        validate_write_path(v0_path, workspace)
+
+        if original.exists() and not v0_path.exists():
+            import shutil
+
+            shutil.copy2(original, v0_path)
+            logger.info(
+                "Backed up original resource",
+                original=str(original),
+                backup=str(v0_path),
+            )
+
+    def _finalize_resources(self) -> None:
+        """Copy latest versioned files to final resource paths.
+
+        For each optimized resource, copies {resource}-v{N}.md to {resource}.md
+        so that plugins load the final version.
+
+        Called when pipeline reaches COMPLETE phase.
+
+        Raises:
+            PathViolationError: If any path is outside workspace.
+        """
+        if not self._state:
+            return
+
+        import shutil
+
+        workspace = self.config.workspace_dir
+
+        for path, resource in self._state.resources.items():
+            if resource.status != "optimized":
+                continue
+
+            # Find the latest version file
+            version = resource.version
+            if version > 0:
+                versioned = workspace / _versioned_path(path, version)
+                final = workspace / path
+
+                # Validate paths
+                validate_write_path(versioned, workspace)
+                validate_write_path(final, workspace)
+
+                if versioned.exists():
+                    shutil.copy2(versioned, final)
+                    logger.info(
+                        "Finalized resource",
+                        versioned=str(versioned),
+                        final=str(final),
+                    )
 
     # -------------------------------------------------------------------------
     # Agent Delegation Methods
@@ -406,7 +546,8 @@ Research topics:
 Resource context: {self._spec.name}
 Resource type: {self._spec.spec_type.name}
 
-Save findings to workspace/{self._spec.name}/research/notes/
+CRITICAL: Save findings to {workspace}/research/notes/
+(Use this exact path - it's the workspace root)
 
 When complete, output:
 [RESEARCH_COMPLETE]
@@ -456,9 +597,13 @@ eval_criteria_path: research/eval_criteria.yaml
         logger.info("Q&A: Auto-accepting proposed structure")
 
         # Create decisions file
-        sessions_dir = self.config.workspace_dir / "sessions"
+        workspace = self.config.workspace_dir
+        sessions_dir = workspace / "sessions"
         sessions_dir.mkdir(parents=True, exist_ok=True)
         decisions_path = sessions_dir / "qa-decisions.json"
+
+        # Validate path
+        validate_write_path(decisions_path, workspace)
 
         import json
 
@@ -499,9 +644,12 @@ eval_criteria_path: research/eval_criteria.yaml
 
         # Create directory structure
         (workspace / "agents").mkdir(parents=True, exist_ok=True)
-        (workspace / "skills").mkdir(parents=True, exist_ok=True)
         (workspace / "commands").mkdir(parents=True, exist_ok=True)
         (workspace / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+
+        # Create skill directories (skills/{name}/)
+        for skill in self._spec.proposed_skills:
+            (workspace / "skills" / skill.name).mkdir(parents=True, exist_ok=True)
 
         # Load research findings for context
         eval_criteria_path = workspace / "research" / "eval_criteria.yaml"
@@ -510,6 +658,9 @@ eval_criteria_path: research/eval_criteria.yaml
             research_context = f"\nEval criteria: {eval_criteria_path}"
 
         for resource in pending:
+            # Backup original if it exists (for v0 preservation)
+            self._backup_original_resource(resource.path)
+
             self._state.update_resource(resource.path, status="in_progress")
             self._save_state()
 
@@ -519,6 +670,11 @@ eval_criteria_path: research/eval_criteria.yaml
                 name = Path(resource.path).parent.name
 
             purpose = self._get_resource_purpose(name, resource.resource_type)
+
+            # Build resource-specific instructions
+            resource_instructions = self._get_resource_instructions(
+                name, resource.resource_type, purpose
+            )
 
             prompt = f"""Generate a {resource.resource_type} for multi-resource plugin.
 
@@ -530,6 +686,8 @@ Resource Details:
 - Name: {name}
 - Type: {resource.resource_type}
 - Purpose: {purpose}
+
+{resource_instructions}
 
 Constraints from SPEC.md:
 {chr(10).join(f'- {c}' for c in self._spec.constraints[:5])}
@@ -550,6 +708,7 @@ output_path: {workspace / resource.path}
                 path=resource.path,
                 type=resource.resource_type,
             )
+            self._emit_progress("GENERATE", resource.path, "in_progress")
 
             try:
                 response = await call_agent_simple(
@@ -564,6 +723,7 @@ output_path: {workspace / resource.path}
                         resource.path, status="generated", version=0
                     )
                     logger.info("GENERATE: Resource created", path=resource.path)
+                    self._emit_progress("GENERATE", resource.path, "complete")
                 else:
                     # Check if file was created anyway
                     full_path = workspace / resource.path
@@ -626,6 +786,71 @@ output_path: {workspace / resource.path}
                     return cmd.purpose
         return ""
 
+    def _get_resource_instructions(
+        self,
+        name: str,
+        resource_type: str,
+        purpose: str,
+    ) -> str:
+        """Get resource-type-specific generation instructions.
+
+        Args:
+            name: Resource name.
+            resource_type: Type of resource.
+            purpose: Purpose from spec.
+
+        Returns:
+            Instruction text for the generation prompt.
+        """
+        if resource_type == "skill":
+            # Get trigger terms if available
+            triggers = []
+            if self._spec:
+                for skill in self._spec.proposed_skills:
+                    if skill.name == name:
+                        triggers = skill.triggers
+                        break
+
+            trigger_text = (
+                f"Trigger terms: {', '.join(triggers)}"
+                if triggers
+                else "Determine appropriate trigger terms from purpose"
+            )
+
+            return f"""Skill-Specific Instructions:
+- Create SKILL.md with proper YAML frontmatter (name, description)
+- Description must include specific trigger terms for auto-activation
+- Include "Activate when user mentions:" section
+- Include "Use for:" and "Do NOT use for:" boundaries
+- Keep SKILL.md under 5000 tokens (core instructions only)
+- Use progressive disclosure: reference examples/ and templates/ directories
+- {trigger_text}
+
+Skill Directory Structure:
+  skills/{name}/
+  ├── SKILL.md          # Main skill (required)
+  ├── examples/         # Usage examples (optional)
+  └── templates/        # Code templates (optional)"""
+
+        elif resource_type == "agent":
+            return """Agent-Specific Instructions:
+- Create agent with YAML frontmatter (name, description, tools, model)
+- Description must include 2-4 concrete examples with commentary
+- Use "Use PROACTIVELY when..." phrases for discovery optimization
+- Specify minimal necessary tool access (least privilege)
+- Include clear constraints and boundaries
+- Add working code examples in the system prompt"""
+
+        elif resource_type == "command":
+            return """Command-Specific Instructions:
+- Create command with YAML frontmatter (name, description, allowed_tools)
+- Document all arguments ($1, $2, $ARGUMENTS)
+- Provide default values for optional args (${2:-default})
+- Include usage examples
+- Specify allowed_tools appropriately"""
+
+        return ""
+
     async def _generate_plugin_json(self) -> None:
         """Generate plugin.json metadata file."""
         if not self._spec:
@@ -648,7 +873,12 @@ output_path: {workspace / resource.path}
             },
         }
 
-        plugin_path = self.config.workspace_dir / ".claude-plugin" / "plugin.json"
+        workspace = self.config.workspace_dir
+        plugin_path = workspace / ".claude-plugin" / "plugin.json"
+
+        # Validate path
+        validate_write_path(plugin_path, workspace)
+
         with open(plugin_path, "w") as f:
             json.dump(plugin_json, f, indent=2)
 
@@ -725,6 +955,9 @@ word_count: {{count}}
                     path=resource.path,
                     iteration=iteration,
                 )
+                self._emit_progress(
+                    "ITERATE", resource.path, f"iteration {iteration}"
+                )
 
                 try:
                     response = await call_agent_simple(
@@ -738,12 +971,17 @@ word_count: {{count}}
                         # Parse iteration result
                         result = self._parse_iteration_result(response)
 
+                        # Get quality score with all dimensions
+                        quality_full = None
                         if result["quality_overall"] is not None:
                             current_quality = result["quality_overall"]
                         else:
-                            # Fallback: use evaluator
+                            # Fallback: use evaluator for full quality
+                            quality_full = await self._evaluate_resource_quality_full(
+                                resource
+                            )
                             current_quality = (
-                                await self._evaluate_resource_quality(resource)
+                                quality_full.overall if quality_full else 0.0
                             )
 
                         # Get word counts for CHANGELOG
@@ -772,8 +1010,11 @@ word_count: {{count}}
                             summary=result["summary"] or "",
                         )
 
-                        # Update state
-                        quality = ResourceQuality(overall=current_quality)
+                        # Update state with full quality dimensions
+                        if quality_full:
+                            quality = quality_full
+                        else:
+                            quality = ResourceQuality(overall=current_quality)
                         self._state.update_resource(
                             resource.path,
                             version=resource.version + 1,
@@ -799,14 +1040,59 @@ word_count: {{count}}
                                 path=resource.path,
                                 quality=f"{current_quality:.2f}",
                             )
+                            self._emit_progress(
+                                "ITERATE",
+                                resource.path,
+                                "complete",
+                                current_quality,
+                            )
                             break
 
                     else:
-                        logger.warning(
-                            "ITERATE: No completion signal",
-                            path=resource.path,
-                            iteration=iteration,
+                        # Fallback: check if versioned file was created
+                        versioned_path = workspace / _versioned_path(
+                            resource.path, resource.version + 1
                         )
+                        if versioned_path.exists():
+                            # File exists - use evaluator for full quality
+                            fallback_quality = (
+                                await self._evaluate_resource_quality_full(resource)
+                            )
+                            current_quality = (
+                                fallback_quality.overall if fallback_quality else 0.0
+                            )
+
+                            if current_quality > 0:
+                                quality = (
+                                    fallback_quality
+                                    if fallback_quality
+                                    else ResourceQuality(overall=current_quality)
+                                )
+                                self._state.update_resource(
+                                    resource.path,
+                                    version=resource.version + 1,
+                                    iterations=iteration,
+                                    quality=quality,
+                                )
+                                self._save_state()
+
+                                logger.info(
+                                    "ITERATE: File created (no signal)",
+                                    path=resource.path,
+                                    quality=f"{current_quality:.2f}",
+                                )
+
+                                if current_quality >= self.config.quality_threshold:
+                                    self._state.update_resource(
+                                        resource.path, status="optimized"
+                                    )
+                                    break
+                        else:
+                            logger.warning(
+                                "ITERATE: No completion signal or file",
+                                path=resource.path,
+                                iteration=iteration,
+                            )
 
                 except Exception as e:
                     logger.error(
@@ -850,8 +1136,22 @@ word_count: {{count}}
         Returns:
             Quality score (0.0-1.0).
         """
+        quality = await self._evaluate_resource_quality_full(resource)
+        return quality.overall if quality else 0.0
+
+    async def _evaluate_resource_quality_full(
+        self, resource: ResourceStatus
+    ) -> ResourceQuality | None:
+        """Evaluate resource quality and return full dimension scores.
+
+        Args:
+            resource: Resource to evaluate.
+
+        Returns:
+            ResourceQuality with all dimension scores, or None on failure.
+        """
         if not self._evaluator or not self._spec:
-            return 0.0
+            return None
 
         workspace = self.config.workspace_dir
 
@@ -863,7 +1163,7 @@ word_count: {{count}}
             path = workspace / resource.path
 
         if not path.exists():
-            return 0.0
+            return None
 
         content = path.read_text()
 
@@ -874,7 +1174,13 @@ word_count: {{count}}
             resource_name=Path(resource.path).stem,
         )
 
-        return score.overall
+        # Map QualityScore to ResourceQuality
+        return ResourceQuality(
+            completeness=score.completeness,
+            accuracy=score.accuracy,
+            clarity=score.clarity,
+            overall=score.overall,
+        )
 
     # -------------------------------------------------------------------------
     # CHANGELOG Management Methods
@@ -895,10 +1201,21 @@ word_count: {{count}}
             "summary": None,
         }
 
-        # Extract quality_overall: X.XX
-        quality_match = re.search(r"quality_overall:\s*([\d.]+)", response)
-        if quality_match:
-            result["quality_overall"] = float(quality_match.group(1))
+        # Extract quality_overall: X.XX (multiple patterns for permissiveness)
+        quality_patterns = [
+            r"quality_overall:\s*([\d.]+)",
+            r"quality:\s*([\d.]+)",
+            r"overall[_\s]?score:\s*([\d.]+)",
+            r"score:\s*([\d.]+)",
+        ]
+        for pattern in quality_patterns:
+            quality_match = re.search(pattern, response, re.IGNORECASE)
+            if quality_match:
+                val = float(quality_match.group(1))
+                # Ensure it's a valid quality score (0.0-1.0)
+                if 0.0 <= val <= 1.0:
+                    result["quality_overall"] = val
+                    break
 
         # Extract word_count: XXX
         word_match = re.search(r"word_count:\s*(\d+)", response)
@@ -945,6 +1262,9 @@ word_count: {{count}}
 
 ---
 """
+        # Validate path
+        validate_write_path(changelog_path, self.config.workspace_dir)
+
         changelog_path.write_text(header)
         logger.info("CHANGELOG: Created", path=str(changelog_path))
 
@@ -1054,6 +1374,9 @@ word_count: {{count}}
             new_section = f"\n{section_header}\n{entry}"
             content = content[:insert_pos] + new_section + content[insert_pos:]
 
+        # Validate path
+        validate_write_path(changelog_path, self.config.workspace_dir)
+
         changelog_path.write_text(content)
         logger.info(
             "CHANGELOG: Entry added",
@@ -1137,6 +1460,7 @@ word_count: {{count}}
             "VALIDATE: Running cross-resource coherence check",
             resources=len(self._state.resources),
         )
+        self._emit_progress("VALIDATE", "all", "in_progress")
 
         prompt = f"""Validate coherence for multi-resource plugin.
 
@@ -1180,6 +1504,9 @@ affected_resources:
                 "VALIDATE: Complete",
                 coherence_score=f"{coherence_score:.2f}",
             )
+            self._emit_progress(
+                "VALIDATE", "all", "complete", coherence_score
+            )
 
             self._advance_phase(OptimizationPhase.COMPLETE)
 
@@ -1189,13 +1516,38 @@ affected_resources:
             issue_count = int(count_match.group(1)) if count_match else 0
 
             # Extract affected resources
-            affected = re.findall(r"- ((?:agents|skills|commands)/[^\n]+)", response)
+            affected = re.findall(
+                r"- ((?:agents|skills|commands)/[^\n]+)", response
+            )
+
+            # Check if there are FAIL-level issues (not just warnings)
+            # Only refine for FAIL/ERROR/CRITICAL, not WARN
+            has_fail_issues = any(
+                level in response.upper()
+                for level in ["FAIL", "ERROR", "CRITICAL", "SEVERITY: HIGH"]
+            )
 
             logger.warning(
                 "VALIDATE: Issues found",
                 issue_count=issue_count,
+                has_fail_issues=has_fail_issues,
                 affected=affected,
             )
+
+            # Skip refinement if configured or no FAIL-level issues
+            if self.config.skip_refinement:
+                logger.info(
+                    "VALIDATE: Skipping refinement (configured)"
+                )
+                self._advance_phase(OptimizationPhase.COMPLETE)
+                return
+
+            if not has_fail_issues:
+                logger.info(
+                    "VALIDATE: Only WARN issues - completing without refinement"
+                )
+                self._advance_phase(OptimizationPhase.COMPLETE)
+                return
 
             # Check refinement count
             can_refine = True
@@ -1218,11 +1570,12 @@ affected_resources:
                             path,
                             status="needs_refinement",
                             refinement_count=(
-                                self._state.resources[path].refinement_count + 1
+                                self._state.resources[path].refinement_count
+                                + 1
                             ),
                         )
 
-                # Stay in VALIDATE phase (will re-run iteration)
+                # Go back to ITERATE phase
                 self._state.current_phase = OptimizationPhase.ITERATE
                 self._save_state()
             else:
