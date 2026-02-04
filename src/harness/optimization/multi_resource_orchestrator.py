@@ -30,13 +30,15 @@ Example usage:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import structlog
 
@@ -133,6 +135,12 @@ class MultiResourceConfig:
         skip_refinement: Skip refinement loops entirely (fast mode)
         eval_model: Model for quality evaluation
         parallel_generation: Generate independent resources in parallel
+        research_timeout: Timeout for research phase (seconds)
+        generate_timeout: Timeout per resource generation (seconds)
+        iterate_timeout: Timeout per optimization iteration (seconds)
+        validate_timeout: Timeout for validation phase (seconds)
+        show_progress: Show phase transitions and progress updates
+        follow_logs: Stream agent activity in real-time
     """
 
     workspace_dir: Path
@@ -146,6 +154,14 @@ class MultiResourceConfig:
     eval_model: str | None = None
     parallel_generation: bool = True
     progress_callback: Callable[[str, str, str], None] | None = None
+    # Phase-specific timeouts (seconds)
+    research_timeout: int = 1800  # 30 minutes
+    generate_timeout: int = 900   # 15 minutes per resource
+    iterate_timeout: int = 600    # 10 minutes per iteration
+    validate_timeout: int = 300   # 5 minutes
+    # Progress display settings
+    show_progress: bool = True
+    follow_logs: bool = True
 
 
 @dataclass
@@ -402,6 +418,30 @@ class MultiResourceOrchestrator:
             self._state.updated_at = datetime.now(UTC).isoformat()
             self._progress.save_optimization_state(self._state)
 
+    def _validate_all_resources_exist(self) -> list[str]:
+        """Validate all tracked resources have corresponding files.
+
+        Returns:
+            List of missing resource paths (empty if all exist).
+        """
+        if not self._state:
+            return []
+
+        missing = []
+        workspace = self.config.workspace_dir
+
+        for path, resource in self._state.resources.items():
+            full_path = workspace / path
+            if not full_path.exists():
+                missing.append(path)
+                logger.warning(
+                    "VALIDATE: Resource file missing",
+                    path=path,
+                    status=resource.status,
+                )
+
+        return missing
+
     def _emit_progress(
         self, phase: str, resource: str, status: str, quality: float | None = None
     ) -> None:
@@ -465,6 +505,59 @@ class MultiResourceOrchestrator:
                 backup=str(v0_path),
             )
 
+    def _finalize_single_resource(self, resource_path: str) -> None:
+        """Copy latest versioned file to final resource path.
+
+        Called immediately after a resource is marked as optimized.
+
+        Args:
+            resource_path: Relative path like "agents/iac-analyzer.md"
+
+        Raises:
+            PathViolationError: If path is outside workspace.
+        """
+        if not self._state:
+            return
+
+        import shutil
+
+        resource = self._state.resources.get(resource_path)
+        if not resource or resource.status != "optimized":
+            return
+
+        workspace = self.config.workspace_dir
+        version = resource.version
+
+        # Handle both version > 0 (versioned) and version == 0 (original)
+        if version > 0:
+            versioned = workspace / _versioned_path(resource_path, version)
+            final = workspace / resource_path
+
+            # Validate paths
+            validate_write_path(versioned, workspace)
+            validate_write_path(final, workspace)
+
+            if versioned.exists():
+                shutil.copy2(versioned, final)
+                logger.info(
+                    "FINALIZE: Copied versioned to final",
+                    versioned=str(versioned),
+                    final=str(final),
+                )
+            else:
+                logger.error(
+                    "FINALIZE: Versioned file not found",
+                    expected=str(versioned),
+                )
+        else:
+            # Version 0 means original file should exist
+            final = workspace / resource_path
+            if not final.exists():
+                logger.error(
+                    "FINALIZE: Original file not found",
+                    expected=str(final),
+                )
+
     def _finalize_resources(self) -> None:
         """Copy latest versioned files to final resource paths.
 
@@ -479,31 +572,12 @@ class MultiResourceOrchestrator:
         if not self._state:
             return
 
-        import shutil
-
-        workspace = self.config.workspace_dir
-
         for path, resource in self._state.resources.items():
             if resource.status != "optimized":
                 continue
 
-            # Find the latest version file
-            version = resource.version
-            if version > 0:
-                versioned = workspace / _versioned_path(path, version)
-                final = workspace / path
-
-                # Validate paths
-                validate_write_path(versioned, workspace)
-                validate_write_path(final, workspace)
-
-                if versioned.exists():
-                    shutil.copy2(versioned, final)
-                    logger.info(
-                        "Finalized resource",
-                        versioned=str(versioned),
-                        final=str(final),
-                    )
+            # Use single resource finalization
+            self._finalize_single_resource(path)
 
     # -------------------------------------------------------------------------
     # Agent Delegation Methods
@@ -558,16 +632,55 @@ eval_criteria_path: research/eval_criteria.yaml
             "RESEARCH: Delegating to cgf-research-lead",
             workspace=str(workspace),
             capabilities=len(self._spec.capabilities),
+            timeout=self.config.research_timeout,
         )
 
-        response = await call_agent_simple(
-            AGENT_RESEARCH,
-            prompt,
-            verbose=self.config.verbose,
-        )
+        self._emit_progress("RESEARCH", "all", "in_progress")
+
+        try:
+            # Pass timeout directly to agent - no need for outer asyncio.wait_for
+            response = await call_agent_simple(
+                AGENT_RESEARCH,
+                prompt,
+                verbose=self.config.verbose or self.config.follow_logs,
+                timeout=float(self.config.research_timeout),
+            )
+        except TimeoutError:
+            logger.error(
+                "RESEARCH: Timed out",
+                timeout=self.config.research_timeout,
+            )
+            self._emit_progress(
+                "RESEARCH", "all",
+                f"timeout after {self.config.research_timeout}s"
+            )
+            raise TimeoutError(
+                f"Research phase timed out after {self.config.research_timeout}s. "
+                "Increase CGF_RESEARCH_TIMEOUT or simplify the SPEC."
+            )
 
         # Parse signal
         if "[RESEARCH_COMPLETE]" in response:
+            # Validate research files actually exist
+            research_notes = workspace / "research" / "notes"
+            findings_files = list(research_notes.glob("*_findings.yaml"))
+
+            if not findings_files:
+                logger.error(
+                    "RESEARCH: Signal received but no findings files found",
+                    expected_path=str(research_notes),
+                )
+                self._emit_progress("RESEARCH", "all", "failed - no files")
+                raise ValueError(
+                    "Research phase emitted [RESEARCH_COMPLETE] but no findings "
+                    f"files found in {research_notes}. Check researcher output."
+                )
+
+            logger.info(
+                "RESEARCH: Validated findings exist",
+                files_found=len(findings_files),
+            )
+
             # Extract eval_criteria_path if present
             match = re.search(r"eval_criteria_path:\s*(.+)", response)
             if match:
@@ -577,6 +690,7 @@ eval_criteria_path: research/eval_criteria.yaml
                 "RESEARCH: Complete",
                 findings_path=self._state.research_findings_path,
             )
+            self._emit_progress("RESEARCH", "all", "complete")
         else:
             logger.warning(
                 "RESEARCH: No completion signal found in response",
@@ -707,23 +821,43 @@ output_path: {workspace / resource.path}
                 "GENERATE: Creating resource",
                 path=resource.path,
                 type=resource.resource_type,
+                timeout=self.config.generate_timeout,
             )
             self._emit_progress("GENERATE", resource.path, "in_progress")
 
             try:
+                # Pass timeout directly to agent
                 response = await call_agent_simple(
                     AGENT_GENERATE,
                     prompt,
-                    verbose=self.config.verbose,
+                    verbose=self.config.verbose or self.config.follow_logs,
+                    timeout=float(self.config.generate_timeout),
                 )
 
                 # Parse signal
                 if f"[GENERATE_COMPLETE:{resource.path}]" in response:
-                    self._state.update_resource(
-                        resource.path, status="generated", version=0
-                    )
-                    logger.info("GENERATE: Resource created", path=resource.path)
-                    self._emit_progress("GENERATE", resource.path, "complete")
+                    # Validate file actually exists before marking as generated
+                    full_path = workspace / resource.path
+                    if full_path.exists():
+                        self._state.update_resource(
+                            resource.path, status="generated", version=0
+                        )
+                        logger.info("GENERATE: Resource created", path=resource.path)
+                        self._emit_progress("GENERATE", resource.path, "complete")
+                    else:
+                        logger.error(
+                            "GENERATE: Signal received but file not found",
+                            signal_path=resource.path,
+                            expected_path=str(full_path),
+                        )
+                        self._state.update_resource(
+                            resource.path,
+                            status="failed",
+                            error=f"Signal received but file not created at {full_path}",
+                        )
+                        self._emit_progress(
+                            "GENERATE", resource.path, "failed - file not found"
+                        )
                 else:
                     # Check if file was created anyway
                     full_path = workspace / resource.path
@@ -746,6 +880,21 @@ output_path: {workspace / resource.path}
                             path=resource.path,
                         )
 
+            except TimeoutError:
+                logger.error(
+                    "GENERATE: Resource timed out",
+                    path=resource.path,
+                    timeout=self.config.generate_timeout,
+                )
+                self._state.update_resource(
+                    resource.path,
+                    status="failed",
+                    error=f"Generation timed out after {self.config.generate_timeout}s",
+                )
+                self._emit_progress(
+                    "GENERATE", resource.path,
+                    f"timeout after {self.config.generate_timeout}s"
+                )
             except Exception as e:
                 logger.error(
                     "GENERATE: Resource failed",
@@ -755,6 +904,61 @@ output_path: {workspace / resource.path}
                 self._state.update_resource(
                     resource.path, status="failed", error=str(e)
                 )
+
+            # Retry once with simplified prompt if generation failed
+            full_path = workspace / resource.path
+            if (
+                self._state.resources[resource.path].status == "failed"
+                and not full_path.exists()
+            ):
+                logger.info(
+                    "GENERATE: Retrying with simplified prompt",
+                    path=resource.path,
+                )
+                self._emit_progress(
+                    "GENERATE", resource.path, "retrying"
+                )
+                retry_prompt = (
+                    f"Create {resource.resource_type} file.\n"
+                    f"Write to: {full_path}\n"
+                    f"Name: {name}\n"
+                    f"Purpose: {purpose}\n"
+                    f"Keep it focused and concise.\n"
+                    f"When done, emit: "
+                    f"[GENERATE_COMPLETE:{resource.path}]"
+                )
+                try:
+                    await call_agent_simple(
+                        AGENT_GENERATE,
+                        retry_prompt,
+                        verbose=self.config.verbose
+                        or self.config.follow_logs,
+                        timeout=float(self.config.generate_timeout),
+                    )
+                    if full_path.exists():
+                        self._state.update_resource(
+                            resource.path,
+                            status="generated",
+                            version=0,
+                        )
+                        logger.info(
+                            "GENERATE: Resource created on retry",
+                            path=resource.path,
+                        )
+                        self._emit_progress(
+                            "GENERATE", resource.path, "complete"
+                        )
+                    else:
+                        logger.warning(
+                            "GENERATE: Retry also failed",
+                            path=resource.path,
+                        )
+                except Exception as retry_err:
+                    logger.error(
+                        "GENERATE: Retry failed",
+                        path=resource.path,
+                        error=str(retry_err),
+                    )
 
             self._save_state()
 
@@ -911,6 +1115,22 @@ Skill Directory Structure:
         )
 
         for resource in resources_to_optimize:
+            # Guard: skip resources with no file (e.g. failed generation)
+            if resource.version == 0:
+                resource_file = workspace / resource.path
+                if not resource_file.exists():
+                    logger.warning(
+                        "ITERATE: Skipping - no file exists",
+                        path=resource.path,
+                    )
+                    self._state.update_resource(
+                        resource.path,
+                        status="failed",
+                        error="No file available for optimization",
+                    )
+                    self._save_state()
+                    continue
+
             self._state.update_resource(resource.path, status="in_progress")
             self._save_state()
 
@@ -944,6 +1164,9 @@ When complete, emit signals:
 [ITERATE_COMPLETE:{resource.path}]
 version: {resource.version + 1}
 quality_overall: {{0.0-1.0}}
+quality_completeness: {{0.0-1.0}}
+quality_accuracy: {{0.0-1.0}}
+quality_clarity: {{0.0-1.0}}
 word_count: {{count}}
 [SUMMARY]
 {{1-2 sentence summary of key improvements}}
@@ -954,16 +1177,19 @@ word_count: {{count}}
                     "ITERATE: Running iteration",
                     path=resource.path,
                     iteration=iteration,
+                    timeout=self.config.iterate_timeout,
                 )
                 self._emit_progress(
                     "ITERATE", resource.path, f"iteration {iteration}"
                 )
 
                 try:
+                    # Pass timeout directly to agent
                     response = await call_agent_simple(
                         AGENT_ITERATE,
                         prompt,
-                        verbose=self.config.verbose,
+                        verbose=self.config.verbose or self.config.follow_logs,
+                        timeout=float(self.config.iterate_timeout),
                     )
 
                     # Parse signal and quality
@@ -1014,7 +1240,14 @@ word_count: {{count}}
                         if quality_full:
                             quality = quality_full
                         else:
-                            quality = ResourceQuality(overall=current_quality)
+                            quality = ResourceQuality(
+                                overall=current_quality,
+                                completeness=result.get(
+                                    "quality_completeness", 0.0
+                                ),
+                                accuracy=result.get("quality_accuracy", 0.0),
+                                clarity=result.get("quality_clarity", 0.0),
+                            )
                         self._state.update_resource(
                             resource.path,
                             version=resource.version + 1,
@@ -1035,6 +1268,8 @@ word_count: {{count}}
                             self._state.update_resource(
                                 resource.path, status="optimized"
                             )
+                            # Immediately finalize this resource
+                            self._finalize_single_resource(resource.path)
                             logger.info(
                                 "ITERATE: Resource meets threshold",
                                 path=resource.path,
@@ -1086,6 +1321,8 @@ word_count: {{count}}
                                     self._state.update_resource(
                                         resource.path, status="optimized"
                                     )
+                                    # Immediately finalize this resource
+                                    self._finalize_single_resource(resource.path)
                                     break
                         else:
                             logger.warning(
@@ -1094,6 +1331,18 @@ word_count: {{count}}
                                 iteration=iteration,
                             )
 
+                except TimeoutError:
+                    logger.error(
+                        "ITERATE: Iteration timed out",
+                        path=resource.path,
+                        iteration=iteration,
+                        timeout=self.config.iterate_timeout,
+                    )
+                    self._emit_progress(
+                        "ITERATE", resource.path,
+                        f"iteration {iteration} timeout"
+                    )
+                    break
                 except Exception as e:
                     logger.error(
                         "ITERATE: Iteration failed",
@@ -1216,6 +1465,19 @@ word_count: {{count}}
                 if 0.0 <= val <= 1.0:
                     result["quality_overall"] = val
                     break
+
+        # Extract dimension scores (completeness, accuracy, clarity)
+        for dim in ["completeness", "accuracy", "clarity"]:
+            for pattern in [
+                rf"quality_{dim}:\s*([\d.]+)",
+                rf"{dim}:\s*([\d.]+)",
+            ]:
+                match = re.search(pattern, response, re.IGNORECASE)
+                if match:
+                    val = float(match.group(1))
+                    if 0.0 <= val <= 1.0:
+                        result[f"quality_{dim}"] = val
+                        break
 
         # Extract word_count: XXX
         word_match = re.search(r"word_count:\s*(\d+)", response)
@@ -1459,6 +1721,7 @@ word_count: {{count}}
         logger.info(
             "VALIDATE: Running cross-resource coherence check",
             resources=len(self._state.resources),
+            timeout=self.config.validate_timeout,
         )
         self._emit_progress("VALIDATE", "all", "in_progress")
 
@@ -1486,11 +1749,27 @@ affected_resources:
 - {{path}}
 """
 
-        response = await call_agent_simple(
-            AGENT_VALIDATE,
-            prompt,
-            verbose=self.config.verbose,
-        )
+        try:
+            # Pass timeout directly to agent
+            response = await call_agent_simple(
+                AGENT_VALIDATE,
+                prompt,
+                verbose=self.config.verbose or self.config.follow_logs,
+                timeout=float(self.config.validate_timeout),
+            )
+        except TimeoutError:
+            logger.error(
+                "VALIDATE: Timed out",
+                timeout=self.config.validate_timeout,
+            )
+            self._emit_progress(
+                "VALIDATE", "all",
+                f"timeout after {self.config.validate_timeout}s"
+            )
+            # On timeout, complete anyway since validation is the last phase
+            logger.warning("VALIDATE: Completing with timeout, skipping validation")
+            self._advance_phase(OptimizationPhase.COMPLETE)
+            return
 
         # Parse signal
         if "[VALIDATE_COMPLETE]" in response:
@@ -1507,6 +1786,17 @@ affected_resources:
             self._emit_progress(
                 "VALIDATE", "all", "complete", coherence_score
             )
+
+            # Pre-completion validation
+            missing = self._validate_all_resources_exist()
+            if missing:
+                logger.error(
+                    "COMPLETE: Cannot finalize - missing resources",
+                    missing_count=len(missing),
+                    missing_paths=missing[:5],  # Show first 5
+                )
+                # Don't fail - log warning and continue
+                # Resources can be regenerated in next run
 
             self._advance_phase(OptimizationPhase.COMPLETE)
 
@@ -1566,12 +1856,23 @@ affected_resources:
                 # Loop affected resources back to ITERATE
                 for path in affected:
                     if path in self._state.resources:
+                        resource = self._state.resources[path]
+                        # Skip refinement for v0 failed resources
+                        if (
+                            resource.version == 0
+                            and resource.status == "failed"
+                        ):
+                            logger.warning(
+                                "VALIDATE: Skipping refinement for "
+                                "failed resource",
+                                path=path,
+                            )
+                            continue
                         self._state.update_resource(
                             path,
                             status="needs_refinement",
                             refinement_count=(
-                                self._state.resources[path].refinement_count
-                                + 1
+                                resource.refinement_count + 1
                             ),
                         )
 
@@ -1599,23 +1900,55 @@ async def run_multi_resource_optimization(
     quality_threshold: float = DEFAULT_QUALITY_THRESHOLD,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     verbose: bool = False,
+    research_timeout: int | None = None,
+    generate_timeout: int | None = None,
+    iterate_timeout: int | None = None,
+    validate_timeout: int | None = None,
 ) -> OrchestrationResult:
     """Convenience function to run multi-resource optimization.
+
+    Timeouts are loaded from environment variables if not specified:
+    - CGF_RESEARCH_TIMEOUT (default: 1800s / 30 min)
+    - CGF_GENERATE_TIMEOUT (default: 900s / 15 min)
+    - CGF_ITERATE_TIMEOUT (default: 600s / 10 min)
+    - CGF_VALIDATE_TIMEOUT (default: 300s / 5 min)
 
     Args:
         workspace_dir: Directory containing SPEC.md.
         quality_threshold: Target quality score.
         max_iterations: Max iterations per resource.
         verbose: Enable verbose output.
+        research_timeout: Override research phase timeout (seconds).
+        generate_timeout: Override generate phase timeout (seconds).
+        iterate_timeout: Override iterate phase timeout (seconds).
+        validate_timeout: Override validate phase timeout (seconds).
 
     Returns:
         OrchestrationResult with optimization details.
     """
+    # Load timeouts from env vars with defaults
+    def get_timeout(name: str, override: int | None, default: int) -> int:
+        if override is not None:
+            return override
+        env_val = os.environ.get(name)
+        if env_val:
+            try:
+                return int(env_val)
+            except ValueError:
+                pass
+        return default
+
     config = MultiResourceConfig(
         workspace_dir=Path(workspace_dir),
         quality_threshold=quality_threshold,
         max_iterations=max_iterations,
         verbose=verbose,
+        research_timeout=get_timeout("CGF_RESEARCH_TIMEOUT", research_timeout, 1800),
+        generate_timeout=get_timeout("CGF_GENERATE_TIMEOUT", generate_timeout, 900),
+        iterate_timeout=get_timeout("CGF_ITERATE_TIMEOUT", iterate_timeout, 600),
+        validate_timeout=get_timeout("CGF_VALIDATE_TIMEOUT", validate_timeout, 300),
+        show_progress=os.environ.get("CGF_SHOW_PROGRESS", "true").lower() == "true",
+        follow_logs=os.environ.get("CGF_FOLLOW_LOGS", "true").lower() == "true",
     )
 
     orchestrator = MultiResourceOrchestrator(config)

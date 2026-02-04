@@ -516,8 +516,53 @@ def _parse_proposed_agents(content: str) -> list[ProposedAgent]:
     return agents
 
 
+def _parse_skills_table(content: str) -> list[ProposedSkill]:
+    """Parse skills from a markdown table in SPEC.md.
+
+    Looks for tables with columns like: | Skill | Purpose | Agent |
+    This handles SPECs that list skills in tabular format rather than
+    bullet points.
+
+    Args:
+        content: Full content of SPEC.md or section content.
+
+    Returns:
+        List of proposed skills parsed from table.
+    """
+    skills = []
+
+    # Find table rows using _extract_table_rows helper
+    rows = _extract_table_rows(content)
+
+    for row in rows:
+        # Look for Skill/Name column
+        name = row.get("Skill", row.get("skill", row.get("Name", row.get("name", ""))))
+        # Look for Purpose/Description column
+        purpose = row.get(
+            "Purpose",
+            row.get("purpose", row.get("Description", row.get("description", ""))),
+        )
+        # Look for Agent column (optional, for context)
+        agent = row.get("Agent", row.get("agent", ""))
+
+        if name and purpose:
+            # Clean up name (remove backticks, bold, etc.)
+            name = re.sub(r"[`*]", "", name).strip()
+            purpose = purpose.strip()
+
+            # Include agent context in purpose if available
+            if agent and agent not in purpose:
+                purpose = f"{purpose} (used by {agent})"
+
+            skills.append(ProposedSkill(name=name, purpose=purpose))
+
+    return skills
+
+
 def _parse_proposed_skills(content: str) -> list[ProposedSkill]:
     """Parse proposed skills from SPEC.md.
+
+    Supports both bullet point format and table format.
 
     Args:
         content: Content of "### Skills" subsection.
@@ -527,7 +572,12 @@ def _parse_proposed_skills(content: str) -> list[ProposedSkill]:
     """
     skills = []
 
-    # Match pattern: - **name** - description
+    # First try to parse from table format
+    table_skills = _parse_skills_table(content)
+    if table_skills:
+        skills.extend(table_skills)
+
+    # Also match bullet point pattern: - **name** - description
     for match in re.finditer(
         r"^[\-\*]\s+\*\*([^*]+)\*\*\s*[\-\–]\s*(.+)$",
         content,
@@ -535,7 +585,9 @@ def _parse_proposed_skills(content: str) -> list[ProposedSkill]:
     ):
         name = match.group(1).strip()
         purpose = match.group(2).strip()
-        skills.append(ProposedSkill(name=name, purpose=purpose))
+        # Avoid duplicates from table parsing
+        if not any(s.name == name for s in skills):
+            skills.append(ProposedSkill(name=name, purpose=purpose))
 
     # Also match without bold: - name - description (for skills listed without bold)
     for match in re.finditer(
