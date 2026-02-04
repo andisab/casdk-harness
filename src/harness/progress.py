@@ -839,6 +839,9 @@ class MultiResourceState:
         resource = self.resources[path]
         if status is not None:
             resource.status = status
+            # Clear error on successful status transitions
+            if status in ("generated", "optimized") and error is None:
+                resource.error = ""
         if version is not None:
             resource.version = version
         if quality is not None:

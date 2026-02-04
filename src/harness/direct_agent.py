@@ -231,8 +231,8 @@ def _extract_tool_info(message: Any) -> tuple[str, str] | None:
                 # For other tools, show first key-value
                 elif tool_input:
                     first_key = next(iter(tool_input))
-                    first_val = str(tool_input[first_key])[:50]
-                    if len(str(tool_input[first_key])) > 50:
+                    first_val = str(tool_input[first_key])[:120]
+                    if len(str(tool_input[first_key])) > 120:
                         first_val += "..."
                     args_summary = f"{first_key}={first_val}"
 
@@ -241,7 +241,7 @@ def _extract_tool_info(message: Any) -> tuple[str, str] | None:
     return None
 
 
-def _extract_text_preview(message: Any, max_len: int = 60) -> str:
+def _extract_text_preview(message: Any, max_len: int = 150) -> str:
     """Extract a text preview from a message."""
     if not hasattr(message, "content"):
         return ""
@@ -473,6 +473,7 @@ async def call_agent(
     on_progress: Callable[[str], None] | None = None,
     system_prompt_override: str | None = None,
     model_override: str | None = None,
+    timeout: float | None = None,
     **extra_options: Any,
 ) -> AsyncIterator[Union[UserMessage, AssistantMessage, SystemMessage, ResultMessage, StreamEvent]]:
     """Call an agent directly, bypassing the Task tool.
@@ -492,6 +493,8 @@ async def call_agent(
                                agent's default. Used for prompt optimization.
         model_override: Override the agent's default model (sonnet/haiku/opus).
                        Useful for faster test evaluation.
+        timeout: Query timeout in seconds. If None, uses CLAUDE_QUERY_TIMEOUT
+                env var or default (600s).
         **extra_options: Additional ClaudeAgentOptions parameters
 
     Yields:
@@ -568,7 +571,8 @@ async def call_agent(
     options = ClaudeAgentOptions(**options_dict)
 
     # Call the agent with timeout protection
-    query_timeout = _get_query_timeout()
+    # Use provided timeout or fall back to env var / default
+    query_timeout = timeout if timeout is not None else _get_query_timeout()
 
     logger.debug(
         "Starting agent query with timeout",
@@ -648,6 +652,7 @@ async def call_agent_simple(
     verbose: bool | None = None,
     system_prompt_override: str | None = None,
     model_override: str | None = None,
+    timeout: float | None = None,
     **kwargs: Any,
 ) -> str:
     """Call an agent and return just the text response.
@@ -661,6 +666,8 @@ async def call_agent_simple(
         verbose: Print progress to stderr. None=inherit from CLAUDE_AGENT_VERBOSE
         system_prompt_override: Optional system prompt to use instead of default.
         model_override: Override the agent's model (sonnet/haiku for faster eval).
+        timeout: Query timeout in seconds. If None, uses CLAUDE_QUERY_TIMEOUT
+                env var or default (600s).
         **kwargs: Additional options passed to call_agent()
 
     Returns:
@@ -692,6 +699,7 @@ async def call_agent_simple(
         verbose=verbose,
         system_prompt_override=system_prompt_override,
         model_override=model_override,
+        timeout=timeout,
         **kwargs,
     ):
         if isinstance(message, AssistantMessage) and hasattr(message, "content"):
@@ -722,8 +730,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="Show progress updates"
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        metavar="SECONDS",
+        help=f"Query timeout in seconds (overrides {QUERY_TIMEOUT_ENV_VAR}, default: {DEFAULT_QUERY_TIMEOUT})",
+    )
 
     args = parser.parse_args()
+
+    # Apply timeout override if specified
+    if args.timeout:
+        os.environ[QUERY_TIMEOUT_ENV_VAR] = str(args.timeout)
 
     if args.list:
         agents = list_available_agents()
