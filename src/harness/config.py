@@ -275,6 +275,38 @@ class HarnessConfig(BaseSettings):
         description="Directory path for file span exports (when exporter=file or both)",
     )
 
+    # CGF Phase Timeouts (seconds) - how long each phase can run before timeout
+    cgf_research_timeout: int = Field(
+        default=1800,
+        description="Research phase timeout in seconds (30 minutes)",
+    )
+    cgf_generate_timeout: int = Field(
+        default=900,
+        description="Generate phase timeout per resource in seconds (15 minutes)",
+    )
+    cgf_iterate_timeout: int = Field(
+        default=600,
+        description="Iterate phase timeout per iteration in seconds (10 minutes)",
+    )
+    cgf_validate_timeout: int = Field(
+        default=300,
+        description="Validate phase timeout in seconds (5 minutes)",
+    )
+
+    # CGF Progress Display Settings
+    cgf_show_progress: bool = Field(
+        default=True,
+        description="Show phase transitions and progress updates during optimization",
+    )
+    cgf_show_status: bool = Field(
+        default=True,
+        description="Show status summary before/after optimization",
+    )
+    cgf_follow_logs: bool = Field(
+        default=True,
+        description="Stream agent activity in real-time during optimization",
+    )
+
     @property
     def redis_url(self) -> str:
         """Get Redis connection URL."""

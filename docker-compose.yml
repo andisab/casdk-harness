@@ -57,6 +57,14 @@ services:
     restart: unless-stopped
     networks:
       - claude-network
+    # Process-based healthcheck works for both interactive and batch modes
+    # (unlike HTTP healthcheck which only works when server is running)
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python|tail' || test -f /tmp/.healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
