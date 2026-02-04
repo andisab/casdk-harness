@@ -18,7 +18,7 @@ description: >
 
 tools: Read, Write, Bash, Task, Glob, Grep
 model: sonnet
-max_turns: 500
+max_turns: 100
 color: "#b16286"
 ---
 

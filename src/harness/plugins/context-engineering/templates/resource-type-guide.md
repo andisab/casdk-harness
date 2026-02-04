@@ -521,6 +521,33 @@ Use this matrix to select the right resource type:
 | Event automation | No | No | No | **Hook** |
 | Reusable structure | No | No | No | **Template** |
 
+### Agent vs Skill: Detailed Comparison
+
+Context is loaded in three levels to minimize token usage:
+
+| Level | Content | Tokens | When Loaded |
+|-------|---------|--------|-------------|
+| **1. Metadata** | Name + description only | ~30-50/skill | Session start |
+| **2. Triggered** | Full SKILL.md | <5,000 | When Claude determines relevance |
+| **3. Active** | examples/, templates/, references/ | Variable | On-demand |
+
+**Key insight**: "You can make dozens of Skills available without bloating your context window." ([Progressive Disclosure Pattern](../patterns/progressive-disclosure.md))
+
+| Content Type | Agent? | Skill? | Rationale |
+|--------------|--------|--------|-----------|
+| Role definition | Yes | No | Core identity, always loaded |
+| Multi-turn reasoning | Yes | No | Requires persistent context |
+| Tool selection logic | Yes | No | Part of agent orchestration |
+| Handoff protocols | Yes | No | Coordination responsibility |
+| 2-4 canonical examples | Yes | No | Discovery optimization |
+| Multi-page code snippets | No | Yes | Reusable, token-heavy |
+| API specifications | No | Yes/Ref | Reference on demand |
+| Step-by-step procedures | No | Yes | Deterministic, reusable |
+| Domain best practices | No | Yes | Shared across contexts |
+| Code templates | No | Yes | Reference when needed |
+
+**Agent length 500-1000+ lines is FINE** as long as content is role/responsibility focused, code snippets are brief (illustrative, not exhaustive), and detailed patterns are referenced not embedded.
+
 ### Complex Scenarios
 
 **"I need expertise that activates automatically"**
@@ -573,6 +600,328 @@ When creating a pipeline:
 
 ---
 
+## Use Case Examples
+
+Real-world examples showing resource selection reasoning.
+
+### Example 1: Research Team (Multi-Agent Plugin)
+
+**Request**: "Build me a research team"
+
+**Analysis**:
+- "team" → Multiple coordinated agents
+- "research" → Information gathering workflow
+- Needs: Discovery, investigation, synthesis stages
+
+**Result**: Plugin with coordinated agents
+
+```
+research-team/
+├── .claude-plugin/
+│   └── plugin.json
+├── agents/
+│   ├── research-lead.md           # Coordinates, plans research
+│   ├── research-specialist.md     # Investigates specific topics
+│   └── report-writer.md           # Synthesizes findings
+├── skills/
+│   └── joplin-research/           # Output formatting patterns
+│       └── SKILL.md
+└── commands/
+    └── research.md                # Entry point: /research [topic]
+```
+
+**Why this structure**:
+- **Lead orchestrates** → Needs autonomous decision-making about task breakdown → **Agent**
+- **Specialists parallelize** → Same capability applied to different topics → **Single agent**, invoked multiple times
+- **Report writing is distinct** → Different tools (Write), different output format → **Separate agent**
+- **Formatting is reusable** → No decisions, pure patterns for Joplin notes → **Skill**
+- **Entry point** → User-triggered start of workflow → **Command**
+
+### Example 2: Domain Expert (Single Agent)
+
+**Request**: "Build me an IaC agent for AWS deployments"
+
+**Analysis**:
+- Single domain (IaC + AWS)
+- Clear scope, no "team" indicators
+- May need supporting knowledge patterns
+
+**Result**: Single agent + supporting skills
+
+```
+aws-iac-expert/
+├── agents/
+│   └── aws-iac-expert.md          # Core IaC expertise
+└── skills/
+    ├── terraform-patterns/        # Reusable TF module patterns
+    │   ├── SKILL.md
+    │   └── examples/
+    │       ├── vpc-module.md
+    │       └── eks-module.md
+    └── github-actions/            # CI/CD workflow patterns
+        ├── SKILL.md
+        └── examples/
+            └── terraform-deploy.md
+```
+
+**Why this structure**:
+- **One domain expert** → AWS + IaC is cohesive, doesn't need separate agents
+- **Skills for depth** → Terraform patterns and CI/CD patterns are reusable reference material
+- **Progressive disclosure** → Agent references skills; skills load examples on demand
+
+### Example 3: Infrastructure Pipeline (Workflow)
+
+**Request**: "Build me an infrastructure deployment pipeline"
+
+**Analysis**:
+- "pipeline" → Multi-stage workflow with state
+- Distinct stages with dependencies
+- Needs checkpoint and resumption capability
+
+**Result**: Workflow with specialized stage agents
+
+```
+deploy-pipeline/
+├── workflows/
+│   └── deploy-pipeline.yaml       # Stage definitions + dependencies
+├── agents/
+│   ├── plan-validator.md          # Stage 1: Validate TF plan
+│   ├── resource-deployer.md       # Stage 2: Apply changes
+│   └── health-checker.md          # Stage 3: Verify deployment
+├── commands/
+│   └── deploy.md                  # Entry point: /deploy [env]
+└── hooks/
+    └── hooks-config.json          # Pre-commit TF validation
+```
+
+**Workflow definition** (`deploy-pipeline.yaml`):
+```yaml
+name: deploy-pipeline
+stages:
+  - name: validate
+    agent: plan-validator
+    outputs: [plan.json]
+
+  - name: deploy
+    agent: resource-deployer
+    depends_on: [validate]
+    inputs: [plan.json]
+    outputs: [deployment-id]
+
+  - name: verify
+    agent: health-checker
+    depends_on: [deploy]
+    inputs: [deployment-id]
+
+checkpoints:
+  - after: validate
+  - after: deploy
+```
+
+**Why this structure**:
+- **Workflow orchestration** → Pipeline needs ordered execution with state persistence
+- **Separate agents per stage** → Each stage has distinct tools and responsibilities
+- **Checkpoint support** → Can resume after failures at stage boundaries
+- **Command entry point** → User triggers with `/deploy staging`
+
+### Example 4: Code Quality Automation (Hook + Skill)
+
+**Request**: "Auto-format and lint Python files when I save them"
+
+**Analysis**:
+- Automation on file save → Event-driven
+- No complex reasoning needed → Not an agent
+- Reusable formatting knowledge → Skill for reference
+
+**Result**: Hook with supporting skill
+
+```
+python-quality/
+├── hooks/
+│   └── hooks-config.json          # PostToolUse hook
+└── skills/
+    └── python-formatting/         # Reference for manual formatting
+        ├── SKILL.md
+        └── references/
+            └── tool-config.md     # pyproject.toml examples
+```
+
+**Hook configuration** (`hooks-config.json`):
+```json
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "matchers": [
+        { "tool_name": "Write", "file_path": "*.py" },
+        { "tool_name": "Edit", "file_path": "*.py" }
+      ],
+      "command": "ruff format $FILE_PATH && ruff check --fix $FILE_PATH"
+    }
+  ]
+}
+```
+
+**Why this structure**:
+- **Hook for automation** → Simple shell command execution on events
+- **Skill for reference** → When user asks "how do I configure formatting?" the skill provides guidance
+- **No agent needed** → No reasoning or decisions required
+
+---
+
+## Configuration Reference
+
+### ~/.claude Folder Structure
+
+```
+~/.claude/
+├── CLAUDE.md              # Global instructions (all sessions)
+├── settings.json          # Permissions, hooks, enabled plugins
+├── commands/              # Custom slash commands (*.md)
+├── skills/                # Skills (*/SKILL.md)
+├── agents/                # Custom subagents (*.md)
+├── hooks/                 # Lifecycle scripts (*.py, *.sh)
+├── specs/                 # Language-specific standards (*.md)
+├── plugins/               # Plugin installation state
+└── lsp-config.lua         # LSP server configuration
+```
+
+### CLAUDE.md Hierarchy
+
+Instructions are loaded from lowest to highest priority:
+
+| Priority | Location | Scope | Version Control |
+|----------|----------|-------|-----------------|
+| 1 (lowest) | `~/.claude/CLAUDE.md` | Global (all sessions) | Personal dotfiles |
+| 2 | `./CLAUDE.md` or `./.claude/CLAUDE.md` | Project (team-shared) | Committed |
+| 3 | `./CLAUDE.local.md` | Personal project overrides | Gitignored |
+| 4 (highest) | `./subdir/CLAUDE.md` | Directory-specific | Optional |
+
+**Best practice**: Put team conventions in `./CLAUDE.md`, personal preferences in `~/.claude/CLAUDE.md`.
+
+### settings.json Structure
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",           // All git commands
+      "Bash(npm:*)",           // All npm commands
+      "Read",                   // File reading
+      "Write",                  // File writing
+      "Edit"                    // File editing
+    ],
+    "deny": [
+      "Bash(rm -rf *)",        // Dangerous commands
+      "Bash(sudo:*)"           // Privileged execution
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matchers": [{ "tool_name": "Write", "file_path": "*.py" }],
+        "command": "black $FILE_PATH"
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "context-engineering": true,
+    "research-team": true
+  },
+  "mcpServers": {
+    "memory": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"] }
+  }
+}
+```
+
+### Key Configuration Options
+
+| Setting | Purpose | Example |
+|---------|---------|---------|
+| `permissions.allow` | Whitelist tool patterns | `Bash(git:*)` |
+| `permissions.deny` | Blacklist dangerous operations | `Bash(rm -rf *)` |
+| `hooks.*` | Lifecycle automation | Auto-format on save |
+| `enabledPlugins` | Plugin activation | Enable/disable plugins |
+| `mcpServers` | MCP server configuration | Add custom servers |
+
+---
+
+## SPEC.md Quick Reference
+
+SPEC.md files define optimization goals for CGF (ContextGrad Framework). Location determines workspace root.
+
+### Single-Resource SPEC.md
+
+For optimizing an existing agent, skill, or command:
+
+```markdown
+## Resource
+
+- **Type:** agent
+- **File:** my-agent.md
+
+## Optimization Goals
+
+- Improve async/await pattern guidance
+- Add better error handling examples
+- Strengthen type hint recommendations
+
+## Constraints
+
+- Do NOT remove existing content that's working well
+- Preserve the overall structure and section organization
+- Keep code examples under 30 lines each
+```
+
+### Multi-Resource SPEC.md
+
+For generating a new plugin, skill-set, or workflow:
+
+```markdown
+## Purpose
+
+Multi-agent plugin for Infrastructure-as-Code automation that can:
+- Analyze existing repositories to understand structure
+- Generate containerization and deployment resources
+- Validate security and best practices
+
+## Capabilities
+
+### Core Workflows
+
+1. **Repository Analysis** - Scan codebase, identify services
+2. **Resource Generation** - Create Dockerfiles, K8s manifests
+3. **Security Validation** - Scan generated resources
+
+## Proposed Structure (optional)
+
+### Agents
+- **iac-analyzer** - Repository analysis
+- **iac-generator** - Resource generation
+
+### Skills
+- **kubernetes-native** - K8s manifest patterns
+- **terraform-modules** - TF module patterns
+
+## Constraints
+
+- No hardcoded secrets in any generated resource
+- Terraform modules under 300 lines each
+```
+
+### SPEC.md Type Detection
+
+| Type | Detection Signal |
+|------|------------------|
+| **Single Resource** | `## Resource` section with `**File:**` |
+| **Plugin** | `## Capabilities` + agents/skills/commands |
+| **Skill Set** | `## Type: skill-set` |
+| **Workflow** | `## Type: workflow` + stages |
+
+**Full examples**: See `docs/examples/CGF_SPEC.example.md` and `docs/examples/MULTI_RESOURCE_SPEC.example.md`
+
+---
+
 ## Quality Checklist
 
 ### Agent Quality
@@ -611,10 +960,23 @@ When creating a pipeline:
 
 ## References
 
+### Research Sources
+
+- [Effective Context Engineering for AI Agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) (Anthropic)
+- [Writing Tools for Agents](https://www.anthropic.com/engineering/writing-tools-for-agents) (Anthropic)
+- [Complete Guide to Claude Skills](https://tylerfolkman.substack.com/p/the-complete-guide-to-claude-skills) (Tyler Folkman)
+- [Prompt Engineering Overview](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview)
+
+### Templates
+
 - `templates/subagent-template.md` - Agent structure
 - `templates/skill-template.md` - Skill structure
 - `templates/slash-command-template.md` - Command structure
 - `templates/plugin-structure.md` - Plugin layout
 - `templates/hook-configuration-template.md` - Hook examples
+
+### Patterns
+
 - `patterns/progressive-disclosure.md` - Token management
 - `patterns/multi-agent-orchestration.md` - Agent coordination
+- `patterns/tool-restriction-patterns.md` - Security best practices

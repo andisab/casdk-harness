@@ -30,6 +30,12 @@ Auto-activated skills provide detailed guidance for each resource type:
 
 Ready-to-use starting points for every resource type:
 
+- **resource-type-guide.md** - **Single source of truth** for resource selection and design
+  - Quick reference table for all resource types
+  - Detailed agent vs skill comparison with token management
+  - Real-world use case examples (research team, domain expert, pipeline)
+  - Configuration reference (~/.claude folder, settings.json, CLAUDE.md hierarchy)
+  - SPEC.md quick reference for CGF optimization
 - **subagent-template.md** - Agent structure with frontmatter and system prompt
 - **skill-template.md** - Skill structure with activation triggers and supporting files
 - **plugin-structure.md** - Complete plugin directory layout and configuration
@@ -43,6 +49,8 @@ Documentation of proven architectural patterns:
 - **progressive-disclosure.md** - Token management with three disclosure levels (saves 80%+ tokens)
 - **multi-agent-orchestration.md** - Coordinating multiple agents for complex workflows
 - **tool-restriction-patterns.md** - Security-focused tool access control
+
+> **Note**: Agent vs skill separation guidance has been consolidated into `templates/resource-type-guide.md` as the single source of truth for resource selection.
 
 ## Installation
 

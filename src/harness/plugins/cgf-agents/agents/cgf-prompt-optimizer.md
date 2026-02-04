@@ -12,7 +12,7 @@ description: >
   </examples>
 tools: Read, Write, Bash, Task, Glob, Grep
 model: sonnet
-max_turns: 200
+max_turns: 100
 color: "#d65d0e"
 ---
 
@@ -143,6 +143,9 @@ When `programmatic_mode: false` (default) in run_config.yaml, use this workflow:
    [ITERATE_COMPLETE:{resource_path}]
    version: {N}
    quality_overall: {0.0-1.0}
+   quality_completeness: {0.0-1.0}
+   quality_accuracy: {0.0-1.0}
+   quality_clarity: {0.0-1.0}
    word_count: {count}
    [SUMMARY]
    {1-2 sentence summary of key improvements}

@@ -186,8 +186,12 @@ Researchers will produce YAML with:
 
 **STEP 5: WAIT AND CONFIRM**
 - Wait for all researchers to complete
-- Verify YAML files exist in research/notes/
-- Report completion with file paths
+- **CRITICAL**: Use Glob to verify files exist in research/notes/
+  ```
+  Glob: {WORKSPACE_PATH}/research/notes/*_findings.yaml
+  ```
+- If files found: Report completion with file paths, emit [RESEARCH_COMPLETE]
+- If NO files found: Report error "Research failed - no findings saved" and DO NOT emit signal
 - Do NOT spawn report-writer (orchestrator handles synthesis)
 </workflow>
 
@@ -230,7 +234,7 @@ Save structured YAML findings to:
 uv run python -m harness.direct_agent \
   --agent "research-team:research-specialist" \
   --prompt "$(cat /tmp/research_prompt_{aspect_slug}.txt)" \
-  --simple 2>/dev/null
+  --simple
 ```
 
 ### Example (spawn 4 researchers):
@@ -240,16 +244,16 @@ uv run python -m harness.direct_agent \
 # Then spawn all researchers (parallel Bash calls)
 
 # Researcher 1
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_async_semantics.txt)" --simple 2>/dev/null &
+uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_async_semantics.txt)" --simple &
 
 # Researcher 2
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_error_handling.txt)" --simple 2>/dev/null &
+uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_error_handling.txt)" --simple &
 
 # Researcher 3
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_library_integration.txt)" --simple 2>/dev/null &
+uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_library_integration.txt)" --simple &
 
 # Researcher 4
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_testing_patterns.txt)" --simple 2>/dev/null &
+uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_testing_patterns.txt)" --simple &
 
 # Wait for all
 wait
