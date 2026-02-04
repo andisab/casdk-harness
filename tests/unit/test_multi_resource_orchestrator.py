@@ -4,8 +4,10 @@ Tests the pipeline improvements:
 - Path validation and enforcement
 - Versioned path generation
 - Signal parsing
+- Quality dimension parsing
 - Resource-specific instructions
 - Configuration options
+- Error clearing on status transitions
 """
 
 from pathlib import Path
@@ -19,6 +21,11 @@ from harness.optimization.multi_resource_orchestrator import (
     PathViolationError,
     _versioned_path,
     validate_write_path,
+)
+from harness.progress import (
+    MultiResourceState,
+    OptimizationPhase,
+    ResourceQuality,
 )
 
 
@@ -377,3 +384,208 @@ class TestEmitProgress:
 
         # Should not raise
         orch._emit_progress("GENERATE", "agents/foo.md", "in_progress")
+
+
+class TestUpdateResourceErrorClearing:
+    """Tests for auto-clearing errors on successful status transitions (Issue 1)."""
+
+    def test_error_cleared_on_generated_status(self) -> None:
+        """Error should be cleared when status transitions to 'generated'."""
+        state = MultiResourceState(
+            spec_path="test", spec_type="PLUGIN",
+            spec_hash="abc", current_phase=OptimizationPhase.GENERATE,
+        )
+        state.add_resource("agents/foo.md", "agent")
+        # Simulate a failure with error
+        state.update_resource(
+            "agents/foo.md",
+            status="failed",
+            error="Signal received but file not created",
+        )
+        assert state.resources["agents/foo.md"].error != ""
+
+        # Transition to generated without explicitly clearing error
+        state.update_resource("agents/foo.md", status="generated")
+        assert state.resources["agents/foo.md"].error == ""
+
+    def test_error_cleared_on_optimized_status(self) -> None:
+        """Error should be cleared when status transitions to 'optimized'."""
+        state = MultiResourceState(
+            spec_path="test", spec_type="PLUGIN",
+            spec_hash="abc", current_phase=OptimizationPhase.GENERATE,
+        )
+        state.add_resource("skills/helm/SKILL.md", "skill")
+        state.update_resource(
+            "skills/helm/SKILL.md",
+            status="failed",
+            error="Optimization failed",
+        )
+        assert state.resources["skills/helm/SKILL.md"].error != ""
+
+        state.update_resource("skills/helm/SKILL.md", status="optimized")
+        assert state.resources["skills/helm/SKILL.md"].error == ""
+
+    def test_error_not_cleared_on_failed_status(self) -> None:
+        """Error should persist when status transitions to 'failed'."""
+        state = MultiResourceState(
+            spec_path="test", spec_type="PLUGIN",
+            spec_hash="abc", current_phase=OptimizationPhase.GENERATE,
+        )
+        state.add_resource("agents/foo.md", "agent")
+        state.update_resource(
+            "agents/foo.md",
+            status="failed",
+            error="Something went wrong",
+        )
+        # Transition to another failed state
+        state.update_resource(
+            "agents/foo.md",
+            status="failed",
+            error="New error",
+        )
+        assert state.resources["agents/foo.md"].error == "New error"
+
+    def test_explicit_error_overrides_auto_clear(self) -> None:
+        """Explicit error param should override auto-clear behavior."""
+        state = MultiResourceState(
+            spec_path="test", spec_type="PLUGIN",
+            spec_hash="abc", current_phase=OptimizationPhase.GENERATE,
+        )
+        state.add_resource("agents/foo.md", "agent")
+        state.update_resource(
+            "agents/foo.md",
+            status="failed",
+            error="Original error",
+        )
+        # Pass both status=generated and an explicit error
+        state.update_resource(
+            "agents/foo.md",
+            status="generated",
+            error="Override error",
+        )
+        assert state.resources["agents/foo.md"].error == "Override error"
+
+    def test_error_not_cleared_on_needs_refinement(self) -> None:
+        """Error should NOT auto-clear on 'needs_refinement' status."""
+        state = MultiResourceState(
+            spec_path="test", spec_type="PLUGIN",
+            spec_hash="abc", current_phase=OptimizationPhase.GENERATE,
+        )
+        state.add_resource("agents/foo.md", "agent")
+        state.update_resource(
+            "agents/foo.md",
+            status="failed",
+            error="Stale error",
+        )
+        state.update_resource(
+            "agents/foo.md", status="needs_refinement"
+        )
+        # Error should persist since needs_refinement is not a success state
+        assert state.resources["agents/foo.md"].error == "Stale error"
+
+
+class TestParseIterationResultDimensions:
+    """Tests for quality dimension parsing in _parse_iteration_result (Issue 2)."""
+
+    @pytest.fixture
+    def orchestrator(self, tmp_path: Path):
+        """Create orchestrator for testing."""
+        from harness.optimization.multi_resource_orchestrator import (
+            MultiResourceOrchestrator,
+        )
+
+        config = MultiResourceConfig(workspace_dir=tmp_path)
+        return MultiResourceOrchestrator(config)
+
+    def test_parses_quality_dimensions(self, orchestrator) -> None:
+        """Should parse quality_completeness, quality_accuracy, quality_clarity."""
+        response = """
+        [ITERATE_COMPLETE:agents/foo.md]
+        quality_overall: 0.87
+        quality_completeness: 0.90
+        quality_accuracy: 0.85
+        quality_clarity: 0.88
+        word_count: 500
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["quality_overall"] == 0.87
+        assert result["quality_completeness"] == 0.90
+        assert result["quality_accuracy"] == 0.85
+        assert result["quality_clarity"] == 0.88
+
+    def test_parses_dimension_fallback_patterns(self, orchestrator) -> None:
+        """Should parse plain dimension names (without quality_ prefix)."""
+        response = """
+        [ITERATE_COMPLETE:agents/foo.md]
+        quality_overall: 0.87
+        completeness: 0.92
+        accuracy: 0.80
+        clarity: 0.75
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["quality_completeness"] == 0.92
+        assert result["quality_accuracy"] == 0.80
+        assert result["quality_clarity"] == 0.75
+
+    def test_dimensions_default_missing(self, orchestrator) -> None:
+        """Missing dimensions should not appear in result."""
+        response = """
+        [ITERATE_COMPLETE:agents/foo.md]
+        quality_overall: 0.87
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["quality_overall"] == 0.87
+        assert "quality_completeness" not in result
+        assert "quality_accuracy" not in result
+        assert "quality_clarity" not in result
+
+    def test_invalid_dimension_scores_ignored(self, orchestrator) -> None:
+        """Dimension scores outside 0.0-1.0 should be ignored."""
+        response = """
+        [ITERATE_COMPLETE:agents/foo.md]
+        quality_overall: 0.87
+        quality_completeness: 1.5
+        quality_accuracy: -0.1
+        quality_clarity: 0.88
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert "quality_completeness" not in result
+        assert "quality_accuracy" not in result
+        assert result["quality_clarity"] == 0.88
+
+    def test_resource_quality_created_with_dimensions(
+        self, orchestrator
+    ) -> None:
+        """ResourceQuality should be created with parsed dimensions."""
+        result = {
+            "quality_overall": 0.87,
+            "quality_completeness": 0.90,
+            "quality_accuracy": 0.85,
+            "quality_clarity": 0.88,
+        }
+        quality = ResourceQuality(
+            overall=result["quality_overall"],
+            completeness=result.get("quality_completeness", 0.0),
+            accuracy=result.get("quality_accuracy", 0.0),
+            clarity=result.get("quality_clarity", 0.0),
+        )
+        assert quality.overall == 0.87
+        assert quality.completeness == 0.90
+        assert quality.accuracy == 0.85
+        assert quality.clarity == 0.88
+
+    def test_resource_quality_defaults_without_dimensions(
+        self, orchestrator
+    ) -> None:
+        """ResourceQuality should default dimensions to 0.0 when missing."""
+        result = {"quality_overall": 0.87}
+        quality = ResourceQuality(
+            overall=result["quality_overall"],
+            completeness=result.get("quality_completeness", 0.0),
+            accuracy=result.get("quality_accuracy", 0.0),
+            clarity=result.get("quality_clarity", 0.0),
+        )
+        assert quality.overall == 0.87
+        assert quality.completeness == 0.0
+        assert quality.accuracy == 0.0
+        assert quality.clarity == 0.0
