@@ -16,7 +16,7 @@ A comprehensive Claude Code plugin that helps you design and implement high-qual
 - Uses conventions-mcp to find proven patterns
 - Implements progressive disclosure for token efficiency
 
-### 🎓 Five Specialized Skills
+### 🎓 Six Specialized Skills
 
 Auto-activated skills provide detailed guidance for each resource type:
 
@@ -25,6 +25,7 @@ Auto-activated skills provide detailed guidance for each resource type:
 3. **plugin-development** - Building plugin bundles with proper directory structure, metadata, and distribution
 4. **command-creation** - Crafting slash commands with arguments, file references, and bash execution
 5. **hook-configuration** - Setting up lifecycle event handlers for automation and workflow control
+6. **tool-creation** - Building MCP tools and servers with proper schemas, error handling, and SDK registration
 
 ### 📋 Complete Templates
 
@@ -35,6 +36,7 @@ Ready-to-use starting points for every resource type:
 - **plugin-structure.md** - Complete plugin directory layout and configuration
 - **slash-command-template.md** - Command patterns with 10 real-world examples
 - **hook-configuration-template.md** - 20+ hook configurations for common scenarios
+- **tool-template.md** - MCP tool/server scaffolding with Python, TypeScript, and subprocess patterns
 
 ### 🎨 Best Practice Patterns
 
@@ -147,6 +149,22 @@ The hook-configuration skill sets up:
 3. Shell commands
 4. Security validation
 
+### Creating MCP Tools
+
+```
+User: "Create a tool that queries our internal API"
+
+Claude: I'll design an MCP server with proper tool definitions,
+        async handlers, input validation, and error handling.
+```
+
+The tool-creation skill handles:
+1. Server type selection (in-process Python/TS or subprocess)
+2. Tool schema design (names, descriptions, parameters)
+3. Async handler implementation with MCP return format
+4. Error handling and dependency management
+5. Server registration and testing
+
 ## Components
 
 ### Agent
@@ -165,6 +183,7 @@ The hook-configuration skill sets up:
 | plugin-development | "create plugin", "bundle components", "distribute" | Plugin development |
 | command-creation | "create command", "slash command", "add /command" | Command development |
 | hook-configuration | "create hook", "automation", "event handler" | Hook configuration |
+| tool-creation | "create tool", "MCP server", "custom tool", "MCP integration" | Tool/server development |
 
 ### Templates
 
@@ -357,13 +376,15 @@ context-engineering/
 │   ├── skill-creation/
 │   ├── plugin-development/
 │   ├── command-creation/
-│   └── hook-configuration/
+│   ├── hook-configuration/
+│   └── tool-creation/
 ├── templates/
 │   ├── subagent-template.md
 │   ├── skill-template.md
 │   ├── plugin-structure.md
 │   ├── slash-command-template.md
-│   └── hook-configuration-template.md
+│   ├── hook-configuration-template.md
+│   └── tool-template.md
 ├── patterns/
 │   ├── progressive-disclosure.md
 │   ├── multi-agent-orchestration.md      # In progress
@@ -384,8 +405,8 @@ Contributions welcome! Areas for contribution:
 
 ### ✅ v1.0.0 - Core Functionality (Current)
 - Expert orchestrator agent
-- 5 specialized skills
-- 5 complete templates
+- 6 specialized skills
+- 6 complete templates
 - Progressive disclosure pattern
 - Conventions MCP integration
 
@@ -450,3 +471,4 @@ Then ask Claude:
 - "Build a plugin for [your workflow]"
 - "Design a command for [common task]"
 - "Set up a hook for [automation]"
+- "Create a tool for [custom integration]"
