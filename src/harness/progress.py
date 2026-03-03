@@ -576,13 +576,16 @@ class OptimizationPhase(Enum):
     """Phase in multi-resource optimization pipeline.
 
     The pipeline progresses through these phases:
-    RESEARCH → QA → GENERATE → ITERATE → VALIDATE → COMPLETE
+    RESEARCH -> DESIGN -> QA -> GENERATE -> EVAL_DESIGN -> ITERATE -> EXECUTION_EVAL -> VALIDATE -> COMPLETE
     """
 
-    RESEARCH = auto()  # Determine optimal structure
+    RESEARCH = auto()  # Gather domain knowledge
+    DESIGN = auto()  # Resource architecture decision
     QA = auto()  # Gather user input on decisions
-    GENERATE = auto()  # Create resources based on research + input
+    GENERATE = auto()  # Create resources based on plan
+    EVAL_DESIGN = auto()  # Generate evaluation suite
     ITERATE = auto()  # Quality-based improvement of each resource
+    EXECUTION_EVAL = auto()  # Sandboxed execution evaluation
     VALIDATE = auto()  # Cross-resource coherence check
     COMPLETE = auto()  # Pipeline finished
 
@@ -696,7 +699,7 @@ class MultiResourceState:
     Tracks progress through the optimization pipeline including:
     - Current phase and completed phases
     - Per-resource status, version, and quality scores
-    - References to artifacts (research findings, user decisions)
+    - References to artifacts (research findings, user decisions, plans, evals)
 
     Attributes:
         spec_path: Path to SPEC.md file
@@ -707,6 +710,10 @@ class MultiResourceState:
         resources: Dictionary mapping resource path to status
         research_findings_path: Path to research findings YAML
         user_decisions_path: Path to Q&A decisions JSON
+        resource_plan_path: Path to resource-plan.yaml from DESIGN phase
+        eval_suite_path: Path to eval-suite.yaml from EVAL_DESIGN phase
+        eval_results_path: Path to eval-results.json from EXECUTION_EVAL phase
+        feedback_history: Execution feedback entries for the optimizer
         quality_threshold: Target quality score (default: 0.85)
         max_iterations: Max iterations per resource (default: 5)
         started_at: ISO timestamp when optimization started
@@ -721,6 +728,10 @@ class MultiResourceState:
     resources: dict[str, ResourceStatus] = field(default_factory=dict)
     research_findings_path: str = ""
     user_decisions_path: str = ""
+    resource_plan_path: str = ""
+    eval_suite_path: str = ""
+    eval_results_path: str = ""
+    feedback_history: list[dict[str, Any]] = field(default_factory=list)
     quality_threshold: float = 0.85
     max_iterations: int = 5
     started_at: str = ""
@@ -745,6 +756,10 @@ class MultiResourceState:
             "resources": {path: status.to_dict() for path, status in self.resources.items()},
             "research_findings_path": self.research_findings_path,
             "user_decisions_path": self.user_decisions_path,
+            "resource_plan_path": self.resource_plan_path,
+            "eval_suite_path": self.eval_suite_path,
+            "eval_results_path": self.eval_results_path,
+            "feedback_history": self.feedback_history,
             "quality_threshold": self.quality_threshold,
             "max_iterations": self.max_iterations,
             "started_at": self.started_at,
@@ -766,6 +781,10 @@ class MultiResourceState:
             },
             research_findings_path=data.get("research_findings_path", ""),
             user_decisions_path=data.get("user_decisions_path", ""),
+            resource_plan_path=data.get("resource_plan_path", ""),
+            eval_suite_path=data.get("eval_suite_path", ""),
+            eval_results_path=data.get("eval_results_path", ""),
+            feedback_history=data.get("feedback_history", []),
             quality_threshold=data.get("quality_threshold", 0.85),
             max_iterations=data.get("max_iterations", 5),
             started_at=data.get("started_at", ""),
