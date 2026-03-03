@@ -105,6 +105,70 @@ class ProposedCommand:
 
 
 @dataclass
+class ProposedMCPTool:
+    """A proposed MCP tool from SPEC.md.
+
+    Attributes:
+        name: Tool name (e.g., "search")
+        purpose: Brief description of tool's purpose
+        language: Implementation language (default: "python")
+    """
+
+    name: str
+    purpose: str
+    language: str = "python"
+
+    def to_dict(self) -> dict[str, str]:
+        """Serialize to dictionary."""
+        return {"name": self.name, "purpose": self.purpose, "language": self.language}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str]) -> ProposedMCPTool:
+        """Deserialize from dictionary."""
+        return cls(
+            name=data["name"],
+            purpose=data["purpose"],
+            language=data.get("language", "python"),
+        )
+
+
+@dataclass
+class ProposedMCPServer:
+    """A proposed MCP server from SPEC.md.
+
+    Attributes:
+        name: Server name (e.g., "memory-server")
+        purpose: Brief description of server's purpose
+        language: Implementation language (default: "python")
+        tools: List of tool names this server exposes
+    """
+
+    name: str
+    purpose: str
+    language: str = "python"
+    tools: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "name": self.name,
+            "purpose": self.purpose,
+            "language": self.language,
+            "tools": self.tools,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ProposedMCPServer:
+        """Deserialize from dictionary."""
+        return cls(
+            name=data["name"],
+            purpose=data["purpose"],
+            language=data.get("language", "python"),
+            tools=data.get("tools", []),
+        )
+
+
+@dataclass
 class WorkflowStage:
     """Stage in a workflow spec.
 
@@ -172,6 +236,8 @@ class MultiResourceSpec:
         proposed_agents: User-proposed agents (may be counter-proposed)
         proposed_skills: User-proposed skills
         proposed_commands: User-proposed commands
+        proposed_mcp_tools: User-proposed MCP tools
+        proposed_mcp_servers: User-proposed MCP servers
         workflow_stages: Stages for workflow specs
         raw_content: Original SPEC.md content
         source_path: Path to SPEC.md file
@@ -190,6 +256,8 @@ class MultiResourceSpec:
     proposed_agents: list[ProposedAgent] = field(default_factory=list)
     proposed_skills: list[ProposedSkill] = field(default_factory=list)
     proposed_commands: list[ProposedCommand] = field(default_factory=list)
+    proposed_mcp_tools: list[ProposedMCPTool] = field(default_factory=list)
+    proposed_mcp_servers: list[ProposedMCPServer] = field(default_factory=list)
     workflow_stages: list[WorkflowStage] = field(default_factory=list)
     raw_content: str = ""
     source_path: Path | None = None
@@ -203,13 +271,21 @@ class MultiResourceSpec:
             self.proposed_agents
             or self.proposed_skills
             or self.proposed_commands
+            or self.proposed_mcp_tools
+            or self.proposed_mcp_servers
             or self.workflow_stages
         )
 
     @property
     def total_proposed_resources(self) -> int:
         """Total number of proposed resources."""
-        return len(self.proposed_agents) + len(self.proposed_skills) + len(self.proposed_commands)
+        return (
+            len(self.proposed_agents)
+            + len(self.proposed_skills)
+            + len(self.proposed_commands)
+            + len(self.proposed_mcp_tools)
+            + len(self.proposed_mcp_servers)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary for JSON storage."""
@@ -256,6 +332,8 @@ class MultiResourceSpec:
                 }
                 for c in self.proposed_commands
             ],
+            "proposed_mcp_tools": [t.to_dict() for t in self.proposed_mcp_tools],
+            "proposed_mcp_servers": [s.to_dict() for s in self.proposed_mcp_servers],
             "workflow_stages": [
                 {
                     "name": s.name,
@@ -320,6 +398,12 @@ class MultiResourceSpec:
                     invokes=c.get("invokes", []),
                 )
                 for c in data.get("proposed_commands", [])
+            ],
+            proposed_mcp_tools=[
+                ProposedMCPTool.from_dict(t) for t in data.get("proposed_mcp_tools", [])
+            ],
+            proposed_mcp_servers=[
+                ProposedMCPServer.from_dict(s) for s in data.get("proposed_mcp_servers", [])
             ],
             workflow_stages=[
                 WorkflowStage(
@@ -630,6 +714,112 @@ def _parse_proposed_commands(content: str) -> list[ProposedCommand]:
     return commands
 
 
+def _parse_proposed_mcp_tools(content: str) -> list[ProposedMCPTool]:
+    """Parse proposed MCP tools from SPEC.md.
+
+    Parses bullet items in the format: - **name** - purpose
+    Optionally parses sub-items for language: - language: typescript
+
+    Args:
+        content: Content of "### MCP Tools" subsection.
+
+    Returns:
+        List of proposed MCP tools.
+    """
+    tools = []
+
+    # Split into lines for sub-item parsing
+    lines = content.split("\n")
+
+    for i, line in enumerate(lines):
+        # Match pattern: - **name** - description (or en-dash)
+        match = re.match(
+            r"^[\-\*]\s+\*\*([^*]+)\*\*\s*[\-\u2013]\s*(.+)$",
+            line,
+        )
+        if match:
+            name = match.group(1).strip()
+            purpose = match.group(2).strip()
+            language = "python"  # default
+
+            # Look ahead for sub-items (indented lines starting with -)
+            for j in range(i + 1, len(lines)):
+                sub_line = lines[j]
+                # Stop if we hit a non-indented line or empty line
+                if not sub_line.startswith("  ") and sub_line.strip():
+                    break
+                if not sub_line.strip():
+                    continue
+                # Parse language sub-item
+                lang_match = re.match(r"^\s+[\-\*]\s+language:\s*(.+)$", sub_line)
+                if lang_match:
+                    language = lang_match.group(1).strip()
+
+            tools.append(ProposedMCPTool(name=name, purpose=purpose, language=language))
+
+    return tools
+
+
+def _parse_proposed_mcp_servers(content: str) -> list[ProposedMCPServer]:
+    """Parse proposed MCP servers from SPEC.md.
+
+    Parses bullet items in the format: - **name** - purpose
+    Optionally parses sub-items for language and tools:
+      - language: typescript
+      - tools: tool1, tool2, tool3
+
+    Args:
+        content: Content of "### MCP Servers" subsection.
+
+    Returns:
+        List of proposed MCP servers.
+    """
+    servers = []
+
+    # Split into lines for sub-item parsing
+    lines = content.split("\n")
+
+    for i, line in enumerate(lines):
+        # Match pattern: - **name** - description (or en-dash)
+        match = re.match(
+            r"^[\-\*]\s+\*\*([^*]+)\*\*\s*[\-\u2013]\s*(.+)$",
+            line,
+        )
+        if match:
+            name = match.group(1).strip()
+            purpose = match.group(2).strip()
+            language = "python"  # default
+            tools: list[str] = []
+
+            # Look ahead for sub-items (indented lines starting with -)
+            for j in range(i + 1, len(lines)):
+                sub_line = lines[j]
+                # Stop if we hit a non-indented line that has content
+                if not sub_line.startswith("  ") and sub_line.strip():
+                    break
+                if not sub_line.strip():
+                    continue
+                # Parse language sub-item
+                lang_match = re.match(r"^\s+[\-\*]\s+language:\s*(.+)$", sub_line)
+                if lang_match:
+                    language = lang_match.group(1).strip()
+                # Parse tools sub-item
+                tools_match = re.match(r"^\s+[\-\*]\s+tools:\s*(.+)$", sub_line)
+                if tools_match:
+                    tools = [t.strip() for t in tools_match.group(1).split(",")]
+
+            servers.append(
+                ProposedMCPServer(
+                    name=name,
+                    purpose=purpose,
+                    language=language,
+                    tools=tools,
+                )
+            )
+
+    return servers
+
+
 def _parse_capabilities(content: str) -> list[Capability]:
     """Parse capabilities from SPEC.md.
 
@@ -885,6 +1075,8 @@ def parse_multi_resource_spec(path: Path) -> MultiResourceSpec:
     proposed_agents = []
     proposed_skills = []
     proposed_commands = []
+    proposed_mcp_tools: list[ProposedMCPTool] = []
+    proposed_mcp_servers: list[ProposedMCPServer] = []
 
     if proposed_section:
         agents_subsection = _extract_subsection(proposed_section, "Agents")
@@ -899,6 +1091,14 @@ def parse_multi_resource_spec(path: Path) -> MultiResourceSpec:
         if commands_subsection:
             proposed_commands = _parse_proposed_commands(commands_subsection)
 
+        mcp_tools_subsection = _extract_subsection(proposed_section, "MCP Tools")
+        if mcp_tools_subsection:
+            proposed_mcp_tools = _parse_proposed_mcp_tools(mcp_tools_subsection)
+
+        mcp_servers_subsection = _extract_subsection(proposed_section, "MCP Servers")
+        if mcp_servers_subsection:
+            proposed_mcp_servers = _parse_proposed_mcp_servers(mcp_servers_subsection)
+
     return MultiResourceSpec(
         name=name,
         spec_type=spec_type,
@@ -911,6 +1111,8 @@ def parse_multi_resource_spec(path: Path) -> MultiResourceSpec:
         proposed_agents=proposed_agents,
         proposed_skills=proposed_skills,
         proposed_commands=proposed_commands,
+        proposed_mcp_tools=proposed_mcp_tools,
+        proposed_mcp_servers=proposed_mcp_servers,
         workflow_stages=workflow_stages,
         raw_content=content,
         source_path=path,
