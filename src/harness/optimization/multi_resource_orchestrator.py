@@ -55,6 +55,7 @@ from .multi_resource_spec import (
     is_multi_resource_spec,
     parse_multi_resource_spec,
 )
+from .protocols.signals import SignalParser, SignalType
 from .quality_evaluator import QualityEvaluator
 
 logger = structlog.get_logger(__name__)
@@ -229,6 +230,7 @@ class MultiResourceOrchestrator:
         self._state: MultiResourceState | None = None
         self._progress: ProgressManager | None = None
         self._evaluator: QualityEvaluator | None = None
+        self._signal_parser = SignalParser()
 
     async def run(self) -> OrchestrationResult:
         """Run the full multi-resource optimization pipeline.
@@ -659,7 +661,10 @@ eval_criteria_path: research/eval_criteria.yaml
             )
 
         # Parse signal
-        if "[RESEARCH_COMPLETE]" in response:
+        signals = self._signal_parser.parse(response)
+        research_signals = [s for s in signals if s.type == SignalType.RESEARCH_COMPLETE]
+        if research_signals:
+            signal = research_signals[0]
             # Validate research files actually exist
             research_notes = workspace / "research" / "notes"
             findings_files = list(research_notes.glob("*_findings.yaml"))
@@ -680,10 +685,10 @@ eval_criteria_path: research/eval_criteria.yaml
                 files_found=len(findings_files),
             )
 
-            # Extract eval_criteria_path if present
-            match = re.search(r"eval_criteria_path:\s*(.+)", response)
-            if match:
-                self._state.research_findings_path = match.group(1).strip()
+            # Extract eval_criteria_path if present in signal metadata
+            eval_path = signal.metadata.get("eval_criteria_path", "")
+            if eval_path:
+                self._state.research_findings_path = str(eval_path).strip()
 
             logger.info(
                 "RESEARCH: Complete",
@@ -762,7 +767,9 @@ Emit [DESIGN_COMPLETE] when done.
             ) from None
 
         # Parse signal
-        if "[DESIGN_COMPLETE]" in response:
+        signals = self._signal_parser.parse(response)
+        design_signals = [s for s in signals if s.type == SignalType.DESIGN_COMPLETE]
+        if design_signals:
             plan_path = workspace / "resource-plan.yaml"
             if plan_path.exists():
                 self._load_resource_plan(plan_path)
@@ -965,7 +972,13 @@ output_path: {workspace / resource.path}
                 )
 
                 # Parse signal
-                if f"[GENERATE_COMPLETE:{resource.path}]" in response:
+                gen_signals = self._signal_parser.parse(response)
+                gen_complete = [
+                    s for s in gen_signals
+                    if s.type == SignalType.GENERATE_COMPLETE
+                    and s.resource_path == resource.path
+                ]
+                if gen_complete:
                     # Validate file actually exists before marking as generated
                     full_path = workspace / resource.path
                     if full_path.exists():
@@ -1323,7 +1336,13 @@ word_count: {{count}}
                     )
 
                     # Parse signal and quality
-                    if f"[ITERATE_COMPLETE:{resource.path}]" in response:
+                    iter_signals = self._signal_parser.parse(response)
+                    iter_complete = [
+                        s for s in iter_signals
+                        if s.type == SignalType.ITERATE_COMPLETE
+                        and s.resource_path == resource.path
+                    ]
+                    if iter_complete:
                         # Parse iteration result
                         result = self._parse_iteration_result(response)
 
@@ -1902,12 +1921,13 @@ affected_resources:
             return
 
         # Parse signal
-        if "[VALIDATE_COMPLETE]" in response:
-            # Extract coherence score
-            score_match = re.search(r"coherence_score:\s*([\d.]+)", response)
-            coherence_score = (
-                float(score_match.group(1)) if score_match else 1.0
-            )
+        signals = self._signal_parser.parse(response)
+        validate_complete = [s for s in signals if s.type == SignalType.VALIDATE_COMPLETE]
+        validate_issues = [s for s in signals if s.type == SignalType.VALIDATE_ISSUES]
+        if validate_complete:
+            # Extract coherence score from signal metadata
+            score_str = validate_complete[0].metadata.get("coherence_score", "")
+            coherence_score = float(score_str) if score_str else 1.0
 
             logger.info(
                 "VALIDATE: Complete",
@@ -1930,10 +1950,9 @@ affected_resources:
 
             self._advance_phase(OptimizationPhase.COMPLETE)
 
-        elif "[VALIDATE_ISSUES:" in response:
-            # Extract issue count
-            count_match = re.search(r"\[VALIDATE_ISSUES:(\d+)\]", response)
-            issue_count = int(count_match.group(1)) if count_match else 0
+        elif validate_issues:
+            # Extract issue count from signal metadata
+            issue_count = int(validate_issues[0].metadata.get("issue_count", 0))
 
             # Extract affected resources
             affected = re.findall(
