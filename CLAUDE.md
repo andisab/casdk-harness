@@ -17,14 +17,23 @@ Technical reference for developers working on this repository and for Claude's o
 - 5 MCP servers (3 in-process + 2 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
-- 26 subagents (14 harness + 12 plugin) via direct invocation
+- 27 subagents (14 harness + 13 plugin) via direct invocation
 - 14 skills via Skill tool (6 base + 8 plugin)
-- **CGF Optimization Framework** (1,500+ tests):
+- **CGF Optimization Framework** (1,700+ tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
   - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
   - Phase 2: Section-based optimization (agentic, coherence)
+  - Stage 1: Protocol layer, resource architect agent, DESIGN phase
 
 ### Completed Recently
+- **Stage 1: Protocol Layer + Resource Architect (2026-03-02)**
+  - [x] Shared protocol layer: signals, resource types, quality scoring, state, workspace
+  - [x] Resource architect agent (opus model) for SPEC → resource plan decisions
+  - [x] DESIGN phase between RESEARCH and QA in multi-resource pipeline
+  - [x] MCP tool/server types in SPEC parser (ProposedMCPTool, ProposedMCPServer)
+  - [x] Extended OptimizationPhase enum (6 → 9 phases: +DESIGN, EVAL_DESIGN, EXECUTION_EVAL)
+  - [x] Orchestrator refactored to use SignalParser protocol
+  - [x] resource_plan.schema.json and resource-plan.yaml output
 - **Multi-Resource Pipeline Improvements (2026-01-29)**
   - [x] Full skills support: parse from SPEC, route to context-engineer, proper directory structure
   - [x] Final naming convention: `{resource}.md` final, `{resource}-v0.md` original, `{resource}-v{N}.md` history
@@ -87,6 +96,7 @@ casdk-harness/
 │   │   │   ├── optimizers/         # agentic optimizer
 │   │   │   ├── testcases/          # loader, validators, models
 │   │   │   ├── runners/            # agent_runner, batch_runner
+│   │   │   ├── protocols/          # Shared protocol layer (signals, types, quality, state, workspace)
 │   │   │   ├── resources/          # agent, prompt, skill resources
 │   │   │   ├── orchestrator.py     # Section-based optimization
 │   │   │   ├── multi_resource_spec.py      # Multi-resource SPEC parser
@@ -320,6 +330,10 @@ make optimize-dryrun
 ├── {resource}.md                  # Original resource (NEVER modified)
 ├── {resource}-v1.md               # First optimization
 ├── {resource}-v2.md               # Second optimization (if REFINE)
+├── resource-plan.yaml             # Resource plan (created during DESIGN phase)
+├── tools/                         # MCP tool definitions (multi-resource)
+├── mcp-servers/                   # MCP server definitions (multi-resource)
+├── eval/                          # Evaluation suites and results
 ├── research/                      # Created during RESEARCH phase
 │   ├── notes/
 │   │   └── *.yaml                 # Research findings
@@ -444,6 +458,11 @@ uv run python -m harness.optimization.cli.section_optimize \
 | `analysis/coherence.py` | Detect and fix structural issues |
 | `analysis/synthesizer.py` | Merge optimized sections |
 | `optimizers/agentic_optimizer.py` | Self-critique optimizer |
+| `protocols/signals.py` | Signal parsing protocol and registry |
+| `protocols/resource_types.py` | Resource type definitions (agent, skill, mcp_tool, mcp_server, etc.) |
+| `protocols/quality.py` | Quality scoring models |
+| `protocols/state.py` | Optimization state management |
+| `protocols/workspace.py` | Workspace path resolution |
 
 ### Test Coverage
 
@@ -456,7 +475,8 @@ uv run python -m harness.optimization.cli.section_optimize \
 | 0.5 | Reward System | 50 |
 | 0.6 | Integration | 16 |
 | 1.0 | Single-Agent Optimization | 1,182 |
-| **Total** | | **1,586** |
+| S1 | Protocol Layer + Design Phase | 120 |
+| **Total** | | **1,738** |
 
 ### Orchestration Workflows
 
@@ -473,7 +493,7 @@ Create and optimize new resources from natural language description:
 /cgf create "Python async expert that helps with asyncio patterns"
 ```
 
-Pipeline: INIT → CREATE (context-engineer) → RESEARCH → RESEARCH_ITERATE → EVALUATE → FINALIZE
+Pipeline: INIT → CREATE (context-engineer) → RESEARCH → DESIGN → RESEARCH_ITERATE → EVALUATE → FINALIZE
 
 ### Targeted Refinement
 
@@ -507,14 +527,15 @@ For multi-resource SPEC.md files (plugins, skill-sets, workflows), the orchestra
 
 **State Machine:**
 ```
-PLANNING → RESEARCH → GENERATE → ITERATE → VALIDATE → COMPLETE
-    │           │           │          │           │
-    │     cgf-research  context-   cgf-prompt  cgf-coherence
-    │        -lead      engineer   -optimizer   -validator
-    │           │           │          │           │
-    │      [RESEARCH_   [GENERATE_  [ITERATE_  [VALIDATE_
-    │      COMPLETE]    COMPLETE]   COMPLETE]  COMPLETE]
+PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE → COMPLETE
+    │           │         │          │          │           │
+    │     cgf-research  cgf-     context-   cgf-prompt  cgf-coherence
+    │        -lead      resource  engineer   -optimizer   -validator
+    │           │       -architect    │          │           │
+    │      [RESEARCH_  [DESIGN_  [GENERATE_  [ITERATE_  [VALIDATE_
+    │      COMPLETE]   COMPLETE] COMPLETE]   COMPLETE]  COMPLETE]
 ```
+*Note: EVAL_DESIGN and EXECUTION_EVAL phases exist in the enum for future stages but are not yet orchestrated.*
 
 **Phase-to-Agent Mapping:**
 
@@ -522,6 +543,7 @@ PLANNING → RESEARCH → GENERATE → ITERATE → VALIDATE → COMPLETE
 |-------|-------|--------|
 | PLANNING | None (Python only) | State file created |
 | RESEARCH | `cgf-agents:cgf-research-lead` | `[RESEARCH_COMPLETE]` |
+| DESIGN | `cgf-agents:cgf-resource-architect` | `[DESIGN_COMPLETE]` |
 | GENERATE | `context-engineering:context-engineer` | `[GENERATE_COMPLETE:{path}]` |
 | ITERATE | `cgf-agents:cgf-prompt-optimizer` | `[ITERATE_COMPLETE:{path}]` |
 | EVALUATE | `cgf-agents:cgf-result-evaluator` | `RECOMMENDATION: ACCEPT/REFINE/REJECT` |
@@ -573,7 +595,7 @@ PLANNING → RESEARCH → GENERATE → ITERATE → VALIDATE → COMPLETE
 | **Plugin Agents** | `src/harness/plugins/*/agents/*.md` | `harness.direct_agent` | Same process |
 | **Container Agents** | `docker-compose.yml` services | Docker | Separate containers |
 
-### Subagents (14 harness + 11 plugin)
+### Subagents (14 harness + 13 plugin)
 
 Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 
@@ -585,10 +607,10 @@ Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 | **Infrastructure** (4) | docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert |
 | **Testing** (1) | sdet-expert |
 
-**Plugin Agents** (12):
+**Plugin Agents** (13):
 | Plugin | Agents |
 |--------|--------|
-| **cgf-agents** (8) | cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator |
+| **cgf-agents** (9) | cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator, cgf-resource-architect |
 | **context-engineering** (1) | context-engineer |
 | **research-team** (3) | lead-research-coordinator, research-specialist, research-report-writer |
 
@@ -823,7 +845,7 @@ Lifecycle hook infrastructure:
 | Type | Count | Invocation | Status |
 |------|-------|------------|--------|
 | Harness Agents | 14 | `harness.direct_agent.call_agent()` | Working |
-| Plugin Agents | 11 | `harness.direct_agent.call_agent()` | Working |
+| Plugin Agents | 13 | `harness.direct_agent.call_agent()` | Working |
 | Base Skills | 6 | `Skill(skill="...")` | Working |
 | Plugin Skills | 7 | `Skill(skill="plugin:name")` | Working |
 | Commands | 2 | CommandRegistry | Working |
@@ -832,7 +854,7 @@ Lifecycle hook infrastructure:
 ### Plugins (3 total)
 
 **cgf-agents** (`src/harness/plugins/cgf-agents/`):
-- 8 agents: cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator
+- 9 agents: cgf-orchestrator, cgf-research-lead, cgf-test-architect, cgf-test-validator, cgf-criteria-synthesizer, cgf-result-evaluator, cgf-prompt-optimizer, cgf-coherence-validator, cgf-resource-architect
 - 1 skill: cgf-optimize
 - 1 command: cgf (with subcommands: create, optimize, status)
 - Dependencies: context-engineering, research-team
