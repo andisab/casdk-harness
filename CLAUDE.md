@@ -18,8 +18,8 @@ Technical reference for developers working on this repository and for Claude's o
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
 - 26 subagents (14 harness + 12 plugin) via direct invocation
-- 13 skills via Skill tool (6 base + 7 plugin)
-- **CGF Optimization Framework** (600+ tests):
+- 14 skills via Skill tool (6 base + 8 plugin)
+- **CGF Optimization Framework** (1,500+ tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
   - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
   - Phase 2: Section-based optimization (agentic, coherence)
@@ -54,9 +54,8 @@ Technical reference for developers working on this repository and for Claude's o
 - AlertManager not configured (alerting rules defined but unused)
 
 ### TODOs
-- [ ] Fix `config/monitoring/dashboards/overview.json` (currently 41-byte stub)
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules
-- [ ] Remove postgres/redis exporter targets from `prometheus.yml` (services don't exist)
+- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist)
 
 ---
 
@@ -83,7 +82,7 @@ casdk-harness/
 │   │   ├── plugins/                # 3 plugins (cgf-agents, context-engineering, research-team)
 │   │   ├── skills/                 # 6 base skills
 │   │   ├── optimization/           # CGF optimization framework
-│   │   │   ├── cli/                # optimize.py, section_optimize.py
+│   │   │   ├── cli/                # section_optimize.py (section-based optimization CLI)
 │   │   │   ├── analysis/           # competency_mapper, coherence, synthesizer
 │   │   │   ├── optimizers/         # agentic optimizer
 │   │   │   ├── testcases/          # loader, validators, models
@@ -364,7 +363,7 @@ CGF Optimization Q&A
 [cgf-initializer] Analyzing resource: python-expert.md
 [cgf-initializer] Detected: Agent (705 lines, 12 sections)
 
-Question 1/5: What do you want to improve?
+Question 1/4: What do you want to improve?
 > Better async/await patterns and error handling
 
 Question 2/4: Focus on specific sections? (2, 3, 5 or "all")
@@ -382,7 +381,7 @@ Question 4/4: Number of iterations? (default: 10)
 CGF Optimization Phase
 ======================
 Goal: Better async/await patterns and error handling
-Mode: agentic | Iterations: 5 | Review: enabled
+Iterations: 5 | Review: enabled
 
 [cgf-orchestrator] Starting optimization...
 ```
@@ -439,7 +438,6 @@ uv run python -m harness.optimization.cli.section_optimize \
 
 | File | Purpose |
 |------|---------|
-| `cli/optimize.py` | Single-agent optimization CLI |
 | `cli/section_optimize.py` | Section-based optimization CLI |
 | `orchestrator.py` | Section optimization orchestrator |
 | `analysis/competency_mapper.py` | Map tests → competencies → sections |
@@ -457,8 +455,8 @@ uv run python -m harness.optimization.cli.section_optimize \
 | 0.4 | Adapter Framework | 87 |
 | 0.5 | Reward System | 50 |
 | 0.6 | Integration | 16 |
-| 1.0 | Single-Agent Optimization | 398 |
-| **Total** | | **802+** |
+| 1.0 | Single-Agent Optimization | 1,182 |
+| **Total** | | **1,586** |
 
 ### Orchestration Workflows
 
@@ -475,7 +473,7 @@ Create and optimize new resources from natural language description:
 /cgf create "Python async expert that helps with asyncio patterns"
 ```
 
-Pipeline: INIT → CREATE (context-engineer) → RESEARCH → TEST_GEN → OPTIMIZE → EVALUATE → FINALIZE
+Pipeline: INIT → CREATE (context-engineer) → RESEARCH → RESEARCH_ITERATE → EVALUATE → FINALIZE
 
 ### Targeted Refinement
 

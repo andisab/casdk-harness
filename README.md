@@ -37,7 +37,7 @@ docker compose version
 See [QUICKSTART.md](./QUICKSTART.md) for the complete 5-minute setup guide.
 
 ```bash
-git clone https://www.github.com/andis/ab-casdk-harness.git
+git clone https://github.com/andisab/ab-casdk-harness.git
 cd casdk-harness && make init
 # Edit .env and set: ANTHROPIC_API_KEY=sk-ant-your_key_here
 make build && make up && make interactive
@@ -181,7 +181,7 @@ make optimize-dryrun
 
 1. **Q&A Phase** (`cgf-initializer` agent):
    - Analyzes the resource file
-   - Asks 5 clarifying questions about optimization goals
+   - Asks 4 clarifying questions about optimization goals
    - Generates `cgf_spec.yaml` specification
    - Supports resume if interrupted
 
