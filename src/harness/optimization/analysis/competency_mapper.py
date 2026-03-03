@@ -1,7 +1,7 @@
 """Competency mapper for CGF optimization pipeline.
 
 Maps test cases to competencies from evaluation criteria to determine
-which prompt sections can be optimized programmatically vs agentically.
+which prompt sections should be optimized agentically vs preserved.
 
 Example usage:
     from harness.optimization.analysis import (
@@ -15,9 +15,7 @@ Example usage:
     optimizable = assess_coverage(mapping)
 
     for section in optimizable:
-        if section.strategy == OptimizationStrategy.PROGRAMMATIC:
-            # Use DSPy/TextGrad
-        elif section.strategy == OptimizationStrategy.AGENTIC:
+        if section.strategy == OptimizationStrategy.AGENTIC:
             # Use self-improvement
         else:
             # Preserve original
@@ -42,8 +40,7 @@ logger = structlog.get_logger(__name__)
 class OptimizationStrategy(str, Enum):
     """Strategy for optimizing a prompt section."""
 
-    PROGRAMMATIC = "programmatic"  # Use DSPy/TextGrad (3+ quantitative tests)
-    AGENTIC = "agentic"  # Use self-improvement (qualitative tests only)
+    AGENTIC = "agentic"  # Use LLM self-critique
     PRESERVE = "preserve"  # Keep original (insufficient test coverage)
 
 
@@ -332,8 +329,7 @@ def load_eval_criteria(criteria_path: Path) -> EvalCriteria:
 def is_quantitative_test(test: TestCase) -> bool:
     """Check if a test uses quantitative (code-based) validation.
 
-    Quantitative tests provide deterministic, measurable feedback suitable
-    for programmatic optimization with DSPy/TextGrad.
+    Quantitative tests provide deterministic, measurable feedback.
 
     Args:
         test: Test case to check.
@@ -384,8 +380,7 @@ def is_deterministic_test(test: TestCase) -> bool:
 def is_llm_judge_test(test: TestCase) -> bool:
     """Check if a test uses LLM-as-judge validation.
 
-    LLM-judge tests can score outputs on a scale (0-100) making them
-    suitable for programmatic optimization with fewer tests (3+).
+    LLM-judge tests can score outputs on a scale (0-100).
 
     Args:
         test: Test case to check.
@@ -497,32 +492,16 @@ def map_tests_to_competencies(
 def assess_coverage(
     mapping: dict[str, list[TestCase]],
     criteria: EvalCriteria | None = None,
-    min_deterministic_tests: int = 6,
-    min_llm_judge_tests: int = 3,
-    programmatic_enabled: bool = False,
 ) -> list[OptimizableSection]:
     """Assess test coverage and determine optimization strategy per section.
 
     Strategy Selection:
-    - AGENTIC is the default and recommended approach (LLM self-critique)
-    - PROGRAMMATIC only used when programmatic_enabled=True AND thresholds met
-    - PRESERVE when no test coverage
-
-    When programmatic_enabled=False (default):
-    - All sections with test coverage → AGENTIC
-    - No coverage → PRESERVE
-
-    When programmatic_enabled=True:
-    - 6+ deterministic tests → PROGRAMMATIC
-    - 3+ LLM-judge tests → PROGRAMMATIC
-    - Otherwise → AGENTIC
+    - AGENTIC: Sections with test coverage (LLM self-critique)
+    - PRESERVE: Sections with no test coverage
 
     Args:
         mapping: Competency ID → test cases mapping.
         criteria: Optional criteria for competency lookup.
-        min_deterministic_tests: Minimum deterministic tests (default 6).
-        min_llm_judge_tests: Minimum LLM-judge tests (default 3).
-        programmatic_enabled: Enable PROGRAMMATIC strategy (default False).
 
     Returns:
         List of OptimizableSection objects with strategies.
@@ -592,24 +571,8 @@ def assess_coverage(
         total = len(data["tests"])
         quantitative = deterministic + llm_judge
 
-        # Default: AGENTIC for all sections with test coverage
-        # PROGRAMMATIC only when explicitly enabled AND thresholds met
-        min_det = min_deterministic_tests
-        min_llm = min_llm_judge_tests
-
-        if programmatic_enabled and deterministic >= min_det:
-            strategy = OptimizationStrategy.PROGRAMMATIC
-            reason = f"{deterministic} deterministic tests (>= {min_det})"
-        elif programmatic_enabled and llm_judge >= min_llm:
-            strategy = OptimizationStrategy.PROGRAMMATIC
-            reason = f"{llm_judge} LLM-judge tests (>= {min_llm})"
-        elif total > 0:
-            # AGENTIC is default for any section with test coverage
-            strategy = OptimizationStrategy.AGENTIC
-            reason = f"{total} tests ({deterministic} det, {llm_judge} llm, {qualitative} qual)"
-        else:
-            strategy = OptimizationStrategy.PRESERVE
-            reason = f"insufficient coverage ({total} tests)"
+        strategy = OptimizationStrategy.AGENTIC
+        reason = f"{total} tests ({deterministic} det, {llm_judge} llm, {qualitative} qual)"
 
         results.append(
             OptimizableSection(

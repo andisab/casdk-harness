@@ -102,10 +102,6 @@ cgf = [
     # OpenTelemetry for tracing (Phase 0.1)
     "opentelemetry-api>=1.27.0",
     "opentelemetry-sdk>=1.27.0",
-    # DSPy for prompt optimization (Phase 1C)
-    "dspy-ai>=2.5.0",
-    # TextGrad for textual gradients (Phase 1D)
-    "textgrad>=0.1.6",
 ]
 
 [project.scripts]

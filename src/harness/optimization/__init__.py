@@ -131,17 +131,12 @@ from harness.optimization.runners import (
 
 # Re-export optimizer components
 from harness.optimization.optimizers import (
-    # Configuration
-    PROGRAMMATIC_ENABLED,
-    MIPRO_AVAILABLE,
-    TEXTGRAD_AVAILABLE,
     # Protocol and base types
     BaseOptimizer,
     IterationResult,
     OptimizationConfig,
     OptimizationResult,
     OptimizerProtocol,
-    OptimizerType,
     PromptCandidate,
     # Agentic optimizer (primary)
     AgenticSectionOptimizer,
@@ -149,13 +144,6 @@ from harness.optimization.optimizers import (
     AgenticOptimizationResult,
     CritiqueResult,
     get_agentic_optimizer,
-    # MIPROv2 optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
-    MIPROv2AgentOptimizer,
-    MIPROv2Config,
-    get_mipro_optimizer,
-    # TextGrad optimizer (optional, requires CGF_ENABLE_PROGRAMMATIC=true)
-    TextGradAgentOptimizer,
-    get_textgrad_optimizer,
     # Metrics
     suite_average_score,
     validation_score_metric,
@@ -163,11 +151,8 @@ from harness.optimization.optimizers import (
 
 # Re-export pipeline components
 from harness.optimization.pipeline import (
-    OptimizationRun,
     OutputFormat,
     PipelineConfig,
-    RunPhase,
-    RunStatus,
 )
 
 # Re-export orchestration components
@@ -245,13 +230,8 @@ __all__ = [
     "RunContext",
     "AgentRunner",
     "BatchRunner",
-    # Optimizers - Configuration
-    "PROGRAMMATIC_ENABLED",
-    "MIPRO_AVAILABLE",
-    "TEXTGRAD_AVAILABLE",
     # Optimizers - Protocol and base types
     "OptimizerProtocol",
-    "OptimizerType",
     "BaseOptimizer",
     "OptimizationConfig",
     "OptimizationResult",
@@ -263,22 +243,12 @@ __all__ = [
     "AgenticOptimizationResult",
     "CritiqueResult",
     "get_agentic_optimizer",
-    # Optimizers - MIPROv2 (optional)
-    "MIPROv2AgentOptimizer",
-    "MIPROv2Config",
-    "get_mipro_optimizer",
-    # Optimizers - TextGrad (optional)
-    "TextGradAgentOptimizer",
-    "get_textgrad_optimizer",
     # Metrics
     "validation_score_metric",
     "suite_average_score",
     # Pipeline
     "PipelineConfig",
     "OutputFormat",
-    "OptimizationRun",
-    "RunPhase",
-    "RunStatus",
     # Orchestration
     "SectionOptimizationConfig",
     "SectionOptimizer",

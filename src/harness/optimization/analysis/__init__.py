@@ -17,9 +17,9 @@ Example usage:
     mapping = map_tests_to_competencies(test_suite.test_cases, criteria)
     optimizable = assess_coverage(mapping)
 
-    # Create focused suite for programmatic sections
+    # Create focused suite for agentic sections
     for section in optimizable:
-        if section.strategy == OptimizationStrategy.PROGRAMMATIC:
+        if section.strategy == OptimizationStrategy.AGENTIC:
             focused = create_focused_suite_for_section(base_suite, section, mapping, criteria)
             path = write_temp_suite(focused, output_dir)
 """

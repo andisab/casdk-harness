@@ -8,7 +8,7 @@ This plugin provides the orchestration layer for the CGF optimization framework.
 
 - **Research** - Domain knowledge gathering via research-team plugin
 - **Test Generation** - Creating evaluation test suites (M3)
-- **Optimization** - Running DSPy MIPROv2 or TextGrad TGD
+- **Optimization** - Agentic self-critique and research-based improvement
 - **Evaluation** - Assessing results and recommending actions (M4)
 
 ## Components
@@ -80,7 +80,7 @@ COMPLETE ← FINALIZE ← [CHECKPOINT_EVALUATE] ← EVALUATE ← OPTIMIZE
 | INIT | Parse request, create workspace |
 | RESEARCH | Gather domain knowledge |
 | TEST_GEN | Generate test suite |
-| OPTIMIZE | Run DSPy/TextGrad optimization |
+| OPTIMIZE | Run agentic optimization |
 | EVALUATE | Assess results |
 | FINALIZE | Accept/Refine/Reject |
 | COMPLETE | Terminal state |
@@ -156,11 +156,9 @@ resource:
   optimization_goal: "async programming"
 
 strategy: prompt_optimization
-optimizer: dspy  # or textgrad
 
 options:
   max_iterations: 10
-  early_stopping_threshold: 0.01
   review_mode: false
 ```
 

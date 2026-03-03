@@ -38,15 +38,10 @@ make cgf-reset
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `CGF_OPTIMIZER_MODE` | string | `agentic` | Optimization mode: `agentic`, `python`, `both` |
 | `CGF_ITERATIONS` | int | `10` | Maximum optimization iterations per section |
 | `CGF_ITERATION_REVIEW` | bool | `false` | Pause for review after each iteration |
 | `CGF_EVAL_MODEL` | string | `sonnet` | Eval model for LLM validators: `haiku`, `sonnet`, `opus` |
 | `CGF_VERBOSE` | bool | `true` | Show progress output |
-| `CGF_ENABLE_PROGRAMMATIC` | bool | `false` | Enable test-based optimization (DSPy/TextGrad) |
-| `CGF_OPTIMIZER` | string | `mipro` | Programmatic optimizer: `mipro`, `textgrad` |
-| `CGF_CANDIDATES` | int | `5` | Candidates per iteration (programmatic mode) |
-| `CGF_LEARNING_RATE` | float | `0.1` | Optimizer learning rate (programmatic mode) |
 | `CGF_EARLY_STOP` | float | `0.01` | Early stopping threshold |
 
 ### Examples
@@ -65,9 +60,6 @@ make optimize WORKSPACE=workspace/python-expert \
 
 # Enable review mode (pause after each iteration)
 CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert
-
-# Use programmatic optimization (requires 6+ deterministic tests)
-CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/python-expert
 
 # Validate setup
 make optimize-dryrun WORKSPACE=workspace/python-expert
@@ -210,7 +202,6 @@ resource:
   optimization_goal: improve async programming guidance
 
 strategy: prompt_optimization
-optimizer_mode: agentic  # agentic (default), python, or both
 
 options:
   max_iterations: 10
@@ -329,9 +320,6 @@ test_cases:
 | `llm_judge` | AI evaluation of response | Natural language criteria | LLM-based |
 | `code_llm` | LLM-based code quality assessment | Natural language criteria | LLM-based |
 
-> **Note**: Deterministic validators (exact, contains, regex, code, code_syntax) are required for
-> programmatic optimization (DSPy/TextGrad). A minimum of 6 deterministic tests enables
-> `CGF_ENABLE_PROGRAMMATIC=true` mode.
 
 ### sessions/{resource}-v{n}.summary.json
 
@@ -402,37 +390,6 @@ if result.success:
     print(f"Optimized prompt:\n{result.optimized_prompt}")
 else:
     print(f"Optimization failed: {result.error}")
-```
-
-### Programmatic Optimization (Optional)
-
-For test-driven optimization with DSPy MIPROv2 or TextGrad:
-
-```python
-import os
-os.environ["CGF_ENABLE_PROGRAMMATIC"] = "true"
-
-from harness.optimization import (
-    get_mipro_optimizer,  # or get_textgrad_optimizer
-    AgentResource,
-    TestSuiteLoader,
-    MIPROv2Config,
-)
-
-# Load resource and test suite (requires 6+ deterministic tests)
-resource = AgentResource.load("workspace/python-expert/python-expert.md")
-suite = TestSuiteLoader.load("workspace/python-expert/tests/tests.yaml")
-
-# Configure MIPROv2
-config = MIPROv2Config(
-    max_iterations=10,
-    num_candidates=5,
-    early_stopping_threshold=0.01,
-)
-
-# Run optimization
-optimizer = get_mipro_optimizer()
-result = await optimizer.optimize(resource, suite, config)
 ```
 
 ### OptimizationRun (Pipeline)

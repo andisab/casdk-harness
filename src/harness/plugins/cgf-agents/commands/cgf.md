@@ -15,14 +15,13 @@ Command interface for CGF (Claude Gradient Feedback) optimization pipeline.
 Create and optimize a new resource from description:
 
 ```
-/cgf create <description> [--review] [--type agent|skill|command] [--optimizer dspy|textgrad]
+/cgf create <description> [--review] [--type agent|skill|command]
 ```
 
 **Arguments:**
 - `description` - Natural language description of desired resource
 - `--review` - Enable checkpoint mode for human review
 - `--type` - Resource type to create (default: agent)
-- `--optimizer` - Choose optimizer (default: dspy)
 
 **Examples:**
 ```
@@ -49,20 +48,19 @@ Equivalent to `/cgf create <description>`.
 Start a new optimization run:
 
 ```
-/cgf optimize <resource> <goal> [--review] [--optimizer dspy|textgrad]
+/cgf optimize <resource> <goal> [--review]
 ```
 
 **Arguments:**
 - `resource` - Resource to optimize (agent name, path, or namespaced)
 - `goal` - Optimization objective
 - `--review` - Enable checkpoint mode for human review
-- `--optimizer` - Choose optimizer (default: dspy)
 
 **Examples:**
 ```
 /cgf optimize python-expert async programming
 /cgf optimize typescript-expert better error handling --review
-/cgf optimize research-team:research-specialist Context7 usage --optimizer textgrad
+/cgf optimize research-team:research-specialist Context7 usage
 ```
 
 ### status

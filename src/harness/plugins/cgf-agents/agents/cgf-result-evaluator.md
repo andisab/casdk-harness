@@ -60,8 +60,7 @@ All files are located in `workspace/{resource_id}/`:
   "iterations": 8,
   "duration_seconds": 450,
   "config": {
-    "max_iterations": 10,
-    "optimizer": "dspy"
+    "max_iterations": 10
   }
 }
 ```

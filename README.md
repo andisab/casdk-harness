@@ -189,7 +189,7 @@ make optimize-dryrun
    - Runs autonomously using the spec
    - Researches domain best practices
    - Generates test cases and criteria
-   - Optimizes with LLM self-critique (default) or DSPy/TextGrad
+   - Optimizes with LLM self-critique
    - Produces versioned output with review
 
 ### Commands
@@ -243,7 +243,6 @@ See [docs/examples/MULTI_RESOURCE_SPEC.example.md](./docs/examples/MULTI_RESOURC
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CGF_OPTIMIZER_MODE` | `agentic`, `python`, or `both` | `agentic` |
 | `CGF_ITERATIONS` | Max optimization iterations | `10` |
 | `CGF_ITERATION_REVIEW` | Pause for review each iteration | `false` |
 | `CGF_EVAL_MODEL` | Eval model (`sonnet`/`haiku`/`opus`) | `sonnet` |

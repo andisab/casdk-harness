@@ -108,7 +108,7 @@ Critical modules lack test coverage while being the default optimization path:
 | `cli/section_optimize.py` | ~300 | 0 | Entry point untested |
 | `agentic_optimizer.py` | ~400 | 7 | Default strategy, lightest coverage |
 
-**Impact**: Default optimization path (agentic) significantly under-tested while programmatic path (DSPy/TextGrad) is well-tested (47+ tests).
+**Impact**: Default optimization path (agentic) significantly under-tested.
 
 **Remediation**:
 - [ ] Add orchestrator unit tests (8h)
@@ -158,19 +158,6 @@ Critical modules lack test coverage while being the default optimization path:
 - Integration tests: 16 in test_cgf_pipeline.py
 
 To reach 80%: orchestrator + api + CLI tests (~16h), then cli.py/interactive.py (~8h)
-
----
-
-## Production-Ready Components
-
-### Programmatic Optimization (DSPy/TextGrad)
-**Status**: ✅ Production Ready
-
-- MIPROv2 optimizer: Complete (637 LOC, well-tested)
-- TextGrad optimizer: Complete (534 LOC, well-tested)
-- Feature gating via `CGF_ENABLE_PROGRAMMATIC` env var
-- Graceful degradation if libraries not installed
-- 47+ optimizer-related tests with good coverage
 
 ---
 

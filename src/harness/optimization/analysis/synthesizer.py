@@ -1,7 +1,7 @@
 """Synthesizer for merging optimized prompt sections.
 
-Combines optimized sections from programmatic optimization with preserved
-sections to create a coherent final prompt while maintaining template structure.
+Combines optimized sections with preserved sections to create a coherent
+final prompt while maintaining template structure.
 
 Example usage:
     from harness.optimization.analysis.synthesizer import PromptSynthesizer

@@ -1,8 +1,8 @@
 """Triplet adapter for generating training data from spans.
 
-Transforms execution traces into preference triplets for optimization frameworks
-like DSPy and TextGrad. Triplets consist of (prompt, positive, negative) examples
-that can be used for learning preferences.
+Transforms execution traces into preference triplets for optimization.
+Triplets consist of (prompt, positive, negative) examples that can be
+used for learning preferences.
 
 Example usage:
     from harness.optimization.adapters import TripletAdapter

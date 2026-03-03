@@ -239,8 +239,7 @@ Example structure:
 Override defaults via `.env` or command line:
 
 ```bash
-# Optimization mode
-CGF_OPTIMIZER_MODE=agentic    # agentic (default), python, or both
+# Optimization settings
 CGF_ITERATIONS=10             # Max iterations per section
 CGF_ITERATION_REVIEW=false    # Pause for review after each iteration
 CGF_EVAL_MODEL=sonnet         # sonnet (default), haiku, or opus
@@ -259,4 +258,4 @@ CGF_VERBOSE=true              # Show progress output
 
 4. **Use iteration review**: For important resources, enable `iteration_review: true` to provide feedback between rounds.
 
-5. **Start with agentic mode**: It's faster and doesn't require test generation. Use programmatic mode only for critical resources needing quantitative validation.
+5. **Agentic mode is fast**: It uses LLM self-critique and doesn't require test generation.

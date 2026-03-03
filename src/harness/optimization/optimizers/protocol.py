@@ -20,19 +20,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from harness.optimization.resources import AgentResource
     from harness.optimization.testcases import SuiteResult, TestSuite
-
-
-class OptimizerType(str, Enum):
-    """Supported optimizer types."""
-
-    DSPY = "dspy"
-    TEXTGRAD = "textgrad"
 
 
 @dataclass

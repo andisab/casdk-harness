@@ -10,7 +10,6 @@ Run your first optimization in 5 minutes.
 
 - Python 3.10+
 - Anthropic API key configured
-- DSPy or TextGrad installed (optional, for programmatic optimization)
 
 ### Basic Optimization
 
@@ -28,10 +27,6 @@ make optimize WORKSPACE=workspace/python-expert \
 # Run with review mode (pauses after each iteration)
 CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert \
   GOAL="better error handling"
-
-# Use programmatic optimizer (requires 6+ deterministic tests)
-CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/python-expert \
-  GOAL="clearer examples"
 ```
 
 > **Note**: For detailed examples and walkthroughs, see [CGF-EXAMPLES.md](./CGF-EXAMPLES.md).
@@ -364,13 +359,6 @@ CGF_ITERATIONS=10                  # Max iterations per section
 CGF_ITERATION_REVIEW=false         # Pause after each iteration
 CGF_EVAL_MODEL=sonnet              # sonnet (default), haiku, opus
 CGF_VERBOSE=true                   # Show progress output
-
-# Programmatic mode (DSPy/TextGrad)
-CGF_ENABLE_PROGRAMMATIC=false      # Enable test-based optimization
-CGF_OPTIMIZER=mipro                # mipro or textgrad
-CGF_CANDIDATES=5                   # Candidates per iteration
-CGF_LEARNING_RATE=0.1              # Optimizer learning rate
-CGF_EARLY_STOP=0.01                # Early stopping threshold
 ```
 
 ### SPEC.md
@@ -404,23 +392,6 @@ Improve async programming guidance with practical concurrent examples.
 
 ### Common Issues
 
-#### "Optimizer not available"
-
-**Symptom**: Error about DSPy or TextGrad not installed when using programmatic mode.
-
-**Solution**:
-```bash
-# Programmatic mode is optional - agentic mode works without these
-# For DSPy MIPROv2
-pip install 'dspy-ai>=2.5.0'
-
-# For TextGrad
-pip install 'textgrad>=0.1.6'
-
-# Then enable programmatic mode
-CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/agent
-```
-
 #### "Empty system prompt"
 
 **Symptom**: Validation fails with empty prompt error.
@@ -444,7 +415,6 @@ CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/agent
 - Make optimization goal more specific
 - Increase max_iterations
 - Check test cases are relevant to goal
-- Try different optimizer
 
 #### "REJECT recommendation"
 

@@ -429,7 +429,6 @@ CGF_MAX_ITERATIONS=5           # Max iterations before escalation
 CGF_PARALLEL_GENERATION=true   # Generate independent resources in parallel
 
 # Shared settings (same as single-resource)
-CGF_OPTIMIZER_MODE=agentic     # agentic (default), python, or both
 CGF_EVAL_MODEL=sonnet          # sonnet (default), haiku, or opus
 CGF_VERBOSE=true               # Show progress output
 CGF_ITERATION_REVIEW=false     # Pause for review after each iteration

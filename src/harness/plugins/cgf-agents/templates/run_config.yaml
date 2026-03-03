@@ -15,18 +15,9 @@ resource:
 # - workflow: workflow_optimization (steps, hand-offs)
 strategy: "{strategy}"
 
-# Optimizer selection
-# - dspy: MIPROv2 algorithm (requires dspy-ai>=2.5.0)
-# - textgrad: TGD algorithm (requires textgrad>=0.1.6)
-optimizer: "{optimizer}"
-
 # Optimization parameters
 options:
   max_iterations: 10                # Maximum optimization iterations
-  early_stopping_threshold: 0.01    # Stop if improvement < threshold
-  learning_rate: 0.1                # Learning rate for optimization
-  num_candidates: 5                 # Prompt candidates per iteration
-  temperature: 0.7                  # LLM temperature for generation
   review_mode: false                # Enable checkpoint pauses for review
 
 # Workspace configuration

@@ -261,8 +261,8 @@ class TestMapTestsToCompetencies:
 class TestAssessCoverage:
     """Tests for assess_coverage function."""
 
-    def test_programmatic_strategy_with_enough_tests(self) -> None:
-        """Test programmatic strategy when 6+ deterministic tests exist."""
+    def test_agentic_strategy_with_enough_tests(self) -> None:
+        """Test agentic strategy when deterministic tests exist."""
         mapping = {
             "comp1": [
                 TestCase(
@@ -273,7 +273,7 @@ class TestAssessCoverage:
                         type="code", criteria="def", require_syntax_valid=True
                     ),
                 )
-                for i in range(7)  # Need 6+ deterministic tests
+                for i in range(7)
             ]
         }
 
@@ -290,7 +290,7 @@ class TestAssessCoverage:
             None,
         )
         assert core_section is not None
-        assert core_section.strategy == OptimizationStrategy.PROGRAMMATIC
+        assert core_section.strategy == OptimizationStrategy.AGENTIC
         assert core_section.quantitative_count >= 6
 
     def test_preserve_strategy_with_insufficient_tests(self) -> None:

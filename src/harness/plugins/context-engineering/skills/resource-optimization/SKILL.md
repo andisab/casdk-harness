@@ -62,8 +62,8 @@ to enable end-to-end improvement of Claude Code resources.
 │  4. BASELINE  →   Run test suite against original resource          │
 │                   Record baseline scores                             │
 │                                                                      │
-│  5. OPTIMIZE  →   Execute CGF optimization with appropriate         │
-│                   strategy (programmatic vs agentic)                 │
+│  5. OPTIMIZE  →   Execute CGF agentic optimization with             │
+│                   research-based critique                            │
 │                                                                      │
 │  6. COMPARE   →   Present before/after metrics                      │
 │                   Show improvements per section                      │
@@ -161,8 +161,7 @@ python -m harness.direct_agent \
 | **Edge Cases** | `code_llm` | Complex scenarios requiring LLM evaluation |
 
 **Minimum Test Coverage**:
-- 6+ deterministic tests for PROGRAMMATIC optimization
-- 3+ LLM-judge tests for AGENTIC optimization
+- 3+ LLM-judge tests for quality assessment
 - At least 1 test per identified competency
 
 ## Step 4: Baseline Evaluation
@@ -201,27 +200,9 @@ uv run python -m harness.optimization.cli.optimize \
 
 Execute optimization based on test coverage analysis:
 
-### Strategy Selection
-
-| Coverage | Strategy | Optimizer |
-|----------|----------|-----------|
-| 6+ deterministic tests | PROGRAMMATIC | DSPy MIPROv2 / TextGrad |
-| 3+ LLM-judge tests | AGENTIC | Self-critique + conventions |
-| < 3 tests | PRESERVE | Keep original |
-
 ### Execution
 
-```bash
-# Section-based optimization
-uv run python -m harness.optimization.cli.section_optimize \
-  --agent {resource-path} \
-  --test-suite {tests-path} \
-  --criteria {eval-criteria-path} \
-  --workspace {workspace} \
-  --optimizer mipro \
-  --iterations 2 \
-  --verbose
-```
+The CGF framework uses agentic optimization (LLM self-critique + research heuristics) to iteratively improve resources based on competency criteria and research findings.
 
 ### Monitoring Progress
 
@@ -242,17 +223,17 @@ Present before/after analysis:
 - **Overall Improvement**: +12.5% (0.73 → 0.82)
 - **Sections Optimized**: 3/5
 - **Duration**: 45.2s
-- **Strategy Used**: Hybrid (PROGRAMMATIC + AGENTIC)
+- **Strategy Used**: Agentic (LLM self-critique)
 
 ## Section-by-Section Analysis
 
-| Section | Before | After | Change | Strategy |
-|---------|--------|-------|--------|----------|
-| Role Definition | 0.85 | 0.90 | +5.9% | AGENTIC |
-| Core Approach | 0.70 | 0.82 | +17.1% | PROGRAMMATIC |
-| Best Practices | 0.65 | 0.78 | +20.0% | PROGRAMMATIC |
-| Constraints | 0.75 | 0.80 | +6.7% | AGENTIC |
-| Examples | 0.72 | 0.72 | 0% | PRESERVE |
+| Section | Before | After | Change |
+|---------|--------|-------|--------|
+| Role Definition | 0.85 | 0.90 | +5.9% |
+| Core Approach | 0.70 | 0.82 | +17.1% |
+| Best Practices | 0.65 | 0.78 | +20.0% |
+| Constraints | 0.75 | 0.80 | +6.7% |
+| Examples | 0.72 | 0.72 | 0% |
 
 ## Cross-Section Impact Matrix
 

@@ -61,7 +61,7 @@ class TestAgentWorkspaceCreation:
         assert config["resource"]["type"] == "agent"
         assert config["resource"]["id"] == ws.resource_id
         assert config["strategy"] == "prompt_optimization"
-        assert config["optimizer"] == "dspy"
+        assert config["optimizer"] == "agentic"
 
     def test_workspace_has_run_state(
         self, cgf_agent_workspace: "CGFWorkspace"
@@ -75,7 +75,7 @@ class TestAgentWorkspaceCreation:
 
         assert state["state"] == "INIT"
         assert state["resource"]["type"] == "agent"
-        assert state["optimizer"] == "dspy"
+        assert state["optimizer"] == "agentic"
 
 
 class TestAgentResearchPhase:
@@ -209,7 +209,6 @@ class TestAgentOptimizePhase:
 
     def test_optimize_produces_versioned_resource(
         self, cgf_agent_workspace: "CGFWorkspace",
-        mock_optimizer: MagicMock,
     ) -> None:
         """Verify OPTIMIZE phase produces optimized resource file."""
         ws = cgf_agent_workspace
@@ -226,7 +225,6 @@ class TestAgentOptimizePhase:
 
     def test_optimize_creates_summary_json(
         self, cgf_agent_workspace: "CGFWorkspace",
-        mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization creates summary.json with metrics."""
         ws = cgf_agent_workspace
@@ -245,7 +243,6 @@ class TestAgentOptimizePhase:
 
     def test_optimize_state_transition(
         self, cgf_agent_workspace: "CGFWorkspace",
-        mock_optimizer: MagicMock,
     ) -> None:
         """Verify state transitions from TEST_GEN to OPTIMIZE."""
         ws = cgf_agent_workspace
@@ -401,7 +398,6 @@ class TestAgentFullPipeline:
 
     def test_full_pipeline_success(
         self, cgf_agent_workspace: "CGFWorkspace",
-        mock_optimizer: MagicMock,
         mock_research_agent: MagicMock,
         mock_evaluator_agent: MagicMock,
     ) -> None:
@@ -445,7 +441,6 @@ class TestAgentFullPipeline:
 
     def test_pipeline_with_refine_iteration(
         self, cgf_agent_workspace: "CGFWorkspace",
-        mock_optimizer: MagicMock,
     ) -> None:
         """Test pipeline with REFINE iteration loop."""
         ws = cgf_agent_workspace

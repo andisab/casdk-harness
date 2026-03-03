@@ -14,14 +14,15 @@
       "type": "string",
       "enum": [
         "INIT",
+        "CREATE",
         "RESEARCH",
         "CHECKPOINT_RESEARCH",
-        "TEST_GEN",
-        "CHECKPOINT_TEST_GEN",
-        "OPTIMIZE",
+        "RESEARCH_ITERATE",
+        "CHECKPOINT_ITERATE",
         "EVALUATE",
         "CHECKPOINT_EVALUATE",
         "FINALIZE",
+        "TARGETED_REFINEMENT",
         "COMPLETE"
       ],
       "description": "Current pipeline state"
@@ -54,11 +55,6 @@
       "enum": ["prompt_optimization", "trigger_optimization", "schema_optimization", "workflow_optimization"],
       "description": "Optimization strategy based on resource type"
     },
-    "optimizer": {
-      "type": "string",
-      "enum": ["dspy", "textgrad"],
-      "description": "Optimizer implementation to use"
-    },
     "options": {
       "type": "object",
       "properties": {
@@ -66,27 +62,6 @@
           "type": "integer",
           "default": 10,
           "minimum": 1
-        },
-        "early_stopping_threshold": {
-          "type": "number",
-          "default": 0.01,
-          "minimum": 0
-        },
-        "learning_rate": {
-          "type": "number",
-          "default": 0.1,
-          "minimum": 0
-        },
-        "num_candidates": {
-          "type": "integer",
-          "default": 5,
-          "minimum": 1
-        },
-        "temperature": {
-          "type": "number",
-          "default": 0.7,
-          "minimum": 0,
-          "maximum": 2
         },
         "review_mode": {
           "type": "boolean",

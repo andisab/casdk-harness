@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -86,7 +86,7 @@ class CGFWorkspace:
                 "optimization_goal": "test optimization",
             },
             "strategy": self._get_strategy(),
-            "optimizer": "dspy",
+            "optimizer": "agentic",
             "options": {
                 "max_iterations": 10,
                 "review_mode": False,
@@ -127,7 +127,7 @@ class CGFWorkspace:
                 "optimization_goal": goal,
             },
             "strategy": self._get_strategy(),
-            "optimizer": "dspy",
+            "optimizer": "agentic",
             "options": {
                 "max_iterations": 10,
                 "early_stopping_threshold": 0.01,
@@ -274,7 +274,7 @@ optimization:
   final_score: {score}
   improvement_percent: "{improvement:.1f}%"
   iterations: 5
-  optimizer: dspy
+  optimizer: agentic
 ---
 
 This is the optimized system prompt for {self.resource_id}.
@@ -298,7 +298,7 @@ It has been enhanced through CGF optimization.
             "duration_seconds": 10.0,
             "config": {
                 "max_iterations": 10,
-                "optimizer": "dspy",
+                "optimizer": "agentic",
             },
         }
         # Save summary to sessions/ folder
@@ -528,29 +528,6 @@ def cgf_workflow_workspace(
     workspace.write_run_config(goal="reliability improvements")
     workspace.write_run_state("INIT")
     yield workspace
-
-
-@pytest.fixture
-def mock_optimizer() -> Generator[MagicMock, None, None]:
-    """Mock DSPy optimizer for deterministic testing.
-
-    Yields:
-        MagicMock configured as optimizer
-    """
-    mock = MagicMock()
-    mock_result = MagicMock()
-    mock_result.success = True
-    mock_result.original_score = 0.65
-    mock_result.final_score = 0.82
-    mock_result.improvement = 0.17
-    mock_result.improvement_percent = 26.15
-    mock_result.total_iterations = 5
-    mock_result.total_duration_seconds = 10.0
-    mock_result.optimized_prompt = "Optimized system prompt"
-    mock_result.iterations = []
-
-    mock.optimize = AsyncMock(return_value=mock_result)
-    yield mock
 
 
 @pytest.fixture

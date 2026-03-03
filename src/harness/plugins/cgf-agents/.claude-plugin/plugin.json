@@ -15,8 +15,6 @@
     "cgf",
     "optimization",
     "prompt-engineering",
-    "dspy",
-    "textgrad",
     "agentic"
   ],
   "dependencies": {
@@ -26,10 +24,5 @@
   "agents": ["./agents"],
   "skills": ["./skills"],
   "commands": ["./commands"],
-  "configuration": {
-    "thresholds": {
-      "min_deterministic_tests_for_programmatic": 6,
-      "note": "Synchronized with orchestrator.py:min_tests_for_programmatic"
-    }
-  }
+  "configuration": {}
 }

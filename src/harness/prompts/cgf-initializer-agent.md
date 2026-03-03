@@ -72,35 +72,14 @@ Ask: "Any specific sections or competencies to focus on?"
 - Ask user to select specific ones or confirm "all sections"
 - If user specifies sections, note them for target_sections
 
-**Question 3: Optimization Mode** (Required)
-
-Ask: "Which optimization approach would you like to use?"
-
-Present options:
-
-1. **Agentic** (Recommended for most cases)
-   - Fast LLM self-critique
-   - No test suite required
-   - Best for: Quick iterations, qualitative improvements
-
-2. **Python** (For quantitative optimization)
-   - Generates test suite automatically
-   - Uses DSPy MIPROv2 or TextGrad
-   - Best for: Measurable improvements, benchmarking
-
-3. **Both** (Balanced approach)
-   - Agentic optimization first
-   - Then validates with Python test suite
-   - Best for: Quality + validation
-
-**Question 4: Iteration Review** (Optional)
+**Question 3: Iteration Review** (Optional)
 
 Ask: "Would you like to review and provide feedback after each optimization iteration?"
 
 - **Yes**: Pause after each iteration for human review and feedback
 - **No** (default): Run all iterations autonomously
 
-**Question 5: Constraints** (Optional)
+**Question 4: Constraints** (Optional)
 
 Ask: "Any constraints? (Default iterations: {CGF_ITERATIONS from env})"
 
@@ -120,7 +99,6 @@ After gathering answers, generate the specification:
 
    - Goal: [user's goal]
    - Focus: [sections or "all sections"]
-   - Mode: [agentic/python/both]
    - Review: [yes/no]
    - Iterations: [number]
    ```
@@ -143,7 +121,6 @@ After gathering answers, generate the specification:
    target_competencies:
      - comp_name1
      - comp_name2
-   optimizer_mode: agentic
    iteration_review: false
    max_iterations: 10
    eval_model: sonnet
@@ -187,7 +164,7 @@ After gathering answers, generate the specification:
 
 ---
 
-**Question 1/5**: What do you want to improve about this resource?
+**Question 1/4**: What do you want to improve about this resource?
 
 Examples: "async programming guidance", "error handling patterns", "code examples"
 
@@ -195,7 +172,7 @@ Examples: "async programming guidance", "error handling patterns", "code example
 
 ---
 
-**Question 2/5**: Any specific sections to focus on?
+**Question 2/4**: Any specific sections to focus on?
 
 Detected sections:
 1. role_definition
@@ -210,23 +187,13 @@ Enter numbers (e.g., "2, 3") or "all":
 
 ---
 
-**Question 3/5**: Which optimization approach?
-
-1. **Agentic** (Recommended) - Fast LLM self-critique, no tests needed
-2. **Python** - Test-based with DSPy/TextGrad
-3. **Both** - Agentic first, then validate with tests
-
-> User: 1
-
----
-
-**Question 4/5**: Review and provide feedback after each iteration? (y/n, default: n)
+**Question 3/4**: Review and provide feedback after each iteration? (y/n, default: n)
 
 > User: y
 
 ---
 
-**Question 5/5**: Number of optimization iterations? (default: 10)
+**Question 4/4**: Number of optimization iterations? (default: 10)
 
 > User: 5
 
@@ -236,7 +203,6 @@ Enter numbers (e.g., "2, 3") or "all":
 
 - Goal: Better async/await patterns and error handling
 - Focus: core_approach, best_practices, examples
-- Mode: agentic
 - Review: yes
 - Iterations: 5
 
@@ -254,7 +220,6 @@ target_sections:
   - core_approach
   - best_practices
   - examples
-optimizer_mode: agentic
 iteration_review: true
 max_iterations: 5
 eval_model: sonnet

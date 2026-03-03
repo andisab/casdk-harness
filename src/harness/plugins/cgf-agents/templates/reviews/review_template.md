@@ -20,7 +20,6 @@
 | Improvement | {improvement_percent:.1f}% |
 | Iterations | {iterations} |
 | Duration | {duration_seconds}s |
-| Optimizer | {optimizer} |
 | Recommendation | **{ACCEPT/REFINE/REJECT}** |
 
 ## Optimization Goal
@@ -107,7 +106,6 @@
 | improvement_percent | summary.json | Float (%) |
 | iterations | summary.json | Integer |
 | duration_seconds | summary.json | Float |
-| optimizer | run_config.yaml | "dspy" or "textgrad" |
 
 ### Assessment Values
 
@@ -141,7 +139,6 @@
 | Improvement | 26.2% |
 | Iterations | 8 |
 | Duration | 450s |
-| Optimizer | dspy |
 | Recommendation | **ACCEPT** |
 
 ## Optimization Goal
@@ -227,7 +224,6 @@ incorporation. Recommend accepting the optimized resource.
 | Improvement | 4.3% |
 | Iterations | 10 |
 | Duration | 520s |
-| Optimizer | textgrad |
 | Recommendation | **REFINE** |
 
 ...
@@ -267,7 +263,6 @@ acceptable results.
 | Improvement | -9.3% |
 | Iterations | 10 |
 | Duration | 480s |
-| Optimizer | dspy |
 | Recommendation | **REJECT** |
 
 ...

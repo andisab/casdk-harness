@@ -1,6 +1,6 @@
 """Shared utilities for optimization modules.
 
-Common functions used across DSPy, TextGrad, and other optimizers.
+Common functions used across optimizers.
 """
 
 from __future__ import annotations

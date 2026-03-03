@@ -1,16 +1,14 @@
 """CLI module for optimization commands.
 
-Provides command-line interface for running optimization pipelines.
+Provides command-line interface for running section-based optimization.
 
 Usage:
-    python -m harness.optimization.cli.optimize \\
+    python -m harness.optimization.cli.section_optimize \\
         --agent agents/configs/python-expert.md \\
-        --test-suite tests/optimization/python_expert_tests.yaml \\
-        --optimizer dspy \\
-        --output optimized_prompt.md \\
-        --iterations 10
+        --workspace workspace/python-expert \\
+        --iterations 2
 """
 
-from harness.optimization.cli.optimize import cli, main
+from harness.optimization.cli.section_optimize import cli, main
 
 __all__ = ["cli", "main"]

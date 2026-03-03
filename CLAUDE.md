@@ -21,8 +21,8 @@ Technical reference for developers working on this repository and for Claude's o
 - 13 skills via Skill tool (6 base + 7 plugin)
 - **CGF Optimization Framework** (600+ tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
-  - Phase 1: Single-agent optimization (test cases, runners, DSPy, TextGrad, CLI)
-  - Phase 2: Section-based optimization (agentic, coherence, MIPROv2)
+  - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
+  - Phase 2: Section-based optimization (agentic, coherence)
 
 ### Completed Recently
 - **Multi-Resource Pipeline Improvements (2026-01-29)**
@@ -47,8 +47,6 @@ Technical reference for developers working on this repository and for Claude's o
   - [x] Targeted refinement loop: Skip full research, focus on specific sections
   - [x] Cross-section regression detection with automatic rollback
   - [x] Post-synthesis validation against full test suite
-  - [x] Updated threshold: 6+ deterministic tests for PROGRAMMATIC strategy
-  - [x] DSPy Metric Bridge: `TestSuiteMetric` bridges CGF validators to DSPy
 
 ### Known Limitations
 - **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead
@@ -87,7 +85,7 @@ casdk-harness/
 │   │   ├── optimization/           # CGF optimization framework
 │   │   │   ├── cli/                # optimize.py, section_optimize.py
 │   │   │   ├── analysis/           # competency_mapper, coherence, synthesizer
-│   │   │   ├── optimizers/         # dspy, textgrad, mipro, agentic
+│   │   │   ├── optimizers/         # agentic optimizer
 │   │   │   ├── testcases/          # loader, validators, models
 │   │   │   ├── runners/            # agent_runner, batch_runner
 │   │   │   ├── resources/          # agent, prompt, skill resources
@@ -207,10 +205,7 @@ When running inside the harness container:
 
 ## CGF Optimization Framework
 
-The ContextGrad Framework (CGF) provides prompt optimization with **agentic (LLM-based) optimization as the default**. Programmatic optimization (DSPy MIPROv2, TextGrad) is available but disabled by default.
-
-**Default Mode (Agentic)**: Uses LLM self-critique and research heuristics. No test suite required.
-**Programmatic Mode**: Requires `CGF_ENABLE_PROGRAMMATIC=true` and 6+ deterministic tests.
+The ContextGrad Framework (CGF) provides prompt optimization using **agentic (LLM-based) optimization**. It uses LLM self-critique and research heuristics. No test suite required.
 
 ### Architecture
 
@@ -243,26 +238,20 @@ The ContextGrad Framework (CGF) provides prompt optimization with **agentic (LLM
 │  │   Set eval_model           detection                                     │  │
 │  └───────────────────────────────────────────────────────────────────────────┘  │
 │                                  │                                               │
-│              ┌───────────────────┼───────────────────┐                          │
-│              ▼                   ▼                   ▼                          │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐                    │
-│  │  PROGRAMMATIC  │  │    AGENTIC     │  │    PRESERVE    │                    │
-│  │  (6+ determ)   │  │  (qualitative) │  │  (no coverage) │                    │
-│  │                │  │                │  │                │                    │
-│  │  ┌──────────┐  │  │  Self-critique │  │  Keep original │                    │
-│  │  │  DSPy    │  │  │  LLM-based     │  │  section       │                    │
-│  │  │  MIPROv2 │  │  │  improvement   │  │                │                    │
-│  │  └──────────┘  │  │                │  │                │                    │
-│  │  ┌──────────┐  │  │                │  │                │                    │
-│  │  │ TextGrad │  │  │                │  │                │                    │
-│  │  │   TGD    │  │  │                │  │                │                    │
-│  │  └──────────┘  │  │                │  │                │                    │
-│  └────────────────┘  └────────────────┘  └────────────────┘                    │
+│              ┌──────────────────────┼──────────────────────┐                    │
+│              ▼                                             ▼                    │
+│  ┌────────────────────────────┐              ┌────────────────┐                │
+│  │         AGENTIC            │              │    PRESERVE    │                │
+│  │      (qualitative)         │              │  (no coverage) │                │
+│  │                            │              │                │                │
+│  │  Self-critique LLM-based   │              │  Keep original │                │
+│  │  improvement               │              │  section       │                │
+│  └────────────────────────────┘              └────────────────┘                │
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐  │
 │  │                      VALIDATORS & EVAL MODEL                              │  │
 │  │                                                                           │  │
-│  │  Deterministic (→ PROGRAMMATIC):   LLM-Based (→ AGENTIC):                │  │
+│  │  Deterministic:                    LLM-Based:                             │  │
 │  │    exact, contains, regex            llm_judge                            │  │
 │  │    code, code_syntax                 code_llm                             │  │
 │  │                                                                           │  │
@@ -287,11 +276,9 @@ The ContextGrad Framework (CGF) provides prompt optimization with **agentic (LLM
 | Strategy | Trigger | Optimizer | Validators |
 |----------|---------|-----------|------------|
 | **AGENTIC** (default) | Default mode, no tests required | Self-critique LLM | llm_judge, code_llm (optional) |
-| **PROGRAMMATIC** | `CGF_ENABLE_PROGRAMMATIC=true` + ≥6 deterministic tests | DSPy MIPROv2 / TextGrad | exact, contains, regex, code, code_syntax |
-| **PRESERVE** | No test coverage (programmatic mode only) | None | - |
+| **PRESERVE** | No test coverage for section | None | - |
 
-**Default (Agentic)**: Uses research heuristics + LLM self-critique. Fastest, no test suite needed.
-**Programmatic**: Requires explicit opt-in. Tests provide gradient signal for DSPy/TextGrad optimization.
+**Agentic**: Uses research heuristics + LLM self-critique. No test suite needed.
 
 ### Eval Model Configuration
 
@@ -357,18 +344,11 @@ make optimize-dryrun
 
 **Configuration** (`.env` or command line):
 ```bash
-# Optimization mode
-CGF_OPTIMIZER_MODE=agentic    # agentic (default), python, or both
+# Optimization settings
 CGF_ITERATIONS=10             # max optimization iterations per section
 CGF_ITERATION_REVIEW=false    # pause for review after each iteration
 CGF_EVAL_MODEL=sonnet         # sonnet (default), haiku, or opus
 CGF_VERBOSE=true              # show progress output
-
-# Programmatic mode settings (when CGF_OPTIMIZER_MODE=python or both)
-CGF_OPTIMIZER=mipro           # mipro or textgrad
-CGF_CANDIDATES=5              # candidates per iteration
-CGF_LEARNING_RATE=0.1         # optimizer learning rate
-CGF_EARLY_STOP=0.01           # early stopping threshold
 ```
 
 **Q&A Flow Example:**
@@ -387,16 +367,13 @@ CGF Optimization Q&A
 Question 1/5: What do you want to improve?
 > Better async/await patterns and error handling
 
-Question 2/5: Focus on specific sections? (2, 3, 5 or "all")
+Question 2/4: Focus on specific sections? (2, 3, 5 or "all")
 > 2, 3, 5
 
-Question 3/5: Optimization mode? (1=agentic, 2=python, 3=both)
-> 1
-
-Question 4/5: Review after each iteration? (y/n)
+Question 3/4: Review after each iteration? (y/n)
 > y
 
-Question 5/5: Number of iterations? (default: 10)
+Question 4/4: Number of iterations? (default: 10)
 > 5
 
 [cgf-initializer] Saved: workspace/python-expert/cgf_spec.yaml
@@ -448,33 +425,14 @@ make cgf-reset
 
 ### Advanced CLI (Section-Based)
 
-Default mode (agentic - no tests required):
 ```bash
-# Default agentic optimization (no test suite needed)
+# Agentic optimization (no test suite needed)
 uv run python -m harness.optimization.cli.section_optimize \
   --agent src/harness/agents/configs/dev-python-expert.md \
   --criteria workspace/dev-python-expert/research/eval_criteria.yaml \
   --workspace workspace/dev-python-expert \
   --iterations 2 \
   --verbose
-```
-
-Programmatic mode (requires `CGF_ENABLE_PROGRAMMATIC=true`):
-```bash
-# Enable test-based optimization
-CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_optimize \
-  --agent src/harness/agents/configs/dev-python-expert.md \
-  --test-suite workspace/dev-python-expert/tests/tests.yaml \
-  --criteria workspace/dev-python-expert/research/eval_criteria.yaml \
-  --workspace workspace/dev-python-expert \
-  --optimizer mipro \
-  --iterations 2 \
-  --verbose
-
-# Dry run (analyze test coverage)
-CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_optimize \
-  --agent ... --test-suite ... --criteria ... --workspace ... \
-  --dry-run
 ```
 
 ### Key Files
@@ -487,10 +445,7 @@ CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_o
 | `analysis/competency_mapper.py` | Map tests → competencies → sections |
 | `analysis/coherence.py` | Detect and fix structural issues |
 | `analysis/synthesizer.py` | Merge optimized sections |
-| `optimizers/agentic_optimizer.py` | Self-critique optimizer (DEFAULT) |
-| `optimizers/dspy_mipro_optimizer.py` | MIPROv2 Bayesian optimizer (requires CGF_ENABLE_PROGRAMMATIC) |
-| `optimizers/textgrad_optimizer.py` | TextGrad TGD optimizer (requires CGF_ENABLE_PROGRAMMATIC) |
-| `optimizers/dspy_metrics.py` | DSPy metric bridge for validators |
+| `optimizers/agentic_optimizer.py` | Self-critique optimizer |
 
 ### Test Coverage
 
@@ -505,64 +460,12 @@ CGF_ENABLE_PROGRAMMATIC=true uv run python -m harness.optimization.cli.section_o
 | 1.0 | Single-Agent Optimization | 398 |
 | **Total** | | **802+** |
 
-### DSPy MIPROv2 Integration
-
-The DSPy optimizer uses MIPROv2 (Bayesian optimization with TPE) via the metric bridge:
-
-```python
-# TestSuiteMetric bridges CGF validators to DSPy
-metric = TestSuiteMetric(
-    test_suite=suite,
-    resource=resource,
-    pass_threshold=0.5,
-    cache_validators=True,
-)
-
-# Create trainset from test cases
-trainset = create_trainset_from_suite(suite, include_expected=True)
-
-# MIPROv2 three-stage optimization:
-# 1. Bootstrapping: Collect high-quality traces
-# 2. Grounded proposal: Draft instructions from task data
-# 3. Discrete search: Bayesian TPE optimization
-```
-
-### TextGrad TGD Integration
-
-TextGrad uses textual gradient descent with structure-aware optimization:
-
-```python
-# Trainable prompt variable
-system_prompt_var = tg.Variable(
-    prompt,
-    requires_grad=True,
-    role_description=f"{base_role}\n\n{structure_guidance}",
-)
-
-# TGD optimizer with validation revert
-optimizer = tg.TGD(parameters=[system_prompt_var])
-
-# Loss text from test failures drives backward pass
-loss_var = tg.Variable(loss_text, requires_grad=False)
-loss_var.backward()  # Generates textual gradients
-optimizer.step()     # Applies improvements
-```
-
 ### Orchestration Workflows
 
-**Default (Agentic Mode)**:
+**Agentic Mode**:
 1. **LOAD**: Load agent, criteria, and research findings
 2. **ITERATE**: LLM self-critique (1-3 rounds)
 3. **OUTPUT**: Merge sections, run coherence analysis, save
-
-**Programmatic Mode** (CGF_ENABLE_PROGRAMMATIC=true):
-1. **ANALYZE**: Map tests to competencies, assign strategies per section
-2. **PLAN**: Create focused test suites for programmatic sections
-3. **EXECUTE**: Run optimizers (MIPROv2/TextGrad/Agentic) per section
-4. **SYNTHESIZE**: Merge sections, run coherence analysis, auto-reorder
-5. **VALIDATE**: Post-synthesis full test suite validation with rollback
-
-**Cross-Section Regression Detection** (programmatic mode): After optimizing section N, re-runs tests for sections 1..(N-1). If score drops > 5%, automatically rolls back.
 
 ### Creation Mode
 

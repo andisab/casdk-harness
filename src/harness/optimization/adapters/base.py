@@ -474,8 +474,7 @@ class CommandFeedback(BaseFeedback):
 class TrainingTriplet:
     """Triplet for preference-based optimization training.
 
-    Used by DSPy, TextGrad, or similar frameworks for learning from
-    feedback signals.
+    Used for learning from feedback signals via pairwise comparisons.
 
     Structure:
         - prompt: The input/task given to the resource

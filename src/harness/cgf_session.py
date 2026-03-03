@@ -102,7 +102,7 @@ class CGFSpec:
     # Defaults from .env (can be overridden in Q&A)
     optimizer_mode: str = field(
         default_factory=lambda: os.environ.get("CGF_OPTIMIZER_MODE", "agentic")
-    )  # agentic | python | both
+    )
     max_iterations: int = field(
         default_factory=lambda: int(os.environ.get("CGF_ITERATIONS", "10"))
     )
@@ -407,8 +407,6 @@ CGF_PHASES = (
     "qa",  # Q&A phase (gathering requirements)
     "research",  # Research phase (domain knowledge)
     "research_iterate",  # Agentic optimization using research
-    "test_gen",  # Test generation (programmatic mode)
-    "optimize",  # DSPy/TextGrad optimization (programmatic mode)
     "evaluate",  # Result evaluation
     "finalize",  # Final review and acceptance
     "complete",  # Terminal state
@@ -1088,7 +1086,6 @@ class CGFSessionRunner:
 
 These values are read from the environment and can be overridden in your answers:
 
-- **CGF_OPTIMIZER_MODE**: {os.environ.get("CGF_OPTIMIZER_MODE", "agentic")}
 - **CGF_ITERATIONS**: {os.environ.get("CGF_ITERATIONS", "10")}
 - **CGF_ITERATION_REVIEW**: {os.environ.get("CGF_ITERATION_REVIEW", "false")}
 - **CGF_EVAL_MODEL**: {os.environ.get("CGF_EVAL_MODEL", "sonnet")}
@@ -1145,16 +1142,11 @@ Ask sequentially (use **Question X/Y** format):
    - If yes, list detected sections and ask which to prioritize
    - If no, optimize all sections
 
-3. **Optimization Mode**: "Which optimization approach?"
-   - **Agentic** (default): Fast LLM self-critique, no tests needed
-   - **Python**: Generate test suite + DSPy/TextGrad optimization
-   - **Both**: Agentic first, then validate with Python tests
-
-4. **Iteration Review**: "Review and provide feedback after each iteration?"
+3. **Iteration Review**: "Review and provide feedback after each iteration?"
    - If yes, pause after each optimization round for user feedback
    - If no (default), run all iterations autonomously
 
-5. **Constraints** (optional): "How many optimization iterations?" (default: from .env)
+4. **Constraints** (optional): "How many optimization iterations?" (default: from .env)
 
 ### Step 3: Generate Specification
 
@@ -1167,7 +1159,6 @@ optimization_goal: "<goal>"
 target_sections:
   - <section1>
   - <section2>
-optimizer_mode: <agentic|python|both>
 iteration_review: <true|false>
 max_iterations: <number>
 eval_model: <sonnet|haiku|opus>
@@ -1420,13 +1411,6 @@ Begin optimization now.
             return (
                 f"Resume from RESEARCH_ITERATE phase (iteration {iteration}). "
                 "Continue agentic optimization using research findings."
-            )
-        elif phase == "test_gen":
-            return "Resume from TEST_GEN phase. Continue generating test suite."
-        elif phase == "optimize":
-            return (
-                f"Resume from OPTIMIZE phase (iteration {iteration}). "
-                "Continue DSPy/TextGrad optimization."
             )
         elif phase == "evaluate":
             return "Resume from EVALUATE phase. Continue evaluating results."

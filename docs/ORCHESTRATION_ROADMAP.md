@@ -42,9 +42,8 @@ Phase 1 validates the optimization loop works end-to-end on a single agent befor
 |-----------|-------------|--------|
 | 1A | Test case infrastructure - YAML-based test suites with validation | ✅ Complete |
 | 1B | Agent runner - Execute agent with full tracing | ✅ Complete |
-| 1C | DSPy integration - MIPROv2 prompt optimization | ✅ Complete |
-| 1D | TextGrad integration - Textual gradient refinement | ✅ Complete |
-| 1E | Pipeline CLI - `python -m harness.optimization.cli.optimize` | ✅ Complete |
+| 1C | Agentic optimizer - LLM self-critique optimization | ✅ Complete |
+| 1D | Pipeline CLI - `python -m harness.optimization.cli.optimize` | ✅ Complete |
 
 **Total Tests**: 398 optimization tests passing
 **Target Agent**: `python-expert`
@@ -60,7 +59,7 @@ Detailed specifications for each major capability:
 |---------|---------------|--------|-------------|
 | **CGF Infrastructure** | See [CLAUDE.md](../CLAUDE.md#cgf-optimization-framework) | **Phase 0 ✅, Phase 1 ✅** | Tracing, store, adapters, rewards (Phase 0) + Single-agent optimization (Phase 1) |
 | Context Engineering Workflow | Superseded | - | Q&A workflow integrated into cgf-orchestrator |
-| ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | DSPy + TextGrad optimization system |
+| ContextGrad Framework | [CONTEXT-GRAD-SPEC.md](./features/CONTEXT-GRAD-SPEC.md) | Design Complete | Agentic optimization system |
 | CGF Implementation Guide | [CONTEXT-GRAD-IMP.md](./features/CONTEXT-GRAD-IMP.md) | Design Complete | Detailed implementation patterns |
 | Container Architecture | [CONTAINERIZATION.md](./features/CONTAINERIZATION.md) | Decided | Subagent-first Docker model |
 | Agentic Examples | Superseded | - | Merged into ORCHESTRATION_PATTERNS.md |
@@ -186,9 +185,7 @@ Build the tracing and optimization infrastructure that enables training data col
 │                                 ▼                                          │
 │   ┌────────────────────────────────────────────────────────────────────┐  │
 │   │                      OPTIMIZATION ALGORITHMS                        │  │
-│   │  ├─ DSPy Bootstrap (few-shot example optimization)                 │  │
-│   │  ├─ TextGrad APO (textual gradient descent)                        │  │
-│   │  └─ Hybrid (DSPy for examples, TextGrad for prompts)               │  │
+│   │  └─ Agentic (LLM self-critique with research heuristics)           │  │
 │   └────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -224,8 +221,6 @@ Build the tracing and optimization infrastructure that enables training data col
 ### Dependencies
 
 - **OpenTelemetry**: `opentelemetry-api>=1.27.0`, `opentelemetry-sdk>=1.27.0`
-- **DSPy**: `dspy-ai>=3.0.0`
-- **TextGrad**: `textgrad>=0.1.6`
 - **Redis**: Existing from multi-agent profile
 
 ### Integration with Existing CGF Spec
@@ -442,19 +437,6 @@ context-engineering/
 **Deliverables:**
 1. agents/orchestration-architect.md
 2. Enhance context-engineer.md with orchestration awareness
-
----
-
-## Future: DSPy/TextGrad Integration
-
-The modular plugin structure supports future optimization:
-
-- **specs/**: Formal specifications → training targets
-- **examples/**: Known-good outputs → evaluation data
-- **workflows/**: Structured pipelines → optimization graphs
-- **patterns/**: Reusable templates → prompt libraries
-
-DSPy can optimize agent prompts automatically. TextGrad can provide gradient feedback on workflow outputs.
 
 ---
 

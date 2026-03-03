@@ -98,19 +98,17 @@ Creates and optimizes with human review at each phase.
 ### Optimization Mode
 1. **INIT**: Creates workspace, detects resource type
 2. **RESEARCH**: Investigates domain best practices (via research-team)
-3. **TEST_GEN**: Creates test suite from research findings
-4. **OPTIMIZE**: Runs DSPy/TextGrad optimization
-5. **EVALUATE**: Assesses results, recommends accept/refine/reject
-6. **FINALIZE**: Applies recommendation
+3. **RESEARCH_ITERATE**: Agentic optimization using research findings and LLM self-critique
+4. **EVALUATE**: Assesses results, recommends accept/refine/reject
+5. **FINALIZE**: Applies recommendation
 
 ### Creation Mode
 1. **INIT**: Creates workspace, detects creation mode
 2. **CREATE**: Spawns context-engineer to create initial resource draft
 3. **RESEARCH**: Investigates domain best practices
-4. **TEST_GEN**: Creates test suite from research findings
-5. **OPTIMIZE**: Runs DSPy/TextGrad optimization
-6. **EVALUATE**: Assesses results, recommends accept/refine/reject
-7. **FINALIZE**: Applies recommendation
+4. **RESEARCH_ITERATE**: Agentic optimization using research findings and LLM self-critique
+5. **EVALUATE**: Assesses results, recommends accept/refine/reject
+6. **FINALIZE**: Applies recommendation
 
 ## Output
 

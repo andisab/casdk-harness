@@ -323,17 +323,6 @@ test_cases:
       type: contains
       criteria: "not found"
 
-  # Invalid optimizer
-  - id: err-opt-001
-    prompt: "make optimize OPTIMIZER=invalid"
-    expected_behavior: |
-      Error lists valid optimizer options,
-      suggests correct usage
-    validation:
-      type: llm_judge
-      criteria: |
-        Lists valid optimizers (agentic, mipro, textgrad),
-        shows correct option syntax
 ```
 
 ### Results
@@ -549,10 +538,7 @@ test_cases:
     difficulty: basic
 ```
 
-### Run with Custom Tests (Programmatic Mode)
-
-To use a custom test suite with programmatic optimization (DSPy MIPROv2 or TextGrad),
-enable programmatic mode:
+### Run with Custom Tests
 
 ```bash
 # Initialize workspace
@@ -562,15 +548,10 @@ cp agents/configs/financial-analyst.md workspace/financial-analyst/
 # Copy custom test suite to workspace
 cp tests/optimization/financial-analyst-tests.yaml workspace/financial-analyst/tests/tests.yaml
 
-# Enable programmatic mode and run with MIPROv2
-CGF_ENABLE_PROGRAMMATIC=true make optimize WORKSPACE=workspace/financial-analyst \
+# Run optimization
+make optimize WORKSPACE=workspace/financial-analyst \
   GOAL="improve accuracy of financial analysis explanations"
 ```
-
-> **Note**: Programmatic mode (DSPy MIPROv2, TextGrad) requires:
-> - `CGF_ENABLE_PROGRAMMATIC=true` environment variable
-> - At least 6 deterministic tests (exact, contains, regex, code, code_syntax)
-> - DSPy or TextGrad installed: `pip install 'dspy-ai>=2.5.0'` or `pip install 'textgrad>=0.1.6'`
 
 ### Domain-Specific Validation with llm_judge
 
@@ -623,8 +604,8 @@ GOAL="improve errors and add new features and fix bugs"
 1. **Balance coverage**: Include basic, intermediate, and advanced cases
 2. **Test boundaries**: Add edge cases and negative cases
 3. **Use appropriate validators**:
-   - `exact` / `contains` / `regex` - Deterministic checks (enable programmatic mode)
-   - `llm_judge` - Nuanced semantic evaluation (agentic mode)
+   - `exact` / `contains` / `regex` - Deterministic checks
+   - `llm_judge` - Nuanced semantic evaluation
    - `code` / `code_syntax` - Code validation
 4. **Tag tests**: Enable filtering and analysis by category
 
@@ -642,10 +623,3 @@ GOAL="improve errors and add new features and fix bugs"
 3. **Consider constraints**: Sometimes it's better to narrow the goal
 4. **Know when to stop**: After 2-3 REFINE cycles, reassess the goal
 
-### Optimizer Selection
-
-| Optimizer | Best For | Requirements |
-|-----------|----------|--------------|
-| `agentic` (default) | Most use cases, LLM self-critique | None |
-| `mipro` | Large test suites, Bayesian optimization | CGF_ENABLE_PROGRAMMATIC=true, 6+ deterministic tests |
-| `textgrad` | Gradient-based refinement | CGF_ENABLE_PROGRAMMATIC=true, 6+ deterministic tests |

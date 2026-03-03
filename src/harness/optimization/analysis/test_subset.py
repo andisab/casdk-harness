@@ -1,7 +1,7 @@
 """Focused test suite generator for targeted optimization.
 
 Creates subset test suites containing only tests relevant to specific
-competencies or prompt sections, enabling focused programmatic optimization.
+competencies or prompt sections, enabling focused section-based optimization.
 
 Example usage:
     from harness.optimization.analysis import (
@@ -19,7 +19,7 @@ Example usage:
     sections = assess_coverage(mapping, criteria)
 
     for section in sections:
-        if section.strategy == OptimizationStrategy.PROGRAMMATIC:
+        if section.strategy == OptimizationStrategy.AGENTIC:
             focused = create_focused_suite_for_section(
                 base_suite, section, mapping, criteria
             )
@@ -313,7 +313,7 @@ def create_section_suites(
     criteria: EvalCriteria,
     output_dir: Path,
 ) -> dict[PromptSection, Path]:
-    """Create focused test suites for all programmatic sections.
+    """Create focused test suites for all optimizable sections.
 
     Args:
         base_suite: Original full test suite.
@@ -330,7 +330,7 @@ def create_section_suites(
     result: dict[PromptSection, Path] = {}
 
     for section in sections:
-        if section.strategy != OptimizationStrategy.PROGRAMMATIC:
+        if section.strategy != OptimizationStrategy.AGENTIC:
             continue
 
         if section.test_count < 3:

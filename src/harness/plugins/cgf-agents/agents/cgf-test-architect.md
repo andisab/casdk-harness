@@ -91,7 +91,6 @@ resource:
   optimization_goal: "async programming"
 
 strategy: prompt_optimization
-optimizer: dspy
 ```
 </input_files>
 

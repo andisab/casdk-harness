@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -96,9 +95,7 @@ async def optimize_resource(
     resource_path: Path,
     criteria_path: Path,
     workspace_dir: Path,
-    programmatic_mode: bool = False,
     test_suite_path: Path | None = None,
-    optimizer: str = "agentic",
     iterations: int = 2,
     eval_model: str | None = None,
     verbose: bool = False,
@@ -109,9 +106,7 @@ async def optimize_resource(
         resource_path: Path to agent/skill/command .md file
         criteria_path: Path to eval_criteria.yaml
         workspace_dir: Working directory for outputs
-        programmatic_mode: Use DSPy/TextGrad (requires tests)
-        test_suite_path: Path to tests.yaml (required if programmatic_mode)
-        optimizer: "agentic" (default), "mipro", or "textgrad"
+        test_suite_path: Optional path to tests.yaml for validation
         iterations: Max iterations per section
         eval_model: Override eval model (sonnet/haiku/opus)
         verbose: Enable verbose output
@@ -130,8 +125,6 @@ async def optimize_resource(
             test_suite_path=test_suite_path,
             criteria_path=criteria_path,
             workspace_dir=workspace_dir,
-            optimizer=optimizer,
-            agentic_mode=not programmatic_mode,
             eval_model=eval_model,
             iterations_per_section=iterations,
             verbose=verbose,
@@ -320,8 +313,6 @@ def cli():
 @click.option("--criteria", "-c", type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--workspace", "-w", type=click.Path(path_type=Path), required=True)
 @click.option("--test-suite", "-t", type=click.Path(exists=True, path_type=Path), default=None)
-@click.option("--programmatic", is_flag=True, default=False, help="Use DSPy/TextGrad")
-@click.option("--optimizer", "-o", default="agentic", help="agentic, mipro, or textgrad")
 @click.option("--iterations", "-i", type=int, default=2, help="Max iterations per section")
 @click.option("--eval-model", type=str, default=None, help="Override eval model")
 @click.option("--verbose", "-v", is_flag=True, default=False)
@@ -331,8 +322,6 @@ def optimize(
     criteria: Path,
     workspace: Path,
     test_suite: Path | None,
-    programmatic: bool,
-    optimizer: str,
     iterations: int,
     eval_model: str | None,
     verbose: bool,
@@ -345,8 +334,6 @@ def optimize(
             criteria_path=criteria,
             workspace_dir=workspace,
             test_suite_path=test_suite,
-            programmatic_mode=programmatic,
-            optimizer=optimizer,
             iterations=iterations,
             eval_model=eval_model,
             verbose=verbose,

@@ -1,7 +1,6 @@
 """Metric functions for optimization.
 
 Converts TestResult and SuiteResult to scalar metrics for optimizer consumption.
-DSPy requires metric functions that return float scores.
 
 Example usage:
     from harness.optimization.optimizers.metrics import (
@@ -204,27 +203,24 @@ def create_threshold_metric(
     base_metric: MetricFunction = validation_score_metric,
     threshold: float = 0.5,
 ) -> Callable[[dict, dict], float]:
-    """Create a DSPy-compatible metric function with threshold.
+    """Create a metric function with threshold.
 
-    DSPy metrics expect (example, prediction) -> float signature.
-    This wraps a base metric with threshold-based scoring.
-
-    Note: For test-suite-based metrics, use dspy_metrics.create_test_suite_metric
-    which integrates directly with CGF test validators.
+    Wraps a base metric with threshold-based scoring. The returned function
+    expects (example, prediction) -> float signature.
 
     Args:
         base_metric: Base metric to use on TestResult.
         threshold: Minimum score to count as success.
 
     Returns:
-        DSPy-compatible metric function.
+        Metric function.
     """
     def metric(example: dict, prediction: dict) -> float:
-        """DSPy metric wrapper.
+        """Threshold metric wrapper.
 
         Args:
-            example: DSPy example with input.
-            prediction: DSPy prediction with output.
+            example: Example with input.
+            prediction: Prediction with output.
 
         Returns:
             Metric score.
@@ -249,10 +245,6 @@ def create_threshold_metric(
         return 0.0
 
     return metric
-
-
-# Backwards-compatible alias (deprecated)
-create_dspy_metric = create_threshold_metric
 
 
 def create_suite_metric(

@@ -1,7 +1,7 @@
 """Pipeline configuration for optimization runs.
 
 Defines the configuration needed to run an end-to-end optimization pipeline,
-including paths, optimizer selection, and output settings.
+including paths, output settings, and feature flags.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from harness.optimization.optimizers import OptimizationConfig, OptimizerType
+from harness.optimization.optimizers import OptimizationConfig
 
 
 def _env_bool(key: str, default: bool = False) -> bool:
@@ -42,7 +42,6 @@ class PipelineConfig:
     Attributes:
         agent_path: Path to the agent definition file (.md with YAML frontmatter).
         test_suite_path: Path to the test suite file (YAML/JSON).
-        optimizer_type: Which optimizer to use (dspy or textgrad).
         output_path: Path to write the optimized prompt (optional).
         output_format: Format for the output file.
         optimization_config: Optimizer-specific configuration.
@@ -63,7 +62,6 @@ class PipelineConfig:
 
     agent_path: str | Path
     test_suite_path: str | Path
-    optimizer_type: OptimizerType = OptimizerType.DSPY
     output_path: str | Path | None = None
     output_format: OutputFormat = OutputFormat.MARKDOWN
     optimization_config: OptimizationConfig | None = None
@@ -175,7 +173,6 @@ class PipelineConfig:
         return {
             "agent_path": str(self.agent_path),
             "test_suite_path": str(self.test_suite_path),
-            "optimizer_type": self.optimizer_type.value,
             "output_path": str(self.output_path) if self.output_path else None,
             "output_format": self.output_format.value,
             "optimization_config": {
@@ -226,7 +223,6 @@ class PipelineConfig:
         return cls(
             agent_path=data["agent_path"],
             test_suite_path=data["test_suite_path"],
-            optimizer_type=OptimizerType(data.get("optimizer_type", "dspy")),
             output_path=data.get("output_path"),
             output_format=OutputFormat(data.get("output_format", "markdown")),
             optimization_config=opt_config,

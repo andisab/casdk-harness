@@ -9,21 +9,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from harness.optimization.optimizers import (
-    MIPRO_AVAILABLE,
-    PROGRAMMATIC_ENABLED,
-    TEXTGRAD_AVAILABLE,
     BaseOptimizer,
     IterationResult,
     OptimizationConfig,
     OptimizationResult,
     OptimizerProtocol,
-    OptimizerType,
     PromptCandidate,
 )
 from harness.optimization.optimizers.metrics import (
     MetricRegistry,
     aggregate_metrics,
-    create_dspy_metric,
     create_suite_metric,
     execution_time_metric,
     get_metric,
@@ -45,20 +40,6 @@ from harness.optimization.testcases import (
     ValidationConfig,
     ValidationType,
 )
-
-
-class TestOptimizerType:
-    """Tests for OptimizerType enum."""
-
-    def test_dspy_type(self) -> None:
-        """Test DSPy optimizer type."""
-        assert OptimizerType.DSPY == "dspy"
-        assert OptimizerType.DSPY.value == "dspy"
-
-    def test_textgrad_type(self) -> None:
-        """Test TextGrad optimizer type."""
-        assert OptimizerType.TEXTGRAD == "textgrad"
-        assert OptimizerType.TEXTGRAD.value == "textgrad"
 
 
 class TestOptimizationConfig:
@@ -234,10 +215,10 @@ class TestOptimizationResult:
             config=OptimizationConfig(),
             agent_name="test-agent",
             suite_name="test-suite",
-            error="DSPy not installed",
+            error="Optimization failed",
         )
         assert result.success is False
-        assert result.error == "DSPy not installed"
+        assert result.error == "Optimization failed"
 
 
 class TestMetrics:
@@ -440,34 +421,8 @@ class TestMetricRegistry:
         assert suite_metric == suite_average_score
 
 
-class TestDSPyMetricCreation:
-    """Tests for DSPy metric creation utilities."""
-
-    def test_create_dspy_metric(self) -> None:
-        """Test creating a DSPy-compatible metric."""
-        metric = create_dspy_metric()
-
-        # With test result
-        prediction = {
-            "test_result": TestResult(
-                "test", "agent", True, 0.9, "", "", 100.0
-            )
-        }
-        score = metric({}, prediction)
-        assert score == 0.9
-
-    def test_create_dspy_metric_with_output(self) -> None:
-        """Test DSPy metric with output matching."""
-        metric = create_dspy_metric()
-
-        example = {"expected": "hello"}
-        prediction = {"output": "Hello world!"}
-        score = metric(example, prediction)
-        assert score == 1.0
-
-        prediction = {"output": "Goodbye!"}
-        score = metric(example, prediction)
-        assert score == 0.0
+class TestSuiteMetricCreation:
+    """Tests for suite metric creation utilities."""
 
     def test_create_suite_metric(self) -> None:
         """Test creating a suite metric wrapper."""
@@ -497,299 +452,13 @@ class TestDSPyMetricCreation:
         assert score == 0.0
 
 
-class TestMIPROOptimizerImport:
-    """Tests for MIPRO optimizer availability."""
-
-    def test_mipro_available_flag(self) -> None:
-        """Test MIPRO_AVAILABLE flag is set."""
-        # This test just verifies the flag exists
-        assert isinstance(MIPRO_AVAILABLE, bool)
-
-    def test_programmatic_enabled_flag(self) -> None:
-        """Test PROGRAMMATIC_ENABLED flag is set."""
-        assert isinstance(PROGRAMMATIC_ENABLED, bool)
-
-    @pytest.mark.skipif(
-        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
-        reason="Programmatic optimization disabled or DSPy not installed"
-    )
-    def test_mipro_optimizer_import(self) -> None:
-        """Test MIPRO optimizer can be imported when available."""
-        from harness.optimization.optimizers import MIPROv2AgentOptimizer
-
-        assert MIPROv2AgentOptimizer is not None
-
-
-class TestMIPROOptimizerWithMock:
-    """Tests for MIPROv2AgentOptimizer with mocked DSPy."""
-
-    @pytest.fixture
-    def test_suite(self) -> TestSuite:
-        """Create a test suite for optimization."""
-        return TestSuite(
-            name="test-optimization-suite",
-            agent_name="python-expert",
-            test_cases=[
-                TestCase(
-                    id="test-1",
-                    prompt="Write a function",
-                    expected_behavior="Function code",
-                    validation=ValidationConfig(
-                        type=ValidationType.CONTAINS,
-                        criteria="def ",
-                    ),
-                ),
-            ],
-        )
-
-    @pytest.fixture
-    def mock_agent_resource(self) -> MagicMock:
-        """Create a mock agent resource."""
-        resource = MagicMock()
-        resource.name = "python-expert"
-        resource.system_prompt = "You are a Python expert."
-        return resource
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
-        reason="Programmatic optimization disabled or DSPy not installed"
-    )
-    async def test_optimizer_evaluate(
-        self,
-        test_suite: TestSuite,
-    ) -> None:
-        """Test optimizer evaluate method."""
-        from harness.optimization.optimizers import MIPROv2AgentOptimizer
-
-        optimizer = MIPROv2AgentOptimizer()
-
-        with patch(
-            "harness.direct_agent.call_agent_simple",
-            new_callable=AsyncMock,
-            return_value="def my_function(): pass",
-        ):
-            score, result = await optimizer.evaluate(
-                "Test prompt",
-                test_suite,
-            )
-
-        assert score > 0.0
-        assert isinstance(result, SuiteResult)
-
-    @pytest.mark.asyncio
-    async def test_optimizer_not_available(
-        self,
-        mock_agent_resource: MagicMock,
-        test_suite: TestSuite,
-    ) -> None:
-        """Test optimizer returns error when MIPRO not available."""
-        # Force MIPRO_AVAILABLE to False for this test
-        with patch(
-            "harness.optimization.optimizers.dspy_mipro_optimizer.DSPY_AVAILABLE",
-            False,
-        ):
-            from harness.optimization.optimizers.dspy_mipro_optimizer import (
-                MIPROv2AgentOptimizer,
-            )
-
-            optimizer = MIPROv2AgentOptimizer()
-            result = await optimizer.optimize(mock_agent_resource, test_suite)
-
-            assert result.success is False
-            assert "DSPy not installed" in result.error
-
-
 class TestOptimizerProtocol:
     """Tests for OptimizerProtocol compliance."""
 
-    @pytest.mark.skipif(
-        not PROGRAMMATIC_ENABLED or not MIPRO_AVAILABLE,
-        reason="Programmatic optimization disabled or DSPy not installed"
-    )
-    def test_mipro_optimizer_implements_protocol(self) -> None:
-        """Verify MIPROv2AgentOptimizer implements OptimizerProtocol."""
-        from harness.optimization.optimizers import MIPROv2AgentOptimizer
+    def test_agentic_optimizer_implements_protocol(self) -> None:
+        """Verify AgenticSectionOptimizer exists and has required methods."""
+        from harness.optimization.optimizers import AgenticSectionOptimizer
 
-        optimizer = MIPROv2AgentOptimizer()
-
-        # Check required methods exist
-        assert hasattr(optimizer, "optimize")
-        assert hasattr(optimizer, "evaluate")
-        assert callable(optimizer.optimize)
-        assert callable(optimizer.evaluate)
-
-    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
-    def test_textgrad_optimizer_implements_protocol(self) -> None:
-        """Verify TextGradAgentOptimizer implements OptimizerProtocol."""
-        from harness.optimization.optimizers import TextGradAgentOptimizer
-
-        optimizer = TextGradAgentOptimizer()
-
-        # Check required methods exist
-        assert hasattr(optimizer, "optimize")
-        assert hasattr(optimizer, "evaluate")
-        assert callable(optimizer.optimize)
-        assert callable(optimizer.evaluate)
-
-
-class TestTextGradOptimizerImport:
-    """Tests for TextGrad optimizer availability."""
-
-    def test_textgrad_available_flag(self) -> None:
-        """Test TEXTGRAD_AVAILABLE flag is set."""
-        # This test just verifies the flag exists
-        assert isinstance(TEXTGRAD_AVAILABLE, bool)
-
-    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
-    def test_textgrad_optimizer_import(self) -> None:
-        """Test TextGrad optimizer can be imported when available."""
-        from harness.optimization.optimizers import TextGradAgentOptimizer
-
-        assert TextGradAgentOptimizer is not None
-
-
-class TestTextGradOptimizerWithMock:
-    """Tests for TextGradAgentOptimizer with mocked TextGrad."""
-
-    @pytest.fixture
-    def test_suite(self) -> TestSuite:
-        """Create a test suite for optimization."""
-        return TestSuite(
-            name="test-optimization-suite",
-            agent_name="python-expert",
-            test_cases=[
-                TestCase(
-                    id="test-1",
-                    prompt="Write a function",
-                    expected_behavior="Function code",
-                    validation=ValidationConfig(
-                        type=ValidationType.CONTAINS,
-                        criteria="def ",
-                    ),
-                ),
-            ],
-        )
-
-    @pytest.fixture
-    def mock_agent_resource(self) -> MagicMock:
-        """Create a mock agent resource."""
-        resource = MagicMock()
-        resource.name = "python-expert"
-        resource.system_prompt = "You are a Python expert."
-        return resource
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
-    async def test_optimizer_evaluate(
-        self,
-        test_suite: TestSuite,
-    ) -> None:
-        """Test optimizer evaluate method."""
-        from harness.optimization.optimizers import TextGradAgentOptimizer
-
-        optimizer = TextGradAgentOptimizer()
-
-        with patch(
-            "harness.direct_agent.call_agent_simple",
-            new_callable=AsyncMock,
-            return_value="def my_function(): pass",
-        ):
-            score, result = await optimizer.evaluate(
-                "Test prompt",
-                test_suite,
-            )
-
-        assert score > 0.0
-        assert isinstance(result, SuiteResult)
-
-    @pytest.mark.asyncio
-    async def test_optimizer_not_available(
-        self,
-        mock_agent_resource: MagicMock,
-        test_suite: TestSuite,
-    ) -> None:
-        """Test optimizer returns error when TextGrad not available."""
-        # Force TEXTGRAD_AVAILABLE to False for this test
-        with patch(
-            "harness.optimization.optimizers.textgrad_optimizer.TEXTGRAD_AVAILABLE",
-            False,
-        ):
-            from harness.optimization.optimizers.textgrad_optimizer import (
-                TextGradAgentOptimizer,
-            )
-
-            optimizer = TextGradAgentOptimizer()
-            result = await optimizer.optimize(mock_agent_resource, test_suite)
-
-            assert result.success is False
-            assert "TextGrad not installed" in result.error
-
-    @pytest.mark.skipif(not TEXTGRAD_AVAILABLE, reason="TextGrad not installed")
-    def test_textgrad_loss_text_creation(self) -> None:
-        """Test loss text generation for TextGrad backward pass."""
-        from harness.optimization.optimizers.textgrad_optimizer import (
-            TextGradAgentOptimizer,
-        )
-
-        optimizer = TextGradAgentOptimizer()
-
-        # Create a sample suite result with failures
-        suite_result = SuiteResult(
-            suite_name="test-suite",
-            agent_name="test-agent",
-            results=[
-                TestResult(
-                    test_case_id="test-1",
-                    agent_name="test-agent",
-                    success=True,
-                    score=0.9,
-                    output="Good output",
-                    trace_id="trace-1",
-                    execution_time_ms=100.0,
-                ),
-                TestResult(
-                    test_case_id="test-2",
-                    agent_name="test-agent",
-                    success=False,
-                    score=0.3,
-                    output="Bad output",
-                    trace_id="trace-2",
-                    execution_time_ms=100.0,
-                    error="Validation failed",
-                ),
-            ],
-        )
-
-        test_suite = TestSuite(
-            name="test-suite",
-            agent_name="test-agent",
-            test_cases=[
-                TestCase(
-                    id="test-1",
-                    prompt="Write code",
-                    expected_behavior="Working code",
-                    validation=ValidationConfig(
-                        type=ValidationType.CONTAINS,
-                        criteria="def",
-                    ),
-                ),
-                TestCase(
-                    id="test-2",
-                    prompt="Write async code",
-                    expected_behavior="Working async code",
-                    validation=ValidationConfig(
-                        type=ValidationType.CONTAINS,
-                        criteria="async def",
-                    ),
-                ),
-            ],
-        )
-
-        loss_text = optimizer._create_loss_text(suite_result, test_suite)
-
-        # Verify loss text contains failure information
-        assert "1 passed" in loss_text
-        assert "1 failed" in loss_text
-        assert "test-2" in loss_text
-        assert "Improve the system prompt" in loss_text
+        optimizer = AgenticSectionOptimizer()
+        assert hasattr(optimizer, "optimize_section")
+        assert callable(optimizer.optimize_section)
