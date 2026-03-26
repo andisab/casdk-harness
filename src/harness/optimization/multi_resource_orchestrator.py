@@ -30,7 +30,6 @@ Example usage:
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import time
@@ -658,7 +657,7 @@ eval_criteria_path: research/eval_criteria.yaml
             raise TimeoutError(
                 f"Research phase timed out after {self.config.research_timeout}s. "
                 "Increase CGF_RESEARCH_TIMEOUT or simplify the SPEC."
-            )
+            ) from None
 
         # Parse signal
         signals = self._signal_parser.parse(response)
@@ -874,6 +873,25 @@ Emit [DESIGN_COMPLETE] when done.
 
         logger.info("Q&A: Complete", decisions_path=str(decisions_path))
 
+    def _setup_workspace_dirs(self, workspace: Path) -> None:
+        """Create directory structure for resource generation.
+
+        Only creates directories for resource types present in the SPEC.
+        The .claude-plugin directory is always created (needed for plugin.json).
+        """
+        (workspace / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+
+        if self._spec.proposed_agents:
+            (workspace / "agents").mkdir(parents=True, exist_ok=True)
+        if self._spec.proposed_commands:
+            (workspace / "commands").mkdir(parents=True, exist_ok=True)
+        for skill in self._spec.proposed_skills:
+            (workspace / "skills" / skill.name).mkdir(parents=True, exist_ok=True)
+        if self._spec.proposed_mcp_tools:
+            (workspace / "tools").mkdir(parents=True, exist_ok=True)
+        if self._spec.proposed_mcp_servers:
+            (workspace / "mcp-servers").mkdir(parents=True, exist_ok=True)
+
     async def _delegate_generation(self) -> None:
         """Delegate resource generation to context-engineer agent.
 
@@ -893,14 +911,7 @@ Emit [DESIGN_COMPLETE] when done.
             total=len(pending),
         )
 
-        # Create directory structure
-        (workspace / "agents").mkdir(parents=True, exist_ok=True)
-        (workspace / "commands").mkdir(parents=True, exist_ok=True)
-        (workspace / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-
-        # Create skill directories (skills/{name}/)
-        for skill in self._spec.proposed_skills:
-            (workspace / "skills" / skill.name).mkdir(parents=True, exist_ok=True)
+        self._setup_workspace_dirs(workspace)
 
         # Load research findings for context
         eval_criteria_path = workspace / "research" / "eval_criteria.yaml"
@@ -1131,20 +1142,28 @@ output_path: {workspace / resource.path}
             for cmd in self._spec.proposed_commands:
                 if cmd.name.lstrip("/") == name:
                     return cmd.purpose
+        elif resource_type == "mcp_tool":
+            for tool in self._spec.proposed_mcp_tools:
+                if tool.name == name:
+                    return tool.purpose
+        elif resource_type == "mcp_server":
+            for server in self._spec.proposed_mcp_servers:
+                if server.name == name:
+                    return server.purpose
         return ""
 
     def _get_resource_instructions(
         self,
         name: str,
         resource_type: str,
-        purpose: str,
+        _purpose: str,
     ) -> str:
         """Get resource-type-specific generation instructions.
 
         Args:
             name: Resource name.
             resource_type: Type of resource.
-            purpose: Purpose from spec.
+            _purpose: Purpose from spec (available for future use).
 
         Returns:
             Instruction text for the generation prompt.
@@ -1196,6 +1215,41 @@ Skill Directory Structure:
 - Include usage examples
 - Specify allowed_tools appropriately"""
 
+        elif resource_type == "mcp_tool":
+            return f"""MCP Tool-Specific Instructions:
+- Create a Python file with a FastMCP @mcp.tool() decorated async handler
+- Tool name: {name} (snake_case, verb_noun format)
+- Write a 3-4 sentence description: what it does, when to use, when NOT to use, behavior notes
+- Include parameter descriptions with format/constraint information
+- Validate inputs at the top of the handler (fail fast with corrective error messages)
+- Return formatted text (not raw JSON dumps)
+- Use MCP content block format for claude_agent_sdk pattern
+- Include a test snippet or companion test file
+- Output path: tools/{name}.py
+- Reference skill: mcp-tool-creation"""
+
+        elif resource_type == "mcp_server":
+            # Determine language from spec
+            language = "python"
+            if self._spec:
+                for server in self._spec.proposed_mcp_servers:
+                    if server.name == name:
+                        language = server.language
+                        break
+
+            return f"""MCP Server-Specific Instructions:
+- Language: {language}
+- Create a server directory: mcp-servers/{name}/
+- {"Use FastMCP pattern with @mcp.tool() decorators" if language == "python" else "Use @modelcontextprotocol/sdk with Zod schemas"}
+- Register all tools with 3-4 sentence descriptions
+- {"Include pyproject.toml with [project.scripts] for uvx packaging" if language == "python" else "Include package.json with bin entry for npx packaging"}
+- Implement graceful shutdown (SIGINT/SIGTERM handlers)
+- All logging to stderr (stdout is JSON-RPC transport)
+- Include unit tests for each tool handler
+- Include README with tool listing and client configuration
+- Output path: mcp-servers/{name}/
+- Reference skill: mcp-server-creation"""
+
         return ""
 
     async def _generate_plugin_json(self) -> None:
@@ -1217,6 +1271,8 @@ Skill Directory Structure:
                 "agents": [a.name for a in self._spec.proposed_agents],
                 "skills": [s.name for s in self._spec.proposed_skills],
                 "commands": [c.name for c in self._spec.proposed_commands],
+                "mcp_tools": [t.name for t in self._spec.proposed_mcp_tools],
+                "mcp_servers": [s.name for s in self._spec.proposed_mcp_servers],
             },
         }
 
@@ -1777,10 +1833,7 @@ word_count: {{count}}
             else:
                 # Insert after header separator
                 header_end = content.find("---\n")
-                if header_end != -1:
-                    insert_pos = header_end + 4  # After "---\n"
-                else:
-                    insert_pos = len(content)
+                insert_pos = header_end + 4 if header_end != -1 else len(content)
 
             new_section = f"\n{section_header}\n{entry}"
             content = content[:insert_pos] + new_section + content[insert_pos:]

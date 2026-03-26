@@ -18,7 +18,7 @@ Technical reference for developers working on this repository and for Claude's o
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
 - 27 subagents (14 harness + 13 plugin) via direct invocation
-- 14 skills via Skill tool (6 base + 8 plugin)
+- 16 skills via Skill tool (6 base + 10 plugin)
 - **CGF Optimization Framework** (1,700+ tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
   - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
@@ -296,7 +296,7 @@ python -m harness.direct_agent --agent python-expert --prompt "..." --verbose
 **Plugins** (3 total):
 
 - **cgf-agents** (`src/harness/plugins/cgf-agents/`): 1 skill (cgf-optimize), 1 command (cgf: create, optimize, status). Dependencies: context-engineering, research-team. Orchestrates multi-agent optimization workflows.
-- **context-engineering** (`src/harness/plugins/context-engineering/`): 5 skills (agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration). Hook configuration for lifecycle events.
+- **context-engineering** (`src/harness/plugins/context-engineering/`): 8 skills (agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration, resource-optimization, mcp-tool-creation, mcp-server-creation). Hook configuration for lifecycle events. MCP tool/server templates (Python + TypeScript).
 - **research-team** (`src/harness/plugins/research-team/`): 1 skill (joplin-research), 1 command (research).
 
 **Namespacing**: All plugin resources use `plugin-name:resource-name` format (e.g., `context-engineering:skill-creation`, `cgf-agents:cgf`).
@@ -736,7 +736,8 @@ uv run python -m harness.optimization.cli.section_optimize \
 | 0.6 | Integration | 16 |
 | 1.0 | Single-Agent Optimization | 1,182 |
 | S1 | Protocol Layer + Design Phase | 120 |
-| **Total** | | **1,738** |
+| S2 | MCP Resource Generation | 47 |
+| **Total** | | **1,785** |
 
 ### Orchestration Workflows
 

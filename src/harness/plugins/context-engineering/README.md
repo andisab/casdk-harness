@@ -16,7 +16,7 @@ A comprehensive Claude Code plugin that helps you design and implement high-qual
 - Uses conventions-mcp to find proven patterns
 - Implements progressive disclosure for token efficiency
 
-### 🎓 Five Specialized Skills
+### 🎓 Eight Specialized Skills
 
 Auto-activated skills provide detailed guidance for each resource type:
 
@@ -25,6 +25,9 @@ Auto-activated skills provide detailed guidance for each resource type:
 3. **plugin-development** - Building plugin bundles with proper directory structure, metadata, and distribution
 4. **command-creation** - Crafting slash commands with arguments, file references, and bash execution
 5. **hook-configuration** - Setting up lifecycle event handlers for automation and workflow control
+6. **resource-optimization** - Optimizing existing Claude Code resources using CGF framework patterns
+7. **mcp-tool-creation** - Creating MCP tool functions with FastMCP patterns, Anthropic tool description best practices, and testing strategies
+8. **mcp-server-creation** - Building MCP servers in Python (FastMCP) or TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx distribution
 
 ### 📋 Complete Templates
 
@@ -41,6 +44,9 @@ Ready-to-use starting points for every resource type:
 - **plugin-structure.md** - Complete plugin directory layout and configuration
 - **slash-command-template.md** - Command patterns with 10 real-world examples
 - **hook-configuration-template.md** - 20+ hook configurations for common scenarios
+- **mcp-tool-template.py** - FastMCP tool handler with validation and error handling
+- **mcp-server-python-template/** - Complete Python MCP server scaffold (FastMCP, pyproject.toml, tests)
+- **mcp-server-typescript-template/** - Complete TypeScript MCP server scaffold (@modelcontextprotocol/sdk, package.json, tests)
 
 ### 🎨 Best Practice Patterns
 
@@ -173,6 +179,8 @@ The hook-configuration skill sets up:
 | plugin-development | "create plugin", "bundle components", "distribute" | Plugin development |
 | command-creation | "create command", "slash command", "add /command" | Command development |
 | hook-configuration | "create hook", "automation", "event handler" | Hook configuration |
+| mcp-tool-creation | "MCP tool", "tool handler", "tool schema" | MCP tool development |
+| mcp-server-creation | "MCP server", "server scaffolding", "uvx/npx" | MCP server development |
 
 ### Templates
 
@@ -365,13 +373,22 @@ context-engineering/
 │   ├── skill-creation/
 │   ├── plugin-development/
 │   ├── command-creation/
-│   └── hook-configuration/
+│   ├── hook-configuration/
+│   ├── mcp-tool-creation/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── mcp-server-creation/
+│       ├── SKILL.md
+│       └── references/
 ├── templates/
 │   ├── subagent-template.md
 │   ├── skill-template.md
 │   ├── plugin-structure.md
 │   ├── slash-command-template.md
-│   └── hook-configuration-template.md
+│   ├── hook-configuration-template.md
+│   ├── mcp-tool-template.py
+│   ├── mcp-server-python-template/
+│   └── mcp-server-typescript-template/
 ├── patterns/
 │   ├── progressive-disclosure.md
 │   ├── multi-agent-orchestration.md      # In progress
@@ -390,14 +407,21 @@ Contributions welcome! Areas for contribution:
 
 ## Roadmap
 
-### ✅ v1.0.0 - Core Functionality (Current)
+### ✅ v1.0.0 - Core Functionality
 - Expert orchestrator agent
 - 5 specialized skills
 - 5 complete templates
 - Progressive disclosure pattern
 - Conventions MCP integration
 
-### 🚧 v1.0.1 - Pattern Completion (Next)
+### ✅ v1.1.0 - MCP Resource Support (Current)
+- 2 new skills: mcp-tool-creation, mcp-server-creation
+- 3 new templates: Python tool, Python server, TypeScript server
+- Resource-type-guide updated with MCP Tool and MCP Server sections
+- Context-engineer agent updated with MCP awareness
+- Orchestrator handles mcp_tool and mcp_server resource types
+
+### 🚧 v1.1.1 - Pattern Completion (Next)
 - Complete multi-agent-orchestration pattern
 - Complete tool-restriction-patterns pattern
 - Additional examples in skills/*/examples/

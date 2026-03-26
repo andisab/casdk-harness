@@ -14,6 +14,8 @@ Comprehensive guide for selecting and designing Claude Code resources. Use this 
 | **Workflow** | Coordinated multi-agent pipelines | Multi-step process | Orchestrator-driven |
 | **Plugin** | Bundled collection of components | Feature domain | Installation |
 | **Hook** | Lifecycle events, automation triggers | Tool interception | Event-driven |
+| **MCP Tool** | Single utility function for LLM tool calling | Tool capability | Agent tool call via MCP |
+| **MCP Server** | Multi-tool service for distribution | Tool service | MCP client (uvx/npx) |
 | **Template** | Reusable output schemas, starter patterns | Code generation | Reference/copy |
 
 ---
@@ -463,6 +465,143 @@ plugin-name/
 
 ---
 
+## MCP Tool
+
+### When to Use
+
+- **Single utility function** exposed to LLMs via Model Context Protocol
+- **Adding a capability** to an existing MCP server
+- **Stateless request/response** operations (search, fetch, create, validate)
+- **External API wrappers** that an LLM needs to call
+
+### When NOT to Use
+
+- Multiple related tools that share state or config — create an MCP Server instead
+- Logic that requires multi-step reasoning — use an Agent instead
+- User-triggered workflows — use a Command instead
+- Deterministic patterns without external calls — use a Skill instead
+
+### Characteristics
+
+| Aspect | MCP Tool Behavior |
+|--------|-------------------|
+| **Activation** | LLM tool call via MCP protocol |
+| **Execution** | Stateless single request/response |
+| **Input** | JSON Schema-validated parameters |
+| **Output** | MCP content blocks (text, images) |
+| **Transport** | stdio (JSON-RPC) |
+| **Distribution** | Part of an MCP server package |
+
+### Structure
+
+```
+tools/
+└── {tool_name}.py          # FastMCP @mcp.tool() decorated handler
+```
+
+Or within a server:
+```
+my-server/src/my_server/tools/
+├── search.py               # Search-related tools
+├── create.py               # Create-related tools
+└── manage.py               # Management tools
+```
+
+### Examples
+
+- **search_documents** - Full-text search across a document store
+- **create_issue** - Create a GitHub/GitLab issue from parameters
+- **validate_schema** - Validate JSON against a schema
+- **fetch_metrics** - Retrieve metrics from a monitoring API
+
+### MCP Tool vs Agent
+
+| Scenario | Use MCP Tool | Use Agent |
+|----------|-------------|-----------|
+| Single API call with fixed logic | Yes | |
+| Multi-step reasoning about results | | Yes |
+| Data transformation with clear I/O | Yes | |
+| Decision-making between approaches | | Yes |
+| Stateless utility function | Yes | |
+| Needs conversation history/context | | Yes |
+
+---
+
+## MCP Server
+
+### When to Use
+
+- **2+ related tools** that share configuration, state, or domain
+- **Distributing tools** for others to install via `uvx` (Python) or `npx` (TypeScript)
+- **Tools that need shared resources** (database connections, API clients, auth tokens)
+- **Domain-specific toolkits** (GitHub, database, monitoring, deployment)
+
+### When NOT to Use
+
+- Single utility tool — create a standalone MCP Tool instead
+- Claude Code agent, skill, or command — use their respective types
+- REST API — MCP is for LLM tool calling, not general HTTP services
+
+### Characteristics
+
+| Aspect | MCP Server Behavior |
+|--------|---------------------|
+| **Activation** | Started by MCP client (Claude Code, Claude Desktop) |
+| **Lifecycle** | Long-running process, handles multiple tool calls |
+| **Transport** | stdio (JSON-RPC) — reads stdin, writes stdout |
+| **Capabilities** | Tools, Resources, Prompts |
+| **Distribution** | `uvx` (Python) or `npx` (TypeScript) |
+| **State** | Can maintain state across calls within a session |
+
+### Structure
+
+**Python (FastMCP):**
+```
+my-server/
+├── pyproject.toml          # [project.scripts] for uvx
+├── src/my_server/
+│   ├── __init__.py
+│   ├── server.py           # FastMCP instance + tool imports
+│   └── tools/
+│       └── search.py       # Tool handlers
+├── tests/
+│   └── test_tools.py
+└── README.md
+```
+
+**TypeScript (@modelcontextprotocol/sdk):**
+```
+my-server/
+├── package.json            # bin entry for npx
+├── tsconfig.json
+├── src/
+│   ├── index.ts            # Entry: transport + shutdown
+│   ├── server.ts           # Tool registration
+│   └── tools/
+│       └── search.ts
+├── tests/
+│   └── tools.test.ts
+└── README.md
+```
+
+### Python vs TypeScript Decision Factors
+
+| Factor | Choose Python | Choose TypeScript |
+|--------|--------------|-------------------|
+| **Ecosystem** | Data science, ML, Python APIs | Frontend, Node.js, npm packages |
+| **Packaging** | `uvx` / `pip install` | `npx` / `npm install` |
+| **Type system** | Type hints + docstrings | Zod schemas (runtime validation) |
+| **Existing code** | Python tools to wrap | TypeScript/JS tools to wrap |
+
+### Examples
+
+- **context7** - Library documentation lookup (Python, in this repo)
+- **docker** - Container management (Python, in this repo)
+- **conventions-mcp** - Coding conventions search (TypeScript, external)
+- **memory** - Knowledge graph persistence (Python, in this repo)
+
+---
+
 ## Template
 
 ### When to Use
@@ -519,6 +658,8 @@ Use this matrix to select the right resource type:
 | Multi-step pipeline | Yes | Yes | Maybe | **Workflow** |
 | Component bundle | - | - | - | **Plugin** |
 | Event automation | No | No | No | **Hook** |
+| Single utility function | No | No | No | **MCP Tool** |
+| Multi-tool service | No | No | No | **MCP Server** |
 | Reusable structure | No | No | No | **Template** |
 
 ### Agent vs Skill: Detailed Comparison
@@ -948,6 +1089,26 @@ Multi-agent plugin for Infrastructure-as-Code automation that can:
 - [ ] Usage examples
 - [ ] Appropriate allowed_tools
 
+### MCP Tool Quality
+
+- [ ] Tool name uses verb_noun snake_case format
+- [ ] Description is 3-4 sentences (what, when to use, when NOT to use, behavior)
+- [ ] All parameters have descriptions with format/constraint info
+- [ ] Input validation at handler top (fail fast)
+- [ ] Error messages include corrective guidance
+- [ ] Returns formatted text, not raw data dumps
+- [ ] Unit tests for handler (valid input, empty input, error cases)
+
+### MCP Server Quality
+
+- [ ] All tools have proper 3-4 sentence descriptions
+- [ ] Packaging configured (pyproject.toml scripts or package.json bin)
+- [ ] Graceful shutdown handles SIGINT/SIGTERM
+- [ ] All logging goes to stderr (not stdout)
+- [ ] README with tool listing and client configuration
+- [ ] Unit tests for each tool handler
+- [ ] Integration test with MCP client (tools/list works)
+
 ### Plugin Quality
 
 - [ ] Complete plugin.json
@@ -974,6 +1135,9 @@ Multi-agent plugin for Infrastructure-as-Code automation that can:
 - `templates/slash-command-template.md` - Command structure
 - `templates/plugin-structure.md` - Plugin layout
 - `templates/hook-configuration-template.md` - Hook examples
+- `templates/mcp-tool-template.py` - MCP tool pattern
+- `templates/mcp-server-python-template/` - Python MCP server scaffold
+- `templates/mcp-server-typescript-template/` - TypeScript MCP server scaffold
 
 ### Patterns
 

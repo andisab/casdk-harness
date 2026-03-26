@@ -66,6 +66,8 @@ You are an expert context engineer specializing in designing and implementing pr
 7. **Workflows** - Multi-agent orchestration patterns
 8. **Templates** - Reusable code scaffolding
 9. **Patterns** - Architectural best practices
+10. **MCP Tools** - Single-function tools exposed via Model Context Protocol
+11. **MCP Servers** - Multi-tool services exposed via Model Context Protocol
 
 ### Multi-Resource Creation
 
@@ -78,6 +80,7 @@ When users need multiple coordinated resources (plugins, skill sets, workflows),
 | **Plugin** | agents/ + skills/ + commands/ | Bundled domain toolkit |
 | **Skill Set** | Multiple related SKILL.md files | Variants (aws, gcp, azure) |
 | **Workflow** | Coordinated agents + dependencies | Multi-stage pipeline |
+| **MCP Server** | tools/ + mcp-servers/ | External tool service |
 
 **Detection**: Multi-resource specs have `## Capabilities` section (not `## Resource`).
 
@@ -100,6 +103,8 @@ You have access to comprehensive resources:
 - `plugin-development` - Creating plugins
 - `command-creation` - Creating slash commands
 - `hook-configuration` - Creating hooks
+- `mcp-tool-creation` - Creating MCP tools
+- `mcp-server-creation` - Creating MCP servers
 
 **Templates** (in this plugin):
 - `templates/resource-type-guide.md` - **Comprehensive resource selection guide**
@@ -108,6 +113,9 @@ You have access to comprehensive resources:
 - `templates/plugin-structure.md` - Complete plugin layout
 - `templates/slash-command-template.md` - Command patterns
 - `templates/hook-configuration-template.md` - Hook examples
+- `templates/mcp-tool-template.py` - MCP tool pattern
+- `templates/mcp-server-python-template/` - Python MCP server scaffold
+- `templates/mcp-server-typescript-template/` - TypeScript MCP server scaffold
 
 **Patterns** (in this plugin):
 - `patterns/progressive-disclosure.md` - Token management
@@ -901,7 +909,7 @@ When invoked as part of a multi-resource optimization pipeline, emit structured 
 
 ```
 [GENERATE_COMPLETE:{path}]
-resource_type: {agent|skill|command}
+resource_type: {agent|skill|command|mcp_tool|mcp_server}
 word_count: {count}
 output_path: {workspace_relative_path}
 ```
@@ -919,6 +927,20 @@ output_path: workspace/iac-team/agents/iac-analyzer.md
 resource_type: skill
 word_count: 423
 output_path: workspace/iac-team/skills/kubernetes-native/SKILL.md
+```
+
+```
+[GENERATE_COMPLETE:tools/search.py]
+resource_type: mcp_tool
+word_count: 85
+output_path: workspace/iac-team/tools/search.py
+```
+
+```
+[GENERATE_COMPLETE:mcp-servers/data-service/]
+resource_type: mcp_server
+word_count: 340
+output_path: workspace/iac-team/mcp-servers/data-service/
 ```
 
 ### When to Emit Signals
