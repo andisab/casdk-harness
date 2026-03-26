@@ -2,7 +2,7 @@
 
 > **Created**: December 2025
 > **Status**: Decided
-> **Related**: [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md), [ORCHESTRATION_PATTERNS.md](../ORCHESTRATION_PATTERNS.md)
+> **Related**: [ORCHESTRATION_ROADMAP.md](./ORCHESTRATION_ROADMAP.md), [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md)
 
 ---
 
@@ -91,7 +91,7 @@
 
 ## Pattern-Container Mapping
 
-How orchestration patterns map to container strategies. See [ORCHESTRATION_PATTERNS.md](../ORCHESTRATION_PATTERNS.md) for pattern details.
+How orchestration patterns map to container strategies. See [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md) for pattern details.
 
 > **Note**: This mapping is preliminary and needs refinement during implementation.
 
@@ -413,7 +413,7 @@ class ContainerManager:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `docs/features/CONTAINERIZATION.md` | CREATE | This document (consolidated from Amendment 8) |
+| `docs/CONTAINERIZATION.md` | CREATE | This document (consolidated from Amendment 8) |
 
 ### Future (Implementation)
 
@@ -477,5 +477,5 @@ The subagent path (`direct_agent.py`) remains unchanged and is always available.
 
 ## Related Documents
 
-- [ORCHESTRATION_ROADMAP.md](../ORCHESTRATION_ROADMAP.md) - Implementation roadmap with unified timeline
-- [ORCHESTRATION_PATTERNS.md](../ORCHESTRATION_PATTERNS.md) - Pattern documentation (8 patterns)
+- [ORCHESTRATION_ROADMAP.md](./ORCHESTRATION_ROADMAP.md) - Implementation roadmap with unified timeline
+- [ORCHESTRATION_PATTERNS.md](./ORCHESTRATION_PATTERNS.md) - Pattern documentation (8 patterns)
