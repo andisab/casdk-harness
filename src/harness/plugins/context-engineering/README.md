@@ -16,7 +16,15 @@ A comprehensive Claude Code plugin that helps you design and implement high-qual
 - Uses conventions-mcp to find proven patterns
 - Implements progressive disclosure for token efficiency
 
-### 🎓 Eight Specialized Skills
+<!-- MERGE-NOTE (cgf-framework → main, 2026-05-01):
+     Skill 9 (`tool-creation`) overlaps conceptually with skills 7-8 (`mcp-tool-creation`,
+     `mcp-server-creation`). All three are kept temporarily after the cgf-framework merge.
+     Cleanup is scheduled in REFACTOR.md Part 1C (plugin source consolidation) when the
+     in-tree context-engineering plugin is replaced by swe-marketplace's version, which
+     uses different naming again (`mcp-tool-dev`, `mcp-server-dev`). See "Deferred CE
+     plugin redundancies" in docs/REFACTOR.md.
+-->
+### 🎓 Nine Specialized Skills
 
 Auto-activated skills provide detailed guidance for each resource type:
 
@@ -26,8 +34,9 @@ Auto-activated skills provide detailed guidance for each resource type:
 4. **command-creation** - Crafting slash commands with arguments, file references, and bash execution
 5. **hook-configuration** - Setting up lifecycle event handlers for automation and workflow control
 6. **resource-optimization** - Optimizing existing Claude Code resources using CGF framework patterns
-7. **mcp-tool-creation** - Creating MCP tool functions with FastMCP patterns, Anthropic tool description best practices, and testing strategies
-8. **mcp-server-creation** - Building MCP servers in Python (FastMCP) or TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx distribution
+7. **mcp-tool-creation** - Creating MCP tool functions with FastMCP patterns, Anthropic tool description best practices, and testing strategies _(overlaps with skill 9; will be reconciled in Part 1C)_
+8. **mcp-server-creation** - Building MCP servers in Python (FastMCP) or TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx distribution _(overlaps with skill 9; will be reconciled in Part 1C)_
+9. **tool-creation** - Building MCP tools and servers with proper schemas, error handling, and SDK registration _(broader/older single-skill version of skills 7-8; will be reconciled in Part 1C)_
 
 ### 📋 Complete Templates
 
@@ -44,9 +53,11 @@ Ready-to-use starting points for every resource type:
 - **plugin-structure.md** - Complete plugin directory layout and configuration
 - **slash-command-template.md** - Command patterns with 10 real-world examples
 - **hook-configuration-template.md** - 20+ hook configurations for common scenarios
+<!-- MERGE-NOTE: tool-template.md overlaps with the mcp-* templates below; both kept until Part 1C cleanup. -->
 - **mcp-tool-template.py** - FastMCP tool handler with validation and error handling
 - **mcp-server-python-template/** - Complete Python MCP server scaffold (FastMCP, pyproject.toml, tests)
 - **mcp-server-typescript-template/** - Complete TypeScript MCP server scaffold (@modelcontextprotocol/sdk, package.json, tests)
+- **tool-template.md** - MCP tool/server scaffolding with Python, TypeScript, and subprocess patterns _(broader single-template version; overlaps with mcp-* templates; will be reconciled in Part 1C)_
 
 ### 🎨 Best Practice Patterns
 
@@ -161,6 +172,22 @@ The hook-configuration skill sets up:
 3. Shell commands
 4. Security validation
 
+### Creating MCP Tools
+
+```
+User: "Create a tool that queries our internal API"
+
+Claude: I'll design an MCP server with proper tool definitions,
+        async handlers, input validation, and error handling.
+```
+
+The tool-creation skill handles:
+1. Server type selection (in-process Python/TS or subprocess)
+2. Tool schema design (names, descriptions, parameters)
+3. Async handler implementation with MCP return format
+4. Error handling and dependency management
+5. Server registration and testing
+
 ## Components
 
 ### Agent
@@ -179,8 +206,9 @@ The hook-configuration skill sets up:
 | plugin-development | "create plugin", "bundle components", "distribute" | Plugin development |
 | command-creation | "create command", "slash command", "add /command" | Command development |
 | hook-configuration | "create hook", "automation", "event handler" | Hook configuration |
-| mcp-tool-creation | "MCP tool", "tool handler", "tool schema" | MCP tool development |
-| mcp-server-creation | "MCP server", "server scaffolding", "uvx/npx" | MCP server development |
+| mcp-tool-creation | "MCP tool", "tool handler", "tool schema" | MCP tool development _(overlaps with tool-creation; Part 1C cleanup)_ |
+| mcp-server-creation | "MCP server", "server scaffolding", "uvx/npx" | MCP server development _(overlaps with tool-creation; Part 1C cleanup)_ |
+| tool-creation | "create tool", "MCP server", "custom tool", "MCP integration" | Tool/server development _(broader single-skill version; overlaps with mcp-* skills; Part 1C cleanup)_ |
 
 ### Templates
 
@@ -377,9 +405,11 @@ context-engineering/
 │   ├── mcp-tool-creation/
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── mcp-server-creation/
-│       ├── SKILL.md
-│       └── references/
+│   ├── mcp-server-creation/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── tool-creation/                  # Overlaps with mcp-* skills; Part 1C cleanup
+│       └── SKILL.md
 ├── templates/
 │   ├── subagent-template.md
 │   ├── skill-template.md
@@ -388,7 +418,8 @@ context-engineering/
 │   ├── hook-configuration-template.md
 │   ├── mcp-tool-template.py
 │   ├── mcp-server-python-template/
-│   └── mcp-server-typescript-template/
+│   ├── mcp-server-typescript-template/
+│   └── tool-template.md                # Overlaps with mcp-* templates; Part 1C cleanup
 ├── patterns/
 │   ├── progressive-disclosure.md
 │   ├── multi-agent-orchestration.md      # In progress
@@ -409,8 +440,8 @@ Contributions welcome! Areas for contribution:
 
 ### ✅ v1.0.0 - Core Functionality
 - Expert orchestrator agent
-- 5 specialized skills
-- 5 complete templates
+- 6 specialized skills
+- 6 complete templates
 - Progressive disclosure pattern
 - Conventions MCP integration
 
@@ -482,3 +513,4 @@ Then ask Claude:
 - "Build a plugin for [your workflow]"
 - "Design a command for [common task]"
 - "Set up a hook for [automation]"
+- "Create a tool for [custom integration]"
