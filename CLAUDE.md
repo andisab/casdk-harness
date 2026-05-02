@@ -45,13 +45,14 @@ Technical reference for developers working on this repository and for Claude's o
 - **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead. _Note: #12212 is closed (2025-11-27); #11205 may not exist on `anthropics/claude-code`. Re-verification scheduled in REFACTOR.md Part 2 Phase 0._
 - Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
 - AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
-- **5 pre-existing test failures** documented in REFACTOR.md Part 1E (config default mismatch, LLM judge regex drift, plugin_loading fixture issue, order-dependent test-state pollution). To be fixed as small follow-up commits on `main`.
 
 ### TODOs
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
 - [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] Fix 5 pre-existing test failures → REFACTOR.md Part 1E
 - [ ] **Block 2 next:** Part 2 Phase 0 — bump SDK pin, verify Task tool dispatches to filesystem-discovered agents (see REFACTOR.md)
+
+### Recent fixes (2026-05-02)
+- ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
 
 ---
 

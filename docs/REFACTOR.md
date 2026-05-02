@@ -182,23 +182,22 @@ These items are infra/ops, not eval-harness:
 
 Action: remove these from CLAUDE.md's "Known Limitations" section as each Part lands. The remaining items here are pointers, not separate TODOs.
 
-### 1E. Pre-existing test failures discovered during 2026-05-01 merge
+### 1E. Pre-existing test failures fixed 2026-05-02 ✓
 
-`make test-unit` totals on cgf-framework after merging `origin/main`: **1585 passed, 6 failed, 22 warnings.** The 6 failures pre-exist on cgf-framework (verified by running them against parent commit `0e7199a` before the merge). The merge did not introduce regressions. These failures will land on `main` when the Part 1A merge PR is accepted; they should be fixed as separate small commits, not bundled into the merge PR.
+`make test-unit` totals on cgf-framework after merging `origin/main` (pre-fix): **1585 passed, 6 failed, 22 warnings.** The 6 failures pre-existed on cgf-framework (verified against parent commit `0e7199a`). The merge introduced no regressions.
 
-**Follow-up TODOs (post-merge, individual commits on `main`):**
+**All 5 follow-ups landed as 3 small commits on `main` (2026-05-02):**
 
-1. **`tests/unit/test_config.py::test_new_config_fields_defaults`** — assertion `config.autonomous_delay_seconds == 5` fails; actual default is `3`. CLAUDE.md already documents this discrepancy: ".env.example shows 3, code default is 5". Fix: align the test to whatever value is canonical, and align `.env.example` and `config.py` defaults to match each other. **Trivial — single-line change.**
+1. **`a7f6d4f` — `test(config): isolate test_new_config_fields_defaults from .env`**
+   Pass `_env_file=None` so the test verifies code defaults rather than the developer's local `.env` (which had `AUTONOMOUS_DELAY_SECONDS=3` overriding the canonical default of 5).
 
-2. **`tests/unit/test_optimization/test_testcases.py::TestCodeLLMValidator::test_llm_judge_success`** — expected `0.95`, got `0.7`. The LLM judge regex parser extracts "0.7" from the mocked response string `"The score is 0.7"` even though it logs `"Could not parse LLM judge score"`. Test expectation drift after parser was made more permissive. Fix: either tighten the parser to fail-fast on non-canonical formats, or update the test mock to use a string the parser can't extract a value from.
+2. **`f734b5c` — `test(testcases): reset shared anthropic client singleton between tests`**
+   Single root cause for 4 failures (#2, #3, #4, #5). `validators.get_shared_anthropic_client()` cached a module-level singleton populated by the FIRST test's mock; subsequent tests' patches couldn't replace it, so they received the prior test's response ("The score is 0.7") regardless of their own mock. Added autouse fixture that resets `_shared_client = None` between tests.
 
-3. **`tests/unit/test_optimization/test_testcases.py::TestCodeLLMValidator::test_llm_judge_parse_error`** — same root cause as #2; expected `0.8`, got `0.7`. Same fix.
+3. **`9bf5a28` — `fix(config): treat empty ENABLED_PLUGINS env value as "no filter"`**
+   Real user-facing bug, not just a test issue. The `enabled_plugins_list` property treated empty-string `""` (a common `.env` state) as "filter to nothing" → 0 plugins loaded. Now empty resolves to `None` → "no filter, enable all". Anyone with `ENABLED_PLUGINS=` in their `.env` previously had zero plugins silently — that's now fixed.
 
-4. **`tests/unit/test_optimization/test_testcases.py::TestLLMJudgeValidator::test_llm_judge_error_handling`** — order-dependent flake; passes in isolation, fails in full suite. Indicates test-state pollution somewhere in `test_testcases.py`. Fix: identify the culprit fixture/global and isolate it (likely `pytest.fixture(scope="function")` missing somewhere).
-
-5. **`tests/unit/test_plugin_loading.py::test_agent_session_plugin_configuration`** — expected `len(session.plugins) == 3`, got `0`. Plugin discovery logs show 1 plugin found at runtime, but the test sees an empty `session.plugins` list. Likely fixture/env config issue: the test bootstraps `AgentSession` in a way that bypasses plugin discovery. Fix: align test fixture with how `AgentSession` is constructed elsewhere; verify `enabled_plugins_list` is populated.
-
-**Decision rule:** these 5 follow-ups should be 5 small, independently-revertible commits on `main` after the Part 1A merge PR lands. Do not bundle them into the merge PR — they obscure its purpose and risk reviewer rejection over orthogonal test churn.
+**Post-fix totals: 1591 passed, 0 failed, 21 warnings.**
 
 ---
 
