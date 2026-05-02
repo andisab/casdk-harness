@@ -318,11 +318,17 @@ class HarnessConfig(BaseSettings):
         """Get enabled plugins as a list.
 
         Returns:
-            List of plugin names if enabled_plugins is set, None otherwise.
+            List of plugin names if `enabled_plugins` is set to a non-empty
+            comma-separated string. Returns None (= "no filter, enable all
+            discovered plugins") if `enabled_plugins` is None or empty/whitespace.
         """
         if self.enabled_plugins is None:
             return None
-        return [p.strip() for p in self.enabled_plugins.split(",") if p.strip()]
+        names = [p.strip() for p in self.enabled_plugins.split(",") if p.strip()]
+        # Treat empty/whitespace-only env value as "no filter" rather than
+        # "enable zero plugins". `ENABLED_PLUGINS=` in .env is a common state
+        # and should mean "use defaults", not "disable everything".
+        return names if names else None
 
     @property
     def checkpoint_dir(self) -> Path:
