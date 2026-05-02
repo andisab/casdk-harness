@@ -17,15 +17,21 @@ Technical reference for developers working on this repository and for Claude's o
 - 5 MCP servers (3 in-process + 2 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents, skills, commands, and hooks
-- 27 subagents (14 harness + 13 plugin) via direct invocation
-- 16 skills via Skill tool (6 base + 10 plugin)
-- **CGF Optimization Framework** (1,700+ tests):
+- **30 total agents** (17 harness + 13 plugin) via direct invocation
+- **11 plugin skills** (9 context-engineering + 1 cgf-agents + 1 research-team)
+- **CGF Optimization Framework** (1,585 passing tests):
   - Phase 0: Infrastructure (tracer, store, adapters, rewards)
   - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
   - Phase 2: Section-based optimization (agentic, coherence)
   - Stage 1: Protocol layer, resource architect agent, DESIGN phase
+  - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
 
 ### Completed Recently
+- **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
+- **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
+  - [x] `mcp-tool-creation` and `mcp-server-creation` skills with references/
+  - [x] Full Python and TypeScript MCP server scaffolds in templates/
+  - [x] GENERATE phase delegates MCP types to `context-engineer`
 - **Stage 1: Protocol Layer + Resource Architect (2026-03-02)**
   - [x] Shared protocol layer: signals, resource types, quality scoring, state, workspace
   - [x] Resource architect agent (opus model) for SPEC → resource plan decisions
@@ -36,13 +42,16 @@ Technical reference for developers working on this repository and for Claude's o
   - [x] resource_plan.schema.json and resource-plan.yaml output
 
 ### Known Limitations
-- **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead
-- Grafana overview dashboard is placeholder (stub file)
-- AlertManager not configured (alerting rules defined but unused)
+- **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead. _Note: #12212 is closed (2025-11-27); #11205 may not exist on `anthropics/claude-code`. Re-verification scheduled in REFACTOR.md Part 2 Phase 0._
+- Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
+- AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
+- **5 pre-existing test failures** documented in REFACTOR.md Part 1E (config default mismatch, LLM judge regex drift, plugin_loading fixture issue, order-dependent test-state pollution). To be fixed as small follow-up commits on `main`.
 
 ### TODOs
-- [ ] Configure AlertManager in docker-compose for `alerting.yml` rules
-- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist)
+- [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
+- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
+- [ ] Fix 5 pre-existing test failures → REFACTOR.md Part 1E
+- [ ] **Block 2 next:** Part 2 Phase 0 — bump SDK pin, verify Task tool dispatches to filesystem-discovered agents (see REFACTOR.md)
 
 ---
 
