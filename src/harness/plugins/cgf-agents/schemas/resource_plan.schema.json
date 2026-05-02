@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Resource Plan",
+  "description": "Output from cgf-resource-architect: what resources to build, why, and in what order",
+  "type": "object",
+  "required": ["plan_version", "rationale", "resources", "generation_order"],
+  "properties": {
+    "plan_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version of this plan, incremented on each revision"
+    },
+    "spec_hash": {
+      "type": "string",
+      "description": "Hash of SPEC.md used to detect when re-planning is needed"
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Why this set of resources was chosen to fulfill the SPEC capabilities"
+    },
+    "resources": {
+      "type": "array",
+      "description": "Resources to generate, in any order (see generation_order for build sequence)",
+      "items": {
+        "type": "object",
+        "required": ["path", "type", "purpose", "capabilities_served", "priority"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path where this resource will be written (e.g., agents/iac-analyzer.md)"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["agent", "skill", "command", "hook", "mcp_tool", "mcp_server"],
+            "description": "Resource type determines generation strategy"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "What this resource does and why it is needed"
+          },
+          "capabilities_served": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Which SPEC capabilities this resource fulfills (at least one required)"
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "Paths of other resources that must be generated before this one"
+          },
+          "model": {
+            "type": "string",
+            "description": "For agents: LLM model to use (sonnet, opus, haiku). Defaults to sonnet."
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "For agents: tools to grant (e.g., Read, Write, Bash, Glob)"
+          },
+          "language": {
+            "type": "string",
+            "enum": ["python", "typescript"],
+            "description": "For mcp_tool/mcp_server: implementation language. Defaults to python."
+          },
+          "triggers": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "For skills: activation trigger terms"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Build priority: 0 = no dependencies (build first), higher = depends on lower-priority items"
+          }
+        }
+      }
+    },
+    "generation_order": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Resource paths in topological sort order (dependencies first)"
+    },
+    "rejected_proposals": {
+      "type": "array",
+      "default": [],
+      "description": "Proposals from SPEC that were overridden, with justification",
+      "items": {
+        "type": "object",
+        "properties": {
+          "original": {
+            "type": "string",
+            "description": "The original proposal from SPEC"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the proposal was rejected or overridden"
+          }
+        }
+      }
+    }
+  }
+}

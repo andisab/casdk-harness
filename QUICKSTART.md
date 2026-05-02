@@ -75,6 +75,7 @@ Run `make doctor` to diagnose setup issues.
 ```bash
 make interactive      # Chat with the agent
 make autonomous       # Run automated development
+make optimize         # Optimize agent prompts (discovers SPEC.md)
 make logs            # View logs
 make shell           # Shell into container
 make down            # Stop everything
@@ -86,4 +87,6 @@ make doctor          # Diagnose setup issues
 - **Full documentation**: [README.md](./README.md)
 - **Troubleshooting**: [README.md#troubleshooting](./README.md#troubleshooting)
 - **Autonomous mode**: Run `make init-spec` to create a SPEC.md template
+- **Prompt optimization**: `make cgf-init NAME=my-agent` then `make optimize` (auto-discovers SPEC.md)
+- **Multi-resource optimization**: Create SPEC.md in `workspace/my-plugin/` then `make optimize`
 - **Technical details**: [CLAUDE.md](./CLAUDE.md)

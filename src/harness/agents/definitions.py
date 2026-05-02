@@ -187,9 +187,11 @@ def _load_all_agents() -> dict[str, AgentDefinition]:
         "gcp-architect": "infra-gcp-architect",
         "gitlab-ci-expert": "infra-gitlab-ci-expert",
         "k8s-engineer": "infra-k8s-engineer",
-        # Task-specific agents
+        # Task-specific agents (aliases for backward compatibility)
         "testing-agent": "test-sdet-expert",
         "reviewer-agent": "dev-code-review-expert",
+        "code-review-expert": "dev-code-review-expert",
+        "sdet-expert": "test-sdet-expert",
     }
 
     # Keep tech-lead inline (used by autonomous.py)

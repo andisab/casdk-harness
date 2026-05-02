@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CGF Evaluation Criteria",
+  "description": "Schema for synthesized evaluation criteria from research findings",
+  "type": "object",
+  "required": ["resource_id", "optimization_goal", "competencies"],
+  "properties": {
+    "resource_id": {
+      "type": "string",
+      "description": "Identifier of resource being optimized"
+    },
+    "resource_type": {
+      "type": "string",
+      "enum": ["agent", "skill", "command", "mcp", "workflow", "spec", "hook", "plugin"]
+    },
+    "optimization_goal": {
+      "type": "string",
+      "description": "User-specified optimization objective"
+    },
+    "competencies": {
+      "type": "array",
+      "description": "Key competencies the resource should demonstrate",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "importance"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Competency name"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this competency means in practice"
+          },
+          "importance": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "positive_indicators": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Behaviors that demonstrate competence"
+          },
+          "negative_indicators": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Behaviors that indicate incompetence"
+          },
+          "test_scenarios": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Scenarios that test this competency"
+          },
+          "sources": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Research sources for this competency"
+          }
+        }
+      }
+    },
+    "edge_cases": {
+      "type": "array",
+      "description": "Edge cases requiring special handling",
+      "items": {
+        "type": "object",
+        "required": ["scenario", "expected_handling"],
+        "properties": {
+          "scenario": {"type": "string"},
+          "importance": {"type": "string"},
+          "expected_handling": {"type": "string"},
+          "common_failure": {"type": "string"}
+        }
+      }
+    },
+    "common_mistakes": {
+      "type": "array",
+      "description": "Common mistakes to avoid",
+      "items": {
+        "type": "object",
+        "required": ["mistake", "correction"],
+        "properties": {
+          "mistake": {"type": "string"},
+          "correction": {"type": "string"},
+          "severity": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "best_practices": {
+      "type": "array",
+      "description": "Best practices from research",
+      "items": {
+        "type": "object",
+        "required": ["practice"],
+        "properties": {
+          "practice": {"type": "string"},
+          "rationale": {"type": "string"},
+          "source": {"type": "string"}
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "synthesizer": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "research_sources": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        }
+      }
+    }
+  }
+}

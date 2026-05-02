@@ -8,7 +8,7 @@
 #
 # Profiles:
 #   - (default): main-agent + prometheus + grafana
-#   - multi-agent: adds reviewer-agent, tester-agent, redis
+#   - multi-agent: adds agent-two (evaluator), agent-three (validator), redis
 
 services:
   # ===========================================================================
@@ -57,6 +57,14 @@ services:
     restart: unless-stopped
     networks:
       - claude-network
+    # Process-based healthcheck works for both interactive and batch modes
+    # (unlike HTTP healthcheck which only works when server is running)
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'python|tail' || test -f /tmp/.healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -66,9 +74,10 @@ services:
           cpus: ${AGENT_CPU_RESERVATION:-2}
           memory: ${AGENT_MEMORY_RESERVATION:-4G}
   # ===========================================================================
-  # Code Reviewer Agent (multi-agent profile)
+  # Agent Two (multi-agent profile) - Generic secondary agent
+  # Default role: Evaluator (quality scoring, code review)
   # ===========================================================================
-  reviewer-agent:
+  agent-two:
     profiles: ["multi-agent"]
     build:
       context: .
@@ -76,11 +85,11 @@ services:
       target: ${BUILD_TARGET:-development}
       cache_from:
         - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
-    image: ${REGISTRY:-claudeagentsdk-harness}/reviewer:${IMAGE_TAG:-latest}
-    container_name: claude-reviewer-agent
-    hostname: reviewer-agent
+    image: ${REGISTRY:-claudeagentsdk-harness}/agent-two:${IMAGE_TAG:-latest}
+    container_name: claude-agent-two
+    hostname: agent-two
     environment:
-      - AGENT_NAME=reviewer
+      - AGENT_NAME=agent-two
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
       - CLAUDE_PERMISSION_MODE=default
@@ -93,13 +102,13 @@ services:
       - ./workspace:/workspace:ro
       - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
-      - ./logs/reviewer:/logs:delegated
+      - ./logs/agent-two:/logs:delegated
       - ./config:/app/config:ro
       - ./.ssh:/home/claude/.ssh:ro
       - ./.ssh/netrc:/home/claude/.netrc:ro
     ports:
-      - "${REVIEWER_AGENT_PORT:-8081}:8080"
-      - "${REVIEWER_METRICS_PORT:-9092}:9090"  # Prometheus metrics
+      - "${AGENT_TWO_PORT:-8081}:8080"
+      - "${AGENT_TWO_METRICS_PORT:-9092}:9090"  # Prometheus metrics
     depends_on:
       redis:
         condition: service_healthy
@@ -111,13 +120,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: ${REVIEWER_CPU_LIMIT:-2}
-          memory: ${REVIEWER_MEMORY_LIMIT:-4G}
+          cpus: ${AGENT_TWO_CPU_LIMIT:-2}
+          memory: ${AGENT_TWO_MEMORY_LIMIT:-4G}
 
   # ===========================================================================
-  # Tester Agent (multi-agent profile)
+  # Agent Three (multi-agent profile) - Generic tertiary agent
+  # Default role: Validator (test execution, correctness verification)
   # ===========================================================================
-  tester-agent:
+  agent-three:
     profiles: ["multi-agent"]
     build:
       context: .
@@ -125,11 +135,11 @@ services:
       target: ${BUILD_TARGET:-development}
       cache_from:
         - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
-    image: ${REGISTRY:-claudeagentsdk-harness}/tester:${IMAGE_TAG:-latest}
-    container_name: claude-tester-agent
-    hostname: tester-agent
+    image: ${REGISTRY:-claudeagentsdk-harness}/agent-three:${IMAGE_TAG:-latest}
+    container_name: claude-agent-three
+    hostname: agent-three
     environment:
-      - AGENT_NAME=tester
+      - AGENT_NAME=agent-three
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-5-20250929}
       - CLAUDE_PERMISSION_MODE=bypassPermissions
@@ -142,13 +152,13 @@ services:
       - ./workspace:/workspace:delegated
       - ./.claude-plugin:/app/.claude-plugin:ro
       - ./memory:/memory:delegated
-      - ./logs/tester:/logs:delegated
+      - ./logs/agent-three:/logs:delegated
       - ./config:/app/config:ro
       - ./.ssh:/home/claude/.ssh:ro
       - ./.ssh/netrc:/home/claude/.netrc:ro
     ports:
-      - "${TESTER_AGENT_PORT:-8082}:8080"
-      - "${TESTER_METRICS_PORT:-9093}:9090"  # Prometheus metrics
+      - "${AGENT_THREE_PORT:-8082}:8080"
+      - "${AGENT_THREE_METRICS_PORT:-9093}:9090"  # Prometheus metrics
     depends_on:
       redis:
         condition: service_healthy
@@ -160,8 +170,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: ${TESTER_CPU_LIMIT:-2}
-          memory: ${TESTER_MEMORY_LIMIT:-4G}
+          cpus: ${AGENT_THREE_CPU_LIMIT:-2}
+          memory: ${AGENT_THREE_MEMORY_LIMIT:-4G}
 
   # ===========================================================================
   # Redis Cache & Pub/Sub (multi-agent profile)

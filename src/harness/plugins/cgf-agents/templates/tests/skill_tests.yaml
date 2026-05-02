@@ -1,0 +1,165 @@
+# CGF Skill Test Template
+# Guides test generation for skill resources (e.g., joplin-research, commit)
+
+resource_type: skill
+
+# Validation type preferences for skill testing
+validation_preferences:
+  activation: contains        # Check skill activated
+  output_format: regex        # Verify output structure
+  quality: llm_judge          # Evaluate output quality
+  false_positive: llm_judge   # Verify skill did NOT activate
+
+# Test patterns for different source types
+test_patterns:
+  # Tests for skill activation (from competencies)
+  activation_test:
+    id_prefix: "act"
+    prompt_templates:
+      direct:
+        structure: "{trigger_keyword_phrase}"
+        validation:
+          type: contains
+          criteria: "{expected_activation_marker}"
+
+      natural:
+        structure: "{natural_sentence_containing_trigger}"
+        validation:
+          type: contains
+          criteria: "{expected_output_indicator}"
+
+      with_args:
+        structure: "{trigger} {arguments}"
+        validation:
+          type: contains
+          criteria: "{expected_output_with_args}"
+
+    tags: ["activation", "{importance}"]
+    metadata:
+      source_competency: "{competency.name}"
+      source_type: "competency"
+
+  # False positive tests (from negative indicators or common mistakes)
+  false_positive_test:
+    id_prefix: "fp"
+    prompt_template: |
+      {similar_phrase_that_should_NOT_trigger}
+
+    validation:
+      type: llm_judge
+      criteria: |
+        Verify that:
+        1. The skill did NOT activate
+        2. Response is normal/generic
+        3. No skill-specific output present
+
+    tags: ["false_positive", "negative"]
+    metadata:
+      source_type: "false_positive"
+
+  # Instruction following tests
+  instruction_test:
+    id_prefix: "inst"
+    prompt_template: "{trigger} with specific requirements: {requirements}"
+
+    validation:
+      type: llm_judge
+      criteria: |
+        Verify:
+        1. Skill activated correctly
+        2. Requirements were followed
+        3. Output matches expected format
+
+    tags: ["instruction", "{importance}"]
+    metadata:
+      source_competency: "{competency.name}"
+      source_type: "competency"
+
+  # Edge case tests
+  edge_case_test:
+    id_prefix: "edge"
+    prompt_template: "{edge_scenario_trigger}"
+
+    validation:
+      type: llm_judge
+      criteria: |
+        Verify:
+        1. Edge case handled: {scenario}
+        2. Approach: {expected_handling}
+        3. Not failing: {common_failure}
+
+    tags: ["edge_case"]
+    metadata:
+      source_scenario: "{edge_case.scenario}"
+      source_type: "edge_case"
+
+  # Error handling tests (from common mistakes)
+  error_handling_test:
+    id_prefix: "err"
+    prompt_template: "{trigger_with_invalid_input}"
+
+    validation:
+      type: contains  # or llm_judge
+      criteria: "(error|invalid|could not|unable)"
+
+    tags: ["error_handling", "{severity}"]
+    metadata:
+      source_mistake: "{common_mistake.mistake}"
+      source_type: "common_mistake"
+
+# Skill-specific competency patterns
+typical_competencies:
+  trigger_recognition:
+    test_approach: "activation_test with direct triggers"
+    validation_type: contains
+
+  argument_parsing:
+    test_approach: "activation_test with various argument patterns"
+    validation_type: contains
+
+  output_formatting:
+    test_approach: "instruction_test with format requirements"
+    validation_type: regex
+
+  error_messages:
+    test_approach: "error_handling_test with invalid inputs"
+    validation_type: contains
+
+# Common skill failure modes to test
+failure_modes:
+  false_activation:
+    description: "Skill activates when it shouldn't"
+    test_type: false_positive_test
+    importance: high
+
+  missed_activation:
+    description: "Skill doesn't activate when it should"
+    test_type: activation_test
+    importance: high
+
+  format_inconsistency:
+    description: "Output format varies"
+    test_type: instruction_test
+    importance: medium
+
+  argument_rejection:
+    description: "Valid arguments rejected"
+    test_type: activation_test
+    importance: medium
+
+# Difficulty characteristics for skills
+difficulty_characteristics:
+  basic:
+    - Direct trigger phrase
+    - No arguments
+    - Standard format
+
+  intermediate:
+    - Natural language trigger
+    - With arguments
+    - Format requirements
+
+  advanced:
+    - Complex argument patterns
+    - Edge case scenarios
+    - Multi-step operations

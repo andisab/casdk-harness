@@ -199,6 +199,25 @@ class AgentSession:
             checkpoint_dir=self.config.checkpoint_dir,
         )
 
+        # Initialize CGF tracer if enabled
+        # Provides span-based execution tracing for optimization
+        self.tracer = None
+        if self.config.cgf_enabled and self.config.cgf_tracing_enabled:
+            try:
+                from harness.tracer import get_tracer
+
+                self.tracer = get_tracer(
+                    service_name=f"harness.{agent_name}",
+                    enabled=True,
+                )
+                logger.debug("CGF tracer initialized", agent=agent_name)
+            except Exception as e:
+                logger.warning(
+                    "Failed to initialize CGF tracer",
+                    agent=agent_name,
+                    error=str(e),
+                )
+
         # Initialize Redis message broker for cross-agent communication
         # Only connect when in multi-agent mode (AGENT_NAME explicitly set in docker-compose)
         # Uses circuit breaker pattern for resilience (see messaging.py)
@@ -505,8 +524,8 @@ class AgentSession:
 
         Supports different prompts for different agent types:
         - main (default): main-interactivedev-agent.md
-        - reviewer: reviewer-agent.md
-        - tester: tester-agent.md
+        - agent-two: agent-two.md (Evaluator, default: code review)
+        - agent-three: agent-three.md (Validator, default: testing)
 
         Returns:
             System prompt content with plugin skills appended if any.
@@ -517,8 +536,8 @@ class AgentSession:
         # Map agent names to their prompt files
         prompt_map = {
             "main": "main-interactivedev-agent.md",
-            "reviewer": "reviewer-agent.md",
-            "tester": "tester-agent.md",
+            "agent-two": "agent-two.md",
+            "agent-three": "agent-three.md",
         }
 
         # Get agent name from environment (default: main)
@@ -541,7 +560,8 @@ class AgentSession:
                 agent_name=agent_name,
                 expected_path=str(prompt_file),
             )
-            system_prompt = "Work in /workspace directory. Use absolute paths."
+            workspace = str(self.config.workspace_dir)
+            system_prompt = f"Work in {workspace} directory. Use absolute paths."
 
         # Append discovered skills info if any
         if self.discovered_skills:
@@ -782,6 +802,11 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         # Check session timeout before executing
         self._check_session_timeout()
 
+        # Start CGF execution span if tracing is enabled
+        exec_span = self._start_execution_span(prompt)
+        tool_count = 0
+        token_usage: dict[str, int] = {"input": 0, "output": 0}
+
         try:
             logger.info(
                 "Executing agent task",
@@ -801,6 +826,22 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                             anext(async_gen),
                             timeout=inactivity_timeout,
                         )
+
+                        # Track tool calls for CGF tracing
+                        if exec_span and isinstance(message, dict):
+                            if message.get("type") == "tool_use":
+                                tool_count += 1
+                                self._trace_tool_call(
+                                    exec_span,
+                                    message.get("name", "unknown"),
+                                    str(message.get("input", ""))[:500],
+                                )
+                            # Track token usage from result messages
+                            if message.get("type") == "result" and "usage" in message:
+                                usage = message["usage"]
+                                token_usage["input"] += usage.get("input_tokens", 0)
+                                token_usage["output"] += usage.get("output_tokens", 0)
+
                         yield message
                     except StopAsyncIteration:
                         break
@@ -810,6 +851,14 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                     "Inactivity timeout exceeded",
                     agent=self.agent_name,
                     inactivity_timeout=self.config.claude_api_timeout,
+                )
+                # End span with timeout error
+                self._end_execution_span(
+                    exec_span,
+                    success=False,
+                    error="timeout",
+                    tool_count=tool_count,
+                    token_usage=token_usage,
                 )
                 raise AgentTimeoutError(
                     f"Agent inactivity timeout after {self.config.claude_api_timeout}s without messages"
@@ -835,6 +884,14 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                 duration=duration,
             )
 
+            # End span successfully
+            self._end_execution_span(
+                exec_span,
+                success=True,
+                tool_count=tool_count,
+                token_usage=token_usage,
+            )
+
         except AgentTimeoutError:
             # Re-raise timeout errors (already logged and recorded above)
             raise
@@ -845,6 +902,14 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                 agent=self.agent_name,
                 error=str(e),
                 exc_info=True,
+            )
+            # End span with error
+            self._end_execution_span(
+                exec_span,
+                success=False,
+                error=str(e),
+                tool_count=tool_count,
+                token_usage=token_usage,
             )
             raise
 
@@ -1306,6 +1371,123 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             raise SessionTimeoutError(
                 f"Session exceeded {timeout}s timeout (running for {hours:.2f}h). "
                 "Save your work and start a new session."
+            )
+
+    # =========================================================================
+    # CGF Tracing Methods
+    # =========================================================================
+
+    def _start_execution_span(self, prompt: str) -> Any | None:
+        """Start a span for agent execution.
+
+        Args:
+            prompt: The task prompt being executed.
+
+        Returns:
+            The started span, or None if tracing is disabled.
+        """
+        if not self.tracer:
+            return None
+
+        try:
+            from harness.tracer import SpanKind
+
+            span = self.tracer.start_span(
+                name=f"agent.execute.{self.agent_name}",
+                kind=SpanKind.AGENT_EXECUTION,
+            )
+            span.set_attribute("agent.name", self.agent_name)
+            span.set_attribute("agent.model", self.runtime.model)
+            span.set_attribute("agent.input", prompt[:500])  # Truncate for storage
+            span.set_attribute("resource_type", "agent")
+            span.set_attribute("resource_id", self.agent_name)
+            return span
+        except Exception as e:
+            logger.warning(
+                "Failed to start execution span",
+                agent=self.agent_name,
+                error=str(e),
+            )
+            return None
+
+    def _end_execution_span(
+        self,
+        span: Any,
+        success: bool = True,
+        error: str | None = None,
+        tool_count: int = 0,
+        token_usage: dict[str, int] | None = None,
+    ) -> None:
+        """End an execution span.
+
+        Args:
+            span: The span to end.
+            success: Whether execution was successful.
+            error: Error message if unsuccessful.
+            tool_count: Number of tools called during execution.
+            token_usage: Token usage statistics.
+        """
+        if not span or not self.tracer:
+            return
+
+        try:
+            from harness.tracer import SpanStatus
+
+            span.set_attribute("agent.tool_count", tool_count)
+            span.set_attribute("agent.success", success)
+
+            if token_usage:
+                span.set_attribute("tokens.input", token_usage.get("input", 0))
+                span.set_attribute("tokens.output", token_usage.get("output", 0))
+
+            # Use finish() method with status parameter
+            if error:
+                span.finish(status=SpanStatus.ERROR, error_message=error)
+            else:
+                span.finish(status=SpanStatus.OK)
+        except Exception as e:
+            logger.warning(
+                "Failed to end execution span",
+                agent=self.agent_name,
+                error=str(e),
+            )
+
+    def _trace_tool_call(
+        self,
+        parent_span: Any,
+        tool_name: str,
+        tool_input: str | None = None,
+        success: bool = True,
+    ) -> None:
+        """Record a tool call as a child span.
+
+        Args:
+            parent_span: The parent execution span.
+            tool_name: Name of the tool being called.
+            tool_input: Input to the tool (truncated).
+            success: Whether the tool call succeeded.
+        """
+        if not self.tracer or not parent_span:
+            return
+
+        try:
+            from harness.tracer import SpanKind, SpanStatus
+
+            # Use start_span with explicit parent to create child span
+            tool_span = self.tracer.start_span(
+                name=f"tool.{tool_name}",
+                kind=SpanKind.TOOL_CALL,
+                parent=parent_span,
+            )
+            tool_span.set_attribute("tool.name", tool_name)
+            if tool_input:
+                tool_span.set_attribute("tool.input", tool_input[:500])
+            tool_span.finish(status=SpanStatus.OK if success else SpanStatus.ERROR)
+        except Exception as e:
+            logger.debug(
+                "Failed to trace tool call",
+                tool_name=tool_name,
+                error=str(e),
             )
 
     def _format_budget_warning(

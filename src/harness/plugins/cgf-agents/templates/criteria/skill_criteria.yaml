@@ -1,0 +1,83 @@
+# CGF Skill Criteria Template
+# Guides criteria synthesis for skill resources (e.g., joplin-research, commit)
+
+resource_type: skill
+
+# What parts of the skill can be optimized
+optimization_focus:
+  - trigger_keywords     # Words/patterns that activate the skill
+  - instructions         # What the skill tells the agent to do
+  - examples             # Example invocations and outputs
+  - output_format        # Expected output structure
+
+# Typical competencies for skills
+# Synthesizer should include relevant ones based on research findings
+typical_competencies:
+  activation:
+    - name: "Activation precision"
+      description: "Skill activates exactly when intended"
+      importance: high
+    - name: "False positive avoidance"
+      description: "Skill does not activate inappropriately"
+      importance: high
+    - name: "Trigger pattern coverage"
+      description: "All valid invocation patterns recognized"
+      importance: medium
+
+  execution:
+    - name: "Instruction clarity"
+      description: "Agent understands what to do from skill instructions"
+      importance: high
+    - name: "Output format consistency"
+      description: "Outputs match expected format"
+      importance: high
+    - name: "Error handling"
+      description: "Clear error messages for invalid inputs"
+      importance: medium
+    - name: "Argument handling"
+      description: "Correct parsing of skill arguments"
+      importance: medium
+
+  user_experience:
+    - name: "Response quality"
+      description: "Skill produces useful, actionable results"
+      importance: high
+    - name: "Help and documentation"
+      description: "Users can learn how to use the skill"
+      importance: medium
+    - name: "Feedback clarity"
+      description: "Clear communication of what skill did"
+      importance: medium
+
+# Aspects to evaluate when assessing skill performance
+evaluation_aspects:
+  - aspect: activation_precision
+    description: "Correct activation rate (true positives)"
+    weight: high
+  - aspect: false_positive_rate
+    description: "Incorrect activation rate (should be low)"
+    weight: high
+  - aspect: instruction_clarity
+    description: "Agent follows skill instructions correctly"
+    weight: high
+  - aspect: output_consistency
+    description: "Outputs match expected format"
+    weight: medium
+  - aspect: error_handling
+    description: "Graceful handling of edge cases"
+    weight: medium
+
+# Common skill failure modes to check
+failure_modes:
+  - mode: "False activation"
+    description: "Skill activates when not intended"
+    detection: "Test with similar but non-matching queries"
+  - mode: "Missed activation"
+    description: "Skill fails to activate when it should"
+    detection: "Test all documented trigger patterns"
+  - mode: "Instruction ambiguity"
+    description: "Agent misinterprets skill instructions"
+    detection: "Compare agent behavior against expected"
+  - mode: "Format inconsistency"
+    description: "Outputs don't match expected format"
+    detection: "Validate output structure"

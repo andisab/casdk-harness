@@ -22,6 +22,5 @@
   ],
   "agents": ["./agents"],
   "skills": ["./skills"],
-  "commands": ["./commands"],
   "hooks": ["./hooks"]
 }

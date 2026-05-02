@@ -19,7 +19,7 @@ class TestLoadPrompt:
     def test_load_existing_prompt(self) -> None:
         """Test loading an existing prompt file."""
         # These prompts should exist (dash-separated naming convention)
-        for prompt_name in ["tech-lead-agent", "main-autodev-agent", "reviewer-agent", "tester-agent"]:
+        for prompt_name in ["tech-lead-agent", "main-autodev-agent", "agent-two", "agent-three"]:
             prompt = load_prompt(prompt_name)
             assert prompt is not None
             assert len(prompt) > 0
@@ -40,10 +40,10 @@ class TestLoadPrompt:
         prompt = load_prompt("main-autodev-agent")
         assert "autodev" in prompt.lower() or "autonomous" in prompt.lower() or "coding" in prompt.lower()
 
-    def test_reviewer_prompt_content(self) -> None:
-        """Test reviewer mode prompt contains expected content."""
-        prompt = load_prompt("reviewer-agent")
-        assert "review" in prompt.lower()
+    def test_agent_two_prompt_content(self) -> None:
+        """Test agent-two (evaluator) prompt contains expected content."""
+        prompt = load_prompt("agent-two")
+        assert "evaluat" in prompt.lower() or "review" in prompt.lower()
 
 
 class TestAutonomousRunner:

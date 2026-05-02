@@ -370,9 +370,9 @@ class TestAgentToolSets:
         assert "Write" in tools
         assert "Bash" in tools
 
-    def test_reviewer_agent_has_read_only_tools(self) -> None:
-        """Test that reviewer-agent doesn't have write tools."""
-        info = get_agent_info("reviewer-agent")
+    def test_code_review_expert_has_read_only_tools(self) -> None:
+        """Test that code-review-expert doesn't have write tools."""
+        info = get_agent_info("code-review-expert")
         tools = info["tools"]
 
         # Should have read access

@@ -37,7 +37,7 @@ docker compose version
 See [QUICKSTART.md](./QUICKSTART.md) for the complete 5-minute setup guide.
 
 ```bash
-git clone https://www.github.com/andis/ab-casdk-harness.git
+git clone https://github.com/andisab/ab-casdk-harness.git
 cd casdk-harness && make init
 # Edit .env and set: ANTHROPIC_API_KEY=sk-ant-your_key_here
 make build && make up && make interactive
@@ -97,7 +97,7 @@ make autonomous-status
 
 If interrupted with Ctrl+C, run `make autonomous` again to resume.
 
-See [docs/SPEC.example.md](./docs/SPEC.example.md) for spec writing best practices.
+See [docs/examples/SPEC.example.md](./docs/examples/SPEC.example.md) for spec writing best practices.
 
 ---
 
@@ -122,9 +122,9 @@ See [docs/SPEC.example.md](./docs/SPEC.example.md) for spec writing best practic
 | Profile | Command | Services |
 |---------|---------|----------|
 | Default | `make up` | main-agent, prometheus, grafana |
-| Multi-Agent | `make up-multi` | + reviewer-agent, tester-agent, redis |
+| Multi-Agent | `make up-multi` | + agent-two (evaluator), agent-three (validator), redis |
 
-Multi-agent mode enables parallel code review and testing agents.
+Multi-agent mode enables parallel evaluation and validation agents.
 
 ---
 
@@ -155,6 +155,101 @@ Keys are dedicated to this project, mounted read-only into containers.
 
 ---
 
+## CGF Prompt Optimization
+
+The ContextGrad Framework (CGF) optimizes agent prompts through a two-phase workflow: interactive Q&A to gather requirements, then autonomous optimization.
+
+### Quick Start
+
+```bash
+# Initialize a CGF workspace
+make cgf-init NAME=my-agent
+
+# Copy your resource file and edit SPEC.md
+cp path/to/agent.md workspace/my-agent/my-agent.md
+
+# Run optimization (auto-discovers SPEC.md)
+make optimize
+
+# Validate setup without running
+make optimize-dryrun
+```
+
+### How It Works
+
+**Two-Phase Workflow:**
+
+1. **Q&A Phase** (`cgf-initializer` agent):
+   - Analyzes the resource file
+   - Asks 4 clarifying questions about optimization goals
+   - Generates `cgf_spec.yaml` specification
+   - Supports resume if interrupted
+
+2. **Optimization Phase** (`cgf-orchestrator` agent):
+   - Runs autonomously using the spec
+   - Researches domain best practices
+   - Generates test cases and criteria
+   - Optimizes with LLM self-critique
+   - Produces versioned output with review
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `make cgf-init NAME=<name>` | Initialize new CGF workspace |
+| `make optimize` | Run optimization (auto-discovers SPEC.md) |
+| `make optimize-dryrun` | Validate setup |
+| `make cgf-status` | Show optimization run status |
+| `make cgf-clean` | Remove run state files |
+| `make cgf-reset` | Full reset (remove all workspaces) |
+| `/cgf create <description>` | Create + optimize new resource |
+
+### Output
+
+Results saved to `workspace/{agent}/`:
+- `CHANGELOG.md` - Human-readable optimization history (accumulates)
+- `cgf_spec.yaml` - Optimization specification (from Q&A)
+- `{agent}-v1.md` - Optimized version
+- `reviews/v1_review.md` - Evaluation report
+- `research/eval_criteria.yaml` - Evaluation criteria
+- `sessions/` - Runtime state (delete to reset)
+
+For detailed documentation on resource types, goal writing, and troubleshooting, see [docs/features/CGF-USER-GUIDE.md](./docs/features/CGF-USER-GUIDE.md).
+
+### Multi-Resource Optimization
+
+Generate and optimize entire plugins, skill-sets, or workflows from a single SPEC.md:
+
+```bash
+# Create a multi-resource SPEC.md
+mkdir -p workspace/my-plugin
+cp docs/examples/MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
+
+# Run optimization (auto-discovers and detects multi-resource)
+make optimize
+```
+
+**Pipeline:** RESEARCH → Q&A → GENERATE → ITERATE → VALIDATE → COMPLETE
+
+Each phase delegates to specialized agents:
+- **RESEARCH**: `cgf-research-lead` gathers domain best practices
+- **GENERATE**: `context-engineer` creates each resource
+- **ITERATE**: `cgf-prompt-optimizer` improves until quality >= 0.85
+- **VALIDATE**: `cgf-coherence-validator` checks cross-resource consistency
+
+See [docs/examples/MULTI_RESOURCE_SPEC.example.md](./docs/examples/MULTI_RESOURCE_SPEC.example.md) for template.
+
+### Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CGF_ITERATIONS` | Max optimization iterations | `10` |
+| `CGF_ITERATION_REVIEW` | Pause for review each iteration | `false` |
+| `CGF_EVAL_MODEL` | Eval model (`sonnet`/`haiku`/`opus`) | `sonnet` |
+| `CGF_VERBOSE` | Show progress output | `true` |
+
+---
+
 ## Working with Plugins
 
 The harness includes a plugin system for extending capabilities with custom agents, skills, commands, and hooks.
@@ -163,6 +258,7 @@ The harness includes a plugin system for extending capabilities with custom agen
 
 | Plugin | Agents | Skills | Purpose |
 |--------|--------|--------|---------|
+| cgf-agents | 8 | 1 | Prompt optimization pipeline (single + multi-resource) |
 | context-engineering | 1 | 5 | Agent/skill creation toolkit |
 | research-team | 3 | 1 | Research and documentation |
 

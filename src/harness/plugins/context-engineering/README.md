@@ -16,7 +16,15 @@ A comprehensive Claude Code plugin that helps you design and implement high-qual
 - Uses conventions-mcp to find proven patterns
 - Implements progressive disclosure for token efficiency
 
-### 🎓 Six Specialized Skills
+<!-- MERGE-NOTE (cgf-framework → main, 2026-05-01):
+     Skill 9 (`tool-creation`) overlaps conceptually with skills 7-8 (`mcp-tool-creation`,
+     `mcp-server-creation`). All three are kept temporarily after the cgf-framework merge.
+     Cleanup is scheduled in REFACTOR.md Part 1C (plugin source consolidation) when the
+     in-tree context-engineering plugin is replaced by swe-marketplace's version, which
+     uses different naming again (`mcp-tool-dev`, `mcp-server-dev`). See "Deferred CE
+     plugin redundancies" in docs/REFACTOR.md.
+-->
+### 🎓 Nine Specialized Skills
 
 Auto-activated skills provide detailed guidance for each resource type:
 
@@ -25,18 +33,31 @@ Auto-activated skills provide detailed guidance for each resource type:
 3. **plugin-development** - Building plugin bundles with proper directory structure, metadata, and distribution
 4. **command-creation** - Crafting slash commands with arguments, file references, and bash execution
 5. **hook-configuration** - Setting up lifecycle event handlers for automation and workflow control
-6. **tool-creation** - Building MCP tools and servers with proper schemas, error handling, and SDK registration
+6. **resource-optimization** - Optimizing existing Claude Code resources using CGF framework patterns
+7. **mcp-tool-creation** - Creating MCP tool functions with FastMCP patterns, Anthropic tool description best practices, and testing strategies _(overlaps with skill 9; will be reconciled in Part 1C)_
+8. **mcp-server-creation** - Building MCP servers in Python (FastMCP) or TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx distribution _(overlaps with skill 9; will be reconciled in Part 1C)_
+9. **tool-creation** - Building MCP tools and servers with proper schemas, error handling, and SDK registration _(broader/older single-skill version of skills 7-8; will be reconciled in Part 1C)_
 
 ### 📋 Complete Templates
 
 Ready-to-use starting points for every resource type:
 
+- **resource-type-guide.md** - **Single source of truth** for resource selection and design
+  - Quick reference table for all resource types
+  - Detailed agent vs skill comparison with token management
+  - Real-world use case examples (research team, domain expert, pipeline)
+  - Configuration reference (~/.claude folder, settings.json, CLAUDE.md hierarchy)
+  - SPEC.md quick reference for CGF optimization
 - **subagent-template.md** - Agent structure with frontmatter and system prompt
 - **skill-template.md** - Skill structure with activation triggers and supporting files
 - **plugin-structure.md** - Complete plugin directory layout and configuration
 - **slash-command-template.md** - Command patterns with 10 real-world examples
 - **hook-configuration-template.md** - 20+ hook configurations for common scenarios
-- **tool-template.md** - MCP tool/server scaffolding with Python, TypeScript, and subprocess patterns
+<!-- MERGE-NOTE: tool-template.md overlaps with the mcp-* templates below; both kept until Part 1C cleanup. -->
+- **mcp-tool-template.py** - FastMCP tool handler with validation and error handling
+- **mcp-server-python-template/** - Complete Python MCP server scaffold (FastMCP, pyproject.toml, tests)
+- **mcp-server-typescript-template/** - Complete TypeScript MCP server scaffold (@modelcontextprotocol/sdk, package.json, tests)
+- **tool-template.md** - MCP tool/server scaffolding with Python, TypeScript, and subprocess patterns _(broader single-template version; overlaps with mcp-* templates; will be reconciled in Part 1C)_
 
 ### 🎨 Best Practice Patterns
 
@@ -45,6 +66,8 @@ Documentation of proven architectural patterns:
 - **progressive-disclosure.md** - Token management with three disclosure levels (saves 80%+ tokens)
 - **multi-agent-orchestration.md** - Coordinating multiple agents for complex workflows
 - **tool-restriction-patterns.md** - Security-focused tool access control
+
+> **Note**: Agent vs skill separation guidance has been consolidated into `templates/resource-type-guide.md` as the single source of truth for resource selection.
 
 ## Installation
 
@@ -183,7 +206,9 @@ The tool-creation skill handles:
 | plugin-development | "create plugin", "bundle components", "distribute" | Plugin development |
 | command-creation | "create command", "slash command", "add /command" | Command development |
 | hook-configuration | "create hook", "automation", "event handler" | Hook configuration |
-| tool-creation | "create tool", "MCP server", "custom tool", "MCP integration" | Tool/server development |
+| mcp-tool-creation | "MCP tool", "tool handler", "tool schema" | MCP tool development _(overlaps with tool-creation; Part 1C cleanup)_ |
+| mcp-server-creation | "MCP server", "server scaffolding", "uvx/npx" | MCP server development _(overlaps with tool-creation; Part 1C cleanup)_ |
+| tool-creation | "create tool", "MCP server", "custom tool", "MCP integration" | Tool/server development _(broader single-skill version; overlaps with mcp-* skills; Part 1C cleanup)_ |
 
 ### Templates
 
@@ -377,14 +402,24 @@ context-engineering/
 │   ├── plugin-development/
 │   ├── command-creation/
 │   ├── hook-configuration/
-│   └── tool-creation/
+│   ├── mcp-tool-creation/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   ├── mcp-server-creation/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── tool-creation/                  # Overlaps with mcp-* skills; Part 1C cleanup
+│       └── SKILL.md
 ├── templates/
 │   ├── subagent-template.md
 │   ├── skill-template.md
 │   ├── plugin-structure.md
 │   ├── slash-command-template.md
 │   ├── hook-configuration-template.md
-│   └── tool-template.md
+│   ├── mcp-tool-template.py
+│   ├── mcp-server-python-template/
+│   ├── mcp-server-typescript-template/
+│   └── tool-template.md                # Overlaps with mcp-* templates; Part 1C cleanup
 ├── patterns/
 │   ├── progressive-disclosure.md
 │   ├── multi-agent-orchestration.md      # In progress
@@ -403,14 +438,21 @@ Contributions welcome! Areas for contribution:
 
 ## Roadmap
 
-### ✅ v1.0.0 - Core Functionality (Current)
+### ✅ v1.0.0 - Core Functionality
 - Expert orchestrator agent
 - 6 specialized skills
 - 6 complete templates
 - Progressive disclosure pattern
 - Conventions MCP integration
 
-### 🚧 v1.0.1 - Pattern Completion (Next)
+### ✅ v1.1.0 - MCP Resource Support (Current)
+- 2 new skills: mcp-tool-creation, mcp-server-creation
+- 3 new templates: Python tool, Python server, TypeScript server
+- Resource-type-guide updated with MCP Tool and MCP Server sections
+- Context-engineer agent updated with MCP awareness
+- Orchestrator handles mcp_tool and mcp_server resource types
+
+### 🚧 v1.1.1 - Pattern Completion (Next)
 - Complete multi-agent-orchestration pattern
 - Complete tool-restriction-patterns pattern
 - Additional examples in skills/*/examples/

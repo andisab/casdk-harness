@@ -244,6 +244,69 @@ class HarnessConfig(BaseSettings):
         description="Override context window size (useful for testing)",
     )
 
+    # CGF (ContextGrad Framework) Configuration
+    cgf_enabled: bool = Field(
+        default=False,
+        description="Enable CGF infrastructure (tracing, optimization store, rewards)",
+    )
+    cgf_tracing_enabled: bool = Field(
+        default=True,
+        description="Enable span tracing when CGF is enabled",
+    )
+    cgf_exporter: Literal["memory", "redis", "file", "both"] = Field(
+        default="memory",
+        description=(
+            "Span exporter: memory (testing, exports to memory store), "
+            "redis (production, exports to Redis store), "
+            "file (debugging, exports to JSON file), "
+            "both (redis + file for production with debugging)"
+        ),
+    )
+    cgf_span_retention_days: int = Field(
+        default=7,
+        description="Number of days to retain spans in storage",
+    )
+    cgf_span_buffer_size: int = Field(
+        default=0,
+        description="Number of spans to buffer before flushing (0 = immediate write)",
+    )
+    cgf_file_export_path: Path = Field(
+        default=Path("/logs/spans"),
+        description="Directory path for file span exports (when exporter=file or both)",
+    )
+
+    # CGF Phase Timeouts (seconds) - how long each phase can run before timeout
+    cgf_research_timeout: int = Field(
+        default=1800,
+        description="Research phase timeout in seconds (30 minutes)",
+    )
+    cgf_generate_timeout: int = Field(
+        default=900,
+        description="Generate phase timeout per resource in seconds (15 minutes)",
+    )
+    cgf_iterate_timeout: int = Field(
+        default=600,
+        description="Iterate phase timeout per iteration in seconds (10 minutes)",
+    )
+    cgf_validate_timeout: int = Field(
+        default=300,
+        description="Validate phase timeout in seconds (5 minutes)",
+    )
+
+    # CGF Progress Display Settings
+    cgf_show_progress: bool = Field(
+        default=True,
+        description="Show phase transitions and progress updates during optimization",
+    )
+    cgf_show_status: bool = Field(
+        default=True,
+        description="Show status summary before/after optimization",
+    )
+    cgf_follow_logs: bool = Field(
+        default=True,
+        description="Stream agent activity in real-time during optimization",
+    )
+
     @property
     def redis_url(self) -> str:
         """Get Redis connection URL."""
@@ -271,16 +334,42 @@ class HarnessConfig(BaseSettings):
         """Get context directory path."""
         return self.memory_dir / "context"
 
+    @property
+    def cgf_store_backend(self) -> str:
+        """Determine store backend from exporter setting.
+
+        Returns:
+            "redis" if exporter is redis or both, otherwise "memory".
+        """
+        if self.cgf_exporter in ("redis", "both"):
+            return "redis"
+        return "memory"
+
     def ensure_directories(self) -> None:
-        """Create necessary directories if they don't exist."""
-        for directory in [
+        """Create necessary directories if they don't exist.
+
+        Skips directories that can't be created (e.g., Docker paths when
+        running locally). This allows the same config to work in both
+        Docker and local environments.
+        """
+        directories = [
             self.workspace_dir,
             self.memory_dir,
             self.logs_dir,
             self.checkpoint_dir,
             self.context_dir,
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
+        ]
+        # Add CGF file export directory if CGF is enabled with file export
+        if self.cgf_enabled and self.cgf_exporter in ("file", "both"):
+            directories.append(self.cgf_file_export_path)
+
+        for directory in directories:
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                # Skip directories that can't be created (e.g., Docker paths
+                # like /workspace when running locally)
+                pass
 
 
 # Global config instance

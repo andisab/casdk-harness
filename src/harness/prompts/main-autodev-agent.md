@@ -48,7 +48,7 @@ async for message in call_agent("python-expert", "Write a sort function"):
     process(message)
 ```
 
-**Available Custom Agents**: python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent, postgres-expert, sql-expert, docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert, testing-agent, reviewer-agent, research-team:lead-research-coordinator
+**Available Custom Agents**: python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent, postgres-expert, sql-expert, docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert, test-sdet-expert, dev-code-review-expert, research-team:lead-research-coordinator
 
 ### Research Agent
 

@@ -42,8 +42,11 @@ class CheckpointManager:
         self.workspace_dir = Path(workspace_dir) if workspace_dir else Path("/workspace")
         self.memory_dir = Path(memory_dir) if memory_dir else Path("/memory/graph")
 
-        # Ensure directory exists
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists (skip if path is not writable, e.g., Docker paths locally)
+        try:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass  # Directory creation will be retried when actually saving
 
     async def auto_checkpoint(
         self,

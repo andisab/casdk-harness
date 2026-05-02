@@ -202,6 +202,38 @@ interactive_cache_hit_ratio = Gauge(
     ["agent"],
 )
 
+# CGF (ContextGrad Framework) Metrics
+cgf_spans_collected = Counter(
+    "cgf_spans_collected_total",
+    "Total spans collected by CGF tracer",
+    ["agent", "span_kind"],
+)
+
+cgf_spans_exported = Counter(
+    "cgf_spans_exported_total",
+    "Total spans exported to store",
+    ["agent", "exporter"],
+)
+
+cgf_adapter_transforms = Counter(
+    "cgf_adapter_transforms_total",
+    "Adapter span-to-feedback transformations",
+    ["resource_type", "status"],
+)
+
+cgf_reward_composite = Histogram(
+    "cgf_reward_composite",
+    "Distribution of composite reward scores",
+    ["resource_type"],
+    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+cgf_feedback_dimensions = Gauge(
+    "cgf_feedback_dimensions",
+    "Current feedback dimension values",
+    ["resource_type", "dimension"],
+)
+
 
 class MetricsCollector:
     """Collects and exports metrics for monitoring.
@@ -543,3 +575,66 @@ class MetricsCollector:
         if total_input > 0:
             hit_ratio = cache_read / total_input
             interactive_cache_hit_ratio.labels(agent=agent).set(hit_ratio)
+
+    # CGF (ContextGrad Framework) Metrics Methods
+
+    @staticmethod
+    def record_span_collected(agent: str, span_kind: str) -> None:
+        """
+        Record a span collected by the CGF tracer.
+
+        Args:
+            agent: Agent name that generated the span
+            span_kind: Kind of span (e.g., agent_execution, tool_call, llm_request)
+        """
+        cgf_spans_collected.labels(agent=agent, span_kind=span_kind).inc()
+
+    @staticmethod
+    def record_span_exported(agent: str, exporter: str) -> None:
+        """
+        Record a span exported to a store backend.
+
+        Args:
+            agent: Agent name that generated the span
+            exporter: Exporter type (e.g., store, file, redis)
+        """
+        cgf_spans_exported.labels(agent=agent, exporter=exporter).inc()
+
+    @staticmethod
+    def record_adapter_transform(resource_type: str, success: bool) -> None:
+        """
+        Record an adapter transformation from spans to feedback.
+
+        Args:
+            resource_type: Type of resource (agent, skill, prompt, command)
+            success: Whether the transformation succeeded
+        """
+        status = "success" if success else "error"
+        cgf_adapter_transforms.labels(resource_type=resource_type, status=status).inc()
+
+    @staticmethod
+    def record_reward(resource_type: str, composite_score: float) -> None:
+        """
+        Record a composite reward score from the reward system.
+
+        Args:
+            resource_type: Type of resource (agent, skill, prompt, command)
+            composite_score: The weighted composite reward score (0.0 - 1.0)
+        """
+        cgf_reward_composite.labels(resource_type=resource_type).observe(composite_score)
+
+    @staticmethod
+    def set_feedback_dimension(
+        resource_type: str, dimension: str, value: float
+    ) -> None:
+        """
+        Set a feedback dimension value for monitoring.
+
+        Args:
+            resource_type: Type of resource (agent, skill, prompt, command)
+            dimension: Feedback dimension name (e.g., task_completion, efficiency)
+            value: Dimension value (0.0 - 1.0)
+        """
+        cgf_feedback_dimensions.labels(
+            resource_type=resource_type, dimension=dimension
+        ).set(value)

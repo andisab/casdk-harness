@@ -21,7 +21,7 @@ def base_config(temp_config_dir):
 
     Note: git, docker, context7, github, memory are now in-process servers (Method A),
     so they are not included in the subprocess config.
-    Only playwright and joplin remain as subprocess servers.
+    Only playwright and puppeteer remain as Tier 2 subprocess servers.
     """
     config = {
         "mcpServers": {
@@ -30,13 +30,10 @@ def base_config(temp_config_dir):
                 "args": ["-y", "@modelcontextprotocol/server-playwright"],
                 "env": {}
             },
-            "joplin": {
+            "puppeteer": {
                 "command": "npx",
-                "args": ["-y", "@joplin/mcp-server"],
-                "env": {
-                    "JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}",
-                    "JOPLIN_BASE_URL": "http://localhost:41184"
-                }
+                "args": ["-y", "@anthropic-ai/mcp-server-puppeteer"],
+                "env": {}
             }
         }
     }
@@ -90,10 +87,11 @@ class TestLoadConfig:
         config = loader.load_config(base_config)
 
         assert "mcpServers" in config
-        # Only subprocess servers remain in config
+        # Only subprocess servers remain in config (Tier 2)
         assert "playwright" in config["mcpServers"]
-        assert "joplin" in config["mcpServers"]
-        # In-process servers (git, docker, context7, github, memory) not in subprocess config
+        assert "puppeteer" in config["mcpServers"]
+        # In-process servers (git, docker, context7, github, memory)
+        # not in subprocess config
         assert "git" not in config["mcpServers"]
         assert "docker" not in config["mcpServers"]
         assert "memory" not in config["mcpServers"]
@@ -109,7 +107,7 @@ class TestLoadConfig:
 
         assert "mcpServers" in config
         # Base servers
-        assert "joplin" in config["mcpServers"]
+        assert "puppeteer" in config["mcpServers"]
         # Plugin server (override with custom args)
         assert "playwright" in config["mcpServers"]
         assert "--headless" in config["mcpServers"]["playwright"]["args"]
@@ -392,48 +390,50 @@ class TestResolveEnvVars:
 class TestGetTier:
     """Tests for get_tier method.
 
-    Note: context7 and github are now in-process servers (Method A),
-    so they're no longer in the subprocess tier definitions.
+    Note: All fast servers (git, docker, context7, github, memory) are now
+    in-process servers (Method A), so TIER_1 is empty.
+    Only playwright and puppeteer remain in TIER_2 as subprocess servers.
     """
 
-    def test_tier1_servers(self, loader):
-        """Test Tier 1 server identification (Fast subprocess - 30s timeout)."""
-        assert loader.get_tier("git") == 1
-        assert loader.get_tier("docker") == 1
-        # context7 and github are now in-process, not in tier defs
+    def test_tier1_is_empty(self, loader):
+        """Test TIER_1 is empty (all fast servers now in-process)."""
+        # TIER_1_SERVERS is empty set - no subprocess servers are tier 1
+        assert len(loader.TIER_1_SERVERS) == 0
 
     def test_tier2_servers(self, loader):
         """Test Tier 2 server identification (Slow subprocess - 120s timeout)."""
-        # Only playwright and joplin remain as subprocess servers
+        # Only playwright and puppeteer are tier 2 subprocess servers
         assert loader.get_tier("playwright") == 2
-        assert loader.get_tier("joplin") == 2
+        assert loader.get_tier("puppeteer") == 2
 
     def test_unknown_server_defaults_to_tier1(self, loader):
         """Test unknown servers default to Tier 1."""
         assert loader.get_tier("unknown-server") == 1
         # All these are now in-process servers, so they default to tier 1
-        # when checked against subprocess tiers
-        assert loader.get_tier("git") == 1  # In-process, defaults to tier 1
-        assert loader.get_tier("docker") == 1  # In-process, defaults to tier 1
-        assert loader.get_tier("memory") == 1  # In-process, defaults to tier 1
-        assert loader.get_tier("context7") == 1  # In-process, defaults to tier 1
-        assert loader.get_tier("github") == 1  # In-process, defaults to tier 1
+        # when checked against subprocess tiers (not in TIER_1 or TIER_2)
+        assert loader.get_tier("git") == 1
+        assert loader.get_tier("docker") == 1
+        assert loader.get_tier("memory") == 1
+        assert loader.get_tier("context7") == 1
+        assert loader.get_tier("github") == 1
+        # joplin is also not in tier definitions
+        assert loader.get_tier("joplin") == 1
 
 
 class TestFilterByTier:
     """Tests for filter_by_tier method.
 
-    Note: git, docker, context7, github, memory are now in-process servers (Method A).
-    Only playwright and joplin remain as subprocess servers (Tier 2).
+    Note: git, docker, context7, github, memory are now in-process servers.
+    Only playwright and puppeteer remain as subprocess servers (Tier 2).
     Tier 1 is empty.
     """
 
     def test_filter_tier1_only(self, loader):
-        """Test filtering for Tier 1 - now empty since all fast servers are in-process."""
+        """Test filtering for Tier 1 - empty since fast servers are in-process."""
         config = {
             "mcpServers": {
                 "playwright": {"command": "npx", "args": [], "env": {}},
-                "joplin": {"command": "npx", "args": [], "env": {}},
+                "puppeteer": {"command": "npx", "args": [], "env": {}},
                 "unknown-server": {"command": "npx", "args": [], "env": {}},
             }
         }
@@ -444,24 +444,24 @@ class TestFilterByTier:
         assert len(filtered["mcpServers"]) == 1
         assert "unknown-server" in filtered["mcpServers"]
         assert "playwright" not in filtered["mcpServers"]
-        assert "joplin" not in filtered["mcpServers"]
+        assert "puppeteer" not in filtered["mcpServers"]
 
     def test_filter_tier2_only(self, loader):
         """Test filtering for Tier 2 subprocess servers only (Slow - 120s)."""
         config = {
             "mcpServers": {
                 "playwright": {"command": "npx", "args": [], "env": {}},
-                "joplin": {"command": "npx", "args": [], "env": {}},
+                "puppeteer": {"command": "npx", "args": [], "env": {}},
                 "unknown-server": {"command": "npx", "args": [], "env": {}},
             }
         }
 
         filtered = loader.filter_by_tier(config, tier=2, check_keys=False)
 
-        # Only playwright and joplin are tier 2
+        # Only playwright and puppeteer are tier 2
         assert len(filtered["mcpServers"]) == 2
         assert "playwright" in filtered["mcpServers"]
-        assert "joplin" in filtered["mcpServers"]
+        assert "puppeteer" in filtered["mcpServers"]
         assert "unknown-server" not in filtered["mcpServers"]
 
     @patch.dict(os.environ, {}, clear=True)
@@ -470,45 +470,44 @@ class TestFilterByTier:
         config = {
             "mcpServers": {
                 "playwright": {"command": "npx", "args": [], "env": {}},
-                "joplin": {
+                "custom-server": {
                     "command": "npx",
                     "args": [],
-                    "env": {"JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}"}
+                    "env": {"API_TOKEN": "${CUSTOM_API_TOKEN}"}
                 },
             }
         }
 
-        filtered = loader.filter_by_tier(config, tier=2, check_keys=True)
+        filtered = loader.filter_by_tier(config, tier=1, check_keys=True)
 
-        # Joplin should be skipped due to missing API key
-        assert len(filtered["mcpServers"]) == 1
-        assert "playwright" in filtered["mcpServers"]
-        assert "joplin" not in filtered["mcpServers"]
+        # custom-server defaults to tier 1 but skipped due to missing API key
+        assert len(filtered["mcpServers"]) == 0
 
-    @patch.dict(os.environ, {"JOPLIN_API_TOKEN": "test-token"}, clear=False)
+    @patch.dict(os.environ, {"CUSTOM_API_TOKEN": "test-token"}, clear=False)
     def test_filter_with_api_keys_present_includes_server(self, loader):
-        """Test filtering with check_keys=True includes servers with keys present."""
+        """Test filtering with check_keys=True includes servers with keys."""
         config = {
             "mcpServers": {
-                "joplin": {
+                "custom-server": {
                     "command": "npx",
                     "args": [],
-                    "env": {"JOPLIN_TOKEN": "${JOPLIN_API_TOKEN}"}
+                    "env": {"API_TOKEN": "${CUSTOM_API_TOKEN}"}
                 },
             }
         }
 
-        filtered = loader.filter_by_tier(config, tier=2, check_keys=True)
+        filtered = loader.filter_by_tier(config, tier=1, check_keys=True)
 
+        # custom-server defaults to tier 1 and has API key present
         assert len(filtered["mcpServers"]) == 1
-        assert "joplin" in filtered["mcpServers"]
+        assert "custom-server" in filtered["mcpServers"]
 
 
 class TestLoadTier:
     """Tests for load_tier convenience method.
 
-    Note: git, docker, context7, github, memory are now in-process servers (Method A).
-    Only playwright and joplin remain as subprocess servers in Tier 2.
+    Note: git, docker, context7, github, memory are now in-process servers.
+    Only playwright and puppeteer remain as subprocess servers in Tier 2.
     Tier 1 is empty.
     """
 
@@ -521,15 +520,14 @@ class TestLoadTier:
         # Tier 1 is empty - all fast servers are now in-process
         assert len(tier1_config["mcpServers"]) == 0
 
-    @patch.dict(os.environ, {"JOPLIN_API_TOKEN": "test-token"}, clear=False)
-    def test_load_tier_with_env_vars_resolved(self, loader, base_config):
-        """Test that load_tier resolves environment variables."""
-        # Load Tier 2 (includes joplin which requires API key)
+    def test_load_tier2_complete_workflow(self, loader, base_config):
+        """Test complete workflow for loading Tier 2."""
         tier2_config = loader.load_tier(base_config, tier=2, check_keys=True)
 
-        assert "joplin" in tier2_config["mcpServers"]
-        # Env var should be resolved, not placeholder
-        assert tier2_config["mcpServers"]["joplin"]["env"]["JOPLIN_TOKEN"] == "test-token"
+        assert "mcpServers" in tier2_config
+        # Tier 2 has playwright and puppeteer
+        assert "playwright" in tier2_config["mcpServers"]
+        assert "puppeteer" in tier2_config["mcpServers"]
 
     def test_load_tier_with_plugins(self, loader, base_config, plugin_config):
         """Test loading tier with plugin configuration merged."""
@@ -546,5 +544,5 @@ class TestLoadTier:
         assert "playwright" in tier2_config["mcpServers"]
         assert "--headless" in tier2_config["mcpServers"]["playwright"]["args"]
 
-        # Should have joplin from base
-        assert "joplin" in tier2_config["mcpServers"]
+        # Should have puppeteer from base
+        assert "puppeteer" in tier2_config["mcpServers"]

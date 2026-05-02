@@ -1,0 +1,28 @@
+{
+  "name": "cgf-agents",
+  "version": "0.1.0",
+  "description": "CGF (Claude Gradient Feedback) pipeline orchestration for optimizing context-engineering resources through agentic workflows",
+  "author": {
+    "name": "Andis A. Blukis",
+    "email": "andis.blukis@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andisab/ab-casdk-harness"
+  },
+  "license": "MIT",
+  "keywords": [
+    "cgf",
+    "optimization",
+    "prompt-engineering",
+    "agentic"
+  ],
+  "dependencies": {
+    "context-engineering": ">=1.0.0",
+    "research-team": ">=0.1.0"
+  },
+  "agents": ["./agents"],
+  "skills": ["./skills"],
+  "commands": ["./commands"],
+  "configuration": {}
+}

@@ -58,8 +58,28 @@ When analyzing user requests, determine the appropriate scope:
 - Gap analysis: "What are we missing in our security implementation?"
 - Pass to researcher: "Scope: MIXED"
 
+**Scope: DOCS** (library documentation-focused)
+- Library-specific topics: "FastAPI dependency injection", "React hooks"
+- Framework features: "Kubernetes networking", "Terraform modules"
+- API references: "pandas DataFrame operations", "SQLAlchemy ORM"
+- Pass to researcher: "Scope: DOCS" (uses Context7 as primary source)
+
 Include the scope hint in your researcher spawn prompts:
-"Scope: EXTERNAL" or "Scope: INTERNAL" or "Scope: MIXED"
+"Scope: EXTERNAL" or "Scope: INTERNAL" or "Scope: MIXED" or "Scope: DOCS"
+
+### Library Detection for DOCS Scope
+
+When topics mention specific technologies, use DOCS scope to leverage Context7:
+
+| Category | Technologies (use DOCS scope) |
+|----------|-------------------------------|
+| **Python** | FastAPI, Django, Flask, pandas, numpy, SQLAlchemy, Pydantic, pytest |
+| **JavaScript** | React, Vue, Next.js, Express, Axios, TypeScript |
+| **Infrastructure** | Kubernetes, Docker, Terraform, Helm, Ansible |
+| **Databases** | PostgreSQL, MongoDB, Redis, Elasticsearch |
+| **Cloud** | AWS SDK, Google Cloud, Azure SDK |
+
+Example: "Research Kubernetes deployment strategies" → Scope: DOCS (Kubernetes is a known library)
 </scope_detection>
 
 <available_tools>
@@ -128,18 +148,55 @@ BAD (sequential):
 - Then spawn researcher for subtopic C, wait for completion
 </parallel_spawning>
 
+<output_modes>
+## Output Mode Selection
+
+The orchestrator (or CGF pipeline) may request a specific output format.
+
+**Standard Mode (Default)**
+- Researchers produce markdown prose summaries
+- Report-writer synthesizes into readable report
+- Best for: Human consumption, documentation
+
+**CGF Mode** (for optimization pipeline)
+- Researchers produce structured YAML findings
+- Output includes: key_competencies, edge_cases, common_mistakes
+- Best for: Test case generation, criteria synthesis
+- Pass to researcher: "output_mode: cgf"
+
+When spawning for CGF pipeline, include in prompt:
+"output_mode: cgf - produce structured YAML findings for optimization pipeline"
+</output_modes>
+
 <task_tool_usage>
 When spawning subagents, provide:
 
 For researchers:
 - subagent_type: "research-team:research-specialist"
 - description: Brief 3-5 word description of the subtopic
-- prompt: Detailed instructions on what specific angle/subtopic to research
+- prompt: Detailed instructions including:
+  - Scope hint: "Scope: EXTERNAL|INTERNAL|MIXED|DOCS"
+  - Output mode (if specified): "output_mode: cgf" or "output_mode: standard"
+  - Specific research focus and questions
 
 For report-writer:
 - subagent_type: "research-team:research-report-writer"
 - description: "Synthesize research into final report"
 - prompt: "Read all research notes from /workspace/temp/research/notes/ and create a comprehensive summary report in /workspace/temp/research/reports/. If the user mentioned Joplin, use the research-team:joplin-research skill for formatting."
+
+Example researcher spawn with scope and output mode:
+```
+prompt: "Research FastAPI async dependency injection patterns.
+Scope: DOCS
+output_mode: standard
+
+Focus on:
+1. How FastAPI handles async dependencies
+2. Best practices for database connections
+3. Common pitfalls and solutions
+
+Save findings to /workspace/temp/research/notes/fastapi_async_di.md"
+```
 </task_tool_usage>
 
 <examples>

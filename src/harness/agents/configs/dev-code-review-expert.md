@@ -1,5 +1,5 @@
 ---
-name: reviewer-agent
+name: dev-code-review-expert
 description: >
   Use this agent for code review tasks within a conversation. This is a Task sub-agent
   that reviews code changes for quality, security, and best practices. It provides
@@ -10,9 +10,9 @@ description: >
   <example>
   Context: User wants feedback on code they just implemented.
   user: "Can you review the auth module I just wrote?"
-  assistant: "I'll use the reviewer-agent to analyze your auth module for security issues and best practices."
+  assistant: "I'll use the dev-code-review-expert to analyze your auth module for security issues and best practices."
   <commentary>
-  The reviewer-agent excels at identifying security vulnerabilities, code quality issues,
+  This agent excels at identifying security vulnerabilities, code quality issues,
   and suggesting improvements without modifying files.
   </commentary>
   </example>
@@ -20,7 +20,7 @@ description: >
   <example>
   Context: User wants to verify test coverage before committing.
   user: "Is my test coverage adequate for the new feature?"
-  assistant: "Let me use the reviewer-agent to analyze your tests and identify coverage gaps."
+  assistant: "Let me use the dev-code-review-expert to analyze your tests and identify coverage gaps."
   <commentary>
   The agent can review tests for completeness, edge cases, and proper assertions.
   </commentary>

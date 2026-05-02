@@ -1,0 +1,79 @@
+# CGF Agent Criteria Template
+# Guides criteria synthesis for agent resources (e.g., python-expert, code-review-expert)
+
+resource_type: agent
+
+# What parts of the agent can be optimized
+optimization_focus:
+  - system_prompt        # Main agent instructions
+  - tool_selection       # Which tools are available and how to use them
+  - example_quality      # Few-shot examples if present
+  - context_utilization  # How agent uses provided context
+
+# Typical competencies for agents
+# Synthesizer should include relevant ones based on research findings
+typical_competencies:
+  core:
+    - name: "Task understanding and decomposition"
+      description: "Ability to parse user intent and break into actionable steps"
+      importance: high
+    - name: "Tool selection and usage"
+      description: "Choosing appropriate tools and using them effectively"
+      importance: high
+    - name: "Output quality and formatting"
+      description: "Producing clear, well-structured responses"
+      importance: medium
+    - name: "Error handling and recovery"
+      description: "Gracefully handling failures and edge cases"
+      importance: medium
+    - name: "Context utilization"
+      description: "Effectively using available context and conversation history"
+      importance: medium
+
+  domain_specific:
+    # For language-specific agents (python-expert, typescript-expert, etc.)
+    - name: "Language idioms and patterns"
+      description: "Using language-specific best practices"
+      importance: high
+    - name: "Library and framework knowledge"
+      description: "Familiarity with ecosystem tools"
+      importance: high
+    - name: "Code quality standards"
+      description: "Producing maintainable, readable code"
+      importance: medium
+    - name: "Testing and debugging"
+      description: "Writing tests and diagnosing issues"
+      importance: medium
+
+# Aspects to evaluate when assessing agent performance
+evaluation_aspects:
+  - aspect: task_completion_rate
+    description: "Percentage of tasks completed successfully"
+    weight: high
+  - aspect: output_quality
+    description: "Quality of generated code, explanations, or artifacts"
+    weight: high
+  - aspect: tool_usage_efficiency
+    description: "Appropriate tool selection and minimal redundant calls"
+    weight: medium
+  - aspect: error_recovery
+    description: "Ability to handle and recover from failures"
+    weight: medium
+  - aspect: context_awareness
+    description: "Appropriate use of conversation context"
+    weight: medium
+
+# Common agent failure modes to check
+failure_modes:
+  - mode: "Hallucination"
+    description: "Generating plausible but incorrect information"
+    detection: "Compare outputs against known correct answers"
+  - mode: "Tool misuse"
+    description: "Using wrong tools or incorrect parameters"
+    detection: "Track tool call success/failure rates"
+  - mode: "Context blindness"
+    description: "Ignoring relevant context from conversation"
+    detection: "Test with context-dependent questions"
+  - mode: "Verbose/unfocused output"
+    description: "Generating excessive or off-topic content"
+    detection: "Measure response relevance and conciseness"

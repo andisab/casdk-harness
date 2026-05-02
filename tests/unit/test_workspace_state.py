@@ -9,7 +9,12 @@ import pytest
 
 from harness.autonomous import AutonomousRunner
 from harness.config import HarnessConfig
-from harness.progress import WorkspaceState, WorkspaceConfig, TaskList, TaskItem
+from harness.progress import (
+    ProgressManager,
+    TaskItem,
+    TaskList,
+    WorkspaceState,
+)
 
 
 class TestWorkspaceStateDetection:
@@ -34,6 +39,8 @@ class TestWorkspaceStateDetection:
     def test_empty_workspace_no_files(self, temp_workspace: Path, mock_config) -> None:
         """Test empty workspace returns EMPTY state."""
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
@@ -45,47 +52,30 @@ class TestWorkspaceStateDetection:
         (temp_workspace / "SPEC.md").write_text("# My Project\n\nSpec content.")
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
         assert state == WorkspaceState.EMPTY
         assert context == {"has_spec": True}
 
-    def test_conflict_multiple_spec_files(self, temp_workspace: Path, mock_config) -> None:
-        """Test multiple SPEC.md files returns CONFLICT state."""
-        # Create SPEC.md in root
-        (temp_workspace / "SPEC.md").write_text("# Spec 1")
-
-        # Create SPEC.md in subdirectory
-        subdir = temp_workspace / "subproject"
-        subdir.mkdir()
-        (subdir / "SPEC.md").write_text("# Spec 2")
+    def test_conflict_git_at_root_without_spec(
+        self, temp_workspace: Path, mock_config
+    ) -> None:
+        """Test .git at workspace root without SPEC.md returns CONFLICT."""
+        # Create .git directory at workspace root
+        (temp_workspace / ".git").mkdir()
+        # No SPEC.md file
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
         assert state == WorkspaceState.CONFLICT
-        assert "spec_files" in context
-        assert len(context["spec_files"]) == 2
-
-    def test_conflict_multiple_task_list_files(self, temp_workspace: Path, mock_config) -> None:
-        """Test multiple task_list.json files returns CONFLICT state."""
-        # Create task_list.json in root
-        (temp_workspace / "task_list.json").write_text('{"version": "1.0", "tasks": []}')
-
-        # Create task_list.json in subdirectory
-        subdir = temp_workspace / "subproject"
-        subdir.mkdir()
-        (subdir / "task_list.json").write_text('{"version": "1.0", "tasks": []}')
-
-        runner = AutonomousRunner(workspace_dir=temp_workspace)
-
-        state, context = runner._detect_workspace_state()
-
-        assert state == WorkspaceState.CONFLICT
-        assert "task_list_files" in context
-        assert len(context["task_list_files"]) == 2
+        assert "conflict_reason" in context
 
     def test_wip_with_incomplete_tasks(self, temp_workspace: Path, mock_config) -> None:
         """Test task_list.json with incomplete tasks returns WORK_IN_PROGRESS state."""
@@ -117,6 +107,8 @@ class TestWorkspaceStateDetection:
         )
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
@@ -154,38 +146,14 @@ class TestWorkspaceStateDetection:
         )
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
         assert state == WorkspaceState.COMPLETED
         assert "task_list" in context
         assert context["task_list"].get_completion_stats()["remaining"] == 0
-
-    def test_external_repo_with_git(self, temp_workspace: Path, mock_config) -> None:
-        """Test workspace with .git but no SPEC.md returns EXTERNAL_REPO state."""
-        # Create .git directory
-        (temp_workspace / ".git").mkdir()
-
-        runner = AutonomousRunner(workspace_dir=temp_workspace)
-
-        state, context = runner._detect_workspace_state()
-
-        assert state == WorkspaceState.EXTERNAL_REPO
-
-    def test_external_repo_with_git_and_files(self, temp_workspace: Path, mock_config) -> None:
-        """Test workspace with .git and other files (no SPEC.md) returns EXTERNAL_REPO."""
-        # Create .git directory
-        (temp_workspace / ".git").mkdir()
-        # Create some files
-        (temp_workspace / "README.md").write_text("# Project")
-        (temp_workspace / "src").mkdir()
-        (temp_workspace / "src" / "main.py").write_text("print('hello')")
-
-        runner = AutonomousRunner(workspace_dir=temp_workspace)
-
-        state, context = runner._detect_workspace_state()
-
-        assert state == WorkspaceState.EXTERNAL_REPO
 
     def test_mixed_with_files_no_git(self, temp_workspace: Path, mock_config) -> None:
         """Test workspace with files but no .git returns MIXED state."""
@@ -195,6 +163,8 @@ class TestWorkspaceStateDetection:
         (temp_workspace / "src" / "main.py").write_text("print('hello')")
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
@@ -207,6 +177,8 @@ class TestWorkspaceStateDetection:
         (temp_workspace / "SPEC.md").write_text("# My Project")
 
         runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+        runner.progress_manager = ProgressManager(temp_workspace)
 
         state, context = runner._detect_workspace_state()
 
@@ -382,14 +354,34 @@ class TestWorkspaceStateHandlers:
             yield config
 
     @pytest.mark.asyncio
-    async def test_handle_empty_workspace(self, temp_workspace: Path, mock_config) -> None:
-        """Test _handle_empty_workspace runs git init and returns True."""
-        runner = AutonomousRunner(workspace_dir=temp_workspace)
+    async def test_handle_empty_workspace_with_spec(
+        self, temp_workspace: Path, mock_config
+    ) -> None:
+        """Test _handle_empty_workspace runs git init when SPEC.md exists."""
+        # Create SPEC.md so git init will run
+        (temp_workspace / "SPEC.md").write_text("# Test Project")
 
-        result = await runner._handle_empty_workspace({})
+        runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+
+        result = await runner._handle_empty_workspace({"has_spec": True})
 
         assert result is True
         assert (temp_workspace / ".git").exists()
+
+    @pytest.mark.asyncio
+    async def test_handle_empty_workspace_without_spec(
+        self, temp_workspace: Path, mock_config
+    ) -> None:
+        """Test _handle_empty_workspace returns True but skips git init w/o SPEC."""
+        runner = AutonomousRunner(workspace_dir=temp_workspace)
+        runner.project_dir = temp_workspace
+
+        result = await runner._handle_empty_workspace({"has_spec": False})
+
+        assert result is True
+        # Git init is deferred until SPEC.md is created
+        assert not (temp_workspace / ".git").exists()
 
     @pytest.mark.asyncio
     async def test_handle_wip_workspace(self, temp_workspace: Path, mock_config) -> None:
