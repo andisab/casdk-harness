@@ -1,0 +1,422 @@
+# Harness Reorganization + Plugin Loader Modernization
+
+## Context
+
+Two threads of work are tangled together on the `contextgrad-framework` branch and need to be separated:
+
+1. **CGF infrastructure** that's already shipped, tested, and stable (protocol layer, multi-resource orchestrator, MCP creation skills, etc.).
+2. **Eval harness work** for specialized context-engineering resources — the actual ongoing project this branch should represent (Stages 3-4).
+
+In addition, the harness has a custom 633-line `plugin_manager.py` and a 781-line `direct_agent.py` workaround that predate recent SDK improvements (~v0.1.5 through v0.1.72). Those should be retired in favor of native SDK mechanisms — and that modernization is independent of CGF, so it belongs on `main`.
+
+This document describes the reorganization, the modernization, and the new plugin-consumption model (consume `swe-marketplace` plugins from public git instead of vendoring under `src/harness/plugins/`).
+
+---
+
+## Anthropic-canonical references
+
+Two published Anthropic implementations most closely match this harness's shape and should be the reference points during execution:
+
+- **`anthropics/claude-agent-sdk-demos/research-agent`** — closest analog for programmatic resource loading. Uses `ClaudeAgentOptions(setting_sources=["project"], agents={...}, hooks={...})` directly with no custom plugin loader. Confirms the planned approach matches reference style.
+- **`anthropics/claude-cookbooks/claude_agent_sdk/chief_of_staff_agent`** — closest analog for filesystem-based discovery. Uses `.claude/agents/`, `.claude/commands/`, `.claude/hooks/`, `.claude/output-styles/` directly. Confirms the move of `src/harness/agents/configs/*.md` → `.claude/agents/*.md` matches canonical layout.
+
+Plugin distribution follows `anthropics/claude-plugins-official` and `anthropics/skills` (both ship `.claude-plugin/marketplace.json`). Hosting patterns follow the [Anthropic Hosting Guide](https://code.claude.com/docs/en/agent-sdk/hosting) — Pattern 2 (Long-Running Sessions) and Pattern 3 (Hybrid + session resume) describe this harness directly.
+
+**Future-state option:** Anthropic's overview suggests prototyping with the Agent SDK and migrating to [Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview) for long-running asynchronous sessions without operating sandbox/session infrastructure. Not a near-term migration, but worth keeping in mind as the harness scales beyond what self-hosted infra can support easily.
+
+---
+
+## Verified branch state
+
+- **`contextgrad-framework` is 72 ahead, 1 behind `main`.** (Earlier "2 commits ahead" estimate was wrong.)
+- **Main is 1 ahead** via `00ece0e` "feat(plugin): add tool-creation resource type to context-engineering". cgf-framework needs this merged in.
+- **Stage 1 + Stage 2 are exclusively on `contextgrad-framework`** — none of `c491972`, `8c2f956`, `c263aa9`, `c109c8e`, `f263adc`, `2f81582`, `6f0105a`, `fec48cf`, `748e12a` are on main.
+- **Diff is 65,368 insertions / 9,372 deletions across 237 files** — massive divergence, not "two commits".
+- Other commits on cgf-framework not on main include: multi-resource orchestrator (`09ab3da`), DSPy/TextGrad removal (`55ceb11`), CGF phase timeouts (`b3f5891`), context-engineering doc consolidation (`cac9865`), and many test/doc updates.
+
+**Implication:** the reorganization is a real surgery, not a quick relabel. The clean strategy is to **promote nearly everything currently on cgf-framework to main**, then reset cgf-framework to a slim branch that only carries Stage 3-4 eval-harness work going forward.
+
+---
+
+## Plugin source decisions (confirmed with user)
+
+| Decision | Choice |
+|---|---|
+| Stage 2 destination | **Port to `swe-marketplace` under marketplace's naming convention** (`mcp-tool-dev`, `mcp-server-dev`). Harness consumes from marketplace. Requires content-merge between the two versions before adopting. |
+| `research-team` plugin | **Adopt swe-marketplace version wholesale.** The agent→skill migration (`research-team:coordinator`, marketplace commit `2a17fa3`) fixes a real nested-spawn bug. Drop harness's `lead-research-coordinator` agent. |
+| Consumption mechanism | **Clone `swe-marketplace` from public git** to a known local path; SDK references that path via `SdkPluginConfig {"type":"local","path": ...}`. SDK does not yet support remote plugin sources (verified v0.1.72). |
+| Branch sync direction | **Merge `main` → `contextgrad-framework`** periodically. Preserves history and is simpler than rebasing 72 commits. |
+
+---
+
+## Part 1 — Branch Reorganization
+
+### 1A. Promote CGF infrastructure to `main`
+
+Goal: make `main` the home for all *shipped* CGF work plus the modernization in Part 2. `contextgrad-framework` then carries only forward-looking eval-harness work.
+
+The simplest path is a one-shot merge rather than 72 cherry-picks:
+
+1. **Audit cgf-framework for anything *not* ready for main.** Walk the 72 commits and flag any that should be dropped or squashed (e.g., draft plan files in `docs/features/`, half-done experiments). Move flagged content to a new `cgf/eval-harness-staging` branch off cgf-framework, then revert from cgf-framework.
+2. **Resolve the 1-commit lag.** `git checkout contextgrad-framework && git merge origin/main` to absorb `00ece0e`. Resolve any conflicts in the context-engineering plugin's `tool-creation` resource type (the merge is likely the trickiest spot since cgf-framework has Stage 2 work in the same area).
+3. **Open a single PR `contextgrad-framework` → `main`.** Title: "Promote CGF Stages 1-2 + multi-resource pipeline to main". Reviewers can scan by commit; the squashed delta is the 65k/9k lines.
+4. **After merge:** `git branch -D contextgrad-framework && git push origin --delete contextgrad-framework`, then re-create as a fresh branch off the new `main` for Stage 3+ work.
+
+**Files that move with this promotion** (everything currently on cgf-framework, minus anything flagged in step 1):
+
+- `src/harness/optimization/protocols/` (Stage 1)
+- `src/harness/optimization/multi_resource_orchestrator.py`, `multi_resource_spec.py` (multi-resource infra)
+- `src/harness/agents/configs/cgf-resource-architect.md` and the rest of the cgf-agents plugin
+- `src/harness/plugins/context-engineering/skills/mcp-tool-creation/`, `mcp-server-creation/` — but see Section 1C; these get ported to swe-marketplace before or after promotion, not retained in-tree
+- All Stage 1/2 tests under `tests/unit/test_optimization/test_protocols_*`, `test_spec_mcp_parsing.py`, etc.
+- Doc updates: `docs/ORCHESTRATION_ROADMAP.md`, `docs/CGF-EVAL-FRAMEWORK.md`, etc.
+
+### 1B. Reset `contextgrad-framework` to eval-harness-only
+
+After 1A merges, recreate the branch:
+
+```bash
+git checkout main
+git pull
+git checkout -b contextgrad-framework
+git push -u origin contextgrad-framework  # force push if old branch was kept
+```
+
+Going forward, `contextgrad-framework` carries only:
+
+- **Stage 3 — Evaluation Framework** (draft `docs/CGF-EVAL-FRAMEWORK.md`):
+  - `cgf-eval-architect` agent — generates eval suites from resource specs
+  - Grader infrastructure: deterministic, trajectory-based, LLM-judge
+  - Sandboxed agent-session eval harness
+  - Wires the EVAL_DESIGN / EXECUTION_EVAL phases that already exist in the enum
+  - Feedback loop from execution → optimizer refinement
+- **Stage 4 — Integration & hardening:** end-to-end pipeline tests, checkpoint/resume across new phases, ACCEPT/REFINE/REJECT human-review gates.
+
+### 1C. Plugin source consolidation
+
+#### `research-team` — adopt swe-marketplace wholesale
+
+Marketplace version is materially better. Recent commits document the architectural fix:
+
+- `2a17fa3` — replaced coordinator agent with main-thread skill (resolves nested-spawn constraint)
+- `bfce530` — retry killed researchers, default to .md, sync README to v1.2.1
+- `ef72814` — standardize manifest fence, raise subtopic ceiling to 5
+- `c692af5` — namespace subagent types
+- `88877ea` — Glob-based verification instead of `Bash(test -f)`
+- `84d4a55` — enforce file-only findings, conditional mkdir
+- `d5efabe` — verification-based orchestration, output-manifest contract
+
+**Action items** when adopting:
+
+1. Delete `src/harness/plugins/research-team/` entirely.
+2. Update CGF orchestrator code that references `research-team:lead-research-coordinator` (an agent) to use `research-team:coordinator` (a skill). Likely call sites: `src/harness/optimization/multi_resource_orchestrator.py` and any agent-config files that reference it. Run `grep -rn 'lead-research-coordinator\|research-team:lead' src/ tests/` before deleting.
+3. Verify research-team skill works with main-thread `Task` tool calls (the whole reason for the skill conversion). If the harness invokes `research-team:coordinator` from a subagent context, the nested-spawn bug recurs and the call site must move to a main-thread context.
+
+#### `context-engineering` — port Stage 2 to marketplace, then consume from there
+
+The harness has Stage 2 skills (`mcp-tool-creation`, `mcp-server-creation`) that swe-marketplace lacks. Marketplace has analogous-but-different `mcp-tool-dev`, `mcp-server-dev` skills plus `patterns/` (4 docs) and `templates/` (11+ files including Python/TypeScript MCP scaffolds).
+
+**Compatibility assessment is a prerequisite, not an assumption.** Before porting:
+
+1. **Diff content** between harness's `mcp-tool-creation/SKILL.md` and marketplace's `mcp-tool-dev/SKILL.md` (and the same for `mcp-server-*`). Are they:
+   - **Same intent, different naming** → rename harness skills to `mcp-tool-dev`/`mcp-server-dev`, then merge content (keep richer of the two), commit to swe-marketplace.
+   - **Different intent (e.g., creation = scaffolding, dev = guidance)** → keep both under distinct names; harness skills get adopted under `mcp-tool-creation`/`mcp-server-creation` in marketplace alongside the existing `-dev` skills.
+2. **Diff `context-engineer` agent definitions** between harness and marketplace — whichever is canonical for the agent must be reconciled too.
+3. **Verify naming dependencies in CGF code.** `grep -rn 'mcp-tool-creation\|mcp-server-creation\|context-engineering:' src/ tests/` to find every call site. Update them to whatever names land in marketplace.
+4. **Compatibility with local agent definitions.** The harness has 14 agent configs in `src/harness/agents/configs/`. Confirm none of them reference `context-engineering:` skills by names that change.
+5. **Adopt marketplace's `patterns/` and `templates/`** as they ship in swe-marketplace — they're additive and useful.
+
+After porting and merging upstream: delete `src/harness/plugins/context-engineering/` and consume the swe-marketplace version.
+
+##### Deferred CE plugin redundancies (introduced by 2026-05-01 merge)
+
+The cgf-framework → main merge took the **union** of skills/templates from both branches because cleaning them up requires the marketplace adoption that happens here in Part 1C. Until that lands, the in-tree CE plugin contains overlapping resources that need reconciling:
+
+**Overlapping skills (3 cover similar ground):**
+| Skill | Origin | Granularity | Has references/ | Notes |
+|---|---|---|---|---|
+| `skills/mcp-tool-creation/` | cgf-framework, Stage 2 | Tool-only | yes (`tool-design-patterns.md`) | Most specific; FastMCP / Anthropic tool-description focused |
+| `skills/mcp-server-creation/` | cgf-framework, Stage 2 | Server-only | yes (`python-server-patterns.md`, `typescript-server-patterns.md`, `server-testing-guide.md`) | Most specific; ships full Python + TypeScript server scaffolds in `templates/` |
+| `skills/tool-creation/` | main, commit `00ece0e` (Feb 2026) | Tool + server combined | no | Older single-skill version; broader / less detailed |
+
+**Overlapping templates:**
+- `templates/mcp-tool-template.py` (cgf, FastMCP-specific)
+- `templates/mcp-server-python-template/` (cgf, full Python scaffold)
+- `templates/mcp-server-typescript-template/` (cgf, full TypeScript scaffold)
+- `templates/tool-template.md` (main, broader single template covering Python + TypeScript + subprocess patterns)
+
+**Reconciliation plan in this Part 1C:**
+1. When swe-marketplace adoption begins, treat marketplace's `mcp-tool-dev` / `mcp-server-dev` as the canonical names. The harness's `mcp-tool-creation` and `mcp-server-creation` content gets ported upstream under the marketplace names (richer of the two wins per skill).
+2. The single `tool-creation` skill from main is **superseded** by the granular pair. Drop it during marketplace adoption — its content is fully covered by `mcp-tool-dev` + `mcp-server-dev` post-port.
+3. `tool-template.md` from main is also superseded by the cgf MCP-specific templates. Drop it.
+4. The merge artifacts in README.md and agents/context-engineer.md have inline `_(Part 1C cleanup)_` notes pointing at this section.
+
+**Markers to grep when starting Part 1C:**
+- `grep -rn 'Part 1C cleanup' src/harness/plugins/context-engineering/` — finds every inline note in the README and agent doc
+- `grep -rn 'tool-creation' src/harness/plugins/context-engineering/` — finds the to-be-dropped skill references
+- `grep -rn 'tool-template' src/harness/plugins/context-engineering/` — finds the to-be-dropped template references
+
+#### `cgf-agents` — stays in-tree
+
+Not in swe-marketplace and harness-specific. Lives under `src/harness/plugins/cgf-agents/` indefinitely (or moves to a private marketplace later if useful).
+
+#### Marketplace consumption mechanism
+
+SDK supports only `{"type":"local","path": ...}` — no git source. So:
+
+- **Bootstrap step** clones `https://github.com/andisab/swe-marketplace` to a known path. Two reasonable conventions:
+  - **In Docker:** `git clone https://github.com/andisab/swe-marketplace.git /opt/plugins/swe-marketplace` in the Dockerfile (with optional pin to a tag/SHA).
+  - **Local dev:** `make plugins-sync` target that clones/updates to `<repo>/.plugins/swe-marketplace/` (gitignored).
+- **Harness config** (env or settings): `SWE_MARKETPLACE_PATH=/opt/plugins/swe-marketplace` (default in container) or auto-detected `<repo>/.plugins/swe-marketplace`.
+- **Plugin loader** (post-modernization, see Part 2) reads marketplace.json from that path and emits one `SdkPluginConfig` per enabled plugin under `<marketplace_path>/plugins/<name>`.
+- **Pinning:** for reproducibility, support `SWE_MARKETPLACE_REF` env var (tag, SHA, or branch). Default to a known-good ref; bump deliberately.
+
+### 1D. Move "Known limitations" to main TODOs
+
+These items are infra/ops, not eval-harness:
+
+- Grafana overview dashboard is a stub → **handled by Part 3C**
+- AlertManager rules defined but not wired into `docker-compose.yml` → **handled by Part 3D**
+- Stale postgres exporter target in `prometheus.yml` → **handled by Part 3D**
+- SDK Task tool bug references — re-verify against current SDK; #12212 is closed (2025-11-27), #11205 may not exist on `anthropics/claude-code`. Update CLAUDE.md. → **handled by Part 2 Phase 0**
+
+Action: remove these from CLAUDE.md's "Known Limitations" section as each Part lands. The remaining items here are pointers, not separate TODOs.
+
+### 1E. Pre-existing test failures discovered during 2026-05-01 merge
+
+`make test-unit` totals on cgf-framework after merging `origin/main`: **1585 passed, 6 failed, 22 warnings.** The 6 failures pre-exist on cgf-framework (verified by running them against parent commit `0e7199a` before the merge). The merge did not introduce regressions. These failures will land on `main` when the Part 1A merge PR is accepted; they should be fixed as separate small commits, not bundled into the merge PR.
+
+**Follow-up TODOs (post-merge, individual commits on `main`):**
+
+1. **`tests/unit/test_config.py::test_new_config_fields_defaults`** — assertion `config.autonomous_delay_seconds == 5` fails; actual default is `3`. CLAUDE.md already documents this discrepancy: ".env.example shows 3, code default is 5". Fix: align the test to whatever value is canonical, and align `.env.example` and `config.py` defaults to match each other. **Trivial — single-line change.**
+
+2. **`tests/unit/test_optimization/test_testcases.py::TestCodeLLMValidator::test_llm_judge_success`** — expected `0.95`, got `0.7`. The LLM judge regex parser extracts "0.7" from the mocked response string `"The score is 0.7"` even though it logs `"Could not parse LLM judge score"`. Test expectation drift after parser was made more permissive. Fix: either tighten the parser to fail-fast on non-canonical formats, or update the test mock to use a string the parser can't extract a value from.
+
+3. **`tests/unit/test_optimization/test_testcases.py::TestCodeLLMValidator::test_llm_judge_parse_error`** — same root cause as #2; expected `0.8`, got `0.7`. Same fix.
+
+4. **`tests/unit/test_optimization/test_testcases.py::TestLLMJudgeValidator::test_llm_judge_error_handling`** — order-dependent flake; passes in isolation, fails in full suite. Indicates test-state pollution somewhere in `test_testcases.py`. Fix: identify the culprit fixture/global and isolate it (likely `pytest.fixture(scope="function")` missing somewhere).
+
+5. **`tests/unit/test_plugin_loading.py::test_agent_session_plugin_configuration`** — expected `len(session.plugins) == 3`, got `0`. Plugin discovery logs show 1 plugin found at runtime, but the test sees an empty `session.plugins` list. Likely fixture/env config issue: the test bootstraps `AgentSession` in a way that bypasses plugin discovery. Fix: align test fixture with how `AgentSession` is constructed elsewhere; verify `enabled_plugins_list` is populated.
+
+**Decision rule:** these 5 follow-ups should be 5 small, independently-revertible commits on `main` after the Part 1A merge PR lands. Do not bundle them into the merge PR — they obscure its purpose and risk reviewer rejection over orthogonal test churn.
+
+---
+
+## Part 2 — Plugin Loader Modernization (lands on `main`)
+
+This is independent of eval-harness work and should land on `main` first. After it lands, merge `main` → `contextgrad-framework` to pick it up.
+
+### Current architecture (verified)
+
+- **`src/harness/plugin_manager.py`** (633 LoC) — discovers `src/harness/plugins/*/.claude-plugin/plugin.json`, parses agent/skill/command/hook markdown manually, namespaces as `plugin:resource`, wires into `CommandRegistry` and `HookRegistry`.
+- **`src/harness/direct_agent.py`** (781 LoC) — bypasses `Task` tool because of SDK issue #12212 by calling `query()` directly with a per-agent system prompt.
+- **`src/harness/agent.py:684-693`** — already passes `agents=`, `setting_sources=["user","project"]`, `plugins=self.plugins` to `ClaudeAgentOptions`. The hard parts are wired; what remains is delegation rather than duplication.
+- **`src/harness/agents/configs/*.md`** — 14 harness agent definitions live here, NOT in `.claude/agents/`, so SDK auto-discovery cannot see them.
+- **`.claude/`** in repo holds only `settings.json` (permission allowlist + MCP enables). No `agents/`, `skills/`, `commands/`, `hooks/`.
+- **SDK version pin** — `pyproject.toml` requests `claude-agent-sdk>=0.1.0`; `uv.lock` resolves to **0.1.12 (2025-12-04)**. Latest is **0.1.72** (May 2026).
+
+### What the SDK now provides natively
+
+| Native capability | SDK version | Replaces |
+|---|---|---|
+| `ClaudeAgentOptions.plugins=[{"type":"local","path":...}]` auto-loads `.claude-plugin/plugin.json` (skills, agents, hooks, MCP, LSP, monitors) | 0.1.5+ | Most of `plugin_manager.py` |
+| `setting_sources=["user","project","local"]` auto-discovers `.claude/agents/`, `.claude/skills/`, `.claude/commands/` | 0.1.0 (empty list correctly disables, post-bug) | Manual frontmatter parsing |
+| `skills="all" \| list[str] \| []` parameter | 0.1.62 | `allowed_tools=["Skill",...]` plumbing |
+| Task tool finds custom agents from filesystem AND `agents=` dict | issue #12212 fixed 2025-11-27 | `harness.direct_agent` |
+| Plugin commands and skills unified — `/foo` resolves from either `commands/foo.md` or `skills/foo/SKILL.md` | 2026 | `CommandRegistry` |
+| `AgentDefinition` camelCase fields: `maxTurns`, `permissionMode`, `mcpServers`, `disallowedTools`, plus newer `skills`, `memory`, `effort`, `background`, `initialPrompt` | recent | YAML `max_turns` → manual translation |
+| `hooks/hooks.json` standard event names: `PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, `UserPromptSubmit`, `Notification` | stable | Harness's non-standard `PostSessionStart` / `STOP` |
+
+Caveats:
+- `allowed-tools` in `SKILL.md` frontmatter is **CLI-only** — the SDK ignores it; use `ClaudeAgentOptions.allowed_tools`.
+- Skills are filesystem-only — no programmatic registration. CGF-generated skills must be written to disk before the session starts (the orchestrator already does this).
+- `setting_sources=[]` is the documented way to make autonomous runs hermetic.
+- `SdkPluginConfig` does **not** support remote/git sources as of v0.1.72 — clone first, then point to local path.
+
+### Phased modernization
+
+**Phase 0 — Bump and verify (low risk, days; lands on `main`)**
+- Pin `claude-agent-sdk>=0.1.72` (or specific tested version) in `pyproject.toml`; refresh `uv.lock`.
+- Smoke test: `Task` tool dispatches to a custom agent registered via `agents=` AND via filesystem. Confirms #12212 is genuinely fixed in the harness's setup.
+- If green: file an issue tracking removal of `direct_agent.py`. If red: keep workaround, document why.
+
+**Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`)**
+- Move `src/harness/agents/configs/*.md` → repo `.claude/agents/*.md` (14 files). Update `definitions.py` loader path or delete it once SDK auto-discovery is confirmed.
+- Narrow `setting_sources` in `agent.py:692` from the current `["user","project"]` to **`["project"]`** for container runs (matches Anthropic research-agent demo). Add `"local"` only if `.claude/settings.local.json` per-checkout overrides are an explicit feature. Drop `"user"` entirely for container runs — pulling in host `~/.claude/` config inside a sandboxed container is a bleed-over risk and is not how reference implementations work.
+- Add a small frontmatter adapter (snake_case → camelCase) only where YAML is parsed for programmatic `AgentDefinition` construction. Filesystem-loaded agents need no adapter — the SDK reads the on-disk format.
+
+**Phase 2 — Delegate plugin loading to the SDK (~3-5 days; `main`)**
+- Reduce `plugin_manager.py` to: (a) resolve `swe-marketplace` clone path, (b) read its `marketplace.json`, (c) apply `ENABLED_PLUGINS` filter, (d) emit `SdkPluginConfig` entries plus the in-tree `cgf-agents` path. Target: <80 LoC.
+- Delete `CommandRegistry` (`src/harness/commands.py`) — plugins' `commands/` and `skills/` are auto-loaded.
+- Reduce `HookRegistry` (`src/harness/hooks.py`) to anything truly harness-specific (e.g., checkpoint triggers). Move pluggable hooks to `hooks/hooks.json` per plugin and rename non-standard events: `PostSessionStart` → `SessionStart`, `STOP` → `Stop`.
+- **Verify `skills=` parameter exists in the pinned SDK** before depending on it. Reference demos rely on transitive auto-discovery via `setting_sources` and `plugins=` rather than an explicit `skills=` parameter, so it may not be a documented field. If it does not exist or is undocumented, drop the line — `setting_sources=["project"]` + `plugins=[...]` already auto-discover skills with no explicit list needed. If it does exist and works, prefer an explicit allowlist over `"all"` for production safety.
+
+**Phase 3 — Retire `direct_agent.py` (~2 days; `main`)**
+- Replace internal callers (`call_agent`, `call_agent_simple`) with Task-tool dispatch. For streaming progress UX in CGF orchestration, write a thin wrapper around `query()` with `agents=` populated.
+- Keep `register_workspace_agent()` semantics — but the new mechanism writes to `workspace/.claude/agents/` so `setting_sources=["local"]` picks them up automatically.
+- Delete the file when grep shows zero imports.
+
+**Phase 4 — Marketplace bootstrap & CI hooks (`main`)**
+- Add `make plugins-sync` target that clones/pulls `swe-marketplace` to `.plugins/swe-marketplace/` (gitignored).
+- Add Dockerfile step that clones `swe-marketplace` to `/opt/plugins/swe-marketplace` at known SHA/tag.
+- `SWE_MARKETPLACE_PATH` and `SWE_MARKETPLACE_REF` env vars; defaults documented in `.env.example`.
+
+---
+
+## Part 3 — Observability: OpenTelemetry integration + Prometheus/Grafana polish (lands on `main`)
+
+This is its own stage rather than a sub-phase of Part 2. It addresses both a documented Anthropic capability we're not yet using (native OTLP signals) and a known limitation (Grafana stub dashboard, AlertManager unwired). Independent of CGF and modernization, so it can ship to `main` in parallel or after Part 2.
+
+### Scope
+
+The current state has Prometheus metrics emitted from `src/harness/monitoring.py` (agent requests, durations, token counts, costs, tool calls), a Grafana stack via `docker-compose.yml`, and an `alerting.yml` with rules but no AlertManager. The Grafana overview dashboard is a placeholder. Anthropic shipped native OTLP support for the Agent SDK (April 2026) gated by `CLAUDE_CODE_ENABLE_TELEMETRY=1` plus standard `OTEL_EXPORTER_OTLP_*` env vars — we should bridge that into the same observability stack rather than running parallel pipelines.
+
+### Phased plan
+
+**Phase 3A — Enable native OTel and route into existing collector (~2 days)**
+- Add `CLAUDE_CODE_ENABLE_TELEMETRY=1` and `OTEL_EXPORTER_OTLP_ENDPOINT` env vars to `Dockerfile`, `.env.example`, and `docker-compose.yml`.
+- Stand up an OTel Collector service in `docker-compose.yml` configured to receive OTLP from the SDK and export to Prometheus (existing) and a structured-log destination.
+- Reference: [Anthropic Observability with OpenTelemetry](https://code.claude.com/docs/en/agent-sdk/observability).
+- **Verify at runtime**: SDK metrics (token usage, model calls, tool invocations) appear in Prometheus alongside existing harness metrics. Capture metric names from `/metrics` endpoint to confirm.
+
+**Phase 3B — Trim duplicate metrics, keep harness-specific ones (~1 day)**
+- Audit `src/harness/monitoring.py` against what the SDK now emits natively (token counters, request counters, model-call durations).
+- Remove harness counters that duplicate SDK counters. Keep only signals the SDK does not emit: checkpoint events, session-state transitions, autonomous-mode task transitions, plugin/agent registry counts, harness-specific cost calculations.
+- Document which counters are harness-owned vs SDK-owned in `docs/HARDENING.md` or a new `docs/OBSERVABILITY.md`.
+
+**Phase 3C — Grafana dashboards: build out properly (~2-3 days)**
+- Replace the stub overview dashboard with a real one. Required panels:
+  - Session metrics: active sessions, session-start rate, session duration p50/p99
+  - Token & cost: tokens/min by model, cumulative cost, cost-per-session
+  - Tool calls: top tools by call rate, tool-error rate, tool-call duration p99
+  - Agent dispatch: subagent invocations by name, error rate per agent
+  - Autonomous mode: tasks completed/blocked/in-progress, Tech Lead Q&A duration
+  - Plugin/registry health: number of loaded plugins/agents/skills, discovery errors
+- Add a second dashboard for CGF optimization runs (phase transitions, optimizer iterations, eval scores once Stage 3 lands).
+- Provision dashboards as code via Grafana JSON in `config/monitoring/grafana/dashboards/` so they survive container rebuilds.
+- **Verify at runtime**: load each dashboard against a live session, confirm every panel returns data (not "N/A" or "No data"). Screenshot the working state for the doc.
+
+**Phase 3D — AlertManager wiring (~1-2 days)**
+- Add AlertManager service to `docker-compose.yml`. Wire `config/monitoring/alerting.yml` rules into it.
+- Add at minimum: receiver config (webhook or email — user choice), routing tree, inhibition rules.
+- Audit existing `alerting.yml` rules for relevance: confirm thresholds match current production load; remove stale rules.
+- Remove the stale postgres exporter target from `prometheus.yml` while in this area.
+- **Verify at runtime**: synthetically trigger one alert (e.g., kill the main-agent container or spike an error rate) and confirm the receiver fires.
+
+**Phase 3E — Documentation polish (~1 day)**
+- New `docs/OBSERVABILITY.md` covering: how SDK OTel signals reach Prometheus, what each Grafana dashboard shows, how to add a new alert rule, how to interpret common alert states.
+- Cross-link from `README.md`, `CLAUDE.md`, and `QUICKSTART.md`.
+- Remove "Grafana overview dashboard is a stub" and "AlertManager unconfigured" from CLAUDE.md known-limitations.
+
+### Definition of done for Part 3
+
+The harness has feature-complete observability:
+
+- SDK-native OTLP signals are flowing into Prometheus via the OTel Collector.
+- No metric is emitted by both the SDK and the harness.
+- Every Grafana panel on every shipped dashboard shows real data after a 5-minute live session.
+- AlertManager is wired and at least one alert has been synthetically triggered and received.
+- Stale postgres exporter target is removed.
+- `docs/OBSERVABILITY.md` exists; CLAUDE.md known-limitations no longer mentions any of the above.
+
+---
+
+## Critical files to modify
+
+**Branch reorganization:**
+- All 72 commits currently on `contextgrad-framework` (promote to `main` via merge PR)
+- `src/harness/plugins/research-team/` — delete after marketplace adoption
+- `src/harness/plugins/context-engineering/` — delete after Stage 2 ports upstream and marketplace adoption
+- `src/harness/optimization/multi_resource_orchestrator.py` and any agent configs referencing `lead-research-coordinator` — update to `coordinator` skill
+- `Dockerfile`, `Makefile`, `.env.example` — marketplace bootstrap
+
+**Modernization (lands on main):**
+- `pyproject.toml`, `uv.lock` — SDK pin to ≥0.1.72
+- `src/harness/agent.py` — `_build_sdk_options()` (lines 647-693), narrow `setting_sources` to `["project"]`, conditionally add `skills=` only after verifying it exists in pinned SDK
+- `src/harness/plugin_manager.py` — collapse to <80 LoC, delegate to swe-marketplace clone path
+- `src/harness/commands.py` — delete (after verifying no callers)
+- `src/harness/hooks.py` — slim to harness-internal hooks only; rename events
+- `src/harness/direct_agent.py` — delete after callers migrate
+- `src/harness/agents/configs/*.md` → `.claude/agents/*.md` (14 file moves)
+- `src/harness/agents/definitions.py` — likely deletable
+
+**Observability (Part 3, lands on main):**
+- `Dockerfile`, `.env.example`, `docker-compose.yml` — `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_EXPORTER_OTLP_*` env, OTel Collector service
+- `src/harness/monitoring.py` — trim metrics that duplicate SDK-native OTLP signals
+- `config/monitoring/grafana/dashboards/` — real overview dashboard + CGF dashboard, provisioned as code
+- `config/monitoring/prometheus.yml` — remove stale postgres exporter target
+- `config/monitoring/alerting.yml` + new AlertManager service config
+- New `docs/OBSERVABILITY.md`
+
+**Upstream to swe-marketplace:**
+- `mcp-tool-creation/SKILL.md` and `mcp-server-creation/SKILL.md` content (after compatibility diff with `mcp-tool-dev`/`mcp-server-dev`)
+
+---
+
+## Files to reuse / preserve
+
+- `src/harness/optimization/protocols/` — Stage 1 work, moves to main intact
+- `.claude/settings.json` permission allowlist — already canonical
+- `register_workspace_agent()` semantics — keep the capability, change the mechanism (write to `workspace/.claude/agents/`)
+
+---
+
+## Verification plan
+
+**Hard rule for every phase: tests pass ≠ feature works.** Plugin/agent loading silently degrades in ways unit tests do not catch (path mismatches, namespace collisions, swallowed discovery exceptions). Every phase must end with a *runtime* smoke test, and the user must do their own confirmation run before any phase is declared complete.
+
+### Required at every phase boundary
+
+1. **Run the full test suite and report actual numbers** — `make test-unit && make test-integration`, not "tests pass." Include passed/failed/skipped counts.
+2. **Boot the harness and inspect the runtime registry**:
+   - `make build && make up`, confirm container is healthy
+   - `make interactive`, confirm session starts cleanly
+   - From the structured logs, capture and report the actual values of: `discovered_skills=[...]`, `agents=[...]`, `plugins=[...]`. List names, not just counts.
+   - Compare against the expected list for that phase. If a single resource is missing or unnamed, the phase is **not done** — investigate before moving on.
+3. **Invoke at least one resource end-to-end** for any change that touches loading: dispatch `Task` to a custom agent, run a slash command, or invoke a skill. Confirm the actual response, not just that the call returned.
+4. **Stop and ask the user to do their own verification run** before declaring the phase complete. Provide exact commands and what to look for in the output. Do not move on until the user confirms.
+
+### Phase-specific checks
+
+**Branch reorganization (Part 1):**
+1. `make test-unit && make test-integration` green on the merged `main` after Part 1A — report numbers.
+2. `grep -rn 'lead-research-coordinator\|research-team:lead' src/ tests/` returns zero results after research-team swap.
+3. `grep -rn 'mcp-tool-creation\|mcp-server-creation' src/ tests/` matches whatever names landed in marketplace.
+4. **Runtime check:** `make up && make interactive`, then dispatch `Task` with `subagent_type="research-team:coordinator"` and `subagent_type="context-engineering:context-engineer"`. Both must return real responses. If either errors with "agent not found" or returns nothing, plugin loading is broken — do not proceed.
+5. `make autonomous` and `make optimize` smoke runs from a fresh clone with a throwaway SPEC.md exercise the most plugin surface area. Both must complete a full Q&A turn without dropping a resource.
+
+**Modernization (Part 2):**
+6. New integration test: spawn a session, dispatch a `Task` to `python-expert` registered via filesystem (`.claude/agents/python-expert.md`), assert success — proves filesystem discovery works.
+7. New regression test: load all marketplace plugins via `plugins=`, list visible skills/commands/agents, compare to the pre-modernization `plugin_manager` output. Delta should be empty (or strictly larger). **If the modernized loader exposes fewer resources than the legacy loader, the modernization is wrong** — do not declare Phase 2 done.
+8. After Phase 3, delete `direct_agent.py` only when grep shows zero imports AND a runtime smoke proves Task-tool dispatch works for both filesystem and `agents=` agents.
+
+**Plugin marketplace bootstrap (Part 1C):**
+9. From a fresh clone: `make plugins-sync && make build && make up && make interactive` — confirm marketplace plugins load without manual setup, and the runtime registry contains the expected swe-marketplace plugins.
+10. With `SWE_MARKETPLACE_REF=v1.x.y`: confirm the pin is honored (verify the resolved git SHA in the clone matches the requested ref).
+
+**Observability (Part 3):**
+11. **Phase 3A:** After enabling `CLAUDE_CODE_ENABLE_TELEMETRY=1`, hit the OTel Collector's debug exporter and confirm SDK-native signals are arriving. Then confirm the same signals are scraped into Prometheus (`curl http://localhost:9090/api/v1/label/__name__/values | grep claude_code`). If no native signals arrive, do not proceed.
+12. **Phase 3B:** Diff the metric list before and after the trim. No metric should appear from both the SDK and `monitoring.py`.
+13. **Phase 3C:** Run a 5-minute live session (`make interactive` with several Task dispatches and a CGF run). Open every Grafana dashboard panel and confirm each shows real data, not "No data". Take screenshots for `docs/OBSERVABILITY.md`. **A dashboard with even one "No data" panel is not done.**
+14. **Phase 3D:** Synthetically trigger an alert (e.g., `docker kill main-agent` or scripted error spike) and confirm the configured receiver fires. Confirm AlertManager UI at its exposed port shows the firing alert.
+15. **Phase 3E:** `docs/OBSERVABILITY.md` exists, is cross-linked, and CLAUDE.md known-limitations no longer references Grafana stub or AlertManager.
+
+### User-confirmation gate at completion
+
+Before any phase is closed:
+- Provide the user with the exact commands to run (`make up`, `make interactive`, `make autonomous`, etc.) and the exact log lines to look for.
+- Tell the user what *should* be in the runtime registry (which plugins, which agents, which skills).
+- Wait for the user to confirm. Do not assume.
+
+---
+
+## Risks / open questions to resolve during execution
+
+- **Compatibility of `mcp-tool-creation` ↔ `mcp-tool-dev`** (and server variants): same intent or different? Determines whether we merge content or keep both. Treat as a prerequisite to Part 1C; do the diff before opening PRs.
+- **CGF orchestrator dependencies on plugin resource names.** The full `grep` audit must run before adopting marketplace versions, not after.
+- **`research-team:coordinator` invocation context.** It's a *skill*, must run in the main-thread context. If CGF currently invokes the old agent from a subagent, we have to move the call site too — not just rename.
+- **`direct_agent.py` progress UX.** If colored turn-by-turn output during CGF runs is a hard requirement, keep a thin streaming wrapper rather than fully delete.
+- **Marketplace pin policy.** Always-latest (auto-pull on every container build) vs pinned-to-SHA. Recommend pin-and-bump-deliberately for reproducibility.
+- **Stage 2 already-merged commit on main (`00ece0e`).** Confirm during the merge PR that it doesn't conflict with cgf-framework's parallel work in the same context-engineering area.
+- **`skills=` parameter existence.** Documented references and Anthropic demos do not consistently show this on `ClaudeAgentOptions`. Verify in the pinned SDK source (`claude_agent_sdk/types.py`) before depending on it. If absent, drop the line — `setting_sources` + `plugins=` already auto-discover skills.
+- **OTel Collector vs direct OTLP export.** Phase 3A assumes a Collector service in docker-compose. Alternative: SDK exports OTLP directly to a remote-hosted Prometheus/OTLP endpoint, no Collector. Decide based on whether observability stays in-cluster (Collector preferred) or external (direct export simpler).
