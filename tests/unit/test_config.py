@@ -61,8 +61,10 @@ def test_redis_url_no_password() -> None:
 
 def test_new_config_fields_defaults() -> None:
     """Test default values for new hardening config fields."""
-    # Act
-    config = HarnessConfig(anthropic_api_key="test-key")
+    # _env_file=None bypasses .env loading so we test the code defaults, not whatever
+    # the developer's local .env happens to set. Without this, a non-default value
+    # like AUTONOMOUS_DELAY_SECONDS=3 in .env masks the canonical code default.
+    config = HarnessConfig(anthropic_api_key="test-key", _env_file=None)
 
     # Assert - Inactivity Timeout (15 minutes)
     assert config.claude_api_timeout == 900
