@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
+from harness.optimization.testcases import validators as _validators_module
 from harness.optimization.testcases import (
     CodeExtractor,
     CodeLLMValidator,
@@ -32,6 +33,19 @@ from harness.optimization.testcases import (
     get_validator,
     is_valid_python_syntax,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_shared_anthropic_client() -> None:
+    """Reset the module-level shared AsyncAnthropic client between tests.
+
+    `validators.get_shared_anthropic_client()` caches a singleton client. When
+    a test patches `anthropic.AsyncAnthropic`, the resulting MagicMock gets
+    cached, and subsequent tests' patches don't take effect — they receive
+    the prior test's mock instead. Resetting here ensures each test starts
+    with a clean slate so its patch installs properly.
+    """
+    _validators_module._shared_client = None
 
 
 class TestValidationConfig:
