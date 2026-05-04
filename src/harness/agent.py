@@ -750,21 +750,21 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         self.health_server = HealthServer(session=self)
         await self.health_server.start()
 
-        # Trigger PostSessionStart hooks
+        # Trigger SessionStart hooks (REFACTOR.md Part 2 Phase 2: SDK-canonical event name)
         if self.hook_registry:
             try:
                 hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.POST_SESSION_START,
+                    HookEvent.SESSION_START,
                     context={"agent_name": self.agent_name},
                 )
                 if hook_results:
                     logger.debug(
-                        "PostSessionStart hooks triggered",
+                        "SessionStart hooks triggered",
                         count=len(hook_results),
                     )
             except Exception as e:
                 logger.warning(
-                    "Failed to trigger PostSessionStart hooks",
+                    "Failed to trigger SessionStart hooks",
                     error=str(e),
                 )
 

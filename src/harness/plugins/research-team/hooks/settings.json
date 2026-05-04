@@ -1,6 +1,6 @@
 {
   "hooks": {
-    "PostSessionStart": [
+    "SessionStart": [
       {
         "command": "echo 'Research Team plugin loaded'",
         "timeout": 5

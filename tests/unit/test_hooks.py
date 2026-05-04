@@ -19,7 +19,7 @@ def sample_hooks():
     """Create sample hooks for testing."""
     return [
         PluginHook(
-            event=HookEvent.POST_SESSION_START,
+            event=HookEvent.SESSION_START,
             command="echo 'Session started'",
             plugin_name="test-plugin",
         ),
@@ -87,8 +87,8 @@ class TestHookMatching:
         post_tool_hooks = registry.get_hooks_for_event(HookEvent.POST_TOOL_USE, context)
         assert len(post_tool_hooks) == 2
 
-        # POST_SESSION_START hook has no matcher, so it matches
-        session_start_hooks = registry.get_hooks_for_event(HookEvent.POST_SESSION_START)
+        # SESSION_START hook has no matcher, so it matches
+        session_start_hooks = registry.get_hooks_for_event(HookEvent.SESSION_START)
         assert len(session_start_hooks) == 1
 
     def test_get_hooks_with_tool_name_matcher(self, sample_hooks):
@@ -119,14 +119,14 @@ class TestHookMatching:
     def test_get_hooks_no_matcher(self, sample_hooks):
         """Test hooks without matcher always match."""
         registry = HookRegistry()
-        registry.register(sample_hooks[0])  # POST_SESSION_START, no matcher
+        registry.register(sample_hooks[0])  # SESSION_START, no matcher
 
-        hooks = registry.get_hooks_for_event(HookEvent.POST_SESSION_START)
+        hooks = registry.get_hooks_for_event(HookEvent.SESSION_START)
         assert len(hooks) == 1
 
         # Even with context, should match (no matcher = match all)
         hooks = registry.get_hooks_for_event(
-            HookEvent.POST_SESSION_START,
+            HookEvent.SESSION_START,
             {"some": "context"}
         )
         assert len(hooks) == 1
@@ -140,7 +140,7 @@ class TestHookExecution:
         registry = HookRegistry()
         registry.register(sample_hooks[0])  # echo 'Session started'
 
-        results = registry.trigger(HookEvent.POST_SESSION_START)
+        results = registry.trigger(HookEvent.SESSION_START)
 
         assert len(results) == 1
         assert results[0]["status"] == "success"
@@ -164,20 +164,20 @@ class TestHookExecution:
         registry = HookRegistry()
         registry.register(sample_hooks[1])  # POST_TOOL_USE with Write matcher
 
-        # Trigger POST_SESSION_START - no hooks for this event
-        results = registry.trigger(HookEvent.POST_SESSION_START)
+        # Trigger SESSION_START - no hooks for this event
+        results = registry.trigger(HookEvent.SESSION_START)
         assert len(results) == 0
 
     def test_trigger_command_failure(self):
         """Test triggering hook with failing command."""
         registry = HookRegistry()
         registry.register(PluginHook(
-            event=HookEvent.POST_SESSION_START,
+            event=HookEvent.SESSION_START,
             command="exit 1",
             plugin_name="test",
         ))
 
-        results = registry.trigger(HookEvent.POST_SESSION_START)
+        results = registry.trigger(HookEvent.SESSION_START)
 
         assert len(results) == 1
         assert results[0]["status"] == "error"
@@ -187,13 +187,13 @@ class TestHookExecution:
         """Test triggering hook that times out."""
         registry = HookRegistry()
         registry.register(PluginHook(
-            event=HookEvent.POST_SESSION_START,
+            event=HookEvent.SESSION_START,
             command="sleep 10",
             plugin_name="test",
             timeout=1,  # 1 second timeout
         ))
 
-        results = registry.trigger(HookEvent.POST_SESSION_START)
+        results = registry.trigger(HookEvent.SESSION_START)
 
         assert len(results) == 1
         assert results[0]["status"] == "timeout"
@@ -208,7 +208,7 @@ class TestHookAsyncExecution:
         registry = HookRegistry()
         registry.register(sample_hooks[0])
 
-        results = await registry.trigger_async(HookEvent.POST_SESSION_START)
+        results = await registry.trigger_async(HookEvent.SESSION_START)
 
         assert len(results) == 1
         assert results[0]["status"] == "success"
@@ -231,13 +231,13 @@ class TestHookAsyncExecution:
         """Test async triggering with timeout."""
         registry = HookRegistry()
         registry.register(PluginHook(
-            event=HookEvent.POST_SESSION_START,
+            event=HookEvent.SESSION_START,
             command="sleep 10",
             plugin_name="test",
             timeout=1,
         ))
 
-        results = await registry.trigger_async(HookEvent.POST_SESSION_START)
+        results = await registry.trigger_async(HookEvent.SESSION_START)
 
         assert len(results) == 1
         assert results[0]["status"] == "timeout"
