@@ -35,20 +35,16 @@ This rule has NO exceptions. Violations corrupt the project structure.
 
 ### Custom Agent Invocation
 
-The Claude Agent SDK's Task tool doesn't recognize custom agents (GitHub issues #11205, #12212). Use direct invocation for custom agents:
+Dispatch custom agents via the **Task tool** (named `Agent` in the runtime tool list — same thing) with `subagent_type` set to the agent's canonical name:
 
-```python
-from harness.direct_agent import call_agent, call_agent_simple
-
-# Simple invocation (returns text)
-response = await call_agent_simple("python-expert", "Write a sort function")
-
-# Streaming invocation
-async for message in call_agent("python-expert", "Write a sort function"):
-    process(message)
+```
+Task(subagent_type="python-expert", description="…", prompt="…")
+Task(subagent_type="research-team:research-specialist", description="…", prompt="…")
 ```
 
-**Available Custom Agents**: python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent, database-expert, sql-expert, docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert, test-sdet-expert, code-review-expert, research-team:lead-research-coordinator
+**Available Custom Agents**: `python-expert`, `typescript-expert`, `go-expert`, `nodejs-expert`, `react-expert`, `refactor-agent`, `database-expert`, `sql-expert`, `docker-engineer`, `k8s-engineer`, `gcp-architect`, `gitlab-ci-expert`, `sdet-expert`, `code-review-expert`, `research-team:research-specialist`, `research-team:lead-research-coordinator`, `context-engineering:context-engineer`
+
+For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session), use `harness.direct_agent.call_agent_simple()`.
 
 ### Research Agent
 

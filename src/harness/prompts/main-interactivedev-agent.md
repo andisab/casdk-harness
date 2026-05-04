@@ -60,35 +60,37 @@ For git operations, use HTTPS URLs:
 
 ## Custom Agent Invocation
 
-### SDK Task Tool Limitation
+Dispatch custom agents via the **Task tool** (which appears as `Agent` in the runtime tool list — same thing). Pass `subagent_type` with the agent's canonical name. Both harness agents and plugin agents are available.
 
-The Claude Agent SDK's Task tool doesn't recognize custom agents (GitHub issues #11205, #12212). Use direct invocation instead:
-
-```python
-from harness.direct_agent import call_agent, call_agent_simple, list_available_agents
-
-# List all available agents
-agents = list_available_agents()
-
-# Simple invocation (returns text)
-response = await call_agent_simple("python-expert", "Write a sort function")
-
-# Streaming invocation
-async for message in call_agent("python-expert", "Write a sort function"):
-    process(message)
+```
+Task(subagent_type="python-expert", description="…", prompt="…")
+Task(subagent_type="research-team:research-specialist", description="…", prompt="…")
 ```
 
 ### Available Custom Agents
 
-**Development**: python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent
+**Harness agents** (filesystem-discovered from `.claude/agents/`):
 
-**Database**: database-expert, sql-expert
+- **Development**: `python-expert`, `typescript-expert`, `go-expert`, `nodejs-expert`, `react-expert`, `refactor-agent`
+- **Database**: `database-expert`, `sql-expert`
+- **Infrastructure**: `docker-engineer`, `k8s-engineer`, `gcp-architect`, `gitlab-ci-expert`
+- **Quality**: `sdet-expert`, `code-review-expert`
 
-**Infrastructure**: docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert
+**Plugin agents** (programmatically registered, namespaced as `plugin:agent`):
 
-**Testing**: test-sdet-expert, code-review-expert
+- `research-team:research-specialist`, `research-team:research-report-writer`, `research-team:lead-research-coordinator`
+- `context-engineering:context-engineer`
+- `cgf-agents:cgf-orchestrator` (and other cgf-agents — see plugin)
 
-**Plugin Agents**: research-team:lead-research-coordinator, research-team:research-specialist, research-team:research-report-writer, context-engineering:context-engineer
+### Programmatic / Standalone Invocation
+
+For Python code that needs to invoke an agent outside of an SDK session (e.g., CGF runners), use `harness.direct_agent`:
+
+```python
+from harness.direct_agent import call_agent_simple
+
+response = await call_agent_simple("python-expert", "Write a sort function")
+```
 
 ---
 

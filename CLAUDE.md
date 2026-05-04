@@ -244,7 +244,7 @@ System prompt content...
 
 #### Direct Agent Invocation
 
-Due to SDK Task tool bug (#11205, #12212), use `harness.direct_agent` module:
+For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session, or where streaming progress UX is needed), use the `harness.direct_agent` module. From within an SDK session, prefer Task-tool dispatch (`subagent_type="<name>"`).
 
 ```python
 from harness.direct_agent import call_agent, call_agent_simple, list_available_agents
