@@ -27,8 +27,17 @@ Technical reference for developers working on this repository and for Claude's o
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
 
 ### Completed Recently
-- **Block 2 Part 2 Phase 1 — Filesystem Agent Discovery (2026-05-04)** — moved 14 agent configs from `src/harness/agents/configs/*.md` to canonical `.claude/agents/*.md`; `definitions.py` and `ResourceRegistry.discover()` repointed to new path; `setting_sources` narrowed `["user","project"]` → `["project"]` for container hermeticity; Dockerfile copies `.claude/` in dev + production stages; YAML `model: opus 4.1` normalized to canonical `opus` (12 files) — hidden by `MODEL_MAP` translation pre-Phase-1, but exposed by filesystem auto-discovery reading raw YAML. Unit tests 1591/0/0 unchanged. Runtime smoke verified single-call Task dispatch to `python-expert`. Latent name-mismatch issues (4 files where YAML `name:` differs from programmatic aliases) deferred to Phase 3 cleanup — see REFACTOR.md.
-- **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, direct_agent.py retirement).
+- **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
+  - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
+  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Plugin agents still need programmatic registration with `plugin:resource` namespacing. Replaced alias dict in `definitions.py` with directory walker.
+  - Step 3: Dropped `MODEL_MAP` defensive translation (Phase 1 made it a no-op).
+  - Step 4: Extracted `AgentProgress` + `Colors` + helpers to `harness/agent_progress.py`.
+  - Step 5: Dropped unused `register_workspace_agent` / `unregister` / `clear` API (zero callers in src/ or tests/).
+  - Step 6: Renamed `direct_agent.py` → `subagent.py`; updated all 7 production import sites + plugin docs + prompts + tests.
+  - Net: `direct_agent.py` 780 LoC → `subagent.py` ~530 LoC (-32%); new `agent_progress.py` 196 LoC; 4 agent files renamed; ~15 doc/prompt files updated. Unit tests 1591/0/0 throughout. Runtime smokes after Steps 2 and 5 confirmed both harness agents (filesystem) and plugin agents (programmatic with namespacing) work via Task dispatch.
+- **Block 2 Part 2 Phase 2 minimal — Hook event SDK-canonical names (2026-05-04)** — Renamed `HookEvent.POST_SESSION_START` → `SESSION_START` (value "PostSessionStart" → "SessionStart"); dropped unused `PRE_SESSION_START`. Tests 1591/0/0. Phase 2 full (plugin_manager.py collapse) deferred — gated on Phase 3 experiment results.
+- **Block 2 Part 2 Phase 1 — Filesystem Agent Discovery (2026-05-04)** — moved 14 agent configs from `src/harness/agents/configs/*.md` to canonical `.claude/agents/*.md`; `definitions.py` and `ResourceRegistry.discover()` repointed to new path; `setting_sources` narrowed `["user","project"]` → `["project"]` for container hermeticity; Dockerfile copies `.claude/` in dev + production stages; YAML `model: opus 4.1` normalized to canonical `opus` (12 files). Unit tests 1591/0/0.
+- **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, subagent.py retirement).
 - **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
 - **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
   - [x] `mcp-tool-creation` and `mcp-server-creation` skills with references/
@@ -46,12 +55,11 @@ Technical reference for developers working on this repository and for Claude's o
 ### Known Limitations
 - Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
 - AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
-- `harness.direct_agent` module (781 LoC) is still in active use as a Task-tool workaround predating SDK 0.1.72. Retirement is REFACTOR.md Part 2 Phase 3 (Task dispatch verified working under 0.1.72 — see Phase 0 entry below).
 
 ### TODOs
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
 - [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] **Block 2 next:** Part 2 Phase 2 — collapse `plugin_manager.py` to <80 LoC; delete `src/harness/commands.py`; slim `hooks.py`; rename `PostSessionStart`→`SessionStart`, `STOP`→`Stop` (see REFACTOR.md)
+- [ ] **Block 2 next:** Part 2 Phase 2 full — collapse `plugin_manager.py` to <80 LoC; delete `src/harness/commands.py`; slim `hooks.py`. Gated on Part 1C swe-marketplace adoption decision (see REFACTOR.md). Phase 2 minimal (event renames) is done.
 
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
@@ -70,7 +78,8 @@ casdk-harness/
 │   │   ├── cli.py                  # Rich CLI formatting
 │   │   ├── commands.py             # Slash command registry
 │   │   ├── config.py               # Pydantic configuration
-│   │   ├── direct_agent.py         # Direct agent invocation (bypasses Task tool)
+│   │   ├── subagent.py             # Standalone agent invocation utility (REFACTOR Part 2 Phase 3)
+│   │   ├── agent_progress.py       # Terminal progress UX (extracted Phase 3 Step 4)
 │   │   ├── hooks.py                # Lifecycle hook registry
 │   │   ├── interactive.py          # Interactive conversation loop
 │   │   ├── monitoring.py           # Prometheus metrics collector
@@ -208,13 +217,13 @@ casdk-harness/
 
 | Type | Location | Invocation | Process |
 |------|----------|------------|---------|
-| **Subagents** | `.claude/agents/*.md` | `harness.direct_agent` | Same process |
-| **Plugin Agents** | `src/harness/plugins/*/agents/*.md` | `harness.direct_agent` | Same process |
+| **Subagents** | `.claude/agents/*.md` | `harness.subagent` | Same process |
+| **Plugin Agents** | `src/harness/plugins/*/agents/*.md` | `harness.subagent` | Same process |
 | **Container Agents** | `docker-compose.yml` services | Docker | Separate containers |
 
 #### Subagents (14 harness + 13 plugin)
 
-Invoked via `harness.direct_agent` module (Task tool has SDK bug):
+Invoked via `harness.subagent` module (Task tool has SDK bug):
 
 **Harness Agents** (14):
 | Category | Agents |
@@ -244,10 +253,10 @@ System prompt content...
 
 #### Direct Agent Invocation
 
-For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session, or where streaming progress UX is needed), use the `harness.direct_agent` module. From within an SDK session, prefer Task-tool dispatch (`subagent_type="<name>"`).
+For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session, or where streaming progress UX is needed), use the `harness.subagent` module. From within an SDK session, prefer Task-tool dispatch (`subagent_type="<name>"`).
 
 ```python
-from harness.direct_agent import call_agent, call_agent_simple, list_available_agents
+from harness.subagent import call_agent, call_agent_simple, list_available_agents
 
 # List agents
 agents = list_available_agents()
@@ -262,9 +271,9 @@ async for msg in call_agent("research-team:lead-research-coordinator", "Research
 
 **CLI usage:**
 ```bash
-python -m harness.direct_agent --list                    # List agents
-python -m harness.direct_agent --info python-expert      # Agent details
-python -m harness.direct_agent --agent python-expert --prompt "..." --verbose
+python -m harness.subagent --list                    # List agents
+python -m harness.subagent --info python-expert      # Agent details
+python -m harness.subagent --agent python-expert --prompt "..." --verbose
 ```
 
 **Agent settings**: `max_turns` in YAML frontmatter controls conversation length (default: 100, research agents: 200-500).
@@ -298,8 +307,8 @@ python -m harness.direct_agent --agent python-expert --prompt "..." --verbose
 
 | Type | Count | Invocation | Status |
 |------|-------|------------|--------|
-| Harness Agents | 14 | `harness.direct_agent.call_agent()` | Working |
-| Plugin Agents | 13 | `harness.direct_agent.call_agent()` | Working |
+| Harness Agents | 14 | `harness.subagent.call_agent()` | Working |
+| Plugin Agents | 13 | `harness.subagent.call_agent()` | Working |
 | Base Skills | 6 | `Skill(skill="...")` | Working |
 | Plugin Skills | 7 | `Skill(skill="plugin:name")` | Working |
 | Commands | 2 | CommandRegistry | Working |

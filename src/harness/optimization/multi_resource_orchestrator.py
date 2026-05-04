@@ -592,7 +592,7 @@ class MultiResourceOrchestrator:
         if not self._spec or not self._state:
             return
 
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         workspace = self.config.workspace_dir
         research_dir = workspace / "research" / "notes"
@@ -712,7 +712,7 @@ eval_criteria_path: research/eval_criteria.yaml
         if not self._spec or not self._state:
             return
 
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         workspace = self.config.workspace_dir
 
@@ -901,7 +901,7 @@ Emit [DESIGN_COMPLETE] when done.
         if not self._spec or not self._state:
             return
 
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         workspace = self.config.workspace_dir
         pending = self._state.get_pending_resources()
@@ -1297,7 +1297,7 @@ Skill Directory Structure:
         if not self._state or not self._spec:
             return
 
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         workspace = self.config.workspace_dir
 
@@ -1916,7 +1916,7 @@ word_count: {{count}}
         if not self._state or not self._spec:
             return
 
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         workspace = self.config.workspace_dir
 

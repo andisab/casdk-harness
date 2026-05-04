@@ -1,10 +1,11 @@
 """Terminal progress UX for streaming agent invocations.
 
-Shared between standalone agent runners (`harness.direct_agent`) and any
+Shared between standalone agent runners (`harness.subagent`) and any
 future caller that streams `query()` messages and wants colored
 turn-by-turn output to stderr.
 
-Extracted from `direct_agent.py` in REFACTOR.md Phase 3 Step 4.
+Extracted from `harness.subagent` (formerly `direct_agent`) in
+REFACTOR.md Phase 3 Step 4.
 """
 
 from __future__ import annotations

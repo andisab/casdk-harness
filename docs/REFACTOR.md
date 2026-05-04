@@ -267,7 +267,11 @@ Once the experiment runs:
 
 In both branches: `~~Verify `skills=` parameter exists~~` is **closed** as of Phase 0 (confirmed in SDK 0.1.72). Existing plan items for hook rename and event canonicalization are now done.
 
-**Phase 3 — Slim `direct_agent.py` and lean on SDK loading conventions (~2 days; `main`)**
+**Phase 3 — Slim `direct_agent.py` and lean on SDK loading conventions (~2 days; `main`) ✓ DONE 2026-05-04**
+
+Landed across 6 commits (`a4315d7` through Step 6 commit). Final state: `direct_agent.py` (780 LoC) → `subagent.py` (~530 LoC) + new `agent_progress.py` (196 LoC). Harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`; plugin agents continue to be programmatically registered (the SDK's `plugins=[{type:local,path:...}]` does not auto-expose them with `plugin:resource` namespacing). Both runtime-verified.
+
+Step-by-step record (kept for archeology):
 
 _Renamed scope (2026-05-04): the goal is "use established SDK conventions for loading agents/plugins/resources at startup", not "delete `direct_agent.py`". `direct_agent.py` solves a real standalone-Python use case (CGF runners invoke agents without a parent SDK session) for which SDK Task tool dispatch is not applicable. The goal is to slim it and possibly rename._
 

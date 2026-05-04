@@ -11,7 +11,7 @@ remains for the standalone-invocation use case for which it remains the
 correct approach.
 
 Usage:
-    from harness.direct_agent import call_agent, call_agent_simple, list_available_agents
+    from harness.subagent import call_agent, call_agent_simple, list_available_agents
 
     # List all available agents
     agents = list_available_agents()

@@ -1,7 +1,7 @@
-"""Test nested agent invocation via Bash + direct_agent CLI.
+"""Test nested agent invocation via Bash + subagent CLI.
 
 This tests whether an agent spawned by call_agent_simple() can successfully
-use Bash to invoke another agent via the direct_agent CLI.
+use Bash to invoke another agent via the subagent CLI.
 
 This is a workaround for SDK bug #11205, #12212 where the Task tool doesn't
 recognize custom agents.
@@ -10,13 +10,13 @@ import asyncio
 import re
 import sys
 
-from harness.direct_agent import call_agent_simple
+from harness.subagent import call_agent_simple
 
 
 async def test_nested_invocation():
     """Test that an outer agent can spawn an inner agent via Bash."""
     print("=" * 60)
-    print("TEST: Nested Agent Invocation via Bash + direct_agent CLI")
+    print("TEST: Nested Agent Invocation via Bash + subagent CLI")
     print("=" * 60)
     print()
     print("Outer agent: cgf-agents:cgf-prompt-optimizer")
@@ -30,7 +30,7 @@ async def test_nested_invocation():
     # cgf-prompt-optimizer has Bash tool access
     prompt = (
         "Execute this EXACT Bash command and return ONLY its output:\n\n"
-        'uv run python -m harness.direct_agent --agent '
+        'uv run python -m harness.subagent --agent '
         '"research-team:research-specialist" '
         '--prompt "Name one Python web framework in exactly one word" '
         "--simple 2>/dev/null | tail -5\n\n"
@@ -97,7 +97,7 @@ async def test_signal_preservation():
     # Use a simple agent that emits signals
     prompt = (
         "Execute this EXACT Bash command and return the output:\n\n"
-        'uv run python -m harness.direct_agent --agent '
+        'uv run python -m harness.subagent --agent '
         '"cgf-agents:cgf-test-validator" '
         '--prompt "Validate schema: {}. When done, emit [VALIDATION_COMPLETE]." '
         '--simple 2>/dev/null | grep -E "\\[.*\\]" || echo "NO_SIGNAL_FOUND"\n\n'
@@ -167,7 +167,7 @@ async def main():
     if all_passed:
         print("All tests passed!")
         print()
-        print("CONCLUSION: Nested agent spawning via Bash + direct_agent CLI works.")
+        print("CONCLUSION: Nested agent spawning via Bash + subagent CLI works.")
         print("This workaround addresses SDK Task tool bug #11205, #12212.")
     else:
         print("Some tests failed. See output above for details.")

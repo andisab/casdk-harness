@@ -84,10 +84,10 @@ Task(subagent_type="research-team:research-specialist", description="…", promp
 
 ### Programmatic / Standalone Invocation
 
-For Python code that needs to invoke an agent outside of an SDK session (e.g., CGF runners), use `harness.direct_agent`:
+For Python code that needs to invoke an agent outside of an SDK session (e.g., CGF runners), use `harness.subagent`:
 
 ```python
-from harness.direct_agent import call_agent_simple
+from harness.subagent import call_agent_simple
 
 response = await call_agent_simple("python-expert", "Write a sort function")
 ```
@@ -99,7 +99,7 @@ response = await call_agent_simple("python-expert", "Write a sort function")
 Heavy-duty research with parallel multi-agent execution is available via direct invocation:
 
 ```python
-from harness.direct_agent import call_agent
+from harness.subagent import call_agent
 
 async for message in call_agent(
     "research-team:lead-research-coordinator",

@@ -44,14 +44,14 @@ Task(subagent_type="research-team:research-specialist", description="…", promp
 
 **Available Custom Agents**: `python-expert`, `typescript-expert`, `go-expert`, `nodejs-expert`, `react-expert`, `refactor-agent`, `database-expert`, `sql-expert`, `docker-engineer`, `k8s-engineer`, `gcp-architect`, `gitlab-ci-expert`, `sdet-expert`, `code-review-expert`, `research-team:research-specialist`, `research-team:lead-research-coordinator`, `context-engineering:context-engineer`
 
-For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session), use `harness.direct_agent.call_agent_simple()`.
+For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session), use `harness.subagent.call_agent_simple()`.
 
 ### Research Agent
 
 Heavy-duty research with parallel multi-agent execution via direct invocation:
 
 ```python
-from harness.direct_agent import call_agent
+from harness.subagent import call_agent
 
 async for message in call_agent(
     "research-team:lead-research-coordinator",

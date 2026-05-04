@@ -83,7 +83,7 @@ class ResearchPipeline:
 Using research-team plugin agents:
 
 ```python
-from harness.direct_agent import call_agent
+from harness.subagent import call_agent
 
 async def research_with_harness(topic: str):
     async for msg in call_agent(

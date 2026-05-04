@@ -67,10 +67,10 @@ class CodeReviewSystem:
 
 ## Harness Integration
 
-Using `harness.direct_agent`:
+Using `harness.subagent`:
 
 ```python
-from harness.direct_agent import call_agent_simple
+from harness.subagent import call_agent_simple
 
 async def review_with_harness(code: str):
     # Security review
