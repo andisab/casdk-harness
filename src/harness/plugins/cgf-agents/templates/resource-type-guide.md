@@ -158,7 +158,7 @@ allowed-tools: Read, Bash(git:*)
 | Bad Skill | Better Alternative |
 |-----------|-------------------|
 | `run-tests` | Command: `/test` |
-| `postgres-expert` | Agent: `postgres-expert` |
+| `database-expert` | Agent: `database-expert` |
 | `auto-lint` | Hook: PostToolUse |
 
 ### Skill Structure

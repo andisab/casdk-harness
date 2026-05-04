@@ -82,11 +82,11 @@ async for message in call_agent("python-expert", "Write a sort function"):
 
 **Development**: python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent
 
-**Database**: postgres-expert, sql-expert
+**Database**: database-expert, sql-expert
 
 **Infrastructure**: docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert
 
-**Testing**: test-sdet-expert, dev-code-review-expert
+**Testing**: test-sdet-expert, code-review-expert
 
 **Plugin Agents**: research-team:lead-research-coordinator, research-team:research-specialist, research-team:research-report-writer, context-engineering:context-engineer
 

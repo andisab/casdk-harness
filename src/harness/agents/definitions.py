@@ -176,6 +176,8 @@ def _load_all_agents() -> dict[str, AgentDefinition]:
     agents: dict[str, AgentDefinition] = {}
 
     # Mapping from logical agent name to config filename
+    # Phase 3 Step 2 will replace this with auto-discovery from .claude/agents/.
+    # For Step 1, just point at the renamed files.
     agent_files = {
         # Development agents
         "python-expert": "dev-python-expert",
@@ -185,18 +187,16 @@ def _load_all_agents() -> dict[str, AgentDefinition]:
         "react-expert": "dev-react-expert",
         "refactor-agent": "dev-refactor-agent",
         # Database agents
-        "database-expert": "db-postgres-expert",
+        "database-expert": "database-expert",
         "sql-expert": "db-sql-expert",
         # Infrastructure agents
         "docker-engineer": "infra-docker-engineer",
-        "gcp-architect": "infra-gcp-architect",
+        "gcp-architect": "gcp-architect",
         "gitlab-ci-expert": "infra-gitlab-ci-expert",
         "k8s-engineer": "infra-k8s-engineer",
-        # Task-specific agents (aliases for backward compatibility)
-        "testing-agent": "test-sdet-expert",
-        "reviewer-agent": "dev-code-review-expert",
-        "code-review-expert": "dev-code-review-expert",
-        "sdet-expert": "test-sdet-expert",
+        # Task-specific agents
+        "code-review-expert": "code-review-expert",
+        "sdet-expert": "sdet-expert",
     }
 
     # Keep tech-lead inline (used by autonomous.py)

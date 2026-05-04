@@ -665,7 +665,7 @@ tools: Bash(git:*), Bash(npm:*), Bash(docker:*)
 **Examples**:
 ```yaml
 # Good - Focused
-name: postgres-expert
+name: database-expert
 description: PostgreSQL query optimization and schema design
 
 # Bad - Too broad

@@ -33,11 +33,11 @@ Structure resources with **three disclosure levels**:
 **Example** (conventions-mcp search result):
 ```json
 {
-  "name": "postgres-expert",
+  "name": "database-expert",
   "type": "agent",
   "description": "PostgreSQL database expert for query optimization and schema design",
   "tags": ["database", "postgresql", "optimization"],
-  "path": "agents/database/postgres-expert.md",
+  "path": "agents/database/database-expert.md",
   "tokens": 2500
 }
 ```
@@ -247,7 +247,7 @@ Load when needed with Read tool
 **Level 1** (Metadata search):
 ```
 Found 5 agents:
-1. postgres-expert (2500 tokens) - PostgreSQL optimization
+1. database-expert (2500 tokens) - PostgreSQL optimization
 2. mongodb-expert (2200 tokens) - MongoDB schema design
 3. sql-expert (1800 tokens) - Generic SQL expertise
 4. migration-specialist (3000 tokens) - Database migrations
@@ -257,9 +257,9 @@ Total if loaded: 11,900 tokens (6% of context)
 💡 Use get_convention to load specific agents
 ```
 
-**Level 2** (User selects postgres-expert):
+**Level 2** (User selects database-expert):
 ```
-Loading postgres-expert agent...
+Loading database-expert agent...
 
 Core capabilities:
 - Query optimization and EXPLAIN plan analysis
@@ -387,7 +387,7 @@ Response: [Returns metadata with no indication how to get more]
 
 ❌ **Ignoring user's actual needs**
 ```
-User: "I need the postgres-expert agent"
+User: "I need the database-expert agent"
 Response: [Loads all 50 agents because user mentioned one]
 ```
 

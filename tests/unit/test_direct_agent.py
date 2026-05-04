@@ -352,8 +352,8 @@ class TestAgentModels:
         assert info["model"] in ["sonnet", "opus", "haiku"]
 
     def test_testing_agent_uses_haiku(self) -> None:
-        """Test that testing-agent uses haiku model."""
-        info = get_agent_info("testing-agent")
+        """Test that sdet-expert uses haiku model."""
+        info = get_agent_info("sdet-expert")
         assert info["model"] == "haiku"
 
 

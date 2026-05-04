@@ -75,7 +75,7 @@ from harness.direct_agent import call_agent_simple
 async def review_with_harness(code: str):
     # Security review
     security = await call_agent_simple(
-        "dev-code-review-expert",
+        "code-review-expert",
         f"Review this code for security vulnerabilities:\n\n{code}"
     )
 

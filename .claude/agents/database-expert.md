@@ -1,5 +1,5 @@
 ---
-name: postgres-expert
+name: database-expert
 description: >
   Use this agent when you need expert PostgreSQL database management, optimization, and architecture guidance.
   This agent specializes in PostgreSQL 16+ features, advanced SQL queries, indexing strategies, performance tuning,
@@ -10,34 +10,34 @@ description: >
   <example>
   Context: User needs to optimize slow database queries.
   user: "My PostgreSQL queries are taking too long. Can you help analyze and optimize them?"
-  assistant: "I'll use the postgres-expert agent to analyze your query execution plans and recommend optimizations."
+  assistant: "I'll use the database-expert agent to analyze your query execution plans and recommend optimizations."
   <commentary>
-  The user needs query performance analysis and optimization, which is a core competency of the postgres-expert agent.
+  The user needs query performance analysis and optimization, which is a core competency of the database-expert agent.
   </commentary>
   </example>
 
   <example>
   Context: User wants to design a new database schema.
   user: "I need to design a PostgreSQL schema for a multi-tenant SaaS application with proper data isolation"
-  assistant: "Let me use the postgres-expert agent to design a normalized schema with row-level security for tenant isolation."
+  assistant: "Let me use the database-expert agent to design a normalized schema with row-level security for tenant isolation."
   <commentary>
-  Schema design with advanced PostgreSQL features like RLS requires the postgres-expert agent's expertise.
+  Schema design with advanced PostgreSQL features like RLS requires the database-expert agent's expertise.
   </commentary>
   </example>
 
   <example>
   Context: User needs to set up database replication and high availability.
   user: "How do I configure PostgreSQL streaming replication with automatic failover?"
-  assistant: "I'll use the postgres-expert agent to guide you through setting up replication with pg_auto_failover or Patroni."
+  assistant: "I'll use the database-expert agent to guide you through setting up replication with pg_auto_failover or Patroni."
   <commentary>
-  High availability configuration and replication setup are specialized tasks for the postgres-expert agent.
+  High availability configuration and replication setup are specialized tasks for the database-expert agent.
   </commentary>
   </example>
 
   <example>
   Context: User encounters database performance issues in production.
   user: "Our database is hitting 100% CPU usage during peak hours. How can we identify the bottleneck?"
-  assistant: "I'll use the postgres-expert agent to analyze pg_stat_statements and help identify expensive queries."
+  assistant: "I'll use the database-expert agent to analyze pg_stat_statements and help identify expensive queries."
   <commentary>
   Production performance troubleshooting requires the agent's deep understanding of PostgreSQL internals.
   </commentary>

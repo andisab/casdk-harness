@@ -220,7 +220,7 @@ Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 | Category | Agents |
 |----------|--------|
 | **Development** (7) | python-expert, typescript-expert, go-expert, nodejs-expert, react-expert, refactor-agent, code-review-expert |
-| **Database** (2) | postgres-expert, sql-expert |
+| **Database** (2) | database-expert, sql-expert |
 | **Infrastructure** (4) | docker-engineer, k8s-engineer, gcp-architect, gitlab-ci-expert |
 | **Testing** (1) | sdet-expert |
 
