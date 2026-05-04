@@ -20,6 +20,30 @@ import sys
 from pathlib import Path
 
 
+def _collapse_to_parent_dirs(entries: list[str]) -> list[str]:
+    """Collapse a list of file/sub-paths to unique parent directories.
+
+    The marketplace.json schema lists each resource as a file path
+    (e.g. ``./agents/foo.md``) or a sub-directory (e.g. ``./skills/coordinator``),
+    but the harness's PluginManager expects ``manifest.agents`` to be a list of
+    DIRECTORIES it can glob ``*.md`` inside (e.g. ``./agents``). Collapse
+    accordingly so synthesized shims match the in-tree shape.
+    """
+    parents: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        # ``./agents/foo.md`` → ``agents``;  ``./skills/coordinator`` → ``skills``
+        parts = [p for p in entry.lstrip("./").split("/") if p and p != "."]
+        if not parts:
+            continue
+        parent = parts[0]
+        normalized = f"./{parent}"
+        if normalized not in seen:
+            seen.add(normalized)
+            parents.append(normalized)
+    return parents
+
+
 def synthesize(marketplace_root: Path) -> int:
     manifest_file = marketplace_root / ".claude-plugin" / "marketplace.json"
     if not manifest_file.exists():
@@ -45,10 +69,10 @@ def synthesize(marketplace_root: Path) -> int:
             "name": name,
             "version": entry.get("version", "0.0.0"),
             "description": entry.get("description", ""),
-            "agents": entry.get("agents", []),
-            "skills": entry.get("skills", []),
-            "commands": entry.get("commands", []),
-            "hooks": entry.get("hooks", []),
+            "agents": _collapse_to_parent_dirs(entry.get("agents", [])),
+            "skills": _collapse_to_parent_dirs(entry.get("skills", [])),
+            "commands": _collapse_to_parent_dirs(entry.get("commands", [])),
+            "hooks": _collapse_to_parent_dirs(entry.get("hooks", [])),
         }
         author = entry.get("author")
         if isinstance(author, dict) and author.get("name"):
