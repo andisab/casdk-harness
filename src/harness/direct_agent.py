@@ -1,31 +1,31 @@
-"""Direct agent invocation - bypasses SDK Task tool limitation.
+"""Standalone agent invocation utility.
 
-The Claude Agent SDK's Task tool doesn't recognize custom agents passed via
-ClaudeAgentOptions(agents=...). This module provides direct invocation using
-SDK query() with the agent's system prompt.
+Use this module to invoke a named subagent from Python code that runs OUTSIDE
+of an active SDK session (e.g., CGF runners that need to evaluate an agent
+before there's an orchestrator session to dispatch from). Inside an active
+SDK session, prefer Task-tool dispatch (`subagent_type="<name>"`).
 
-This is a workaround for GitHub issues #11205 and #12212.
+Originally written as a Task-tool workaround (GitHub issues #11205, #12212);
+those are now resolved (verified 2026-05-04, REFACTOR.md Phase 0). The module
+remains for the standalone-invocation use case for which it remains the
+correct approach.
 
 Usage:
-    from harness.direct_agent import call_agent, list_available_agents
+    from harness.direct_agent import call_agent, call_agent_simple, list_available_agents
 
     # List all available agents
     agents = list_available_agents()
 
-    # Call an agent directly
-    async for message in call_agent(
-        agent_name="python-expert",
-        prompt="Write a function to sort a list"
-    ):
-        print(message)
+    # Simple text-only invocation
+    response = await call_agent_simple("python-expert", "Write a sort function")
 
-    # Call with verbose progress output
+    # Streaming invocation with terminal progress UX
     async for message in call_agent(
         agent_name="research-team:lead-research-coordinator",
         prompt="Research quantum computing",
-        verbose=True
+        verbose=True,
     ):
-        pass  # Progress is printed automatically
+        pass  # Progress is printed automatically by AgentProgress
 """
 
 from __future__ import annotations
@@ -96,10 +96,6 @@ logger = structlog.get_logger(__name__)
 _plugin_agents_cache: dict[str, SDKAgentDefinition] | None = None
 _plugin_manager: PluginManager | None = None
 
-# Module-level cache for dynamically registered workspace agents
-# These are agents loaded from workspace files (not in AGENT_DEFINITIONS)
-_workspace_agents_cache: dict[str, dict[str, Any]] = {}
-
 
 def _get_plugin_base_path() -> Path:
     """Get the path to the plugins directory."""
@@ -134,80 +130,6 @@ def _load_plugin_agents() -> dict[str, Any]:
     return _plugin_agents_cache
 
 
-def register_workspace_agent(
-    name: str,
-    system_prompt: str,
-    description: str = "",
-    model: str = "sonnet",
-    tools: list[str] | None = None,
-    max_turns: int = 100,
-) -> None:
-    """Register a workspace agent dynamically for optimization.
-
-    This allows agents defined in workspace .md files to be used with
-    call_agent() and call_agent_simple() without being in AGENT_DEFINITIONS.
-
-    The registration is session-scoped (cleared when Python process ends).
-
-    Args:
-        name: Agent name (must match test suite agent_name).
-        system_prompt: The agent's system prompt content.
-        description: Agent description.
-        model: Model to use (sonnet, opus, haiku).
-        tools: List of allowed tools, or None for all tools.
-        max_turns: Maximum conversation turns.
-
-    Example:
-        >>> from harness.optimization.resources import AgentResource
-        >>> resource = AgentResource.load("workspace/agent/agent-orig.md")
-        >>> register_workspace_agent(
-        ...     name=resource.name,
-        ...     system_prompt=resource.system_prompt,
-        ...     description=resource.description,
-        ...     model=resource.model,
-        ...     tools=resource.tools,
-        ...     max_turns=resource.max_turns,
-        ... )
-    """
-    _workspace_agents_cache[name] = {
-        "name": name,
-        "description": description,
-        "model": model,
-        "tools": tools,
-        "prompt": system_prompt,
-        "max_turns": max_turns,
-        "source": "workspace",
-    }
-    logger.debug(
-        "Registered workspace agent",
-        name=name,
-        model=model,
-        tools=tools,
-    )
-
-
-def unregister_workspace_agent(name: str) -> bool:
-    """Unregister a workspace agent.
-
-    Args:
-        name: Agent name to unregister.
-
-    Returns:
-        True if agent was unregistered, False if not found.
-    """
-    if name in _workspace_agents_cache:
-        del _workspace_agents_cache[name]
-        logger.debug("Unregistered workspace agent", name=name)
-        return True
-    return False
-
-
-def clear_workspace_agents() -> None:
-    """Clear all registered workspace agents."""
-    _workspace_agents_cache.clear()
-    logger.debug("Cleared all workspace agents")
-
-
 def list_available_agents() -> dict[str, str]:
     """List all available agents (harness + plugin + workspace).
 
@@ -229,10 +151,6 @@ def list_available_agents() -> dict[str, str]:
     plugin_agents = _load_plugin_agents()
     for name, agent in plugin_agents.items():
         agents[name] = agent.description
-
-    # Workspace agents
-    for name, agent in _workspace_agents_cache.items():
-        agents[name] = agent.get("description", "")
 
     return agents
 
@@ -289,10 +207,6 @@ def get_agent_info(agent_name: str) -> dict[str, Any]:
             "max_turns": max_turns,
             "source": "plugin",
         }
-
-    # Check workspace agents (dynamically registered)
-    if agent_name in _workspace_agents_cache:
-        return _workspace_agents_cache[agent_name].copy()
 
     available = list(list_available_agents().keys())
     raise ValueError(
