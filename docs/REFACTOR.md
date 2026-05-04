@@ -234,10 +234,12 @@ Caveats:
 
 ### Phased modernization
 
-**Phase 0 — Bump and verify (low risk, days; lands on `main`)**
-- Pin `claude-agent-sdk>=0.1.72` (or specific tested version) in `pyproject.toml`; refresh `uv.lock`.
-- Smoke test: `Task` tool dispatches to a custom agent registered via `agents=` AND via filesystem. Confirms #12212 is genuinely fixed in the harness's setup.
-- If green: file an issue tracking removal of `direct_agent.py`. If red: keep workaround, document why.
+**Phase 0 — Bump and verify (low risk, days; lands on `main`) ✓ DONE 2026-05-04**
+- [x] Pin `claude-agent-sdk>=0.1.72` in `pyproject.toml`; `uv.lock` refreshed (0.1.12 → 0.1.72).
+- [x] Smoke test passed: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response with `ResultMessage(is_error=False, num_turns=2, duration_ms=16492)`. Issue #12212 fix confirmed live in this harness's setup. (Session `ff3d4686-4d77-4ae2-9dc7-e7391498a1e8`.)
+- [x] Bonus: confirmed `ClaudeAgentOptions.skills=` parameter exists in 0.1.72 — closes Risk item below ("`skills=` parameter existence").
+- [x] Unit tests unchanged at 1591 passed / 0 failed.
+- Outcome: green. `direct_agent.py` retirement (Phase 3) is technically unblocked; deferred until Phases 1-2 land per the staged plan.
 
 **Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`)**
 - Move `src/harness/agents/configs/*.md` → repo `.claude/agents/*.md` (14 files). Update `definitions.py` loader path or delete it once SDK auto-discovery is confirmed.
@@ -251,6 +253,7 @@ Caveats:
 - **Verify `skills=` parameter exists in the pinned SDK** before depending on it. Reference demos rely on transitive auto-discovery via `setting_sources` and `plugins=` rather than an explicit `skills=` parameter, so it may not be a documented field. If it does not exist or is undocumented, drop the line — `setting_sources=["project"]` + `plugins=[...]` already auto-discover skills with no explicit list needed. If it does exist and works, prefer an explicit allowlist over `"all"` for production safety.
 
 **Phase 3 — Retire `direct_agent.py` (~2 days; `main`)**
+- _Unblocked by Phase 0 verification (2026-05-04). Gated on Phases 1-2 landing first._
 - Replace internal callers (`call_agent`, `call_agent_simple`) with Task-tool dispatch. For streaming progress UX in CGF orchestration, write a thin wrapper around `query()` with `agents=` populated.
 - Keep `register_workspace_agent()` semantics — but the new mechanism writes to `workspace/.claude/agents/` so `setting_sources=["local"]` picks them up automatically.
 - Delete the file when grep shows zero imports.
@@ -417,5 +420,5 @@ Before any phase is closed:
 - **`direct_agent.py` progress UX.** If colored turn-by-turn output during CGF runs is a hard requirement, keep a thin streaming wrapper rather than fully delete.
 - **Marketplace pin policy.** Always-latest (auto-pull on every container build) vs pinned-to-SHA. Recommend pin-and-bump-deliberately for reproducibility.
 - **Stage 2 already-merged commit on main (`00ece0e`).** Confirm during the merge PR that it doesn't conflict with cgf-framework's parallel work in the same context-engineering area.
-- **`skills=` parameter existence.** Documented references and Anthropic demos do not consistently show this on `ClaudeAgentOptions`. Verify in the pinned SDK source (`claude_agent_sdk/types.py`) before depending on it. If absent, drop the line — `setting_sources` + `plugins=` already auto-discover skills.
+- ~~**`skills=` parameter existence.**~~ ✓ Resolved 2026-05-04 — confirmed present in SDK 0.1.72 alongside `setting_sources`, `plugins`, and `agents`.
 - **OTel Collector vs direct OTLP export.** Phase 3A assumes a Collector service in docker-compose. Alternative: SDK exports OTLP directly to a remote-hosted Prometheus/OTLP endpoint, no Collector. Decide based on whether observability stays in-cluster (Collector preferred) or external (direct export simpler).

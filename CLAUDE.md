@@ -27,6 +27,7 @@ Technical reference for developers working on this repository and for Claude's o
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
 
 ### Completed Recently
+- **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, direct_agent.py retirement).
 - **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
 - **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
   - [x] `mcp-tool-creation` and `mcp-server-creation` skills with references/
@@ -42,14 +43,14 @@ Technical reference for developers working on this repository and for Claude's o
   - [x] resource_plan.schema.json and resource-plan.yaml output
 
 ### Known Limitations
-- **SDK Task tool bug**: Custom agents not recognized (GitHub #11205, #12212). Use `harness.direct_agent` module instead. _Note: #12212 is closed (2025-11-27); #11205 may not exist on `anthropics/claude-code`. Re-verification scheduled in REFACTOR.md Part 2 Phase 0._
 - Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
 - AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
+- `harness.direct_agent` module (781 LoC) is still in active use as a Task-tool workaround predating SDK 0.1.72. Retirement is REFACTOR.md Part 2 Phase 3 (Task dispatch verified working under 0.1.72 — see Phase 0 entry below).
 
 ### TODOs
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
 - [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] **Block 2 next:** Part 2 Phase 0 — bump SDK pin, verify Task tool dispatches to filesystem-discovered agents (see REFACTOR.md)
+- [ ] **Block 2 next:** Part 2 Phase 1 — move `src/harness/agents/configs/*.md` → `.claude/agents/*.md` (14 files); narrow `setting_sources` to `["project"]` for container hermeticity (see REFACTOR.md)
 
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
