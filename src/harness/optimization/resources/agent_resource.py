@@ -6,7 +6,7 @@ Example usage:
     from harness.optimization.resources import AgentResource
 
     # Load from file
-    agent = AgentResource.load(Path("agents/configs/python-expert.md"))
+    agent = AgentResource.load(Path(".claude/agents/python-expert.md"))
 
     # Access properties
     print(agent.name)           # "python-expert"
@@ -22,7 +22,7 @@ Example usage:
 
     # Save modifications
     agent.metadata["model"] = "sonnet"
-    agent.save(Path("agents/configs/python-expert.md"))
+    agent.save(Path(".claude/agents/python-expert.md"))
 """
 
 from __future__ import annotations
@@ -33,18 +33,6 @@ from typing import Any, ClassVar
 
 from harness.optimization.resources.base import BaseResource, ValidationError
 
-
-# Model name mapping for normalization
-MODEL_MAP: dict[str, str] = {
-    "opus 4.1": "opus",
-    "opus 4.5": "opus",
-    "sonnet 4.5": "sonnet",
-    "sonnet 4.0": "sonnet",
-    "haiku 3.5": "haiku",
-    "haiku": "haiku",
-    "sonnet": "sonnet",
-    "opus": "opus",
-}
 
 # Valid models
 VALID_MODELS = {"sonnet", "opus", "haiku"}
@@ -79,9 +67,9 @@ class AgentResource(BaseResource):
 
     @property
     def model(self) -> str:
-        """Model to use (normalized)."""
-        raw_model = self._metadata.get("model", "sonnet")
-        return MODEL_MAP.get(raw_model, raw_model)
+        """Model to use. YAML must use canonical short forms (sonnet/opus/haiku)
+        — REFACTOR.md Phase 1 normalized YAML and Phase 3 dropped MODEL_MAP."""
+        return self._metadata.get("model", "sonnet")
 
     @property
     def tools(self) -> list[str]:
@@ -139,9 +127,9 @@ class AgentResource(BaseResource):
             result["description"] = str(description)
             result["full_description"] = str(description)
 
-        # Model - normalize
-        raw_model = metadata.get("model", "sonnet")
-        result["model"] = MODEL_MAP.get(raw_model, raw_model)
+        # Model — YAML must use canonical short forms (sonnet/opus/haiku);
+        # REFACTOR.md Phase 1 normalized YAML and Phase 3 dropped MODEL_MAP.
+        result["model"] = metadata.get("model", "sonnet")
 
         # Tools - parse comma-separated string
         tools_str = metadata.get("tools", "")

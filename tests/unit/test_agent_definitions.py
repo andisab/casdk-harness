@@ -66,7 +66,7 @@ class TestAgentRegistry:
         assert len(agents) > 0
         assert "python-expert" in agents
         assert "tech-lead" in agents
-        assert "testing-agent" in agents
+        assert "sdet-expert" in agents
 
     def test_get_agents_by_model(self) -> None:
         """Test filtering agents by model."""
@@ -115,7 +115,7 @@ class TestPredefinedAgents:
 
     def test_testing_agent(self) -> None:
         """Test testing agent configuration."""
-        agent = get_agent_definition("testing-agent")
+        agent = get_agent_definition("sdet-expert")
 
         assert agent is not None
         assert agent.model == "haiku"  # Should use cheaper model

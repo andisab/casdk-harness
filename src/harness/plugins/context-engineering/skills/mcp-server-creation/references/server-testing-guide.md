@@ -158,7 +158,7 @@ Test with an actual agent session to verify tools work in the full LLM workflow.
 @pytest.mark.asyncio
 async def test_agent_uses_tool():
     """Verify an agent can discover and use the tool."""
-    from harness.direct_agent import call_agent_simple
+    from harness.subagent import call_agent_simple
 
     response = await call_agent_simple(
         "general-purpose",

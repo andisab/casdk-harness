@@ -67,15 +67,15 @@ class CodeReviewSystem:
 
 ## Harness Integration
 
-Using `harness.direct_agent`:
+Using `harness.subagent`:
 
 ```python
-from harness.direct_agent import call_agent_simple
+from harness.subagent import call_agent_simple
 
 async def review_with_harness(code: str):
     # Security review
     security = await call_agent_simple(
-        "dev-code-review-expert",
+        "code-review-expert",
         f"Review this code for security vulnerabilities:\n\n{code}"
     )
 
@@ -90,7 +90,7 @@ async def review_with_harness(code: str):
 
 ## Agent Definitions
 
-Required agents (in `agents/configs/`):
+Required agents (in `.claude/agents/`):
 - `coordinator-agent.md`: Planning and delegation
 - `security-reviewer.md`: Vulnerability scanning
 - `performance-reviewer.md`: Bottleneck identification

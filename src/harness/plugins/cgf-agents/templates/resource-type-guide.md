@@ -158,7 +158,7 @@ allowed-tools: Read, Bash(git:*)
 | Bad Skill | Better Alternative |
 |-----------|-------------------|
 | `run-tests` | Command: `/test` |
-| `postgres-expert` | Agent: `postgres-expert` |
+| `database-expert` | Agent: `database-expert` |
 | `auto-lint` | Hook: PostToolUse |
 
 ### Skill Structure
@@ -194,7 +194,7 @@ skills/my-skill/
 |-----------|-----|
 | `PostToolUse: Write → black/isort` | Auto-format Python files |
 | `PreToolUse: Bash → validate` | Validate commands before execution |
-| `PostSessionStart → load-context` | Initialize session state |
+| `SessionStart → load-context` | Initialize session state |
 
 | Bad Hook | Better Alternative |
 |----------|-------------------|

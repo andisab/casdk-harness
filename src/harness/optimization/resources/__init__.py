@@ -23,7 +23,7 @@ Usage:
     agents = registry.list_by_type("agent")
 
     # Load individual resource
-    agent = AgentResource.load(Path("agents/configs/python-expert.md"))
+    agent = AgentResource.load(Path(".claude/agents/python-expert.md"))
 """
 
 from __future__ import annotations
@@ -288,11 +288,12 @@ class ResourceRegistry:
         registry = cls()
 
         if base_path is None:
-            # Default to harness package directory
-            base_path = Path(__file__).parent.parent.parent
+            # Default to repo root (where .claude/agents/ lives)
+            # parents[4] from src/harness/optimization/resources/__init__.py → repo root
+            base_path = Path(__file__).resolve().parents[4]
 
-        # Discover agents
-        agents_dir = base_path / "agents" / "configs"
+        # Discover agents (REFACTOR.md Part 2 Phase 1: moved from .claude/agents/ to .claude/agents/)
+        agents_dir = base_path / ".claude" / "agents"
         if agents_dir.exists():
             for md_file in agents_dir.glob("*.md"):
                 try:

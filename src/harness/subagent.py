@@ -1,44 +1,49 @@
-"""Direct agent invocation - bypasses SDK Task tool limitation.
+"""Standalone agent invocation utility.
 
-The Claude Agent SDK's Task tool doesn't recognize custom agents passed via
-ClaudeAgentOptions(agents=...). This module provides direct invocation using
-SDK query() with the agent's system prompt.
+Use this module to invoke a named subagent from Python code that runs OUTSIDE
+of an active SDK session (e.g., CGF runners that need to evaluate an agent
+before there's an orchestrator session to dispatch from). Inside an active
+SDK session, prefer Task-tool dispatch (`subagent_type="<name>"`).
 
-This is a workaround for GitHub issues #11205 and #12212.
+Originally written as a Task-tool workaround (GitHub issues #11205, #12212);
+those are now resolved (verified 2026-05-04, REFACTOR.md Phase 0). The module
+remains for the standalone-invocation use case for which it remains the
+correct approach.
 
 Usage:
-    from harness.direct_agent import call_agent, list_available_agents
+    from harness.subagent import call_agent, call_agent_simple, list_available_agents
 
     # List all available agents
     agents = list_available_agents()
 
-    # Call an agent directly
-    async for message in call_agent(
-        agent_name="python-expert",
-        prompt="Write a function to sort a list"
-    ):
-        print(message)
+    # Simple text-only invocation
+    response = await call_agent_simple("python-expert", "Write a sort function")
 
-    # Call with verbose progress output
+    # Streaming invocation with terminal progress UX
     async for message in call_agent(
         agent_name="research-team:lead-research-coordinator",
         prompt="Research quantum computing",
-        verbose=True
+        verbose=True,
     ):
-        pass  # Progress is printed automatically
+        pass  # Progress is printed automatically by AgentProgress
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Union
 
 import structlog
+
+from harness.agent_progress import (
+    AgentProgress,
+    Colors,
+    extract_text_preview,
+    extract_tool_info,
+)
 
 # Environment variable for verbose mode inheritance
 VERBOSE_ENV_VAR = "CLAUDE_AGENT_VERBOSE"
@@ -91,179 +96,6 @@ logger = structlog.get_logger(__name__)
 _plugin_agents_cache: dict[str, SDKAgentDefinition] | None = None
 _plugin_manager: PluginManager | None = None
 
-# Module-level cache for dynamically registered workspace agents
-# These are agents loaded from workspace files (not in AGENT_DEFINITIONS)
-_workspace_agents_cache: dict[str, dict[str, Any]] = {}
-
-
-# ANSI color codes for terminal output
-class Colors:
-    """ANSI color codes for terminal output."""
-
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    CYAN = "\033[36m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    RED = "\033[31m"
-    WHITE = "\033[37m"
-
-
-@dataclass
-class AgentProgress:
-    """Tracks agent execution progress for verbose output."""
-
-    agent_name: str
-    max_turns: int
-    start_time: float = field(default_factory=time.time)
-    turn_count: int = 0
-    tool_calls: int = 0
-    subagents_spawned: list[str] = field(default_factory=list)
-    _last_print_len: int = 0
-
-    def elapsed(self) -> str:
-        """Return formatted elapsed time."""
-        seconds = time.time() - self.start_time
-        if seconds < 60:
-            return f"{seconds:.1f}s"
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes}m {secs:02d}s"
-
-    def format_header(self) -> str:
-        """Format the start header."""
-        return (
-            f"{Colors.CYAN}{Colors.BOLD}▶ [{self.agent_name}]{Colors.RESET} "
-            f"{Colors.DIM}Starting (max_turns={self.max_turns}){Colors.RESET}"
-        )
-
-    def format_turn(self, msg_type: str, summary: str) -> str:
-        """Format a turn progress line."""
-        elapsed = self.elapsed()
-        turn_info = f"{self.turn_count}/{self.max_turns}"
-        return (
-            f"{Colors.DIM}[{elapsed:>7}]{Colors.RESET} "
-            f"{Colors.YELLOW}Turn {turn_info:>9}{Colors.RESET} "
-            f"{Colors.WHITE}{msg_type:<18}{Colors.RESET} "
-            f"{summary}"
-        )
-
-    def format_tool_call(self, tool_name: str, args_summary: str = "") -> str:
-        """Format a tool call line."""
-        elapsed = self.elapsed()
-        icon = "🔧"
-        if "task" in tool_name.lower():
-            icon = "🚀"
-        elif "read" in tool_name.lower():
-            icon = "📖"
-        elif "write" in tool_name.lower():
-            icon = "✏️"
-        elif "search" in tool_name.lower():
-            icon = "🔍"
-        elif "bash" in tool_name.lower():
-            icon = "💻"
-
-        line = (
-            f"{Colors.DIM}[{elapsed:>7}]{Colors.RESET} "
-            f"{icon} {Colors.MAGENTA}{tool_name}{Colors.RESET}"
-        )
-        if args_summary:
-            line += f" {Colors.DIM}{args_summary}{Colors.RESET}"
-        return line
-
-    def format_subagent(self, subagent_name: str) -> str:
-        """Format a subagent spawn line."""
-        elapsed = self.elapsed()
-        return (
-            f"{Colors.DIM}[{elapsed:>7}]{Colors.RESET} "
-            f"🚀 {Colors.BLUE}Spawning subagent:{Colors.RESET} "
-            f"{Colors.CYAN}{subagent_name}{Colors.RESET}"
-        )
-
-    def format_completion(self) -> str:
-        """Format the completion summary."""
-        elapsed = self.elapsed()
-        subagent_info = ""
-        if self.subagents_spawned:
-            subagent_info = f", {len(self.subagents_spawned)} subagents"
-        return (
-            f"{Colors.GREEN}{Colors.BOLD}✓ [{self.agent_name}]{Colors.RESET} "
-            f"{Colors.DIM}Completed in {elapsed} "
-            f"({self.turn_count} turns, {self.tool_calls} tool calls{subagent_info}){Colors.RESET}"
-        )
-
-    def print_status(self, line: str, newline: bool = True) -> None:
-        """Print a status line to stderr."""
-        if newline:
-            print(line, file=sys.stderr, flush=True)
-        else:
-            # Overwrite current line
-            print(f"\r{line}", end="", file=sys.stderr, flush=True)
-
-
-def _extract_tool_info(message: Any) -> tuple[str, str] | None:
-    """Extract tool name and args summary from a message with tool use."""
-    if not hasattr(message, "content"):
-        return None
-
-    content = message.content
-    if isinstance(content, str):
-        return None
-
-    if not isinstance(content, list):
-        return None
-
-    for block in content:
-        # Check for tool_use block
-        if hasattr(block, "type") and block.type == "tool_use":
-            tool_name = getattr(block, "name", "unknown")
-            tool_input = getattr(block, "input", {})
-
-            # Create args summary
-            args_summary = ""
-            if isinstance(tool_input, dict):
-                # For Task tool, show subagent type
-                if tool_name == "Task" and "subagent_type" in tool_input:
-                    args_summary = f"subagent_type={tool_input['subagent_type']}"
-                # For other tools, show first key-value
-                elif tool_input:
-                    first_key = next(iter(tool_input))
-                    first_val = str(tool_input[first_key])[:120]
-                    if len(str(tool_input[first_key])) > 120:
-                        first_val += "..."
-                    args_summary = f"{first_key}={first_val}"
-
-            return tool_name, args_summary
-
-    return None
-
-
-def _extract_text_preview(message: Any, max_len: int = 150) -> str:
-    """Extract a text preview from a message."""
-    if not hasattr(message, "content"):
-        return ""
-
-    content = message.content
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        texts = []
-        for block in content:
-            if hasattr(block, "text"):
-                texts.append(block.text)
-        text = " ".join(texts)
-    else:
-        return ""
-
-    # Clean and truncate
-    text = " ".join(text.split())  # Normalize whitespace
-    if len(text) > max_len:
-        text = text[:max_len] + "..."
-    return text
-
 
 def _get_plugin_base_path() -> Path:
     """Get the path to the plugins directory."""
@@ -298,80 +130,6 @@ def _load_plugin_agents() -> dict[str, Any]:
     return _plugin_agents_cache
 
 
-def register_workspace_agent(
-    name: str,
-    system_prompt: str,
-    description: str = "",
-    model: str = "sonnet",
-    tools: list[str] | None = None,
-    max_turns: int = 100,
-) -> None:
-    """Register a workspace agent dynamically for optimization.
-
-    This allows agents defined in workspace .md files to be used with
-    call_agent() and call_agent_simple() without being in AGENT_DEFINITIONS.
-
-    The registration is session-scoped (cleared when Python process ends).
-
-    Args:
-        name: Agent name (must match test suite agent_name).
-        system_prompt: The agent's system prompt content.
-        description: Agent description.
-        model: Model to use (sonnet, opus, haiku).
-        tools: List of allowed tools, or None for all tools.
-        max_turns: Maximum conversation turns.
-
-    Example:
-        >>> from harness.optimization.resources import AgentResource
-        >>> resource = AgentResource.load("workspace/agent/agent-orig.md")
-        >>> register_workspace_agent(
-        ...     name=resource.name,
-        ...     system_prompt=resource.system_prompt,
-        ...     description=resource.description,
-        ...     model=resource.model,
-        ...     tools=resource.tools,
-        ...     max_turns=resource.max_turns,
-        ... )
-    """
-    _workspace_agents_cache[name] = {
-        "name": name,
-        "description": description,
-        "model": model,
-        "tools": tools,
-        "prompt": system_prompt,
-        "max_turns": max_turns,
-        "source": "workspace",
-    }
-    logger.debug(
-        "Registered workspace agent",
-        name=name,
-        model=model,
-        tools=tools,
-    )
-
-
-def unregister_workspace_agent(name: str) -> bool:
-    """Unregister a workspace agent.
-
-    Args:
-        name: Agent name to unregister.
-
-    Returns:
-        True if agent was unregistered, False if not found.
-    """
-    if name in _workspace_agents_cache:
-        del _workspace_agents_cache[name]
-        logger.debug("Unregistered workspace agent", name=name)
-        return True
-    return False
-
-
-def clear_workspace_agents() -> None:
-    """Clear all registered workspace agents."""
-    _workspace_agents_cache.clear()
-    logger.debug("Cleared all workspace agents")
-
-
 def list_available_agents() -> dict[str, str]:
     """List all available agents (harness + plugin + workspace).
 
@@ -393,10 +151,6 @@ def list_available_agents() -> dict[str, str]:
     plugin_agents = _load_plugin_agents()
     for name, agent in plugin_agents.items():
         agents[name] = agent.description
-
-    # Workspace agents
-    for name, agent in _workspace_agents_cache.items():
-        agents[name] = agent.get("description", "")
 
     return agents
 
@@ -453,10 +207,6 @@ def get_agent_info(agent_name: str) -> dict[str, Any]:
             "max_turns": max_turns,
             "source": "plugin",
         }
-
-    # Check workspace agents (dynamically registered)
-    if agent_name in _workspace_agents_cache:
-        return _workspace_agents_cache[agent_name].copy()
 
     available = list(list_available_agents().keys())
     raise ValueError(
@@ -586,7 +336,7 @@ async def call_agent(
                 # Track progress
                 if progress:
                     # Check for tool use
-                    tool_info = _extract_tool_info(message)
+                    tool_info = extract_tool_info(message)
                     if tool_info:
                         tool_name, args_summary = tool_info
                         progress.tool_calls += 1
@@ -601,7 +351,7 @@ async def call_agent(
 
                     elif isinstance(message, AssistantMessage):
                         progress.turn_count += 1
-                        preview = _extract_text_preview(message)
+                        preview = extract_text_preview(message)
                         if preview:
                             progress.print_status(
                                 progress.format_turn("AssistantMessage", preview)

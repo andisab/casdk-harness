@@ -4,7 +4,7 @@ Provides command-line interface for running section-based optimization.
 
 Usage:
     python -m harness.optimization.cli.section_optimize \\
-        --agent agents/configs/python-expert.md \\
+        --agent .claude/agents/python-expert.md \\
         --workspace workspace/python-expert \\
         --iterations 2
 """

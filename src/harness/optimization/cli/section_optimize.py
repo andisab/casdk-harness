@@ -4,7 +4,7 @@ Uses agentic (LLM critique) optimization for all sections.
 
 Usage:
     python -m harness.optimization.cli.section_optimize \\
-        --agent agents/configs/python-expert.md \\
+        --agent .claude/agents/python-expert.md \\
         --criteria workspace/python-expert/research/eval_criteria.yaml \\
         --workspace workspace/python-expert
 """

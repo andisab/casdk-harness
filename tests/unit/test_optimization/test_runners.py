@@ -200,7 +200,7 @@ class TestAgentRunner:
         mock_output = "def sort_list(lst): return sorted(lst)"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -221,7 +221,7 @@ class TestAgentRunner:
         mock_output = "Here's the sort function: sorted(lst)"  # Missing "def "
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -251,7 +251,7 @@ class TestAgentRunner:
             return "done"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             side_effect=slow_agent,
         ):
@@ -266,7 +266,7 @@ class TestAgentRunner:
     async def test_run_test_case_error(self, runner: AgentRunner, test_case: TestCase) -> None:
         """Test error handling during test case execution."""
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             side_effect=RuntimeError("Agent failed"),
         ):
@@ -285,7 +285,7 @@ class TestAgentRunner:
         custom_prompt = "You are an expert optimizer."
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ) as mock_call:
@@ -308,7 +308,7 @@ class TestAgentRunner:
         mock_output = "def sort_list(lst): return sorted(lst)"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -398,7 +398,7 @@ class TestBatchRunner:
         mock_output = "def function(): pass"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -418,7 +418,7 @@ class TestBatchRunner:
         mock_output = "async def function(): pass"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -437,7 +437,7 @@ class TestBatchRunner:
         mock_output = "def function(): pass"
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):
@@ -475,7 +475,7 @@ class TestBatchRunner:
         runner._on_progress = on_progress
 
         with patch(
-            "harness.direct_agent.call_agent_simple",
+            "harness.subagent.call_agent_simple",
             new_callable=AsyncMock,
             return_value=mock_output,
         ):

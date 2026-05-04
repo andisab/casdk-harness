@@ -234,26 +234,98 @@ Caveats:
 
 ### Phased modernization
 
-**Phase 0 — Bump and verify (low risk, days; lands on `main`)**
-- Pin `claude-agent-sdk>=0.1.72` (or specific tested version) in `pyproject.toml`; refresh `uv.lock`.
-- Smoke test: `Task` tool dispatches to a custom agent registered via `agents=` AND via filesystem. Confirms #12212 is genuinely fixed in the harness's setup.
-- If green: file an issue tracking removal of `direct_agent.py`. If red: keep workaround, document why.
+**Phase 0 — Bump and verify (low risk, days; lands on `main`) ✓ DONE 2026-05-04**
+- [x] Pin `claude-agent-sdk>=0.1.72` in `pyproject.toml`; `uv.lock` refreshed (0.1.12 → 0.1.72).
+- [x] Smoke test passed: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response with `ResultMessage(is_error=False, num_turns=2, duration_ms=16492)`. Issue #12212 fix confirmed live in this harness's setup. (Session `ff3d4686-4d77-4ae2-9dc7-e7391498a1e8`.)
+- [x] Bonus: confirmed `ClaudeAgentOptions.skills=` parameter exists in 0.1.72 — closes Risk item below ("`skills=` parameter existence").
+- [x] Unit tests unchanged at 1591 passed / 0 failed.
+- Outcome: green. `direct_agent.py` retirement (Phase 3) is technically unblocked; deferred until Phases 1-2 land per the staged plan.
 
-**Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`)**
-- Move `src/harness/agents/configs/*.md` → repo `.claude/agents/*.md` (14 files). Update `definitions.py` loader path or delete it once SDK auto-discovery is confirmed.
-- Narrow `setting_sources` in `agent.py:692` from the current `["user","project"]` to **`["project"]`** for container runs (matches Anthropic research-agent demo). Add `"local"` only if `.claude/settings.local.json` per-checkout overrides are an explicit feature. Drop `"user"` entirely for container runs — pulling in host `~/.claude/` config inside a sandboxed container is a bleed-over risk and is not how reference implementations work.
-- Add a small frontmatter adapter (snake_case → camelCase) only where YAML is parsed for programmatic `AgentDefinition` construction. Filesystem-loaded agents need no adapter — the SDK reads the on-disk format.
+**Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`) ✓ DONE 2026-05-04**
+- [x] Moved 14 files: `src/harness/agents/configs/*.md` → `.claude/agents/*.md` (git-mv preserved history).
+- [x] `definitions.py:31` `CONFIGS_DIR` repointed to repo-root `.claude/agents/` via `parents[3]`.
+- [x] `ResourceRegistry.discover()` (CGF) updated similarly — `base_path / "agents" / "configs"` → `base_path / ".claude" / "agents"`, default `base_path` walks up to repo root.
+- [x] `setting_sources=["user", "project"]` → `["project"]` (drops host `~/.claude/` bleed-over; container hermetic).
+- [x] Dockerfile copies `.claude/` into dev + production stages.
+- [x] All `src/`, `tests/`, `CLAUDE.md`, `README.md` references to old path updated. Plugin agent prompts (cgf-orchestrator, cgf-prompt-optimizer, cgf-test-architect, cgf-optimize SKILL) repointed.
+- [x] **YAML model field normalized:** 12 files had `model: opus 4.1` which SDK filesystem auto-discovery read as `opus-4-1[1m]` (a 1M-context variant) and rejected at runtime. Normalized to canonical `opus`/`sonnet`/`haiku`. Pre-Phase-1 `agents=AGENT_DEFINITIONS` translated via `MODEL_MAP` so the issue was hidden.
+- [x] Unit tests 1591/0/0 unchanged.
+- [x] Runtime smoke verified: `Task(subagent_type="python-expert")` returns real response, `ResultMessage(is_error=False)`. Session `9010bda7-53c7-485f-86e2-f85ff4382978`.
+- Frontmatter adapter (snake_case → camelCase) was not required: existing YAML matches what SDK reads on-disk.
+
+**Latent name-mismatch — to be reconciled in Phase 3.** Filesystem auto-discovery uses each file's YAML `name:` field, while `agents=AGENT_DEFINITIONS` exposes logical aliases. The 2026-05-04 experiment (see Phase 3) confirmed 4 alias divergences (`database-expert`, `gcp-architect`, `code-review-expert`/`reviewer-agent`, `sdet-expert`). Today both registration paths are active simultaneously so any caller can use either name; Phase 3's harness-agent removal from programmatic registration drops the aliases unless we rename. Concrete reconciliation plan is in Phase 3 below.
 
 **Phase 2 — Delegate plugin loading to the SDK (~3-5 days; `main`)**
-- Reduce `plugin_manager.py` to: (a) resolve `swe-marketplace` clone path, (b) read its `marketplace.json`, (c) apply `ENABLED_PLUGINS` filter, (d) emit `SdkPluginConfig` entries plus the in-tree `cgf-agents` path. Target: <80 LoC.
-- Delete `CommandRegistry` (`src/harness/commands.py`) — plugins' `commands/` and `skills/` are auto-loaded.
-- Reduce `HookRegistry` (`src/harness/hooks.py`) to anything truly harness-specific (e.g., checkpoint triggers). Move pluggable hooks to `hooks/hooks.json` per plugin and rename non-standard events: `PostSessionStart` → `SessionStart`, `STOP` → `Stop`.
-- **Verify `skills=` parameter exists in the pinned SDK** before depending on it. Reference demos rely on transitive auto-discovery via `setting_sources` and `plugins=` rather than an explicit `skills=` parameter, so it may not be a documented field. If it does not exist or is undocumented, drop the line — `setting_sources=["project"]` + `plugins=[...]` already auto-discover skills with no explicit list needed. If it does exist and works, prefer an explicit allowlist over `"all"` for production safety.
 
-**Phase 3 — Retire `direct_agent.py` (~2 days; `main`)**
-- Replace internal callers (`call_agent`, `call_agent_simple`) with Task-tool dispatch. For streaming progress UX in CGF orchestration, write a thin wrapper around `query()` with `agents=` populated.
-- Keep `register_workspace_agent()` semantics — but the new mechanism writes to `workspace/.claude/agents/` so `setting_sources=["local"]` picks them up automatically.
-- Delete the file when grep shows zero imports.
+Phase 2 minimal landed 2026-05-04 (commit `a0d1744`): hook event rename `PostSessionStart` → `SessionStart`; dropped unused `PreSessionStart`. Tests 1591/0/0.
+
+The full Phase 2 (collapse `plugin_manager.py` to <80 LoC, delete `CommandRegistry`, slim `HookRegistry`) is **gated on the verification experiment described in Phase 3 below.** The shape of the collapse depends on whether `setting_sources=["project"]` + `plugins=[...]` is sufficient for SDK Task tool dispatch, or whether programmatic `agents=` registration is still required.
+
+Once the experiment runs:
+- **If filesystem auto-discovery is sufficient:** drop `_convert_to_sdk_agents()` and `_load_plugin_agents()` from `agent.py`; `plugin_manager.py` collapses to a thin path-resolver. `CommandRegistry` deletion becomes safe.
+- **If programmatic registration is still required:** `plugin_manager.py` keeps its loader role but can still slim. `CommandRegistry` deletion needs a separate decision.
+
+In both branches: `~~Verify `skills=` parameter exists~~` is **closed** as of Phase 0 (confirmed in SDK 0.1.72). Existing plan items for hook rename and event canonicalization are now done.
+
+**Phase 3 — Slim `direct_agent.py` and lean on SDK loading conventions (~2 days; `main`) ✓ DONE 2026-05-04**
+
+Landed across 6 commits (`a4315d7` through Step 6 commit). Final state: `direct_agent.py` (780 LoC) → `subagent.py` (~530 LoC) + new `agent_progress.py` (196 LoC). Harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`; plugin agents continue to be programmatically registered (the SDK's `plugins=[{type:local,path:...}]` does not auto-expose them with `plugin:resource` namespacing). Both runtime-verified.
+
+Step-by-step record (kept for archeology):
+
+_Renamed scope (2026-05-04): the goal is "use established SDK conventions for loading agents/plugins/resources at startup", not "delete `direct_agent.py`". `direct_agent.py` solves a real standalone-Python use case (CGF runners invoke agents without a parent SDK session) for which SDK Task tool dispatch is not applicable. The goal is to slim it and possibly rename._
+
+#### Verification experiment — RUN 2026-05-04 ✓
+
+Test setup: commented out `agents=sdk_agents,` in `agent.py:_build_sdk_options()`. Left `setting_sources=["project"]` and `plugins=self.plugins` active. Rebuilt container. Two Task dispatches inside `make interactive`.
+
+**Test A — harness agent (`subagent_type="python-expert"`):** ✅ **PASS.** python-expert returned a real response (`ResultMessage(success)`, $0.17, 17s). SDK filesystem auto-discovery from `.claude/agents/` is sufficient for Task dispatch. Session `aed22c67-c36b-4cc5-a4bf-598b00bfe048`.
+
+**Test B — plugin agent (`subagent_type="cgf-agents:cgf-orchestrator"`):** ❌ **FAIL.** `"Agent type 'cgf-agents:cgf-orchestrator' not found."` Available list at runtime included all 14 filesystem-discovered harness agents + SDK built-ins — but **zero plugin agents**. The `plugins=[{type:local, path:...}]` parameter does not auto-expose plugin agents to Task with the `plugin-name:agent-name` namespacing the harness uses.
+
+**Bonus finding — latent name-mismatch surfaces.** With programmatic registration off, the available list was the YAML `name:` fields verbatim:
+- `postgres-expert` present, `database-expert` (programmatic alias) **gone**
+- `gcp-cloud-architect` present, `gcp-architect` (programmatic alias) **gone**
+- `dev-code-review-expert` (with `dev-` prefix in YAML) present, `reviewer-agent` and `code-review-expert` (aliases) **gone**
+- `testing-agent` present, `sdet-expert` (alias) **gone**
+
+These aliases only existed because `_convert_to_sdk_agents()` registered them. Phase 3 must reconcile (recommend: rename YAML to canonical short forms and drop alias dict).
+
+#### Phase 3 work — finalized scope (~1-2 days)
+
+Concrete changes per the experiment outcome:
+
+**In `agent.py:_build_sdk_options()`:**
+- **Drop** the harness-agents portion of `_convert_to_sdk_agents()` (lines 624-631) — filesystem discovery covers it.
+- **Keep** the plugin-agents portion (lines 633-635) — still required for namespaced Task dispatch. `_load_plugin_agents()` continues to do real work until SDK adds native plugin-agent namespacing.
+
+**Reconcile latent name-mismatches** (4 files):
+- Rename YAML `name:` fields to canonical short forms; rename files to match:
+  - `db-postgres-expert.md` → `database-expert.md` (YAML `name: database-expert`)
+  - `infra-gcp-architect.md` → `gcp-architect.md` (YAML `name: gcp-architect`)
+  - `dev-code-review-expert.md` → `code-review-expert.md` (YAML `name: code-review-expert`)
+  - `test-sdet-expert.md` → `sdet-expert.md` (YAML `name: sdet-expert`)
+- Drop the `agent_files` alias dict in `definitions.py` (logical-name → filename mapping no longer needed).
+- Update plugin agent prompts and CGF orchestrator paths that reference the old filenames (per Phase 1 grep audit).
+
+**Slim `direct_agent.py` (780 → ~400-500 LoC):**
+- Drop `MODEL_MAP` (Phase 1 normalized YAML).
+- Share filesystem walker with `definitions.py` and `ResourceRegistry.discover()` (extract a small helper module if it reduces duplication).
+- Convert `register_workspace_agent` from in-memory cache to writing `workspace/.claude/agents/<name>.md`; for CGF standalone runs that need workspace-local agents, set `setting_sources=["project", "local"]` (or `["local"]` for hermetic).
+- Extract `AgentProgress` (~190 LoC) to `harness/agent_progress.py` — reusable terminal UX.
+- Update module docstring (no longer a "Task tool workaround"; standalone agent invocation utility).
+- Rename module → `harness/subagent_query.py` (reflects real role).
+- Update all 7 production import sites: `optimization/multi_resource_orchestrator.py` (5 sites), `optimization/runners/agent_runner.py` (1 site), and `optimization/cli/section_optimize.py` if applicable.
+- Update plugin docs that reference `harness.direct_agent` (~10 doc references in `plugins/cgf-agents/agents/*.md`, `plugins/context-engineering/examples/*.md`, etc.).
+
+**SDK follow-up to file (after Phase 3 lands):**
+- Issue/discussion upstream: does `plugins=[{type:local, path:...}]` expose plugin-defined agents to the Task tool with `plugin:resource` namespacing? If not, request the feature or document the gap. If yes, future work could drop `_load_plugin_agents()` too.
+
+**Target after Phase 3:**
+- `direct_agent.py` (renamed `subagent_query.py`): ~400-500 LoC
+- `agent.py:_convert_to_sdk_agents()`: ~5 lines (just plugin agents)
+- `definitions.py`: alias dict gone, ~200 LoC
+- New: `harness/agent_progress.py`: ~190 LoC (extracted)
 
 **Phase 4 — Marketplace bootstrap & CI hooks (`main`)**
 - Add `make plugins-sync` target that clones/pulls `swe-marketplace` to `.plugins/swe-marketplace/` (gitignored).
@@ -417,5 +489,5 @@ Before any phase is closed:
 - **`direct_agent.py` progress UX.** If colored turn-by-turn output during CGF runs is a hard requirement, keep a thin streaming wrapper rather than fully delete.
 - **Marketplace pin policy.** Always-latest (auto-pull on every container build) vs pinned-to-SHA. Recommend pin-and-bump-deliberately for reproducibility.
 - **Stage 2 already-merged commit on main (`00ece0e`).** Confirm during the merge PR that it doesn't conflict with cgf-framework's parallel work in the same context-engineering area.
-- **`skills=` parameter existence.** Documented references and Anthropic demos do not consistently show this on `ClaudeAgentOptions`. Verify in the pinned SDK source (`claude_agent_sdk/types.py`) before depending on it. If absent, drop the line — `setting_sources` + `plugins=` already auto-discover skills.
+- ~~**`skills=` parameter existence.**~~ ✓ Resolved 2026-05-04 — confirmed present in SDK 0.1.72 alongside `setting_sources`, `plugins`, and `agents`.
 - **OTel Collector vs direct OTLP export.** Phase 3A assumes a Collector service in docker-compose. Alternative: SDK exports OTLP directly to a remote-hosted Prometheus/OTLP endpoint, no Collector. Decide based on whether observability stays in-cluster (Collector preferred) or external (direct export simpler).

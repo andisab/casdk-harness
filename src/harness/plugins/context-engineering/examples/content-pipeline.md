@@ -126,7 +126,7 @@ When quality gate fails:
 ## Harness Integration
 
 ```python
-from harness.direct_agent import call_agent_simple
+from harness.subagent import call_agent_simple
 
 async def content_with_harness(topic: str, style: str):
     # Research phase

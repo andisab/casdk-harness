@@ -2,7 +2,7 @@
 name: docker-engineer
 description: Docker and Docker Compose specialist for containerization, multi-container applications, and local development environments. Expert in Dockerfile optimization, compose orchestration, and container best practices.
 tools: Read, Write, MultiEdit, Bash, Docker
-model: opus 4.1
+model: opus
 color: "#98971a"
 ---
 

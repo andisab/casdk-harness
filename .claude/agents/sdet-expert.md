@@ -1,5 +1,5 @@
 ---
-name: testing-agent
+name: sdet-expert
 description: >
   Use this agent for writing and running comprehensive tests. This is a Task sub-agent
   that specializes in test creation, execution, and coverage analysis. It can write
@@ -10,16 +10,16 @@ description: >
   <example>
   Context: User needs tests for a new module.
   user: "Write unit tests for the UserService class"
-  assistant: "I'll use the testing-agent to create comprehensive tests for UserService with proper coverage."
+  assistant: "I'll use the sdet-expert to create comprehensive tests for UserService with proper coverage."
   <commentary>
-  The testing-agent excels at writing well-structured tests with good edge case coverage.
+  The sdet-expert excels at writing well-structured tests with good edge case coverage.
   </commentary>
   </example>
 
   <example>
   Context: Tests are failing and user needs help debugging.
   user: "The auth tests are failing, can you figure out why?"
-  assistant: "Let me use the testing-agent to analyze the test failures and identify the root cause."
+  assistant: "Let me use the sdet-expert to analyze the test failures and identify the root cause."
   <commentary>
   The agent can run tests, analyze stack traces, and identify issues in test setup or implementation.
   </commentary>

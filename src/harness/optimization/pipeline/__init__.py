@@ -6,7 +6,7 @@ Example usage:
     from harness.optimization.pipeline import PipelineConfig
 
     config = PipelineConfig(
-        agent_path="agents/configs/python-expert.md",
+        agent_path=".claude/agents/python-expert.md",
         test_suite_path="tests/optimization/python_expert_tests.yaml",
         output_path="optimized_prompt.md",
     )

@@ -42,7 +42,7 @@ class SpanKind(Enum):
     """Individual tool invocation within an agent turn."""
 
     SUBAGENT_INVOCATION = "subagent_invocation"
-    """Delegation to a subagent via Task tool or direct_agent."""
+    """Delegation to a subagent via Task tool or subagent."""
 
     LLM_REQUEST = "llm_request"
     """Raw LLM API request to Claude."""

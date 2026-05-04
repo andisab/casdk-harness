@@ -12,7 +12,7 @@ import pytest
 import structlog
 
 from harness.agents.definitions import AGENT_DEFINITIONS
-from harness.direct_agent import (
+from harness.subagent import (
     _get_plugin_base_path,
     _load_plugin_agents,
     call_agent,
@@ -195,7 +195,7 @@ class TestCallAgent:
             return
             yield  # Make it an async generator
 
-        with patch("harness.direct_agent.query", return_value=mock_query_gen()):
+        with patch("harness.subagent.query", return_value=mock_query_gen()):
             # Consume the generator
             messages = []
             async for msg in call_agent("python-expert", "test prompt"):
@@ -213,7 +213,7 @@ class TestCallAgent:
             return
             yield
 
-        with patch("harness.direct_agent.query", return_value=mock_query_gen()) as mock_query:
+        with patch("harness.subagent.query", return_value=mock_query_gen()) as mock_query:
             async for _ in call_agent(
                 "python-expert", "test", permission_mode="bypassPermissions"
             ):
@@ -227,7 +227,7 @@ class TestCallAgent:
             return
             yield
 
-        with patch("harness.direct_agent.query", return_value=mock_query_gen()):
+        with patch("harness.subagent.query", return_value=mock_query_gen()):
             async for _ in call_agent(
                 "python-expert", "test", cwd="/custom/path"
             ):
@@ -241,7 +241,7 @@ class TestCallAgent:
             return
             yield
 
-        with patch("harness.direct_agent.query", return_value=mock_query_gen()):
+        with patch("harness.subagent.query", return_value=mock_query_gen()):
             async for _ in call_agent(
                 "python-expert", "test", max_turns=50
             ):
@@ -257,7 +257,7 @@ class TestCallAgentSimple:
     @pytest.mark.asyncio
     async def test_returns_string(self) -> None:
         """Test that call_agent_simple returns a string."""
-        with patch("harness.direct_agent.call_agent") as mock_call:
+        with patch("harness.subagent.call_agent") as mock_call:
             mock_message = MagicMock()
             mock_message.content = "Test response"
 
@@ -267,7 +267,7 @@ class TestCallAgentSimple:
             mock_call.return_value = async_gen()
 
             # Patch isinstance to recognize our mock as AssistantMessage
-            with patch("harness.direct_agent.isinstance", side_effect=lambda obj, cls: True if cls.__name__ == "AssistantMessage" else isinstance(obj, cls)):
+            with patch("harness.subagent.isinstance", side_effect=lambda obj, cls: True if cls.__name__ == "AssistantMessage" else isinstance(obj, cls)):
                 # Need to import and patch properly
                 pass
 
@@ -283,7 +283,7 @@ class TestCallAgentSimple:
     @pytest.mark.asyncio
     async def test_collects_text_from_content_string(self) -> None:
         """Test that text is collected from string content."""
-        with patch("harness.direct_agent.query") as mock_query:
+        with patch("harness.subagent.query") as mock_query:
             # Create a mock AssistantMessage
             mock_message = MagicMock()
             mock_message.content = "Direct string response"
@@ -302,7 +302,7 @@ class TestCallAgentSimple:
                     return hasattr(obj, "content")
                 return original_isinstance(obj, cls)
 
-            with patch("harness.direct_agent.isinstance", patched_isinstance):
+            with patch("harness.subagent.isinstance", patched_isinstance):
                 result = await call_agent_simple("python-expert", "test")
 
             # The mock message has content attribute
@@ -311,7 +311,7 @@ class TestCallAgentSimple:
     @pytest.mark.asyncio
     async def test_collects_text_from_content_list(self) -> None:
         """Test that text is collected from list content with text blocks."""
-        with patch("harness.direct_agent.query") as mock_query:
+        with patch("harness.subagent.query") as mock_query:
             # Create mock text block
             mock_block = MagicMock()
             mock_block.text = "Text block content"
@@ -325,7 +325,7 @@ class TestCallAgentSimple:
 
             mock_query.return_value = async_gen()
 
-            with patch("harness.direct_agent.isinstance") as mock_isinstance:
+            with patch("harness.subagent.isinstance") as mock_isinstance:
                 # Make isinstance return True for AssistantMessage check
                 mock_isinstance.side_effect = lambda obj, cls: hasattr(obj, "content")
 
@@ -352,8 +352,8 @@ class TestAgentModels:
         assert info["model"] in ["sonnet", "opus", "haiku"]
 
     def test_testing_agent_uses_haiku(self) -> None:
-        """Test that testing-agent uses haiku model."""
-        info = get_agent_info("testing-agent")
+        """Test that sdet-expert uses haiku model."""
+        info = get_agent_info("sdet-expert")
         assert info["model"] == "haiku"
 
 

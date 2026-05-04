@@ -85,7 +85,7 @@ Located at `workspace/{resource_id}/run_config.yaml`:
 
 ```yaml
 resource:
-  path: "src/harness/agents/configs/dev-python-expert.md"
+  path: ".claude/agents/dev-python-expert.md"
   type: agent
   id: python-expert
   optimization_goal: "async programming"

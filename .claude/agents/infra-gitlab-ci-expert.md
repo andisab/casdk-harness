@@ -2,7 +2,7 @@
 name: gitlab-ci-expert
 description: Expert in configuring, optimizing, and maintaining GitLab CI/CD pipelines for efficient software delivery.
 tools: Read, Write, MultiEdit, Bash, Grep, Glob, Context7
-model: opus 4.1
+model: opus
 color: "#fc6d26"
 ---
 

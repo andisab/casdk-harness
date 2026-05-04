@@ -31,12 +31,12 @@ A plugin is a **bundled collection** of Claude Code components that work togethe
 | **Plugin** | Multiple related components, team distribution, reusable across projects |
 
 **Example - Individual approach**:
-- `.claude/agents/postgres-expert.md` (one file)
+- `.claude/agents/database-expert.md` (one file)
 - `.claude/commands/test.md` (one file)
 
 **Example - Plugin approach**:
 - `database-toolkit/` plugin containing:
-  - Agents: postgres-expert, mongodb-expert, sql-expert
+  - Agents: database-expert, mongodb-expert, sql-expert
   - Skills: migration-management, query-optimization
   - Commands: /migrate, /db-status
   - Templates: schema templates
@@ -181,7 +181,7 @@ full-stack-toolkit/
 │   │   ├── react-expert.md
 │   │   └── nextjs-expert.md
 │   └── database/
-│       └── postgres-expert.md
+│       └── database-expert.md
 ├── skills/
 │   ├── api-testing/
 │   ├── deployment/
@@ -357,7 +357,7 @@ Group related agents by domain:
 ```
 agents/
 ├── database/
-│   ├── postgres-expert.md
+│   ├── database-expert.md
 │   └── mongodb-expert.md
 ├── api/
 │   ├── rest-api-expert.md
@@ -487,7 +487,7 @@ Maintain CHANGELOG.md:
 - /db-backup command
 
 ### Changed
-- Improved postgres-expert query optimization
+- Improved database-expert query optimization
 
 ### Fixed
 - Migration skill path resolution bug
@@ -496,7 +496,7 @@ Maintain CHANGELOG.md:
 
 ### Added
 - Initial release
-- postgres-expert agent
+- database-expert agent
 - schema-evolution skill
 ```
 
@@ -632,13 +632,13 @@ plugin-name/
 
 ❌ **Conflicting component names**
 ```
-plugin-name/agents/postgres-expert.md
-# Conflicts with user's existing postgres-expert agent
+plugin-name/agents/database-expert.md
+# Conflicts with user's existing database-expert agent
 ```
 
 ✅ **Unique naming**
 ```
-plugin-name/agents/company-postgres-expert.md
+plugin-name/agents/company-database-expert.md
 # Prefixed to avoid conflicts
 ```
 

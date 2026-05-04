@@ -34,7 +34,7 @@ description: >
   </commentary>
   </example>
 tools: Edit, MultiEdit, Write, NotebookEdit, Grep, LS, Read
-model: opus 4.1
+model: opus
 color: "#d65d0e"
 ---
 

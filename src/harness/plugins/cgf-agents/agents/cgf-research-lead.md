@@ -198,7 +198,7 @@ Researchers will produce YAML with:
 <task_spawning>
 ## Spawning Researchers
 
-**IMPORTANT**: Due to SDK limitations, use Bash + direct_agent CLI to spawn researchers.
+**IMPORTANT**: Due to SDK limitations, use Bash + subagent CLI to spawn researchers.
 
 ### Step 1: Write prompt file
 
@@ -231,7 +231,7 @@ Save structured YAML findings to:
 ### Step 2: Invoke researcher via Bash
 
 ```bash
-uv run python -m harness.direct_agent \
+uv run python -m harness.subagent \
   --agent "research-team:research-specialist" \
   --prompt "$(cat /tmp/research_prompt_{aspect_slug}.txt)" \
   --simple
@@ -244,16 +244,16 @@ uv run python -m harness.direct_agent \
 # Then spawn all researchers (parallel Bash calls)
 
 # Researcher 1
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_async_semantics.txt)" --simple &
+uv run python -m harness.subagent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_async_semantics.txt)" --simple &
 
 # Researcher 2
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_error_handling.txt)" --simple &
+uv run python -m harness.subagent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_error_handling.txt)" --simple &
 
 # Researcher 3
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_library_integration.txt)" --simple &
+uv run python -m harness.subagent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_library_integration.txt)" --simple &
 
 # Researcher 4
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_testing_patterns.txt)" --simple &
+uv run python -m harness.subagent --agent "research-team:research-specialist" --prompt "$(cat /tmp/research_prompt_testing_patterns.txt)" --simple &
 
 # Wait for all
 wait
@@ -373,6 +373,6 @@ REMEMBER: Your tools are Bash, Glob, and Write. You orchestrate; others execute.
 
 **Agent invocation pattern:**
 ```bash
-uv run python -m harness.direct_agent --agent "research-team:research-specialist" --prompt "$(cat /tmp/prompt.txt)" --simple
+uv run python -m harness.subagent --agent "research-team:research-specialist" --prompt "$(cat /tmp/prompt.txt)" --simple
 ```
 </summary>

@@ -41,10 +41,14 @@ MODEL_NORMALIZE_MAP: dict[str, str] = {
 
 
 class HookEvent(Enum):
-    """Supported hook event types matching Claude Code CLI."""
+    """Supported hook event types matching SDK-canonical names.
 
-    PRE_SESSION_START = "PreSessionStart"
-    POST_SESSION_START = "PostSessionStart"
+    REFACTOR.md Part 2 Phase 2: renamed `POST_SESSION_START` → `SESSION_START`
+    to match the SDK-canonical event name. Dropped the previously-unused
+    `PRE_SESSION_START` (no SDK equivalent).
+    """
+
+    SESSION_START = "SessionStart"
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
     NOTIFICATION = "Notification"

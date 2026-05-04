@@ -18,7 +18,7 @@ This skill helps create production-ready Claude Code sub-agent definitions follo
 ### 1. Single Responsibility
 Each agent should have ONE clear purpose. Avoid creating multipurpose agents that try to do everything.
 
-**Good**: `postgres-expert` - PostgreSQL database management and optimization
+**Good**: `database-expert` - PostgreSQL database management and optimization
 **Bad**: `database-expert` - All databases (too broad)
 
 ### 2. Discovery-Optimized Descriptions
@@ -97,7 +97,7 @@ You are a [role description] specializing in [domain].
 **Project-level** (shared with team):
 - Location: `.claude/agents/`
 - Format: `agent-name.md`
-- Example: `.claude/agents/postgres-expert.md`
+- Example: `.claude/agents/database-expert.md`
 
 **User-level** (personal, cross-project):
 - Location: `~/.claude/agents/`
@@ -140,7 +140,7 @@ description: >
   <example>
   Context: User needs query optimization
   user: "My PostgreSQL queries are slow"
-  assistant: "I'll use the postgres-expert agent to analyze and optimize your queries."
+  assistant: "I'll use the database-expert agent to analyze and optimize your queries."
   <commentary>
   Query performance is a core competency, so this agent is appropriate.
   </commentary>
@@ -309,7 +309,7 @@ After creating an agent definition:
 1. **Test discovery**: Ask natural language questions that should trigger the agent
    ```
    User: "Help me optimize my PostgreSQL query"
-   Expected: Claude invokes postgres-expert agent
+   Expected: Claude invokes database-expert agent
    ```
 
 2. **Verify tool access**: Ensure the agent can access specified tools

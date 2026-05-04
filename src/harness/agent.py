@@ -608,41 +608,26 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         return plugin_agents
 
     def _convert_to_sdk_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Convert harness agent definitions to SDK format.
+        """Get plugin agents for SDK Task tool dispatch.
 
-        The SDK expects agents as dict[str, AgentDefinition] where:
-        - Key: Agent name (used for Task tool's subagent_type parameter)
-        - Value: SDKAgentDefinition with description, prompt, tools, model
-
-        Includes both harness-defined agents AND plugin agents.
+        REFACTOR.md Phase 3 (verified 2026-05-04): harness agents are now
+        auto-discovered from `.claude/agents/` via `setting_sources=["project"]`,
+        so they no longer need programmatic registration here. Plugin agents
+        still require it — `plugins=[{type:local,path:...}]` does not expose
+        them to Task with the `plugin:resource` namespacing the harness uses.
 
         Returns:
-            Dict mapping agent names to SDK AgentDefinition objects
+            Dict mapping namespaced plugin agent names to SDK AgentDefinition.
         """
-        sdk_agents: dict[str, SDKAgentDefinition] = {}
-
-        # 1. Load harness-defined agents
-        for name, agent in AGENT_DEFINITIONS.items():
-            sdk_agents[name] = SDKAgentDefinition(
-                description=agent.description,
-                prompt=agent.system_prompt,  # Our system_prompt → SDK's prompt
-                tools=agent.tools if agent.tools else None,
-                model=agent.model if agent.model in ("sonnet", "opus", "haiku") else None,
-            )
-
-        # 2. Load plugin agents (workaround for SDK limitation)
         plugin_agents = self._load_plugin_agents()
-        sdk_agents.update(plugin_agents)
 
         logger.debug(
-            "Converted agent definitions for SDK",
-            total=len(sdk_agents),
-            harness_agents=len(AGENT_DEFINITIONS),
+            "Registering plugin agents for SDK Task dispatch",
             plugin_agents=len(plugin_agents),
-            agents=list(sdk_agents.keys()),
+            agents=list(plugin_agents.keys()),
         )
 
-        return sdk_agents
+        return plugin_agents
 
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
@@ -689,7 +674,7 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             model=model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
             agents=sdk_agents,  # Register custom subagents for Task tool
-            setting_sources=["user", "project"],  # Enable skills from .claude/skills/
+            setting_sources=["project"],  # REFACTOR.md Part 2 Phase 1: hermetic container; project-only auto-discovers .claude/agents/, .claude/skills/, .claude/commands/
             plugins=self.plugins,  # Phase 1B: Enable plugin loading
             system_prompt=system_prompt,
             env=cli_env,  # Pass environment to CLI subprocess
@@ -750,21 +735,21 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         self.health_server = HealthServer(session=self)
         await self.health_server.start()
 
-        # Trigger PostSessionStart hooks
+        # Trigger SessionStart hooks (REFACTOR.md Part 2 Phase 2: SDK-canonical event name)
         if self.hook_registry:
             try:
                 hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.POST_SESSION_START,
+                    HookEvent.SESSION_START,
                     context={"agent_name": self.agent_name},
                 )
                 if hook_results:
                     logger.debug(
-                        "PostSessionStart hooks triggered",
+                        "SessionStart hooks triggered",
                         count=len(hook_results),
                     )
             except Exception as e:
                 logger.warning(
-                    "Failed to trigger PostSessionStart hooks",
+                    "Failed to trigger SessionStart hooks",
                     error=str(e),
                 )
 

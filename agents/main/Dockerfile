@@ -107,6 +107,7 @@ RUN groupadd -r claude && \
 COPY src/ ./src/
 COPY config/ ./config/
 COPY tests/ ./tests/
+COPY .claude/ ./.claude/
 
 # Set ownership
 RUN chown -R claude:claude /app
@@ -137,6 +138,7 @@ FROM deps AS builder
 # Copy source code
 COPY src/ ./src/
 COPY config/ ./config/
+COPY .claude/ ./.claude/
 
 # Run any build steps (if needed)
 RUN python -m compileall src/
@@ -162,6 +164,7 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 # Copy application code from builder
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/config ./config
+COPY --from=builder /app/.claude ./.claude
 
 # Create non-root user
 RUN groupadd -r claude && useradd -r -g claude -d /app -s /bin/bash claude

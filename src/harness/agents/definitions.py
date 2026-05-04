@@ -3,8 +3,12 @@
 This module defines the available subagents that can be delegated to
 via the SDK Task tool during autonomous development.
 
-Agent definitions are loaded dynamically from .md files in the configs/ directory.
-Each .md file uses YAML frontmatter for metadata and markdown body for system prompt.
+Agent definitions are loaded dynamically from .md files in `.claude/agents/`
+at the repo root (canonical Anthropic location). Each .md file uses YAML
+frontmatter for metadata and markdown body for system prompt. SDK filesystem
+auto-discovery (via `setting_sources=["project"]`) reads the same files; this
+loader continues to populate `agents=` programmatically so the existing
+logical-name → filename alias mapping in `_load_all_agents()` keeps working.
 
 Usage:
     from harness.agents.definitions import get_agent_definition, AGENT_DEFINITIONS
@@ -27,8 +31,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Directories
-CONFIGS_DIR = Path(__file__).parent / "configs"
+# Repo-root .claude/agents/ — canonical Anthropic location (REFACTOR.md Part 2 Phase 1)
+# parents[3] from src/harness/agents/definitions.py → repo root
+CONFIGS_DIR = Path(__file__).resolve().parents[3] / ".claude" / "agents"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
@@ -59,19 +64,6 @@ def _load_prompt_if_exists(prompt_name: str) -> str:
         with open(prompt_path) as f:
             return f.read()
     return ""
-
-
-# Model name mapping from .md files to SDK format
-MODEL_MAP = {
-    "opus 4.1": "opus",
-    "opus 4.5": "opus",
-    "sonnet 4.5": "sonnet",
-    "sonnet 4.0": "sonnet",
-    "haiku 3.5": "haiku",
-    "haiku": "haiku",
-    "sonnet": "sonnet",
-    "opus": "opus",
-}
 
 
 def parse_agent_md_file(filepath: Path) -> dict[str, Any]:
@@ -130,12 +122,11 @@ def load_agent_from_md(filename: str) -> AgentDefinition:
         raise FileNotFoundError(f"Agent file not found: {md_file}")
 
     parsed = parse_agent_md_file(md_file)
-    model = MODEL_MAP.get(parsed["model"], parsed["model"])
 
     return AgentDefinition(
         name=parsed["name"],
         description=parsed["description"],
-        model=model,
+        model=parsed["model"],
         tools=parsed["tools"],
         system_prompt=parsed["body"],
         max_turns=parsed["max_turns"],
@@ -163,58 +154,45 @@ TECH_LEAD = _load_tech_lead()
 
 
 def _load_all_agents() -> dict[str, AgentDefinition]:
-    """Load all agent definitions from config files.
+    """Auto-discover all agent definitions from `.claude/agents/`.
+
+    REFACTOR.md Phase 3 Step 2 (verified 2026-05-04): the previous
+    logical-name → filename alias dict has been removed. Each agent's
+    YAML `name:` field IS the canonical name now (Phase 3 Step 1 renamed
+    files and YAML to ensure name == canonical short form, e.g.
+    `database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`).
 
     Returns:
-        Dictionary mapping agent names to definitions
+        Dict mapping each agent's YAML `name:` to its AgentDefinition.
     """
     agents: dict[str, AgentDefinition] = {}
 
-    # Mapping from logical agent name to config filename
-    agent_files = {
-        # Development agents
-        "python-expert": "dev-python-expert",
-        "typescript-expert": "dev-typescript-expert",
-        "go-expert": "dev-go-expert",
-        "nodejs-expert": "dev-nodejs-expert",
-        "react-expert": "dev-react-expert",
-        "refactor-agent": "dev-refactor-agent",
-        # Database agents
-        "database-expert": "db-postgres-expert",
-        "sql-expert": "db-sql-expert",
-        # Infrastructure agents
-        "docker-engineer": "infra-docker-engineer",
-        "gcp-architect": "infra-gcp-architect",
-        "gitlab-ci-expert": "infra-gitlab-ci-expert",
-        "k8s-engineer": "infra-k8s-engineer",
-        # Task-specific agents (aliases for backward compatibility)
-        "testing-agent": "test-sdet-expert",
-        "reviewer-agent": "dev-code-review-expert",
-        "code-review-expert": "dev-code-review-expert",
-        "sdet-expert": "test-sdet-expert",
-    }
-
-    # Keep tech-lead inline (used by autonomous.py)
+    # Tech-lead is loaded inline from src/harness/prompts/tech-lead-agent.md
+    # (used directly by autonomous.py; not a `.claude/agents/` file).
     agents["tech-lead"] = TECH_LEAD
 
-    for name, filename in agent_files.items():
+    if not CONFIGS_DIR.exists():
+        logger.warning(f"Agent configs dir not found: {CONFIGS_DIR}")
+        return agents
+
+    for md_file in sorted(CONFIGS_DIR.glob("*.md")):
         try:
-            agent = load_agent_from_md(filename)
-            # Override the name with the logical key for consistency
-            agent = AgentDefinition(
+            parsed = parse_agent_md_file(md_file)
+            name = parsed["name"]
+            if not name:
+                logger.warning(f"Skipping {md_file.name}: missing 'name' in YAML frontmatter")
+                continue
+            agents[name] = AgentDefinition(
                 name=name,
-                description=agent.description,
-                model=agent.model,
-                tools=agent.tools,
-                system_prompt=agent.system_prompt,
-                max_turns=agent.max_turns,
+                description=parsed["description"],
+                model=parsed["model"],
+                tools=parsed["tools"],
+                system_prompt=parsed["body"],
+                max_turns=parsed["max_turns"],
             )
-            agents[name] = agent
-            logger.debug(f"Loaded agent: {name} from {filename}.md")
-        except FileNotFoundError:
-            logger.warning(f"Agent config not found: {filename}.md (agent: {name})")
+            logger.debug(f"Loaded agent: {name} from {md_file.name}")
         except Exception as e:
-            logger.warning(f"Failed to load agent {name} from {filename}.md: {e}")
+            logger.warning(f"Failed to load agent from {md_file.name}: {e}")
 
     return agents
 

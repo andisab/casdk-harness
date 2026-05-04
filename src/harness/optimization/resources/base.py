@@ -7,12 +7,12 @@ Example usage:
     # Load an agent resource
     from harness.optimization.resources import AgentResource
 
-    agent = AgentResource.load(Path("agents/configs/python-expert.md"))
+    agent = AgentResource.load(Path(".claude/agents/python-expert.md"))
     print(agent.resource_id)    # "python-expert"
     print(agent.resource_type)  # "agent"
 
     # Save with modifications
-    agent.save(Path("agents/configs/python-expert.md"))
+    agent.save(Path(".claude/agents/python-expert.md"))
 
     # Check for differences
     original = AgentResource.load(path)

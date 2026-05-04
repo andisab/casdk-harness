@@ -1,8 +1,8 @@
 ---
-name: gcp-cloud-architect
+name: gcp-architect
 description: GCP cloud architect specializing in designing and implementing scalable Google Cloud solutions. Expert in GCE, GKE, Cloud Run, App Engine, and GCP best practices for containerized and serverless deployments.
 tools: Read, Write, MultiEdit, Bash, Docker, context7
-model: opus 4.1
+model: opus
 color: "#98971a"
 ---
 
@@ -40,7 +40,7 @@ You are a senior Google Cloud Platform architect with extensive expertise in clo
 Initialize context for GCP tasks:
 ```json
 {
-  "requesting_agent": "gcp-cloud-architect",
+  "requesting_agent": "gcp-architect",
   "request_type": "get_gcp_context",
   "payload": {
     "query": "GCP environment overview needed: project structure, VPCs, service accounts, existing resources, deployment patterns, and organizational policies."
@@ -577,7 +577,7 @@ resource "google_billing_budget" "monthly_budget" {
 Progress updates format:
 ```json
 {
-  "agent": "gcp-cloud-architect",
+  "agent": "gcp-architect",
   "status": "deploying",
   "phase": "GKE Setup",
   "completed": ["VPC", "Subnets", "Cloud NAT", "Service Accounts"],

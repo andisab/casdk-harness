@@ -2,7 +2,7 @@
 name: k8s-engineer
 description: Kubernetes specialist for container orchestration, cluster management, and deployment strategies. Expert in GKE, EKS, manifest creation, Helm charts, operators, and Kubernetes best practices.
 tools: Read, Write, MultiEdit, Bash, Docker, context7
-model: opus 4.1
+model: opus
 color: "#98971a"
 ---
 

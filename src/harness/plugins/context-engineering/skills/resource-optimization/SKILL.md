@@ -104,7 +104,7 @@ Spawn `cgf-research-lead` to gather domain-specific competencies:
 
 ```bash
 # Via direct agent invocation
-python -m harness.direct_agent \
+python -m harness.subagent \
   --agent cgf-agents:cgf-research-lead \
   --prompt "Research competencies for: [resource name and description]" \
   --verbose
@@ -144,7 +144,7 @@ common_mistakes:
 Spawn `cgf-test-architect` to create comprehensive test suite:
 
 ```bash
-python -m harness.direct_agent \
+python -m harness.subagent \
   --agent cgf-agents:cgf-test-architect \
   --prompt "Generate test suite for: [resource path] using eval criteria: [criteria path]" \
   --verbose

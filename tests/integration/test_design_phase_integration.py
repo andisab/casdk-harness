@@ -131,7 +131,7 @@ async def test_design_phase_populates_state_from_plan(workspace: Path) -> None:
     orchestrator = await _setup_orchestrator(workspace)
 
     with patch(
-        "harness.direct_agent.call_agent_simple",
+        "harness.subagent.call_agent_simple",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
@@ -168,7 +168,7 @@ async def test_design_phase_handles_missing_plan_file(workspace: Path) -> None:
     orchestrator = await _setup_orchestrator(workspace)
 
     with patch(
-        "harness.direct_agent.call_agent_simple",
+        "harness.subagent.call_agent_simple",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
@@ -185,7 +185,7 @@ async def test_design_phase_handles_no_signal(workspace: Path) -> None:
     orchestrator = await _setup_orchestrator(workspace)
 
     with patch(
-        "harness.direct_agent.call_agent_simple",
+        "harness.subagent.call_agent_simple",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
@@ -203,7 +203,7 @@ async def test_design_phase_saves_state_to_disk(workspace: Path) -> None:
     orchestrator = await _setup_orchestrator(workspace)
 
     with patch(
-        "harness.direct_agent.call_agent_simple",
+        "harness.subagent.call_agent_simple",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):

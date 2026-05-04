@@ -211,7 +211,7 @@ class AgentRunner(BaseRunner):
         Returns:
             The agent's text output.
         """
-        from harness.direct_agent import call_agent_simple
+        from harness.subagent import call_agent_simple
 
         tracer = self._get_tracer() if self.config.collect_spans else None
 

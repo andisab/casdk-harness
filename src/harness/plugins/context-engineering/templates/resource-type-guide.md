@@ -40,7 +40,7 @@ Comprehensive guide for selecting and designing Claude Code resources. Use this 
 
 | Aspect | Agent Behavior |
 |--------|---------------|
-| **Activation** | Explicit invocation via Task tool or direct_agent |
+| **Activation** | Explicit invocation via Task tool or subagent |
 | **Context** | Isolated - receives task description, not full conversation |
 | **Tools** | Has own tool access configured in definition |
 | **Model** | Can specify different model than parent (sonnet/opus/haiku) |

@@ -282,17 +282,20 @@ class TestAgentResource:
 
         assert agent.resource_type == "agent"
 
-    def test_model_normalization(self) -> None:
-        """Test model names are normalized."""
-        # Test various model name formats
+    def test_model_passthrough(self) -> None:
+        """Model field is read raw from YAML — no normalization.
+
+        REFACTOR.md Phase 1 normalized agent YAML to canonical short forms
+        (sonnet/opus/haiku); Phase 3 dropped MODEL_MAP. Verbose names like
+        'opus 4.5' now pass through unchanged so the SDK rejects them
+        loudly rather than silently translating.
+        """
         agent = AgentResource.from_content(
             name="test",
             system_prompt="prompt",
             model="opus 4.5",
         )
-        # Note: from_content doesn't normalize, only load does via _parse_metadata
-        # But the property getter normalizes
-        assert agent.model in {"opus", "opus 4.5"}
+        assert agent.model == "opus 4.5"
 
     def test_implements_protocol(self) -> None:
         """Test AgentResource implements ResourceProtocol."""
@@ -1099,8 +1102,8 @@ class TestResourceRegistryDiscovery:
         }
 
     def test_discover_agents(self, tmp_path: Path) -> None:
-        """Test discovering agents from agents/configs directory."""
-        agents_dir = tmp_path / "agents" / "configs"
+        """Test discovering agents from .claude/agents/ directory."""
+        agents_dir = tmp_path / ".claude" / "agents"
         agents_dir.mkdir(parents=True)
 
         # Create test agent files
