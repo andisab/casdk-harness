@@ -1099,8 +1099,8 @@ class TestResourceRegistryDiscovery:
         }
 
     def test_discover_agents(self, tmp_path: Path) -> None:
-        """Test discovering agents from agents/configs directory."""
-        agents_dir = tmp_path / "agents" / "configs"
+        """Test discovering agents from .claude/agents/ directory."""
+        agents_dir = tmp_path / ".claude" / "agents"
         agents_dir.mkdir(parents=True)
 
         # Create test agent files

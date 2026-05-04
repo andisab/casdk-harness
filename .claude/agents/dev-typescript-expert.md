@@ -44,7 +44,7 @@ description: >
   </example>
 
 tools: Read, Write, MultiEdit, Bash, Grep, Glob, Context7
-model: opus 4.1
+model: opus
 color: "#d65d0e"
 ---
 

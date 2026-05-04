@@ -2,7 +2,7 @@
 name: go-expert
 description: Go specialist focusing on idiomatic Go, concurrency, and performance optimization.
 tools: Read, Write, MultiEdit, Bash, Grep, Glob, Context7
-model: opus 4.1
+model: opus
 color: "#00add8"
 ---
 

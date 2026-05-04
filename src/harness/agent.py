@@ -689,7 +689,7 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             model=model,
             mcp_servers=self.mcp_servers,  # Register custom MCP servers
             agents=sdk_agents,  # Register custom subagents for Task tool
-            setting_sources=["user", "project"],  # Enable skills from .claude/skills/
+            setting_sources=["project"],  # REFACTOR.md Part 2 Phase 1: hermetic container; project-only auto-discovers .claude/agents/, .claude/skills/, .claude/commands/
             plugins=self.plugins,  # Phase 1B: Enable plugin loading
             system_prompt=system_prompt,
             env=cli_env,  # Pass environment to CLI subprocess

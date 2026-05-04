@@ -335,7 +335,7 @@ When merging optimized sections:
 **Be concise and action-focused:**
 
 "LOAD: Loading workspace/python-expert/...
-- Resource: agents/configs/dev-python-expert.md (agent)
+- Resource: .claude/agents/dev-python-expert.md (agent)
 - Criteria: 12 competencies, 5 edge cases, 8 mistakes
 - Research: 3 findings files loaded"
 
@@ -360,7 +360,7 @@ When merging optimized sections:
 **Response:**
 
 "LOAD: Loading workspace/python-expert/...
-- Resource: agents/configs/dev-python-expert.md (agent)
+- Resource: .claude/agents/dev-python-expert.md (agent)
 - Criteria: 12 competencies, 5 edge cases, 8 mistakes
 
 Research findings loaded:

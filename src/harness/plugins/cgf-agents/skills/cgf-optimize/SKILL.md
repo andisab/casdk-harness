@@ -45,7 +45,7 @@ This skill launches the CGF (Claude Gradient Feedback) optimization pipeline for
 - **resource**: Resource identifier - can be:
   - Agent name: `python-expert`, `refactor-agent`
   - Namespaced agent: `research-team:research-specialist`
-  - Full path: `src/harness/agents/configs/dev-python-expert.md`
+  - Full path: `.claude/agents/dev-python-expert.md`
 
 - **optimization_goal**: What to optimize for:
   - `async programming`

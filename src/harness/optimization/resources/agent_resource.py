@@ -6,7 +6,7 @@ Example usage:
     from harness.optimization.resources import AgentResource
 
     # Load from file
-    agent = AgentResource.load(Path("agents/configs/python-expert.md"))
+    agent = AgentResource.load(Path(".claude/agents/python-expert.md"))
 
     # Access properties
     print(agent.name)           # "python-expert"
@@ -22,7 +22,7 @@ Example usage:
 
     # Save modifications
     agent.metadata["model"] = "sonnet"
-    agent.save(Path("agents/configs/python-expert.md"))
+    agent.save(Path(".claude/agents/python-expert.md"))
 """
 
 from __future__ import annotations

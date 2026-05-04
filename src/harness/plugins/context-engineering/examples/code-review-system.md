@@ -90,7 +90,7 @@ async def review_with_harness(code: str):
 
 ## Agent Definitions
 
-Required agents (in `agents/configs/`):
+Required agents (in `.claude/agents/`):
 - `coordinator-agent.md`: Planning and delegation
 - `security-reviewer.md`: Vulnerability scanning
 - `performance-reviewer.md`: Bottleneck identification

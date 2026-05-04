@@ -153,7 +153,7 @@ Continue with normal request parsing below.
    - resource_id = derived resource name
 5. **For optimization mode:**
    - Extract resource_id from file path (filename without extension)
-   - Example: path=`src/harness/agents/configs/dev-python-expert.md` → resource_id=`dev-python-expert`
+   - Example: path=`.claude/agents/dev-python-expert.md` → resource_id=`dev-python-expert`
    - **NOT** a derived name like "python-expert" - use the EXACT filename
 
 #### Step 2: Initialize Workspace
@@ -597,7 +597,7 @@ cat workspace/{resource_id}/sessions/task_list.json
   "resource": {
     "id": "dev-python-expert",
     "type": "agent",
-    "path": "src/harness/agents/configs/dev-python-expert.md",
+    "path": ".claude/agents/dev-python-expert.md",
     "optimization_goal": "async programming"
   },
   "strategy": "agentic",
@@ -681,7 +681,7 @@ cat workspace/{resource_id}/sessions/task_list.json
   "resource": {
     "id": "dev-python-expert",
     "type": "agent",
-    "path": "src/harness/agents/configs/dev-python-expert.md",
+    "path": ".claude/agents/dev-python-expert.md",
     "optimization_goal": "improve async programming guidance"
   },
   "strategy": "agentic",
@@ -718,7 +718,7 @@ cat workspace/{resource_id}/sessions/task_list.json
   "resource": {
     "id": "dev-python-expert",
     "type": "agent",
-    "path": "src/harness/agents/configs/dev-python-expert.md",
+    "path": ".claude/agents/dev-python-expert.md",
     "optimization_goal": "async programming"
   },
   "refinement": {

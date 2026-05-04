@@ -27,6 +27,7 @@ Technical reference for developers working on this repository and for Claude's o
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
 
 ### Completed Recently
+- **Block 2 Part 2 Phase 1 — Filesystem Agent Discovery (2026-05-04)** — moved 14 agent configs from `src/harness/agents/configs/*.md` to canonical `.claude/agents/*.md`; `definitions.py` and `ResourceRegistry.discover()` repointed to new path; `setting_sources` narrowed `["user","project"]` → `["project"]` for container hermeticity; Dockerfile copies `.claude/` in dev + production stages; YAML `model: opus 4.1` normalized to canonical `opus` (12 files) — hidden by `MODEL_MAP` translation pre-Phase-1, but exposed by filesystem auto-discovery reading raw YAML. Unit tests 1591/0/0 unchanged. Runtime smoke verified single-call Task dispatch to `python-expert`. Latent name-mismatch issues (4 files where YAML `name:` differs from programmatic aliases) deferred to Phase 3 cleanup — see REFACTOR.md.
 - **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, direct_agent.py retirement).
 - **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
 - **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
@@ -50,7 +51,7 @@ Technical reference for developers working on this repository and for Claude's o
 ### TODOs
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
 - [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] **Block 2 next:** Part 2 Phase 1 — move `src/harness/agents/configs/*.md` → `.claude/agents/*.md` (14 files); narrow `setting_sources` to `["project"]` for container hermeticity (see REFACTOR.md)
+- [ ] **Block 2 next:** Part 2 Phase 2 — collapse `plugin_manager.py` to <80 LoC; delete `src/harness/commands.py`; slim `hooks.py`; rename `PostSessionStart`→`SessionStart`, `STOP`→`Stop` (see REFACTOR.md)
 
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
@@ -75,7 +76,7 @@ casdk-harness/
 │   │   ├── monitoring.py           # Prometheus metrics collector
 │   │   ├── plugin_manager.py       # Plugin discovery and loading
 │   │   ├── progress.py             # Task list and session tracking
-│   │   ├── agents/configs/         # 14 agent definition files
+│   │   └── agents/definitions.py   # Loads from .claude/agents/ (REFACTOR Part 2 Phase 1)
 │   │   ├── prompts/                # 5 prompt files (3 container + 2 autonomous)
 │   │   ├── plugins/                # 3 plugins (cgf-agents, context-engineering, research-team)
 │   │   ├── skills/                 # 6 base skills
@@ -207,7 +208,7 @@ casdk-harness/
 
 | Type | Location | Invocation | Process |
 |------|----------|------------|---------|
-| **Subagents** | `src/harness/agents/configs/*.md` | `harness.direct_agent` | Same process |
+| **Subagents** | `.claude/agents/*.md` | `harness.direct_agent` | Same process |
 | **Plugin Agents** | `src/harness/plugins/*/agents/*.md` | `harness.direct_agent` | Same process |
 | **Container Agents** | `docker-compose.yml` services | Docker | Separate containers |
 
@@ -230,7 +231,7 @@ Invoked via `harness.direct_agent` module (Task tool has SDK bug):
 | **context-engineering** (1) | context-engineer |
 | **research-team** (3) | lead-research-coordinator, research-specialist, research-report-writer |
 
-**Definition files**: `src/harness/agents/configs/` with YAML frontmatter:
+**Definition files**: `.claude/agents/` with YAML frontmatter:
 ```markdown
 ---
 name: python-expert
@@ -712,7 +713,7 @@ make cgf-reset
 ```bash
 # Agentic optimization (no test suite needed)
 uv run python -m harness.optimization.cli.section_optimize \
-  --agent src/harness/agents/configs/dev-python-expert.md \
+  --agent .claude/agents/dev-python-expert.md \
   --criteria workspace/dev-python-expert/research/eval_criteria.yaml \
   --workspace workspace/dev-python-expert \
   --iterations 2 \

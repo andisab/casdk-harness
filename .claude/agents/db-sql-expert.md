@@ -2,7 +2,7 @@
 name: sql-expert
 description: Master complex SQL queries, optimize execution plans, and ensure database integrity. Expert in index strategies, query optimization, and data modeling.
 tools: Read, Write, MultiEdit, Bash, Grep, Glob, Context7
-model: opus 4.1
+model: opus
 color: "#d79921"
 ---
 

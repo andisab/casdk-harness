@@ -82,7 +82,7 @@ class CGFWorkspace:
             "resource": {
                 "id": self.resource_id,
                 "type": self.resource_type,
-                "path": f"agents/configs/{self.resource_id}.md",
+                "path": f".claude/agents/{self.resource_id}.md",
                 "optimization_goal": "test optimization",
             },
             "strategy": self._get_strategy(),
@@ -121,7 +121,7 @@ class CGFWorkspace:
         """
         config = {
             "resource": {
-                "path": f"agents/configs/{self.resource_id}.md",
+                "path": f".claude/agents/{self.resource_id}.md",
                 "type": self.resource_type,
                 "id": self.resource_id,
                 "optimization_goal": goal,

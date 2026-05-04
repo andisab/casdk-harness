@@ -3,8 +3,12 @@
 This module defines the available subagents that can be delegated to
 via the SDK Task tool during autonomous development.
 
-Agent definitions are loaded dynamically from .md files in the configs/ directory.
-Each .md file uses YAML frontmatter for metadata and markdown body for system prompt.
+Agent definitions are loaded dynamically from .md files in `.claude/agents/`
+at the repo root (canonical Anthropic location). Each .md file uses YAML
+frontmatter for metadata and markdown body for system prompt. SDK filesystem
+auto-discovery (via `setting_sources=["project"]`) reads the same files; this
+loader continues to populate `agents=` programmatically so the existing
+logical-name → filename alias mapping in `_load_all_agents()` keeps working.
 
 Usage:
     from harness.agents.definitions import get_agent_definition, AGENT_DEFINITIONS
@@ -27,8 +31,9 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Directories
-CONFIGS_DIR = Path(__file__).parent / "configs"
+# Repo-root .claude/agents/ — canonical Anthropic location (REFACTOR.md Part 2 Phase 1)
+# parents[3] from src/harness/agents/definitions.py → repo root
+CONFIGS_DIR = Path(__file__).resolve().parents[3] / ".claude" / "agents"
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 

@@ -292,7 +292,7 @@ my-plugin/
 
 See existing plugins for examples:
 - **Skills**: `src/harness/skills/debugging/SKILL.md`
-- **Agents**: `src/harness/agents/configs/dev-python-expert.md`
+- **Agents**: `.claude/agents/dev-python-expert.md`
 - **Commands**: `src/harness/plugins/context-engineering/commands/create-agent.md`
 
 For detailed plugin development, use the `context-engineering:plugin-development` skill.

@@ -241,10 +241,25 @@ Caveats:
 - [x] Unit tests unchanged at 1591 passed / 0 failed.
 - Outcome: green. `direct_agent.py` retirement (Phase 3) is technically unblocked; deferred until Phases 1-2 land per the staged plan.
 
-**Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`)**
-- Move `src/harness/agents/configs/*.md` → repo `.claude/agents/*.md` (14 files). Update `definitions.py` loader path or delete it once SDK auto-discovery is confirmed.
-- Narrow `setting_sources` in `agent.py:692` from the current `["user","project"]` to **`["project"]`** for container runs (matches Anthropic research-agent demo). Add `"local"` only if `.claude/settings.local.json` per-checkout overrides are an explicit feature. Drop `"user"` entirely for container runs — pulling in host `~/.claude/` config inside a sandboxed container is a bleed-over risk and is not how reference implementations work.
-- Add a small frontmatter adapter (snake_case → camelCase) only where YAML is parsed for programmatic `AgentDefinition` construction. Filesystem-loaded agents need no adapter — the SDK reads the on-disk format.
+**Phase 1 — Filesystem discovery for harness agents (1-2 days; `main`) ✓ DONE 2026-05-04**
+- [x] Moved 14 files: `src/harness/agents/configs/*.md` → `.claude/agents/*.md` (git-mv preserved history).
+- [x] `definitions.py:31` `CONFIGS_DIR` repointed to repo-root `.claude/agents/` via `parents[3]`.
+- [x] `ResourceRegistry.discover()` (CGF) updated similarly — `base_path / "agents" / "configs"` → `base_path / ".claude" / "agents"`, default `base_path` walks up to repo root.
+- [x] `setting_sources=["user", "project"]` → `["project"]` (drops host `~/.claude/` bleed-over; container hermetic).
+- [x] Dockerfile copies `.claude/` into dev + production stages.
+- [x] All `src/`, `tests/`, `CLAUDE.md`, `README.md` references to old path updated. Plugin agent prompts (cgf-orchestrator, cgf-prompt-optimizer, cgf-test-architect, cgf-optimize SKILL) repointed.
+- [x] **YAML model field normalized:** 12 files had `model: opus 4.1` which SDK filesystem auto-discovery read as `opus-4-1[1m]` (a 1M-context variant) and rejected at runtime. Normalized to canonical `opus`/`sonnet`/`haiku`. Pre-Phase-1 `agents=AGENT_DEFINITIONS` translated via `MODEL_MAP` so the issue was hidden.
+- [x] Unit tests 1591/0/0 unchanged.
+- [x] Runtime smoke verified: `Task(subagent_type="python-expert")` returns real response, `ResultMessage(is_error=False)`. Session `9010bda7-53c7-485f-86e2-f85ff4382978`.
+- Frontmatter adapter (snake_case → camelCase) was not required: existing YAML matches what SDK reads on-disk.
+
+**Latent name-mismatch — Phase 3 cleanup gate.** Filesystem auto-discovery uses each file's YAML `name:` field, while `agents=AGENT_DEFINITIONS` exposes logical aliases. Divergences:
+- `db-postgres-expert.md` YAML `name: postgres-expert`, programmatic alias `database-expert`
+- `infra-gcp-architect.md` YAML `name: gcp-cloud-architect`, programmatic alias `gcp-architect`
+- `dev-code-review-expert.md` YAML `name: dev-code-review-expert` (with `dev-` prefix!), programmatic aliases `reviewer-agent`, `code-review-expert`
+- `test-sdet-expert.md` YAML `name: testing-agent`, programmatic alias `sdet-expert`
+
+Today both registration paths are active simultaneously, so any caller can use either name. When Phase 3 retires `direct_agent.py` and we lean more on filesystem-only loading, reconcile to single-name-per-file (preferred: rename YAML to canonical short name, drop the alias dict in `definitions.py`).
 
 **Phase 2 — Delegate plugin loading to the SDK (~3-5 days; `main`)**
 - Reduce `plugin_manager.py` to: (a) resolve `swe-marketplace` clone path, (b) read its `marketplace.json`, (c) apply `ENABLED_PLUGINS` filter, (d) emit `SdkPluginConfig` entries plus the in-tree `cgf-agents` path. Target: <80 LoC.

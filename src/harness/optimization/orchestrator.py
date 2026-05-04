@@ -10,7 +10,7 @@ Example usage:
     )
 
     config = SectionOptimizationConfig(
-        agent_path=Path("agents/configs/python-expert.md"),
+        agent_path=Path(".claude/agents/python-expert.md"),
         criteria_path=Path("workspace/python-expert/research/eval_criteria.yaml"),
         workspace_dir=Path("workspace/python-expert"),
     )

@@ -2,7 +2,7 @@
 name: gcp-cloud-architect
 description: GCP cloud architect specializing in designing and implementing scalable Google Cloud solutions. Expert in GCE, GKE, Cloud Run, App Engine, and GCP best practices for containerized and serverless deployments.
 tools: Read, Write, MultiEdit, Bash, Docker, context7
-model: opus 4.1
+model: opus
 color: "#98971a"
 ---
 
