@@ -168,58 +168,46 @@ TECH_LEAD = _load_tech_lead()
 
 
 def _load_all_agents() -> dict[str, AgentDefinition]:
-    """Load all agent definitions from config files.
+    """Auto-discover all agent definitions from `.claude/agents/`.
+
+    REFACTOR.md Phase 3 Step 2 (verified 2026-05-04): the previous
+    logical-name → filename alias dict has been removed. Each agent's
+    YAML `name:` field IS the canonical name now (Phase 3 Step 1 renamed
+    files and YAML to ensure name == canonical short form, e.g.
+    `database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`).
 
     Returns:
-        Dictionary mapping agent names to definitions
+        Dict mapping each agent's YAML `name:` to its AgentDefinition.
     """
     agents: dict[str, AgentDefinition] = {}
 
-    # Mapping from logical agent name to config filename
-    # Phase 3 Step 2 will replace this with auto-discovery from .claude/agents/.
-    # For Step 1, just point at the renamed files.
-    agent_files = {
-        # Development agents
-        "python-expert": "dev-python-expert",
-        "typescript-expert": "dev-typescript-expert",
-        "go-expert": "dev-go-expert",
-        "nodejs-expert": "dev-nodejs-expert",
-        "react-expert": "dev-react-expert",
-        "refactor-agent": "dev-refactor-agent",
-        # Database agents
-        "database-expert": "database-expert",
-        "sql-expert": "db-sql-expert",
-        # Infrastructure agents
-        "docker-engineer": "infra-docker-engineer",
-        "gcp-architect": "gcp-architect",
-        "gitlab-ci-expert": "infra-gitlab-ci-expert",
-        "k8s-engineer": "infra-k8s-engineer",
-        # Task-specific agents
-        "code-review-expert": "code-review-expert",
-        "sdet-expert": "sdet-expert",
-    }
-
-    # Keep tech-lead inline (used by autonomous.py)
+    # Tech-lead is loaded inline from src/harness/prompts/tech-lead-agent.md
+    # (used directly by autonomous.py; not a `.claude/agents/` file).
     agents["tech-lead"] = TECH_LEAD
 
-    for name, filename in agent_files.items():
+    if not CONFIGS_DIR.exists():
+        logger.warning(f"Agent configs dir not found: {CONFIGS_DIR}")
+        return agents
+
+    for md_file in sorted(CONFIGS_DIR.glob("*.md")):
         try:
-            agent = load_agent_from_md(filename)
-            # Override the name with the logical key for consistency
-            agent = AgentDefinition(
+            parsed = parse_agent_md_file(md_file)
+            name = parsed["name"]
+            if not name:
+                logger.warning(f"Skipping {md_file.name}: missing 'name' in YAML frontmatter")
+                continue
+            model = MODEL_MAP.get(parsed["model"], parsed["model"])
+            agents[name] = AgentDefinition(
                 name=name,
-                description=agent.description,
-                model=agent.model,
-                tools=agent.tools,
-                system_prompt=agent.system_prompt,
-                max_turns=agent.max_turns,
+                description=parsed["description"],
+                model=model,
+                tools=parsed["tools"],
+                system_prompt=parsed["body"],
+                max_turns=parsed["max_turns"],
             )
-            agents[name] = agent
-            logger.debug(f"Loaded agent: {name} from {filename}.md")
-        except FileNotFoundError:
-            logger.warning(f"Agent config not found: {filename}.md (agent: {name})")
+            logger.debug(f"Loaded agent: {name} from {md_file.name}")
         except Exception as e:
-            logger.warning(f"Failed to load agent {name} from {filename}.md: {e}")
+            logger.warning(f"Failed to load agent from {md_file.name}: {e}")
 
     return agents
 

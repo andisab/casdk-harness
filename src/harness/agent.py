@@ -608,41 +608,26 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         return plugin_agents
 
     def _convert_to_sdk_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Convert harness agent definitions to SDK format.
+        """Get plugin agents for SDK Task tool dispatch.
 
-        The SDK expects agents as dict[str, AgentDefinition] where:
-        - Key: Agent name (used for Task tool's subagent_type parameter)
-        - Value: SDKAgentDefinition with description, prompt, tools, model
-
-        Includes both harness-defined agents AND plugin agents.
+        REFACTOR.md Phase 3 (verified 2026-05-04): harness agents are now
+        auto-discovered from `.claude/agents/` via `setting_sources=["project"]`,
+        so they no longer need programmatic registration here. Plugin agents
+        still require it — `plugins=[{type:local,path:...}]` does not expose
+        them to Task with the `plugin:resource` namespacing the harness uses.
 
         Returns:
-            Dict mapping agent names to SDK AgentDefinition objects
+            Dict mapping namespaced plugin agent names to SDK AgentDefinition.
         """
-        sdk_agents: dict[str, SDKAgentDefinition] = {}
-
-        # 1. Load harness-defined agents
-        for name, agent in AGENT_DEFINITIONS.items():
-            sdk_agents[name] = SDKAgentDefinition(
-                description=agent.description,
-                prompt=agent.system_prompt,  # Our system_prompt → SDK's prompt
-                tools=agent.tools if agent.tools else None,
-                model=agent.model if agent.model in ("sonnet", "opus", "haiku") else None,
-            )
-
-        # 2. Load plugin agents (workaround for SDK limitation)
         plugin_agents = self._load_plugin_agents()
-        sdk_agents.update(plugin_agents)
 
         logger.debug(
-            "Converted agent definitions for SDK",
-            total=len(sdk_agents),
-            harness_agents=len(AGENT_DEFINITIONS),
+            "Registering plugin agents for SDK Task dispatch",
             plugin_agents=len(plugin_agents),
-            agents=list(sdk_agents.keys()),
+            agents=list(plugin_agents.keys()),
         )
 
-        return sdk_agents
+        return plugin_agents
 
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
