@@ -961,7 +961,7 @@ Save to workspace/{resource_id}/{resource_id}.md"
 ```
 
 The context-engineer agent will:
-- Use appropriate skill (agent-definition-creation, skill-creation, etc.)
+- Use appropriate skill (agent-dev, skill-dev, etc.)
 - Follow progressive disclosure patterns
 - Create well-structured resource with YAML frontmatter
 - Include examples and usage documentation

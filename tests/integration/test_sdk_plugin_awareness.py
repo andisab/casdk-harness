@@ -47,11 +47,11 @@ async def test_sdk_aware_of_plugin_skills():
 
     # Verify plugin skills are mentioned
     plugin_skills = [
-        "skill-creation",
-        "agent-definition-creation",
-        "plugin-development",
-        "command-creation",
-        "hook-configuration",
+        "skill-dev",
+        "agent-dev",
+        "plugin-dev",
+        "command-dev",
+        "hook-dev",
         "joplin-research",
     ]
 
@@ -351,11 +351,11 @@ async def test_sdk_skill_count():
 
     # Verify plugin skills are present
     plugin_skills = [
-        "skill-creation",
-        "agent-definition-creation",
-        "plugin-development",
-        "command-creation",
-        "hook-configuration",
+        "skill-dev",
+        "agent-dev",
+        "plugin-dev",
+        "command-dev",
+        "hook-dev",
         "joplin-research",
     ]
 

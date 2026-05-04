@@ -54,14 +54,14 @@ class TestResourceTypeConfig:
             type=ResourceType.AGENT,
             path_pattern="agents/{name}.md",
             generator_agent="context-engineering:context-engineer",
-            generator_skill="agent-definition-creation",
+            generator_skill="agent-dev",
             eval_strategy="content_and_execution",
             supports_versioning=True,
         )
         assert config.type == ResourceType.AGENT
         assert config.path_pattern == "agents/{name}.md"
         assert config.generator_agent == "context-engineering:context-engineer"
-        assert config.generator_skill == "agent-definition-creation"
+        assert config.generator_skill == "agent-dev"
         assert config.eval_strategy == "content_and_execution"
         assert config.supports_versioning is True
 
@@ -70,7 +70,7 @@ class TestResourceTypeConfig:
             type=ResourceType.MCP_TOOL,
             path_pattern="tools/{name}.py",
             generator_agent="context-engineering:context-engineer",
-            generator_skill="mcp-tool-creation",
+            generator_skill="mcp-tool-dev",
             eval_strategy="executable",
             supports_versioning=True,
         )
@@ -82,7 +82,7 @@ class TestResourceTypeConfig:
             type=ResourceType.AGENT,
             path_pattern="agents/{name}.md",
             generator_agent="context-engineering:context-engineer",
-            generator_skill="agent-definition-creation",
+            generator_skill="agent-dev",
             eval_strategy="content_and_execution",
             supports_versioning=True,
         )
@@ -94,7 +94,7 @@ class TestResourceTypeConfig:
             type=ResourceType.SKILL,
             path_pattern="skills/{name}/SKILL.md",
             generator_agent="context-engineering:context-engineer",
-            generator_skill="skill-creation",
+            generator_skill="skill-dev",
             eval_strategy="content_only",
             supports_versioning=True,
         )
@@ -106,7 +106,7 @@ class TestResourceTypeConfig:
             type=ResourceType.HOOK,
             path_pattern="hooks/{name}.json",
             generator_agent="context-engineering:context-engineer",
-            generator_skill="hook-configuration",
+            generator_skill="hook-dev",
             eval_strategy="content_only",
             supports_versioning=False,
         )
@@ -172,7 +172,7 @@ class TestResourceTypeRegistry:
         config = registry.get(ResourceType.AGENT)
         assert config is not None
         assert config.generator_agent == "context-engineering:context-engineer"
-        assert config.generator_skill == "agent-definition-creation"
+        assert config.generator_skill == "agent-dev"
         assert config.path_pattern == "agents/{name}.md"
         assert config.eval_strategy == "content_and_execution"
         assert config.supports_versioning is True
@@ -181,7 +181,7 @@ class TestResourceTypeRegistry:
         registry = ResourceTypeRegistry.default()
         config = registry.get(ResourceType.SKILL)
         assert config is not None
-        assert config.generator_skill == "skill-creation"
+        assert config.generator_skill == "skill-dev"
         assert config.path_pattern == "skills/{name}/SKILL.md"
         assert config.eval_strategy == "content_only"
         assert config.supports_versioning is True

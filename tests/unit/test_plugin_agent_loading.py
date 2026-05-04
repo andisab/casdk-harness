@@ -22,11 +22,12 @@ class TestPluginAgentLoading:
     def test_plugin_agents_directory_structure(self):
         """Verify plugin agents exist in expected locations.
 
-        ``research-team`` lives in swe-marketplace post-Step 2a; only in-tree
-        plugins are asserted here.
+        Post-Step 2b: ``research-team`` and ``context-engineering`` live in
+        swe-marketplace. ``cgf-agents`` is the only remaining in-tree plugin
+        and is asserted here.
         """
         expected_agents = {
-            "context-engineering": ["context-engineer.md"],
+            "cgf-agents": ["cgf-orchestrator.md"],
         }
 
         for plugin_name, agent_files in expected_agents.items():
@@ -107,10 +108,10 @@ class TestPluginAgentLoading:
                         "model": model,
                     }
 
-        # Verify expected agents are found (in-tree only post-Step 2a; the
-        # research-team plugin moved to swe-marketplace).
+        # Verify expected agents are found (in-tree only post-Step 2b; both
+        # research-team and context-engineering moved to swe-marketplace).
         expected_keys = [
-            "context-engineering:context-engineer",
+            "cgf-agents:cgf-orchestrator",
         ]
 
         for key in expected_keys:
@@ -171,36 +172,10 @@ class TestPluginAgentLoading:
                             key=expected_key,
                         )
 
-    def test_context_engineer_agent_details(self):
-        """Verify context-engineer agent has expected properties."""
-        import re
-        import yaml
-
-        agent_file = PLUGIN_BASE / "context-engineering" / "agents" / "context-engineer.md"
-        content = agent_file.read_text()
-
-        pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
-        match = re.match(pattern, content, re.DOTALL)
-        assert match, "Should parse frontmatter"
-
-        metadata = yaml.safe_load(match.group(1))
-
-        assert metadata.get("name") == "context-engineer"
-        assert metadata.get("model") == "sonnet"
-        assert "tools" in metadata
-        assert "description" in metadata
-
-        # Verify tools list
-        tools_str = metadata.get("tools", "")
-        tools = [t.strip() for t in tools_str.split(",") if t.strip()]
-        assert "Read" in tools
-        assert "Write" in tools
-        assert "Edit" in tools
-
-        logger.info(
-            "Context-engineer agent verified",
-            tools_count=len(tools),
-        )
+    # The context-engineer agent moved to swe-marketplace in Step 2b. Its
+    # in-tree YAML/frontmatter assertions don't apply here anymore — the
+    # marketplace version is upstream-tested. The original test_context_-
+    # engineer_agent_details was removed.
 
     # The research-team plugin lives in swe-marketplace post-Step 2a; the
     # corresponding test was removed because it asserted in-tree files that

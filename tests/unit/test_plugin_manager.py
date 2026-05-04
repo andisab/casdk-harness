@@ -80,24 +80,23 @@ class TestPluginDiscovery:
         manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
         plugins = manager.discover_plugins()
 
-        # Should find at least the two existing plugins
-        assert len(plugins) >= 2
+        # Post-Step 2b: only cgf-agents stays in-tree. research-team and
+        # context-engineering are consumed from swe-marketplace.
+        assert len(plugins) >= 1
 
         plugin_names = [p.name for p in plugins]
-        assert "context-engineering" in plugin_names
-        # research-team moved to swe-marketplace in Step 2a; cgf-agents stays in-tree.
         assert "cgf-agents" in plugin_names
 
     def test_discover_with_enabled_filter(self):
         """Test filtering plugins by enabled list."""
         manager = PluginManager(
             plugin_dirs=[PLUGIN_BASE],
-            enabled_plugins=["context-engineering"],
+            enabled_plugins=["cgf-agents"],
         )
         plugins = manager.discover_plugins()
 
         assert len(plugins) == 1
-        assert plugins[0].name == "context-engineering"
+        assert plugins[0].name == "cgf-agents"
 
     def test_discover_nonexistent_directory(self):
         """Test handling of nonexistent plugin directory."""
@@ -118,16 +117,16 @@ class TestPluginLoading:
 
         agents = manager.get_all_agents()
 
-        # Should have loaded at least the in-tree plugin agents
-        assert len(agents) >= 1  # context-engineer (research-team moved to marketplace in Step 2a)
+        # Post-Step 2b: cgf-agents is the only in-tree plugin and it has 9 agents.
+        assert len(agents) >= 1
 
         # Verify namespacing
         for key in agents:
             assert ":" in key, f"Agent key should be namespaced: {key}"
 
-        # Verify expected in-tree agents exist
+        # Verify expected in-tree agents exist (cgf-agents has 9; we sample one)
         expected = [
-            "context-engineering:context-engineer",
+            "cgf-agents:cgf-orchestrator",
         ]
         for exp in expected:
             assert exp in agents, f"Missing expected agent: {exp}"
@@ -171,17 +170,20 @@ class TestPluginLoading:
             assert cmd.plugin_name in key
 
     def test_load_plugin_hooks(self):
-        """Test loading plugin hooks."""
+        """Test loading plugin hooks.
+
+        Post-Step 2b: in-tree plugins no longer ship hooks (research-team and
+        context-engineering hooks moved to swe-marketplace, cgf-agents has
+        none). The structural assertion is preserved for any future in-tree
+        hook addition; the count assertion is dropped.
+        """
         manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
         manager.discover_plugins()
         manager.load_all_plugins()
 
         hooks = manager.get_all_hooks()
 
-        # Should have loaded the sample hooks we created
-        assert len(hooks) >= 2
-
-        # Verify hook structure
+        # Verify hook structure (no minimum count — list may be empty)
         for hook in hooks:
             assert isinstance(hook, PluginHook)
             assert hook.event in HookEvent
@@ -218,7 +220,7 @@ class TestPluginManagerAccessors:
         plugins = loaded_manager.get_plugins()
 
         assert isinstance(plugins, dict)
-        assert "context-engineering" in plugins
+        # Post-Step 2b: only cgf-agents stays in-tree.
         assert "cgf-agents" in plugins
 
     def test_get_plugin_paths(self, loaded_manager):
@@ -226,7 +228,7 @@ class TestPluginManagerAccessors:
         paths = loaded_manager.get_plugin_paths()
 
         assert isinstance(paths, list)
-        assert len(paths) >= 2
+        assert len(paths) >= 1
 
         for path in paths:
             assert "type" in path
@@ -269,7 +271,7 @@ class TestPluginIntegration:
 
         # Discover
         plugins = manager.discover_plugins()
-        assert len(plugins) >= 2
+        assert len(plugins) >= 1
 
         # Load
         manager.load_all_plugins()
@@ -307,4 +309,4 @@ class TestPluginIntegration:
         plugins = manager.discover_plugins()
 
         # Should still find valid plugins
-        assert len(plugins) >= 2
+        assert len(plugins) >= 1
