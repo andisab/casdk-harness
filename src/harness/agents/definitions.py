@@ -66,19 +66,6 @@ def _load_prompt_if_exists(prompt_name: str) -> str:
     return ""
 
 
-# Model name mapping from .md files to SDK format
-MODEL_MAP = {
-    "opus 4.1": "opus",
-    "opus 4.5": "opus",
-    "sonnet 4.5": "sonnet",
-    "sonnet 4.0": "sonnet",
-    "haiku 3.5": "haiku",
-    "haiku": "haiku",
-    "sonnet": "sonnet",
-    "opus": "opus",
-}
-
-
 def parse_agent_md_file(filepath: Path) -> dict[str, Any]:
     """Parse YAML frontmatter and markdown body from agent .md file.
 
@@ -135,12 +122,11 @@ def load_agent_from_md(filename: str) -> AgentDefinition:
         raise FileNotFoundError(f"Agent file not found: {md_file}")
 
     parsed = parse_agent_md_file(md_file)
-    model = MODEL_MAP.get(parsed["model"], parsed["model"])
 
     return AgentDefinition(
         name=parsed["name"],
         description=parsed["description"],
-        model=model,
+        model=parsed["model"],
         tools=parsed["tools"],
         system_prompt=parsed["body"],
         max_turns=parsed["max_turns"],
@@ -196,11 +182,10 @@ def _load_all_agents() -> dict[str, AgentDefinition]:
             if not name:
                 logger.warning(f"Skipping {md_file.name}: missing 'name' in YAML frontmatter")
                 continue
-            model = MODEL_MAP.get(parsed["model"], parsed["model"])
             agents[name] = AgentDefinition(
                 name=name,
                 description=parsed["description"],
-                model=model,
+                model=parsed["model"],
                 tools=parsed["tools"],
                 system_prompt=parsed["body"],
                 max_turns=parsed["max_turns"],
