@@ -20,14 +20,13 @@ class TestPluginAgentLoading:
     """Test plugin agent discovery and loading."""
 
     def test_plugin_agents_directory_structure(self):
-        """Verify plugin agents exist in expected locations."""
+        """Verify plugin agents exist in expected locations.
+
+        ``research-team`` lives in swe-marketplace post-Step 2a; only in-tree
+        plugins are asserted here.
+        """
         expected_agents = {
             "context-engineering": ["context-engineer.md"],
-            "research-team": [
-                "lead-research-coordinator.md",
-                "research-specialist.md",
-                "research-report-writer.md",
-            ],
         }
 
         for plugin_name, agent_files in expected_agents.items():
@@ -108,12 +107,10 @@ class TestPluginAgentLoading:
                         "model": model,
                     }
 
-        # Verify expected agents are found
+        # Verify expected agents are found (in-tree only post-Step 2a; the
+        # research-team plugin moved to swe-marketplace).
         expected_keys = [
             "context-engineering:context-engineer",
-            "research-team:lead-research-coordinator",
-            "research-team:research-specialist",
-            "research-team:research-report-writer",
         ]
 
         for key in expected_keys:
@@ -205,33 +202,6 @@ class TestPluginAgentLoading:
             tools_count=len(tools),
         )
 
-    def test_research_team_agents(self):
-        """Verify research-team plugin has expected agents."""
-        import re
-        import yaml
-
-        expected_agents = [
-            "lead-research-coordinator",
-            "research-specialist",
-            "research-report-writer",
-        ]
-
-        agents_dir = PLUGIN_BASE / "research-team" / "agents"
-
-        for expected_name in expected_agents:
-            agent_file = agents_dir / f"{expected_name}.md"
-            assert agent_file.exists(), f"Agent file not found: {agent_file}"
-
-            content = agent_file.read_text()
-            pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
-            match = re.match(pattern, content, re.DOTALL)
-            assert match, f"Should parse frontmatter in {expected_name}"
-
-            metadata = yaml.safe_load(match.group(1))
-            assert metadata.get("name") == expected_name, \
-                f"Name mismatch in {expected_name}: {metadata.get('name')}"
-
-        logger.info(
-            "Research-team agents verified",
-            agents=expected_agents,
-        )
+    # The research-team plugin lives in swe-marketplace post-Step 2a; the
+    # corresponding test was removed because it asserted in-tree files that
+    # no longer exist. The marketplace version's correctness is upstream.

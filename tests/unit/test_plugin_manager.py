@@ -85,7 +85,8 @@ class TestPluginDiscovery:
 
         plugin_names = [p.name for p in plugins]
         assert "context-engineering" in plugin_names
-        assert "research-team" in plugin_names
+        # research-team moved to swe-marketplace in Step 2a; cgf-agents stays in-tree.
+        assert "cgf-agents" in plugin_names
 
     def test_discover_with_enabled_filter(self):
         """Test filtering plugins by enabled list."""
@@ -117,19 +118,16 @@ class TestPluginLoading:
 
         agents = manager.get_all_agents()
 
-        # Should have loaded plugin agents
-        assert len(agents) >= 4  # context-engineer + 3 research-team agents
+        # Should have loaded at least the in-tree plugin agents
+        assert len(agents) >= 1  # context-engineer (research-team moved to marketplace in Step 2a)
 
         # Verify namespacing
         for key in agents:
             assert ":" in key, f"Agent key should be namespaced: {key}"
 
-        # Verify expected agents exist
+        # Verify expected in-tree agents exist
         expected = [
             "context-engineering:context-engineer",
-            "research-team:lead-research-coordinator",
-            "research-team:research-specialist",
-            "research-team:research-report-writer",
         ]
         for exp in expected:
             assert exp in agents, f"Missing expected agent: {exp}"
@@ -161,8 +159,9 @@ class TestPluginLoading:
 
         commands = manager.get_all_commands()
 
-        # Should have loaded the sample commands we created
-        assert len(commands) >= 2
+        # Should have loaded the cgf-agents command (research-team's command
+        # moved to swe-marketplace in Step 2a).
+        assert len(commands) >= 1
 
         # Verify command structure
         for key, cmd in commands.items():
@@ -220,7 +219,7 @@ class TestPluginManagerAccessors:
 
         assert isinstance(plugins, dict)
         assert "context-engineering" in plugins
-        assert "research-team" in plugins
+        assert "cgf-agents" in plugins
 
     def test_get_plugin_paths(self, loaded_manager):
         """Test get_plugin_paths returns SDK-compatible format."""

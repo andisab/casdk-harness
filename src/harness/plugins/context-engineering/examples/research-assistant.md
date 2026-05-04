@@ -83,15 +83,20 @@ class ResearchPipeline:
 Using research-team plugin agents:
 
 ```python
+# Programmatic single-subtopic research via direct agent invocation:
 from harness.subagent import call_agent
 
 async def research_with_harness(topic: str):
     async for msg in call_agent(
-        "research-team:lead-research-coordinator",
+        "research-team:research-specialist",
         f"Research the following topic thoroughly:\n\n{topic}",
         verbose=True
     ):
         process_streaming_result(msg)
+
+# For full multi-agent pipelines (parallel decomposition + synthesis), invoke
+# the `research-team:coordinator` skill from a main-thread SDK session:
+#   Skill(skill="research-team:coordinator", args="<topic>")
 ```
 
 ## Quality Gates

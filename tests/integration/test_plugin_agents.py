@@ -5,8 +5,8 @@ are accessible via the Task tool.
 
 Expected plugin agents from local plugins:
 - context-engineering:context-engineer
-- research-team:lead-research-coordinator
-- research-team:research-specialist
+- research-team:research-specialist  # in-tree before Step 2a; via marketplace after
+- research-team:research-report-writer
 - research-team:research-report-writer
 
 Reference: CLAUDE.md states "Plugin agents NOT accessible (SDK issue #213, #11620)"
@@ -52,9 +52,8 @@ class TestPluginAgentDiscovery:
         """
         Verify plugin agents appear in the agents list in SystemMessage.
 
-        Expected agents from plugins:
+        Expected agents from plugins (post-Step 2a):
         - context-engineering:context-engineer
-        - research-team:lead-research-coordinator
         - research-team:research-specialist
         - research-team:research-report-writer
         """
@@ -88,10 +87,10 @@ class TestPluginAgentDiscovery:
                         )
                         break
 
-        # Check for expected plugin agents
+        # Check for expected plugin agents (research-team coordinator is a
+        # main-thread skill post-Step 2a, not a Task-dispatchable agent).
         expected_plugin_agents = [
             "context-engineering:context-engineer",
-            "research-team:lead-research-coordinator",
             "research-team:research-specialist",
             "research-team:research-report-writer",
         ]
@@ -193,42 +192,11 @@ class TestPluginAgentInvocation:
                 errors=error_messages,
             )
 
-    async def test_invoke_research_coordinator_agent(
-        self, plugin_paths: list[dict[str, str]], temp_workspace: Path
-    ):
-        """
-        Attempt to invoke the research-team:lead-research-coordinator agent.
-        """
-        options = ClaudeAgentOptions(
-            allowed_tools=["Read", "Task", "Skill"],
-            permission_mode="bypassPermissions",
-            max_turns=10,
-            cwd=str(temp_workspace),
-            model="claude-sonnet-4-20250514",
-            plugins=plugin_paths,
-        )
-
-        logger.info("Testing lead-research-coordinator agent invocation")
-
-        messages = []
-        async with ClaudeSDKClient(options=options) as client:
-            await client.query(
-                "Use the Task tool with subagent_type='research-team:lead-research-coordinator' "
-                "to briefly explain what research capabilities are available. "
-                "If that agent is not available, list what agents you CAN use."
-            )
-
-            async for msg in client.receive_response():
-                messages.append(msg)
-
-        # Log the response for analysis
-        for msg in messages[-5:]:  # Last 5 messages
-            if hasattr(msg, "content"):
-                logger.info(
-                    "Response message",
-                    type=type(msg).__name__,
-                    content=str(msg.content)[:300],
-                )
+    # The original test_invoke_research_coordinator_agent test was removed in
+    # Step 2a: the in-tree lead-research-coordinator agent was deleted in favor
+    # of the marketplace research-team:coordinator skill. Skill invocation
+    # follows a different pattern (Skill tool, main-thread only) and is not
+    # in scope for this integration suite.
 
 
 @pytest.mark.integration

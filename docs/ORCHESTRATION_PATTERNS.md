@@ -2268,17 +2268,20 @@ output_file = "/workspace/results/analysis.json"
 # NOT: output_file = "results/analysis.json"  # Would use /app
 ```
 
-### 3. Research Agent Usage
+### 3. Research Skill Usage
 
-```python
-# Heavy research tasks
+```
+# Heavy research tasks — invoke the coordinator skill from the main thread
+Skill(skill="research-team:coordinator", args="Research authentication patterns")
+
+# For programmatic single-subtopic research without skill invocation:
 async for msg in call_agent(
-    "research-team:lead-research-coordinator",
-    "Research authentication patterns"
+    "research-team:research-specialist",
+    "Research authentication patterns in FastAPI"
 ):
     process(msg)
 
-# Reports saved to: /workspace/temp/research/reports/
+# Reports saved to: ~/Documents/ClaudeResearch/reports/
 ```
 
 ### 4. Caching for Performance

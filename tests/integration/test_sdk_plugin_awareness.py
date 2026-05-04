@@ -87,7 +87,7 @@ async def test_sdk_aware_of_plugin_agents():
     Specifically, do you have access to these plugin agents?
     - context-engineer (from context-engineering plugin)
     - build-orchestrator (from arch plugin)
-    - lead-research-coordinator (from research-team plugin)
+    - research-specialist (from research-team plugin)
     """
 
     messages = []
@@ -112,8 +112,8 @@ async def test_sdk_aware_of_plugin_agents():
         "context engineer",
         "build-orchestrator",
         "build orchestrator",
-        "lead-research-coordinator",
-        "research coordinator",
+        "research-specialist",
+        "research specialist",
     ]
 
     found_agents = []

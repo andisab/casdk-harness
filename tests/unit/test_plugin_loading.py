@@ -15,8 +15,8 @@ PLUGIN_BASE_PATH = (
     Path(__file__).parent.parent.parent / "src" / "harness" / "plugins"
 )
 
-# Correct plugin names (cgf-agents, context-engineering, research-team)
-PLUGINS = ["cgf-agents", "context-engineering", "research-team"]
+# In-tree plugin names. The research-team plugin moved to swe-marketplace in Step 2a.
+PLUGINS = ["cgf-agents", "context-engineering"]
 
 
 def test_plugin_paths_exist():
@@ -86,8 +86,8 @@ def test_agent_session_plugin_configuration(tmp_path: Path):
         session = AgentSession(agent_name="test", config=mock_config)
 
         assert hasattr(session, "plugins"), "AgentSession missing plugins attribute"
-        assert len(session.plugins) == 3, (
-            f"Expected 3 plugins, got {len(session.plugins)}"
+        assert len(session.plugins) == 2, (
+            f"Expected 2 in-tree plugins, got {len(session.plugins)}"
         )
 
         # Verify plugin paths are absolute and valid

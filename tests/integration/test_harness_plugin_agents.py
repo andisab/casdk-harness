@@ -104,10 +104,10 @@ class TestHarnessPluginAgentLoading:
                         assert len(plugin_agent_keys) > 0, \
                             f"Should have plugin agents (namespaced). Found: {agent_names}"
 
-                        # Verify expected plugin agents
+                        # Verify expected plugin agents (post-Step 2a; the
+                        # research-team coordinator is a skill, not an agent)
                         expected = [
                             "context-engineering:context-engineer",
-                            "research-team:lead-research-coordinator",
                             "research-team:research-specialist",
                             "research-team:research-report-writer",
                         ]
@@ -193,12 +193,12 @@ class TestHarnessPluginAgentLoading:
                         model=normalized_model if normalized_model in ("sonnet", "opus", "haiku") else None,
                     )
 
-        # Verify results
-        assert len(plugin_agents) == 4, f"Expected 4 plugin agents, got {len(plugin_agents)}"
+        # Verify results (post-Step 2a: research-team coordinator is a skill,
+        # so 3 plugin agents instead of 4)
+        assert len(plugin_agents) == 3, f"Expected 3 plugin agents, got {len(plugin_agents)}"
 
         expected = [
             "context-engineering:context-engineer",
-            "research-team:lead-research-coordinator",
             "research-team:research-specialist",
             "research-team:research-report-writer",
         ]
