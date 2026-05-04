@@ -170,8 +170,21 @@ class AgentSession:
         # Plugin configuration via PluginManager
         from pathlib import Path
         plugin_base = Path(__file__).parent / "plugins"
+        plugin_dirs: list[Path] = []
+        # Marketplace first; in-tree last so in-tree wins on duplicate plugin name
+        # (lets us migrate plugins one-by-one without immediate breakage).
+        marketplace_path = self.config.swe_marketplace_resolved_path
+        if marketplace_path is not None:
+            marketplace_plugin_dir = marketplace_path / "plugins"
+            if marketplace_plugin_dir.exists():
+                plugin_dirs.append(marketplace_plugin_dir)
+                logger.info(
+                    "swe-marketplace plugin source resolved",
+                    path=str(marketplace_plugin_dir),
+                )
+        plugin_dirs.append(plugin_base)
         self.plugin_manager = PluginManager(
-            plugin_dirs=[plugin_base],
+            plugin_dirs=plugin_dirs,
             enabled_plugins=self.config.enabled_plugins_list,
             use_sdk_only=self.config.plugin_use_sdk_only,
         )

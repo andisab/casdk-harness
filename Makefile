@@ -131,6 +131,30 @@ init: check-env ## Initialize project (first time setup)
 	@echo "$(GREEN)See QUICKSTART.md for a 5-minute tutorial$(NC)"
 	@echo ""
 
+.PHONY: plugins-sync
+plugins-sync: ## Clone or update local swe-marketplace plugin source (.plugins/swe-marketplace)
+	@MARKETPLACE_DIR=".plugins/swe-marketplace"; \
+	MARKETPLACE_URL="https://github.com/andisab/swe-marketplace.git"; \
+	mkdir -p .plugins; \
+	if [ -d "$$MARKETPLACE_DIR/.git" ]; then \
+		echo "$(CYAN)Updating $$MARKETPLACE_DIR$(NC)"; \
+		git -C "$$MARKETPLACE_DIR" fetch --quiet origin || { echo "$(RED)fetch failed$(NC)"; exit 1; }; \
+		if [ -n "$(SWE_MARKETPLACE_REF)" ]; then \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed$(NC)"; exit 1; }; \
+		else \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet main && git -C "$$MARKETPLACE_DIR" pull --ff-only --quiet; \
+		fi; \
+	else \
+		echo "$(CYAN)Cloning $$MARKETPLACE_URL → $$MARKETPLACE_DIR$(NC)"; \
+		git clone --quiet "$$MARKETPLACE_URL" "$$MARKETPLACE_DIR" || { echo "$(RED)clone failed$(NC)"; exit 1; }; \
+		if [ -n "$(SWE_MARKETPLACE_REF)" ]; then \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed$(NC)"; exit 1; }; \
+		fi; \
+	fi; \
+	SHA=$$(git -C "$$MARKETPLACE_DIR" rev-parse --short HEAD); \
+	echo "$(GREEN)✓ swe-marketplace cloned at $$MARKETPLACE_DIR (HEAD=$$SHA)$(NC)"; \
+	python3 scripts/synthesize_marketplace_manifests.py "$$MARKETPLACE_DIR" || { echo "$(RED)manifest synthesis failed$(NC)"; exit 1; }
+
 .PHONY: check-env
 check-env: ## Validate environment
 	@command -v docker >/dev/null 2>&1 || { echo "$(RED)Docker not installed$(NC)"; exit 1; }

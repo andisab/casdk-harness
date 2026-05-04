@@ -142,6 +142,17 @@ class HarnessConfig(BaseSettings):
         default=False,
         description="Disable workarounds and rely only on SDK plugin loading",
     )
+    swe_marketplace_path: str | None = Field(
+        default=None,
+        description=(
+            "Path to a local clone of swe-marketplace. If unset, auto-detect "
+            "/opt/plugins/swe-marketplace (container) or <repo>/.plugins/swe-marketplace (local)."
+        ),
+    )
+    swe_marketplace_ref: str | None = Field(
+        default=None,
+        description="Git ref (tag, SHA, branch) for swe-marketplace clone in Docker build. Empty = HEAD.",
+    )
 
     # Autonomous Mode Configuration
     autonomous_delay_seconds: int = Field(
@@ -312,6 +323,29 @@ class HarnessConfig(BaseSettings):
         """Get Redis connection URL."""
         auth = f":{self.redis_password}@" if self.redis_password else ""
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/0"
+
+    @property
+    def swe_marketplace_resolved_path(self) -> Path | None:
+        """Resolve the swe-marketplace plugin source path.
+
+        Order of precedence:
+          1. ``swe_marketplace_path`` env override (if set and exists).
+          2. ``/opt/plugins/swe-marketplace`` (container default, set by Dockerfile).
+          3. ``<repo-root>/.plugins/swe-marketplace`` (local dev, populated by ``make plugins-sync``).
+          4. ``None`` — no marketplace available; harness falls back to in-tree plugins only.
+        """
+        candidates: list[Path] = []
+        if self.swe_marketplace_path:
+            candidates.append(Path(self.swe_marketplace_path).expanduser())
+        candidates.append(Path("/opt/plugins/swe-marketplace"))
+        # Walk up from this file: src/harness/config.py → src/harness → src → repo
+        repo_root = Path(__file__).resolve().parents[2]
+        candidates.append(repo_root / ".plugins" / "swe-marketplace")
+
+        for candidate in candidates:
+            if candidate.exists() and (candidate / ".claude-plugin" / "marketplace.json").exists():
+                return candidate
+        return None
 
     @property
     def enabled_plugins_list(self) -> list[str] | None:

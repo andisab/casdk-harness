@@ -119,3 +119,6 @@ dmypy.json
 
 # uv
 uv.lock
+
+# swe-marketplace local clone (populated by `make plugins-sync`)
+.plugins/
