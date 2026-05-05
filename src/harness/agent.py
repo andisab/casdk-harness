@@ -892,16 +892,11 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                             )
                     first_message = False
 
-                # Track token usage from ResultMessage
+                # Accumulate token usage for in-process budget tracking. Prometheus
+                # token + cost counters are emitted by the Claude Code CLI directly
+                # (claude_code_token_usage_tokens_total, claude_code_cost_usage_USD_total).
                 if isinstance(message, ResultMessage) and hasattr(message, "usage"):
                     usage = message.usage
-                    self.metrics.record_tokens(
-                        agent=self.agent_name,
-                        model=self.config.claude_model,
-                        usage=usage,
-                    )
-
-                    # Accumulate total usage for budget tracking
                     input_tokens = usage.get("input_tokens", 0)
                     output_tokens = usage.get("output_tokens", 0)
                     self.tokens_used += input_tokens + output_tokens

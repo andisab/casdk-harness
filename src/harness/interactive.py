@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 import structlog
-from claude_agent_sdk import AssistantMessage, ResultMessage, ToolUseBlock
+from claude_agent_sdk import AssistantMessage, ToolUseBlock
 from rich.console import Console
 from rich.status import Status
 
@@ -171,22 +171,10 @@ async def run_interactive_session() -> None:
                                     agent_name, "thinking"
                                 )
 
-                    elif isinstance(message, ResultMessage):
-                        # Update cache metrics from result
-                        if hasattr(message, "usage"):
-                            usage = message.usage
-                            cache_read = usage.get("cache_read_input_tokens", 0)
-                            cache_creation = usage.get("cache_creation_input_tokens", 0)
-                            total_input = usage.get("input_tokens", 0)
-
-                            if total_input > 0:
-                                session.metrics.update_cache_metrics(
-                                    agent_name,
-                                    runtime.model,
-                                    cache_read,
-                                    cache_creation,
-                                    total_input,
-                                )
+                    # Cache token metrics (cacheRead / cacheCreation) are now
+                    # emitted by the Claude Code CLI as
+                    # claude_code_token_usage_tokens_total{type="cacheRead"|"cacheCreation"}.
+                    # Cache hit ratio is computed from those on the dashboard.
 
                     # Parse and display message with Rich formatting
                     parse_and_print_message(
