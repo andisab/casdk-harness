@@ -6,8 +6,7 @@ Tests command registration, lookup, and execution with argument substitution.
 import pytest
 import structlog
 
-from harness.commands import CommandRegistry
-from harness.plugin_manager import PluginCommand
+from harness.commands import CommandRegistry, PluginCommand
 
 logger = structlog.get_logger(__name__)
 

@@ -138,10 +138,6 @@ class HarnessConfig(BaseSettings):
         default=None,
         description="Comma-separated list of enabled plugin names (None = all discovered)",
     )
-    plugin_use_sdk_only: bool = Field(
-        default=False,
-        description="Disable workarounds and rely only on SDK plugin loading",
-    )
     swe_marketplace_path: str | None = Field(
         default=None,
         description=(

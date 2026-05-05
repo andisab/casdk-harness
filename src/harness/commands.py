@@ -8,14 +8,24 @@ using the /command syntax.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 import structlog
 
-if TYPE_CHECKING:
-    from harness.plugin_manager import PluginCommand
-
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class PluginCommand:
+    """A slash command defined by a plugin."""
+
+    name: str  # Full namespaced name: plugin:command
+    description: str
+    content: str  # Markdown body with placeholders ($1, $ARGUMENTS)
+    plugin_name: str
+    allowed_tools: list[str] | None = None
+    argument_hint: str | None = None
+    model: str | None = None
 
 
 class CommandRegistry:

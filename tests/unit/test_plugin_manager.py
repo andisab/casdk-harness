@@ -1,312 +1,163 @@
-"""Unit tests for PluginManager.
+"""Unit tests for PluginManager (slim post-3a API).
 
-Tests plugin discovery, loading, and resource access for all 5 resource types.
+Tests plugin discovery, agent namespacing, and skill metadata collection.
+Manual command/hook discovery has been dropped (SDK auto-loads them via
+``plugins=`` — see REFACTOR.md Part 2 Phase 2). Those types now live in
+``harness.commands`` and ``harness.hooks`` and have their own test files.
 """
 
-import json
+from __future__ import annotations
+
 from pathlib import Path
 
-import pytest
-import structlog
+from harness.plugin_manager import DiscoveredPlugin, PluginManager
 
-from harness.plugin_manager import (
-    HookEvent,
-    Plugin,
-    PluginCommand,
-    PluginHook,
-    PluginManager,
-    PluginManifest,
-)
-
-logger = structlog.get_logger(__name__)
-
-# Path to our plugins
 PLUGIN_BASE = Path(__file__).parent.parent.parent / "src" / "harness" / "plugins"
 
 
-class TestPluginManifest:
-    """Test PluginManifest dataclass."""
+class TestDiscovery:
+    """Plugin discovery walks plugin_dirs and applies the enabled filter."""
 
-    def test_from_dict_minimal(self):
-        """Test creating manifest from minimal dict."""
-        data = {"name": "test-plugin"}
-        manifest = PluginManifest.from_dict(data, "fallback-name")
-
-        assert manifest.name == "test-plugin"
-        assert manifest.version == "1.0.0"
-        assert manifest.description == ""
-        assert manifest.agents == []
-        assert manifest.skills == []
-        assert manifest.commands == []
-        assert manifest.hooks == []
-        assert manifest.mcp is None
-
-    def test_from_dict_full(self):
-        """Test creating manifest from full dict."""
-        data = {
-            "name": "full-plugin",
-            "version": "2.0.0",
-            "description": "A test plugin",
-            "agents": ["./agents"],
-            "skills": ["./skills"],
-            "commands": ["./commands"],
-            "hooks": ["./hooks"],
-            "mcp": "./.mcp.json",
-        }
-        manifest = PluginManifest.from_dict(data, "fallback")
-
-        assert manifest.name == "full-plugin"
-        assert manifest.version == "2.0.0"
-        assert manifest.description == "A test plugin"
-        assert manifest.agents == ["./agents"]
-        assert manifest.skills == ["./skills"]
-        assert manifest.commands == ["./commands"]
-        assert manifest.hooks == ["./hooks"]
-        assert manifest.mcp == "./.mcp.json"
-
-    def test_from_dict_fallback_name(self):
-        """Test that fallback name is used when name not in dict."""
-        data = {"version": "1.0.0"}
-        manifest = PluginManifest.from_dict(data, "fallback-name")
-
-        assert manifest.name == "fallback-name"
-
-
-class TestPluginDiscovery:
-    """Test plugin discovery functionality."""
-
-    def test_discover_existing_plugins(self):
-        """Test discovering plugins in the plugins directory."""
+    def test_discover_finds_in_tree_plugins(self):
         manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        plugins = manager.discover_plugins()
+        manager.discover()
 
-        # Post-Step 2b: only cgf-agents stays in-tree. research-team and
-        # context-engineering are consumed from swe-marketplace.
-        assert len(plugins) >= 1
-
-        plugin_names = [p.name for p in plugins]
-        assert "cgf-agents" in plugin_names
+        names = manager.get_plugin_names()
+        # Post-Step 2b: only cgf-agents stays in-tree.
+        assert "cgf-agents" in names
 
     def test_discover_with_enabled_filter(self):
-        """Test filtering plugins by enabled list."""
         manager = PluginManager(
             plugin_dirs=[PLUGIN_BASE],
             enabled_plugins=["cgf-agents"],
         )
-        plugins = manager.discover_plugins()
+        manager.discover()
 
-        assert len(plugins) == 1
-        assert plugins[0].name == "cgf-agents"
+        assert manager.get_plugin_names() == ["cgf-agents"]
 
-    def test_discover_nonexistent_directory(self):
-        """Test handling of nonexistent plugin directory."""
-        manager = PluginManager(plugin_dirs=[Path("/nonexistent/path")])
-        plugins = manager.discover_plugins()
-
-        assert len(plugins) == 0
-
-
-class TestPluginLoading:
-    """Test plugin loading functionality."""
-
-    def test_load_plugin_agents(self):
-        """Test loading plugin agents."""
-        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        manager.discover_plugins()
-        manager.load_all_plugins()
-
-        agents = manager.get_all_agents()
-
-        # Post-Step 2b: cgf-agents is the only in-tree plugin and it has 9 agents.
-        assert len(agents) >= 1
-
-        # Verify namespacing
-        for key in agents:
-            assert ":" in key, f"Agent key should be namespaced: {key}"
-
-        # Verify expected in-tree agents exist (cgf-agents has 9; we sample one)
-        expected = [
-            "cgf-agents:cgf-orchestrator",
-        ]
-        for exp in expected:
-            assert exp in agents, f"Missing expected agent: {exp}"
-
-    def test_load_plugin_skills(self):
-        """Test loading plugin skills."""
-        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        manager.discover_plugins()
-        manager.load_all_plugins()
-
-        skills = manager.get_all_skills()
-
-        # Should have loaded some skills
-        assert len(skills) >= 1
-
-        # Verify each skill has required metadata
-        for key, skill in skills.items():
-            assert ":" in key, f"Skill key should be namespaced: {key}"
-            assert "source" in skill
-            assert skill["source"] == "plugin"
-            assert "plugin" in skill
-            assert "path" in skill
-
-    def test_load_plugin_commands(self):
-        """Test loading plugin commands."""
-        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        manager.discover_plugins()
-        manager.load_all_plugins()
-
-        commands = manager.get_all_commands()
-
-        # Should have loaded the cgf-agents command (research-team's command
-        # moved to swe-marketplace in Step 2a).
-        assert len(commands) >= 1
-
-        # Verify command structure
-        for key, cmd in commands.items():
-            assert ":" in key, f"Command key should be namespaced: {key}"
-            assert isinstance(cmd, PluginCommand)
-            assert cmd.name == key
-            assert cmd.plugin_name in key
-
-    def test_load_plugin_hooks(self):
-        """Test loading plugin hooks.
-
-        Post-Step 2b: in-tree plugins no longer ship hooks (research-team and
-        context-engineering hooks moved to swe-marketplace, cgf-agents has
-        none). The structural assertion is preserved for any future in-tree
-        hook addition; the count assertion is dropped.
-        """
-        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        manager.discover_plugins()
-        manager.load_all_plugins()
-
-        hooks = manager.get_all_hooks()
-
-        # Verify hook structure (no minimum count — list may be empty)
-        for hook in hooks:
-            assert isinstance(hook, PluginHook)
-            assert hook.event in HookEvent
-            assert hook.command
-            assert hook.plugin_name
-
-    def test_use_sdk_only_disables_agent_loading(self):
-        """Test that use_sdk_only=True disables agent workaround."""
+    def test_discover_with_unmatched_filter(self):
         manager = PluginManager(
             plugin_dirs=[PLUGIN_BASE],
-            use_sdk_only=True,
+            enabled_plugins=["does-not-exist"],
         )
-        manager.discover_plugins()
-        manager.load_all_plugins()
+        manager.discover()
 
-        # With SDK-only mode, agents should be empty (SDK handles them)
+        assert manager.get_plugin_names() == []
+
+    def test_discover_nonexistent_directory(self):
+        manager = PluginManager(plugin_dirs=[Path("/nonexistent/path")])
+        manager.discover()
+
+        assert manager.get_plugin_names() == []
+
+    def test_discover_skips_non_plugin_directories(self, tmp_path):
+        # A directory without `.claude-plugin/plugin.json` should be ignored.
+        (tmp_path / "not-a-plugin").mkdir()
+        manager = PluginManager(plugin_dirs=[tmp_path])
+        manager.discover()
+
+        assert manager.get_plugin_names() == []
+
+    def test_discover_first_dir_wins_on_duplicate_name(self, tmp_path):
+        # Two plugin dirs both contain a plugin named "alpha"; the first one
+        # listed should win (matches in-tree-shadows-marketplace policy).
+        a = tmp_path / "first"
+        b = tmp_path / "second"
+        for root, agent_desc in [(a, "from-first"), (b, "from-second")]:
+            plugin = root / "alpha"
+            (plugin / ".claude-plugin").mkdir(parents=True)
+            (plugin / ".claude-plugin" / "plugin.json").write_text(
+                '{"name": "alpha"}'
+            )
+            agents = plugin / "agents"
+            agents.mkdir()
+            (agents / "demo.md").write_text(
+                f"---\nname: demo\ndescription: {agent_desc}\nmodel: sonnet\n---\nbody"
+            )
+
+        manager = PluginManager(plugin_dirs=[a, b])
+        manager.discover()
+
+        assert manager.get_plugin_names() == ["alpha"]
         agents = manager.get_all_agents()
-        assert len(agents) == 0
+        assert agents["alpha:demo"].description == "from-first"
 
 
-class TestPluginManagerAccessors:
-    """Test PluginManager accessor methods."""
+class TestAgentRegistration:
+    """Plugin agents are loaded and registered under plugin:agent keys."""
 
-    @pytest.fixture
-    def loaded_manager(self):
-        """Create a fully loaded plugin manager."""
+    def test_agents_namespaced_by_plugin(self):
         manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-        manager.discover_plugins()
-        manager.load_all_plugins()
-        return manager
+        manager.discover()
 
-    def test_get_plugins(self, loaded_manager):
-        """Test get_plugins returns discovered plugins."""
-        plugins = loaded_manager.get_plugins()
-
-        assert isinstance(plugins, dict)
-        # Post-Step 2b: only cgf-agents stays in-tree.
-        assert "cgf-agents" in plugins
-
-    def test_get_plugin_paths(self, loaded_manager):
-        """Test get_plugin_paths returns SDK-compatible format."""
-        paths = loaded_manager.get_plugin_paths()
-
-        assert isinstance(paths, list)
-        assert len(paths) >= 1
-
-        for path in paths:
-            assert "type" in path
-            assert path["type"] == "local"
-            assert "path" in path
-            assert Path(path["path"]).exists()
-
-    def test_get_mcp_configs(self, loaded_manager):
-        """Test get_mcp_configs returns plugin MCP paths."""
-        configs = loaded_manager.get_mcp_configs()
-
-        # May be empty if plugins don't have MCP configs
-        assert isinstance(configs, list)
-
-    def test_get_summary(self, loaded_manager):
-        """Test get_summary returns complete overview."""
-        summary = loaded_manager.get_summary()
-
-        assert "plugins" in summary
-        assert "agents" in summary
-        assert "skills" in summary
-        assert "commands" in summary
-        assert "hooks_count" in summary
-        assert "mcp_configs_count" in summary
-        assert "use_sdk_only" in summary
-
-        assert isinstance(summary["plugins"], list)
-        assert isinstance(summary["agents"], list)
-        assert isinstance(summary["skills"], list)
-        assert isinstance(summary["commands"], list)
-
-
-class TestPluginIntegration:
-    """Test plugin system integration."""
-
-    def test_full_plugin_lifecycle(self):
-        """Test complete plugin discovery -> load -> access cycle."""
-        # Create manager
-        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
-
-        # Discover
-        plugins = manager.discover_plugins()
-        assert len(plugins) >= 1
-
-        # Load
-        manager.load_all_plugins()
-
-        # Access all resource types
         agents = manager.get_all_agents()
-        skills = manager.get_all_skills()
-        commands = manager.get_all_commands()
-        hooks = manager.get_all_hooks()
-        mcp_configs = manager.get_mcp_configs()
+        assert agents, "expected at least one in-tree plugin agent"
 
-        # Verify totals
+        for key in agents:
+            assert ":" in key, f"agent key should be namespaced: {key}"
+
+    def test_known_in_tree_agent_present(self):
+        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
+        manager.discover()
+
+        # cgf-agents ships cgf-orchestrator; sample one as a smoke check.
+        assert "cgf-agents:cgf-orchestrator" in manager.get_all_agents()
+
+    def test_invalid_agent_frontmatter_is_skipped(self, tmp_path):
+        plugin = tmp_path / "broken"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "broken"}')
+        (plugin / "agents").mkdir()
+        # Missing leading "---" — parser should skip with a warning, not raise.
+        (plugin / "agents" / "bad.md").write_text("no frontmatter here\n")
+        # Valid sibling — should still be picked up.
+        (plugin / "agents" / "good.md").write_text(
+            "---\nname: good\ndescription: ok\nmodel: sonnet\n---\nbody"
+        )
+
+        manager = PluginManager(plugin_dirs=[tmp_path])
+        manager.discover()
+
+        agents = manager.get_all_agents()
+        assert "broken:good" in agents
+        assert "broken:bad" not in agents
+
+
+class TestSkillMetadata:
+    """Plugin skills are surfaced as metadata for the CLI banner."""
+
+    def test_skills_namespaced_with_source_metadata(self):
+        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
+        manager.discover()
+
+        for key, info in manager.get_all_skills().items():
+            assert ":" in key
+            assert info["source"] == "plugin"
+            assert "plugin" in info
+            assert "path" in info
+
+
+class TestAccessors:
+    """Public accessor methods return defensive copies and stable shapes."""
+
+    def test_get_plugin_paths_format(self):
+        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
+        manager.discover()
+
+        for entry in manager.get_plugin_paths():
+            assert entry["type"] == "local"
+            assert Path(entry["path"]).exists()
+
+    def test_get_summary_keys(self):
+        manager = PluginManager(plugin_dirs=[PLUGIN_BASE])
+        manager.discover()
+
         summary = manager.get_summary()
-        assert summary["hooks_count"] == len(hooks)
-        assert summary["mcp_configs_count"] == len(mcp_configs)
+        assert set(summary.keys()) == {"plugins", "agents", "skills"}
+        for value in summary.values():
+            assert isinstance(value, list)
 
-        logger.info(
-            "Plugin lifecycle test complete",
-            agents=len(agents),
-            skills=len(skills),
-            commands=len(commands),
-            hooks=len(hooks),
-        )
-
-    def test_plugin_error_handling(self):
-        """Test that plugin loading handles errors gracefully."""
-        # Even with mixed valid/invalid paths, should work
-        manager = PluginManager(
-            plugin_dirs=[
-                Path("/nonexistent"),
-                PLUGIN_BASE,
-            ]
-        )
-
-        plugins = manager.discover_plugins()
-
-        # Should still find valid plugins
-        assert len(plugins) >= 1
+    def test_discovered_plugin_dataclass(self):
+        plugin = DiscoveredPlugin(name="x", path=Path("/tmp/x"))
+        assert plugin.name == "x"
+        assert plugin.path == Path("/tmp/x")

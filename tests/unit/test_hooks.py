@@ -8,8 +8,7 @@ import asyncio
 import pytest
 import structlog
 
-from harness.hooks import HookRegistry
-from harness.plugin_manager import HookEvent, PluginHook
+from harness.hooks import HookEvent, HookRegistry, PluginHook
 
 logger = structlog.get_logger(__name__)
 

@@ -10,14 +10,34 @@ import asyncio
 import fnmatch
 import os
 import subprocess
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 import structlog
 
-if TYPE_CHECKING:
-    from harness.plugin_manager import HookEvent, PluginHook
-
 logger = structlog.get_logger(__name__)
+
+
+class HookEvent(Enum):
+    """Supported hook event types matching SDK-canonical names."""
+
+    SESSION_START = "SessionStart"
+    PRE_TOOL_USE = "PreToolUse"
+    POST_TOOL_USE = "PostToolUse"
+    NOTIFICATION = "Notification"
+    STOP = "Stop"
+
+
+@dataclass
+class PluginHook:
+    """A hook event handler defined by a plugin or harness."""
+
+    event: HookEvent
+    command: str
+    plugin_name: str
+    matcher: dict[str, Any] | None = None
+    timeout: int = 30
 
 
 class HookRegistry:

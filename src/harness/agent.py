@@ -31,7 +31,8 @@ from harness.hooks import HookRegistry
 from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
-from harness.plugin_manager import HookEvent, PluginManager
+from harness.hooks import HookEvent
+from harness.plugin_manager import PluginManager
 from harness.security import sanitize_sensitive_data
 
 # In-process MCP servers (Method A)
@@ -186,21 +187,17 @@ class AgentSession:
         self.plugin_manager = PluginManager(
             plugin_dirs=plugin_dirs,
             enabled_plugins=self.config.enabled_plugins_list,
-            use_sdk_only=self.config.plugin_use_sdk_only,
         )
-        self.plugin_manager.discover_plugins()
-        self.plugin_manager.load_all_plugins()
+        self.plugin_manager.discover()
 
-        # Get plugin paths for SDK (still passed for future SDK support)
+        # Get plugin paths for SDK to auto-load commands/hooks/skills/MCP
         self.plugins = self.plugin_manager.get_plugin_paths()
         self.plugin_base = plugin_base  # Keep for backward compatibility
 
-        # Initialize registries for commands and hooks
+        # Registries are kept for harness-internal hooks and any non-plugin
+        # command callers. Plugin commands/hooks are SDK-auto-loaded now.
         self.command_registry = CommandRegistry()
-        self.command_registry.register_all(self.plugin_manager.get_all_commands())
-
         self.hook_registry = HookRegistry(cwd=str(self.config.workspace_dir))
-        self.hook_registry.register_all(self.plugin_manager.get_all_hooks())
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
@@ -597,17 +594,11 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         return system_prompt
 
     def _load_plugin_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Load agent definitions from plugins via PluginManager.
+        """Return plugin agents in plugin-name:agent-name namespaced form.
 
-        TEMPORARY WORKAROUND (2025-12): SDK passes --plugin-dir to CLI but
-        plugin agents don't appear in the agents list. PluginManager manually
-        loads them so they're available via the Task tool.
-
-        Set PLUGIN_USE_SDK_ONLY=true to disable this workaround when SDK is fixed.
-
-        Returns:
-            Dict mapping namespaced agent names to SDK AgentDefinition objects
-            Keys use format: plugin-name:agent-name
+        SDK plugin loading via ``plugins=`` does not yet expose plugin agents
+        to the Task tool with namespacing, so PluginManager loads them
+        explicitly. Tracked upstream — see Block 3 Step 5.
         """
         plugin_agents = self.plugin_manager.get_all_agents()
 
@@ -689,6 +680,7 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             agents=sdk_agents,  # Register custom subagents for Task tool
             setting_sources=["project"],  # REFACTOR.md Part 2 Phase 1: hermetic container; project-only auto-discovers .claude/agents/, .claude/skills/, .claude/commands/
             plugins=self.plugins,  # Phase 1B: Enable plugin loading
+            skills="all",  # SDK 0.1.72+: must be "all" or list[str]; None hides skills from the Skill tool
             system_prompt=system_prompt,
             env=cli_env,  # Pass environment to CLI subprocess
             stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr

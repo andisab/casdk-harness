@@ -39,6 +39,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_URL=redis://redis:6379
+      - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
+      - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
+      - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude-plugin:/app/.claude-plugin:ro
@@ -96,6 +99,9 @@ services:
       - CLAUDE_MAX_TURNS=50
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
+      - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
+      - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
+      - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -146,6 +152,9 @@ services:
       - CLAUDE_MAX_TURNS=100
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PYTHONUNBUFFERED=1
+      - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
+      - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
+      - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:

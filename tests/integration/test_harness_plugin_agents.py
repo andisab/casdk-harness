@@ -60,7 +60,6 @@ class TestHarnessPluginAgentLoading:
             config.shutdown_timeout = 10
             config.redis_url = "redis://localhost:6379"
             config.enabled_plugins_list = None  # All plugins enabled
-            config.plugin_use_sdk_only = False  # Use workarounds
             mock_config.return_value = config
 
             # Create runtime config mock
@@ -235,7 +234,6 @@ class TestHarnessPluginAgentLoading:
             config.shutdown_timeout = 10
             config.redis_url = "redis://localhost:6379"
             config.enabled_plugins_list = None  # All plugins enabled
-            config.plugin_use_sdk_only = False  # Use workarounds
             mock_config.return_value = config
 
             with patch("harness.agent.RuntimeConfig") as mock_runtime:

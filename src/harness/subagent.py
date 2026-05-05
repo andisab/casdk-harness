@@ -115,10 +115,8 @@ def _load_plugin_agents() -> dict[str, Any]:
         _plugin_manager = PluginManager(
             plugin_dirs=[plugin_base],
             enabled_plugins=None,
-            use_sdk_only=False,
         )
-        _plugin_manager.discover_plugins()
-        _plugin_manager.load_all_plugins()
+        _plugin_manager.discover()
         _plugin_agents_cache = _plugin_manager.get_all_agents()
 
         logger.debug(
