@@ -17,9 +17,9 @@ needs from plugins:
    through the SDK Skill tool independently.
 
 Manual command/hook discovery has been dropped — those are SDK responsibilities
-now (REFACTOR.md Part 2 Phase 2). ``HookEvent`` / ``PluginHook`` /
-``PluginCommand`` types live in their consumer modules (``harness.hooks`` and
-``harness.commands``); they are no longer plugin_manager's concern.
+now (REFACTOR.md Part 2 Phase 2). ``HookEvent`` / ``PluginHook`` types live in
+``harness.hooks`` (their consumer); plugin commands are SDK-auto-loaded
+directly, no harness type or registry remains.
 """
 
 from __future__ import annotations

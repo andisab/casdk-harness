@@ -24,7 +24,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.checkpoint import CheckpointManager
-from harness.commands import CommandRegistry
 from harness.config import HarnessConfig, RuntimeConfig, get_config
 from harness.health import HealthServer
 from harness.hooks import HookRegistry
@@ -194,9 +193,8 @@ class AgentSession:
         self.plugins = self.plugin_manager.get_plugin_paths()
         self.plugin_base = plugin_base  # Keep for backward compatibility
 
-        # Registries are kept for harness-internal hooks and any non-plugin
-        # command callers. Plugin commands/hooks are SDK-auto-loaded now.
-        self.command_registry = CommandRegistry()
+        # Hook registry is kept for harness-internal hooks. Plugin hooks
+        # and slash commands are SDK-auto-loaded via ``plugins=`` now.
         self.hook_registry = HookRegistry(cwd=str(self.config.workspace_dir))
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
@@ -764,7 +762,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             agent=self.agent_name,
             mcp_servers=len(self.mcp_servers),
             skills=len(self.discovered_skills),
-            commands=len(self.command_registry) if self.command_registry else 0,
             hooks=len(self.hook_registry) if self.hook_registry else 0,
             checkpoint_interval=f"{self.checkpoint_manager.interval}s",
             health_port=8080,
