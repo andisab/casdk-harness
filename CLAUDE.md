@@ -55,6 +55,7 @@ Technical reference for developers working on this repository and for Claude's o
 ### Known Limitations
 - Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
 - AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
+- **Sub-agent `HOME` mismatch (surfaced 2026-05-05).** When a sub-agent's Bash tool expands `~` in a path, it sometimes resolves to `/root` even though the runtime user is `claude` (uid 996, `$HOME=/home/claude`). The Write tool that follows then fails with `EACCES`. Symptom: research-team:research-specialist's "save notes to `~/Documents/ClaudeResearch/...`" pattern needs a fallback retry with `/home/claude/...`. Likely a CLI-subprocess env-passthrough gap. Workaround: skill prompts that use tilde paths usually retry with the literal path. Real fix candidates: (a) explicitly set `HOME=/home/claude` in `_build_sdk_options()` env; (b) update marketplace skills that author paths to use absolute forms; (c) ensure Dockerfile aligns HOME for all tool subprocesses. Track for Block 4 prep.
 
 ### TODOs
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
