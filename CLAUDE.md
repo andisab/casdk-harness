@@ -12,19 +12,18 @@ Technical reference for developers working on this repository and for Claude's o
 ### Working Features
 - Interactive mode with Rich CLI (`interactive.py`)
 - Autonomous mode with Tech Lead + Main agent (`autonomous.py`)
-- Docker orchestration with Prometheus + Grafana monitoring
+- Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager) — see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md)
 - Checkpoint & recovery system with hourly auto-save
 - 5 MCP servers (3 in-process + 2 subprocess)
 - CLI tools: git, gh, glab
-- Plugin system with agents, skills, commands, and hooks
-- **30 total agents** (17 harness + 13 plugin) via direct invocation
-- **11 plugin skills** (9 context-engineering + 1 cgf-agents + 1 research-team)
-- **CGF Optimization Framework** (1,585 passing tests):
-  - Phase 0: Infrastructure (tracer, store, adapters, rewards)
-  - Phase 1: Single-agent optimization (test cases, runners, agentic optimizer, CLI)
-  - Phase 2: Section-based optimization (agentic, coherence)
-  - Stage 1: Protocol layer, resource architect agent, DESIGN phase
-  - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
+- Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
+- Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
+- 14 harness agents (in `.claude/agents/`) + plugin agents reachable via `Task(subagent_type="plugin:agent")` or `harness.subagent.call_agent()` for standalone Python invocation
+- **CGF Optimization Framework** (1,534 unit tests passing as of 2026-05-05):
+  - Stage 1: Protocol layer, resource architect agent, DESIGN phase — **shipped**
+  - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds — **shipped**
+  - Stage 3: Eval Harness — **not started**, draft spec in `docs/CGF-EVAL-FRAMEWORK.md`
+  - Stage 4: Integration & hardening — not started, depends on Stage 3
 
 ### Completed Recently
 - **Block 4 Part 3 — Observability (2026-05-05)** — Five phases, four commits, ~1,300 LoC of new infra (~440 LoC of deprecated harness metrics + tests dropped):
@@ -94,18 +93,16 @@ casdk-harness/
 │   │   ├── autonomous.py           # Autonomous mode orchestration
 │   │   ├── checkpoint.py           # Checkpoint manager with auto-save
 │   │   ├── cli.py                  # Rich CLI formatting
-│   │   ├── commands.py             # Slash command registry
 │   │   ├── config.py               # Pydantic configuration
-│   │   ├── subagent.py             # Standalone agent invocation utility (REFACTOR Part 2 Phase 3)
-│   │   ├── agent_progress.py       # Terminal progress UX (extracted Phase 3 Step 4)
-│   │   ├── hooks.py                # Lifecycle hook registry
+│   │   ├── subagent.py             # Standalone agent invocation utility (Block 2 rename of direct_agent.py)
+│   │   ├── agent_progress.py       # Terminal progress UX (extracted Block 2 Phase 3)
 │   │   ├── interactive.py          # Interactive conversation loop
-│   │   ├── monitoring.py           # Prometheus metrics collector
-│   │   ├── plugin_manager.py       # Plugin discovery and loading
+│   │   ├── monitoring.py           # Prometheus metrics (harness_*, cgf_* namespaces)
+│   │   ├── plugin_manager.py       # Plugin discovery + namespacing (Block 3 collapse: 637 → 182 LoC)
 │   │   ├── progress.py             # Task list and session tracking
-│   │   └── agents/definitions.py   # Loads from .claude/agents/ (REFACTOR Part 2 Phase 1)
+│   │   └── agents/definitions.py   # Loads from .claude/agents/ (Block 2 Phase 1 move)
 │   │   ├── prompts/                # 5 prompt files (3 container + 2 autonomous)
-│   │   ├── plugins/                # 3 plugins (cgf-agents, context-engineering, research-team)
+│   │   ├── plugins/                # In-tree plugins: cgf-agents only (research-team + context-engineering moved to swe-marketplace, Block 3 Step 2)
 │   │   ├── skills/                 # 6 base skills
 │   │   ├── optimization/           # CGF optimization framework
 │   │   │   ├── cli/                # section_optimize.py (section-based optimization CLI)
@@ -298,25 +295,31 @@ python -m harness.subagent --agent python-expert --prompt "..." --verbose
 
 #### Plugin System
 
+Post-Block-3, plugin loading is SDK-driven. `PluginManager` walks the
+filesystem (`src/harness/plugins/` + `/opt/plugins/swe-marketplace/plugins/`)
+and hands each plugin's `.claude-plugin/plugin.json` path to the SDK via
+`ClaudeAgentOptions(plugins=[...])`. The SDK loads everything (agents, skills,
+commands, hooks) natively. Harness-side `CommandRegistry` and `HookRegistry`
+were deleted in Block 3 Steps 3b/3c — no longer exist.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      AgentSession                            │
 │                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │PluginManager │  │CommandRegistry│  │ HookRegistry │      │
-│  │              │  │              │  │              │      │
-│  │ discover()   │  │ register()   │  │ register()   │      │
-│  │ load_all()   │  │ execute()    │  │ trigger()    │      │
-│  └──────┬───────┘  └──────────────┘  └──────────────┘      │
+│  ┌──────────────┐                                           │
+│  │PluginManager │  → builds list of SdkPluginConfig         │
+│  │ discover()   │     entries, hands them to SDK via        │
+│  │ get_plugins()│     ClaudeAgentOptions(plugins=[...])     │
+│  └──────┬───────┘                                           │
 │         │                                                    │
 │         ▼                                                    │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │                    Plugin                              │  │
 │  │  .claude-plugin/plugin.json                           │  │
-│  │  ├── agents/      → SDKAgentDefinition               │  │
-│  │  ├── skills/      → Skill metadata                   │  │
-│  │  ├── commands/    → PluginCommand                    │  │
-│  │  └── hooks/       → PluginHook                       │  │
+│  │  ├── agents/      → SDK auto-loads as SDKAgentDefinition  │
+│  │  ├── skills/      → SDK auto-loads as Skill metadata │  │
+│  │  ├── commands/    → SDK auto-loads as slash commands │  │
+│  │  └── hooks/       → SDK auto-loads via hooks/hooks.json │
 │  └──────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -325,31 +328,29 @@ python -m harness.subagent --agent python-expert --prompt "..." --verbose
 
 | Type | Count | Invocation | Status |
 |------|-------|------------|--------|
-| Harness Agents | 14 | `harness.subagent.call_agent()` | Working |
-| Plugin Agents | 13 | `harness.subagent.call_agent()` | Working |
-| Base Skills | 6 | `Skill(skill="...")` | Working |
-| Plugin Skills | 7 | `Skill(skill="plugin:name")` | Working |
-| Commands | 2 | CommandRegistry | Working |
-| Hooks | 2 | HookRegistry | Working |
+| Harness Agents | 14 | `Task(subagent_type=...)` (in-session) or `harness.subagent.call_agent()` (standalone) | Working |
+| Plugin Agents | varies | `Task(subagent_type="plugin:agent")` (preferred) or `harness.subagent.call_agent("plugin:agent")` | Working |
+| Skills | varies | `Skill(skill="plugin:name")` — requires `ClaudeAgentOptions(skills="all")` | Working |
 
-**Plugins** (3 total):
+Plugin commands and hooks load via SDK-native auto-discovery from each plugin's `commands/` and `hooks/` directories — no harness-side registry. The previous `CommandRegistry` and `HookRegistry` (`commands.py`, `hooks.py`) were deleted in Block 3 Steps 3b/3c (verified dead, zero callers).
 
-- **cgf-agents** (`src/harness/plugins/cgf-agents/`): 1 skill (cgf-optimize), 1 command (cgf: create, optimize, status). Dependencies: context-engineering, research-team. Orchestrates multi-agent optimization workflows.
-- **context-engineering** (`src/harness/plugins/context-engineering/`): 8 skills (agent-definition-creation, skill-creation, plugin-development, command-creation, hook-configuration, resource-optimization, mcp-tool-creation, mcp-server-creation). Hook configuration for lifecycle events. MCP tool/server templates (Python + TypeScript).
-- **research-team** (`src/harness/plugins/research-team/`): 1 skill (joplin-research), 1 command (research).
+**Plugin sources** (post Block 3 Step 2):
 
-**Namespacing**: All plugin resources use `plugin-name:resource-name` format (e.g., `context-engineering:skill-creation`, `cgf-agents:cgf`).
+- **In-tree:** `src/harness/plugins/cgf-agents/` only — harness-specific CGF orchestration. Other in-tree plugins (`research-team`, `context-engineering`) were deleted; their content lives in swe-marketplace and is consumed from there.
+- **swe-marketplace clone:** `/opt/plugins/swe-marketplace` (cloned at Docker build time from `https://github.com/andisab/swe-marketplace`). Pin via `SWE_MARKETPLACE_REF` build arg; auto-detect via `SWE_MARKETPLACE_PATH` env var. Local dev uses `make plugins-sync` to clone to `.plugins/swe-marketplace`.
 
-**Commands** (`commands.py`): CommandRegistry with argument substitution ($1, $2, $ARGUMENTS, $FILE), namespaced and short-name lookups.
+**Namespacing:** All plugin resources use `plugin-name:resource-name` (e.g., `cgf-agents:cgf-orchestrator`, `research-team:research-specialist`). Slash commands also need the namespaced form: `/cgf-agents:cgf` not `/cgf` (bare form silent-no-ops; SDK-wide consistent behavior).
 
-**Hooks** (`hooks.py`): HookRegistry with async/sync execution modes, pattern matching (tool_name, file_path globs), timeout handling.
+**Hook events** (SDK-canonical names, used by plugins under `hooks/hooks.json`):
 
-| Event | Triggered | Purpose |
-|-------|-----------|---------|
-| PostSessionStart | After start() | Post-init actions |
-| STOP | Before shutdown() | Cleanup actions |
-| PreToolUse | Before tool call | Tool filtering (defined, not triggered) |
-| PostToolUse | After tool call | Post-processing (defined, not triggered) |
+| Event | Purpose |
+|-------|---------|
+| `SessionStart` | Post-init actions |
+| `Stop` | Cleanup actions |
+| `PreToolUse` | Tool filtering / approval gates |
+| `PostToolUse` | Post-processing |
+| `UserPromptSubmit` | Prompt rewriting / observation |
+| `Notification` | UI hints |
 
 #### Container Agents
 
@@ -365,7 +366,7 @@ Container agents communicate via Redis Streams (`src/harness/messaging.py`).
 
 **Docker Profiles:**
 ```bash
-make up       # Default: main-agent (8080, metrics 9091), prometheus (9090), grafana (3000, admin/admin)
+make up       # Default: main-agent (8080, metrics 9091), prometheus (9090), grafana (3000, admin/${GRAFANA_PASSWORD:-changeme123}), otel-collector (4317/4318), alertmanager (9093), alertmanager-webhook (9099)
 make up-multi # Adds: agent-two (8081), agent-three (8082), redis (6379)
 ```
 
@@ -455,12 +456,26 @@ When running inside the harness container:
 
 #### Prometheus Metrics
 
-Exposed on port 9090 (`monitoring.py`):
-- `agent_requests_total{agent, status}` - Request counter
-- `agent_duration_seconds{agent}` - Request histogram
-- `api_tokens_used_total{model, type}` - Token counter
-- `api_cost_dollars_total{model}` - Cost counter
-- `interactive_tool_calls_total{agent, tool_name, status}` - Tool call counter
+Two metric sources reach Prometheus (see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) for the full picture):
+
+**Harness instruments** (port 9090, `harness_*` and `cgf_*` namespaces, scraped from each agent container):
+- `harness_agent_requests_total{agent, status}` — Request counter
+- `harness_agent_duration_seconds{agent}` — Request histogram
+- `harness_agent_active_sessions{agent}` — Gauge
+- `harness_session_prompts_total{agent}` — User prompt counter
+- `harness_session_responses_total{agent}` — Agent response counter
+- `harness_session_duration_seconds{agent}` — Session duration histogram
+- `harness_tool_calls_total{agent, tool_name, status}` — Tool call counter
+- `harness_message_types_total{agent, message_type}` — Message type counter
+- `harness_checkpoint_size_bytes`, `harness_workspace_files_total`, `harness_memory_usage_bytes{component}` — System gauges
+- `cgf_*` — Tracer + adapter + reward instruments
+
+**SDK-emitted via OTel Collector** (port 8889 on collector, `claude_code_*` namespace):
+- `claude_code_session_count_total{start_type, ...}` — CLI session starts
+- `claude_code_token_usage_tokens_total{model, query_source, type}` — Tokens (segmented by main/auxiliary/subagent and input/output/cacheRead/cacheCreation)
+- `claude_code_cost_usage_USD_total{model, query_source}` — Cost in USD
+
+The harness deliberately drops counters the SDK emits natively (`api_tokens_used_total`, `api_cost_dollars_total`, `interactive_cache_*` were removed in Block 4 Phase 3B).
 
 ### Configuration Reference
 
@@ -765,18 +780,13 @@ uv run python -m harness.optimization.cli.section_optimize \
 
 ### Test Coverage
 
-| Phase | Component | Tests |
-|-------|-----------|-------|
-| 0.1 | OpenTelemetry Tracing | 97 |
-| 0.2 | Optimization Store | 89 |
-| 0.3 | Resource Registry | 65 |
-| 0.4 | Adapter Framework | 87 |
-| 0.5 | Reward System | 50 |
-| 0.6 | Integration | 16 |
-| 1.0 | Single-Agent Optimization | 1,182 |
-| S1 | Protocol Layer + Design Phase | 120 |
-| S2 | MCP Resource Generation | 47 |
-| **Total** | | **1,785** |
+**Current total: 1534 unit tests passing as of 2026-05-05** (1548 baseline post-Block-3, minus 14 dropped in Block 4 Phase 3B for SDK-duplicate metrics).
+
+CGF-specific test areas (in `tests/unit/test_optimization/`):
+- OpenTelemetry tracing, optimization store, resource registry, adapter framework, reward system
+- Single-agent optimization (test cases, runners, agentic optimizer, validators)
+- Stage 1: protocol layer (signals, resource types, quality, state, workspace) + DESIGN phase + multi-resource orchestrator
+- Stage 2: MCP tool/server resource parsing + generation
 
 ### Orchestration Workflows
 
