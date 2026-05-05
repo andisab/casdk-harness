@@ -4,7 +4,7 @@ Verifies the post-5a contract:
 
 - ``ClaudeAgentOptions.agents`` is no longer populated by the harness
   for plugin agents. The SDK exposes them to the Task tool directly via
-  ``plugins=`` (verified 2026-05-05 in ``DERISK-RESULTS.md``).
+  ``plugins=`` (verified 2026-05-05; see docs/REFACTOR.md "SDK upstream investigation").
 - ``ClaudeAgentOptions.plugins`` contains paths for all enabled plugins.
 - ``PluginManager.get_all_agents()`` still parses plugin agents for the
   consumers that aren't the SDK Task tool — namely

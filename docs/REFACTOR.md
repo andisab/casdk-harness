@@ -279,8 +279,8 @@ In both branches: `~~Verify `skills=` parameter exists~~` is **closed** as of Ph
 > manifest was schema-corrected, plugin agents became reachable via
 > Task with both bare and `plugin:agent` namespacing. The
 > programmatic registration workaround was removed in the
-> Block 3 Step 5a follow-up (commit TBD). See
-> [`docs/sdk-upstream-issues/DERISK-RESULTS.md`](sdk-upstream-issues/DERISK-RESULTS.md)
+> Block 3 Step 5a follow-up (commit `d8571b2`). See the
+> "SDK upstream investigation" section near the end of this file
 > for the full bisection.
 
 Landed across 6 commits (`a4315d7` through Step 6 commit). Final state: `direct_agent.py` (780 LoC) → `subagent.py` (~530 LoC) + new `agent_progress.py` (196 LoC). Harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Plugin agents are exposed to Task by the SDK directly via `plugins=[]` (post-erratum verification 2026-05-05). The original Phase 3 finding kept the programmatic registration workaround as a precaution; it was later confirmed redundant and removed.
@@ -435,6 +435,69 @@ The harness has feature-complete observability:
 
 **Upstream to swe-marketplace:**
 - `mcp-tool-creation/SKILL.md` and `mcp-server-creation/SKILL.md` content (after compatibility diff with `mcp-tool-dev`/`mcp-server-dev`)
+
+---
+
+## SDK upstream investigation (closed 2026-05-05)
+
+Block 3 Step 5 originally planned to file two issues against
+[`anthropics/claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python).
+Both were drafted, both went through bisection passes, both turned out
+to be invalid. **Neither was filed.** The investigation is preserved
+here in case the same suspicions resurface later.
+
+### Issue candidate 5a — Plugin agents not exposed to Task tool with `plugin:agent` namespacing
+
+**Original suspicion:** Phase 3's verification experiment (commit `f704536`, 2026-05-04) showed that with the harness's `agents=sdk_agents` programmatic registration disabled, `Task(subagent_type="cgf-agents:cgf-orchestrator")` returned `"Agent type 'cgf-agents:cgf-orchestrator' not found."` This was attributed to an SDK gap and the workaround was kept.
+
+**Bisection (2026-05-05) — `scripts/derisk_plugin_loading.py`:**
+
+| # | Test | Workaround | Probe | Result |
+|---|---|---|---|---|
+| 1a | namespaced plugin agent | OFF | `Task("cgf-agents:cgf-orchestrator")` | **PASS** (22 s, 2 turns, real response) |
+| 1b | bare plugin agent | OFF | `Task("cgf-orchestrator")` | **PASS** (24 s, 3 turns) |
+| 1c | marketplace plugin agent | OFF | `Task("research-team:research-specialist")` | **PASS** (25 s, 3 turns) |
+| 3a | install-flow plugin agent | OFF, no `plugins=` | `Task("research-team:research-specialist")` | PASS via `setting_sources=["user"]` |
+
+All four passed end-to-end with real `Agent` tool calls confirmed in the message stream (`TaskStartedMessage` followed by successful `task_notification`, no `Unknown agent`).
+
+**Actual cause:** The original Phase 3 experiment ran against marketplace plugins whose `.claude-plugin/plugin.json` files were CLI-invalid (synthesizer bug, fixed in Block 3 Step 3a, commit `0e8b31e`). The CLI silently dropped them, which manifested as "plugin agents not addressable." With valid manifests, the SDK exposes plugin agents to Task tool dispatch via `plugins=` natively, with both bare and `plugin:agent` namespacing.
+
+**Outcome:** The harness's `_register_agents` / `agents=sdk_agents` workaround was redundant. Removed in the 5a follow-up commit (`d8571b2`). `plugin_manager.py` retained `_register_agents`/`get_all_agents` for `harness.subagent` (which uses standalone `query()` with the agent's prompt as `system_prompt`, not Task dispatch) and the SystemMessage banner display.
+
+### Issue candidate 5b — Plugin slash commands silently no-op in `ClaudeSDKClient` streaming sessions
+
+**Original suspicion:** Sending `/cgf status` from a streaming session returned `ResultMessage(success, num_turns=0, total_cost_usd=0)` after ~14 ms with no model invocation. Tested across `plugins=[]` and the canonical `claude plugin install` flow, across `setting_sources=["project"]` and `["user", "project"]`, against multiple plugins — same silent no-op. Drafted as a real SDK bug.
+
+**Bisection follow-up (2026-05-05) — `scripts/derisk_slash_init.py`:**
+
+After [Anthropic's Slash Commands in the SDK doc](https://code.claude.com/docs/en/agent-sdk/slash-commands) was read carefully, we noticed it specifies `SystemMessage(subtype="init").data["slash_commands"]` as the authoritative list of available commands. We had never inspected that field.
+
+| # | Test | Result |
+|---|---|---|
+| 7 | Inspect `slash_commands` list | **29 entries**: `cgf-agents:cgf`, `cgf-agents:cgf-optimize`, `research-team:coordinator`, `research-team:joplin-research`, 7 `context-engineering:*`, plus built-ins (`/clear`, `/compact`, `/context`, etc.) |
+| 8a | Bare `/cgf status` (no entry in list) | SILENT_NOOP (14 ms, 0 turns) |
+| 8b | **Namespaced** `/cgf-agents:cgf status` | **PASS** — 4 turns, 17.9 s, real CGF status report |
+| 8c | `/totally-fake-command-that-does-not-exist` | SILENT_NOOP (14 ms, 0 turns) |
+
+**Actual cause:** Plugin slash commands are registered correctly under their namespaced form (`/plugin-name:command-name`), exactly like plugin agents and skills. The original test was sending the bare form `/cgf` which has no registered match. Silent no-op on unknown slash commands is consistent SDK behavior across the board (built-in commands, plugin commands, and entirely fake commands all silent-no-op identically), presumably to forward-compat with future TUI-only commands.
+
+**Slash commands aren't deprecated.** They were merged with Skills on 2026-01-24; both live in `~/.claude/skills/` (or in plugins' `commands/`/`skills/` directories), both use markdown + YAML frontmatter, both invoked with `/`. Skills additionally support autonomous invocation by Claude. Legacy `.claude/commands/` still works.
+
+**Outcome:** No SDK issue to file. Logged the namespacing requirement in CLAUDE.md "Known Limitations" so future sessions don't relitigate. The harness's SystemMessage banner already shows commands in the namespaced form.
+
+### Probe scripts retained for future regressions
+
+- `scripts/derisk_plugin_loading.py` — exercises plugin-agent dispatch via Task without the workaround, configurable per-test via env vars (`DERISK_AGENTS_WORKAROUND`, `DERISK_SETTING_SOURCES`, `DERISK_USE_PLUGINS`, `DERISK_PROBE`).
+- `scripts/derisk_slash_init.py` — opens a session and dumps the `system/init.slash_commands` list.
+
+Re-run either after any SDK bump to confirm both behaviors still hold. If a future SDK release changes plugin loading semantics, the probes will surface it before the harness's runtime smoke does.
+
+### Lessons
+
+1. **A failing test against an undocumented field is not a bug** — read the SDK's official docs for the field's actual contract before drafting an issue. Both findings were resolved by reading the docs we hadn't read yet (the `claude plugin validate` schema for 5a; the `system/init.slash_commands` list for 5b).
+2. **De-risk before filing.** The `PRE-FILING-DERISK.md` exercise (now removed; preserved in git history) caught the misframing on both issues before they shipped to Anthropic. Worth the 25 minutes.
+3. **The synthesizer bug class is sneaky.** Producing manifests that the CLI silently drops (rather than erroring on) caused both Phase 3's wrong "plugin agents need programmatic registration" finding AND the original mass-skill-failure during Block 3 Step 3a smoke testing. Always validate generated artifacts (`claude plugin validate <plugin>`) at every layer, not just at the SDK boundary.
 
 ---
 
