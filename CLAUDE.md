@@ -60,7 +60,6 @@ Technical reference for developers working on this repository and for Claude's o
 
 ### TODOs
 
-**Block 4 prep (small fixes; not gating Block 4):**
 - [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
   bug (full description above in Known Limitations). Three fix
   candidates queued; (a) one-line env passthrough in
@@ -75,10 +74,8 @@ Technical reference for developers working on this repository and for Claude's o
   and `harness/interactive.py` (and possibly `harness/agent_progress.py`)
   to identify which renderer is responsible for each artifact, then
   decide what to clean up vs. accept as cost-of-doing-business.
-
-**Block 4 (Part 3 Observability) — see `~/.claude/plans/block4-part3-observability.md`:**
-- [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
-- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
+- [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D (Block 4)
+- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D (Block 4)
 
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
