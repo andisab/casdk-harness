@@ -138,21 +138,23 @@ plugins-sync: ## Clone or update local swe-marketplace plugin source (.plugins/s
 	mkdir -p .plugins; \
 	if [ -d "$$MARKETPLACE_DIR/.git" ]; then \
 		echo "$(CYAN)Updating $$MARKETPLACE_DIR$(NC)"; \
-		git -C "$$MARKETPLACE_DIR" fetch --quiet origin || { echo "$(RED)fetch failed$(NC)"; exit 1; }; \
+		git -C "$$MARKETPLACE_DIR" fetch --quiet origin || { echo "$(RED)fetch failed (network or auth issue?)$(NC)"; exit 1; }; \
 		if [ -n "$(SWE_MARKETPLACE_REF)" ]; then \
-			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed$(NC)"; exit 1; }; \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed (unknown ref?)$(NC)"; exit 1; }; \
 		else \
-			git -C "$$MARKETPLACE_DIR" checkout --quiet main && git -C "$$MARKETPLACE_DIR" pull --ff-only --quiet; \
+			DEFAULT_BRANCH=$$(git -C "$$MARKETPLACE_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@' || echo main); \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet "$$DEFAULT_BRANCH" || { echo "$(RED)checkout '$$DEFAULT_BRANCH' failed (detached HEAD with local changes?)$(NC)"; exit 1; }; \
+			git -C "$$MARKETPLACE_DIR" pull --ff-only --quiet || { echo "$(RED)fast-forward pull failed (local divergence on '$$DEFAULT_BRANCH'?)$(NC)"; exit 1; }; \
 		fi; \
 	else \
 		echo "$(CYAN)Cloning $$MARKETPLACE_URL → $$MARKETPLACE_DIR$(NC)"; \
-		git clone --quiet "$$MARKETPLACE_URL" "$$MARKETPLACE_DIR" || { echo "$(RED)clone failed$(NC)"; exit 1; }; \
+		git clone --quiet "$$MARKETPLACE_URL" "$$MARKETPLACE_DIR" || { echo "$(RED)clone failed (network or auth issue?)$(NC)"; exit 1; }; \
 		if [ -n "$(SWE_MARKETPLACE_REF)" ]; then \
-			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed$(NC)"; exit 1; }; \
+			git -C "$$MARKETPLACE_DIR" checkout --quiet "$(SWE_MARKETPLACE_REF)" || { echo "$(RED)checkout '$(SWE_MARKETPLACE_REF)' failed (unknown ref?)$(NC)"; exit 1; }; \
 		fi; \
 	fi; \
 	SHA=$$(git -C "$$MARKETPLACE_DIR" rev-parse --short HEAD); \
-	echo "$(GREEN)✓ swe-marketplace cloned at $$MARKETPLACE_DIR (HEAD=$$SHA)$(NC)"; \
+	echo "$(GREEN)✓ swe-marketplace synced at $$MARKETPLACE_DIR (HEAD=$$SHA)$(NC)"; \
 	python3 scripts/synthesize_marketplace_manifests.py "$$MARKETPLACE_DIR" || { echo "$(RED)manifest synthesis failed$(NC)"; exit 1; }
 
 .PHONY: check-env

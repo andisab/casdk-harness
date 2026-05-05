@@ -252,50 +252,91 @@ See [docs/examples/MULTI_RESOURCE_SPEC.example.md](./docs/examples/MULTI_RESOURC
 
 ## Working with Plugins
 
-The harness includes a plugin system for extending capabilities with custom agents, skills, commands, and hooks.
+The harness loads Claude Code plugins from two sources at runtime:
 
-### Available Plugins
+1. **In-tree** at `src/harness/plugins/` — only `cgf-agents` lives here today (the harness's own optimization pipeline).
+2. **swe-marketplace** — a separate plugin marketplace at <https://github.com/andisab/swe-marketplace>. Cloned into `/opt/plugins/swe-marketplace` inside the container at build time and into `.plugins/swe-marketplace` locally on demand.
 
-| Plugin | Agents | Skills | Purpose |
-|--------|--------|--------|---------|
-| cgf-agents | 8 | 1 | Prompt optimization pipeline (single + multi-resource) |
-| context-engineering | 1 | 5 | Agent/skill creation toolkit |
-| research-team | 3 | 1 | Research and documentation |
+### Available plugins
 
-### Using Skills
+| Plugin | Source | Agents | Skills | Purpose |
+|---|---|---|---|---|
+| `cgf-agents` | in-tree | 9 | 1 | CGF (Claude Gradient Feedback) prompt optimization pipeline |
+| `context-engineering` | swe-marketplace | 1 | 8 | Agent / skill / command / plugin / MCP-tool authoring toolkit |
+| `research-team` | swe-marketplace | 2 | 2 | Multi-agent research with Joplin integration |
 
-Load domain expertise during conversation:
+The boot log lists exactly what loaded:
 
-```bash
-# In interactive mode, ask Claude to use a skill
-"Load the debugging skill and help me troubleshoot this error"
-"Use the python-development skill to review this FastAPI code"
+```
+[info] Plugin discovery complete plugins=['research-team', 'context-engineering', 'cgf-agents'] agents=12 skills=10
 ```
 
-Skills provide specialized knowledge and workflows for specific domains.
+### Choosing which plugins load
 
-### Plugin Structure
+Set `ENABLED_PLUGINS` in `.env` to a comma-separated list of plugin names. Empty (or unset) loads every discovered plugin from both sources, which can be noisy — pin to what you actually use:
 
-Plugins live in `src/harness/plugins/` with this structure:
+```dotenv
+ENABLED_PLUGINS=research-team,context-engineering,cgf-agents
+```
+
+### swe-marketplace clone management
+
+Local development:
+
+```bash
+make plugins-sync          # Clone or fast-forward .plugins/swe-marketplace
+make plugins-sync SWE_MARKETPLACE_REF=v1.2.0   # Pin to a tag/SHA/branch
+```
+
+The Makefile target is idempotent: it clones on first run, and on subsequent runs fetches and either fast-forwards the default branch (no pin) or checks out the requested ref. After update it regenerates per-plugin `.claude-plugin/plugin.json` shims via `scripts/synthesize_marketplace_manifests.py`.
+
+The container image clones marketplace at build time (`make build`), pinned to whatever `SWE_MARKETPLACE_REF` was set during the build. This means **the image's marketplace version is independent of your local `.plugins/` clone** — rebuild after changing the pin to get it into the container.
+
+### Pin policy
+
+For reproducible deployments, set `SWE_MARKETPLACE_REF` to a tag or commit SHA in `.env`. Empty (`SWE_MARKETPLACE_REF=`) tracks the marketplace's default branch HEAD — convenient for development, but reruns can pick up unrelated upstream changes.
+
+```dotenv
+SWE_MARKETPLACE_REF=          # HEAD of default branch (default for dev)
+SWE_MARKETPLACE_REF=v1.2.0    # Tag pin (recommended for prod / CI)
+SWE_MARKETPLACE_REF=ef72814   # SHA pin (most precise)
+```
+
+Bump deliberately: when the upstream marketplace ships a release you want, edit the `.env` value and rerun `make plugins-sync && make build`.
+
+### Path resolution
+
+`SWE_MARKETPLACE_PATH` overrides the auto-detect. Auto-detection order (when unset):
+
+1. `/opt/plugins/swe-marketplace` — container default, populated at build time
+2. `<repo-root>/.plugins/swe-marketplace` — local dev, populated by `make plugins-sync`
+
+If neither exists, marketplace plugins are skipped (a log line says so). The harness still loads any in-tree plugins.
+
+### Plugin layout
+
+Each plugin follows the Claude Code convention:
 
 ```
 my-plugin/
 ├── .claude-plugin/
-│   └── plugin.json      # Manifest declaring resources
-├── agents/              # Agent definitions (*.md)
-├── skills/              # Skills (skill-name/SKILL.md)
-├── commands/            # Slash commands (*.md)
-└── hooks/               # Lifecycle hooks (*.json)
+│   └── plugin.json     # Manifest. Validate with: claude plugin validate <plugin-dir>
+├── agents/*.md         # Sub-agent definitions (one per file)
+├── skills/<name>/SKILL.md   # Skills (one subdirectory per skill)
+├── commands/*.md       # Slash commands
+└── hooks/hooks.json    # Lifecycle hooks
 ```
 
-### Creating Custom Resources
+`plugin.json` schema is enforced by `claude plugin validate`. Common gotchas:
+- `agents` is an array of file paths (`./agents/foo.md`), not a parent directory.
+- `skills` is an array of subdirectory paths (`./skills/foo`).
+- `repository` is a string URL; `dependencies` is an array; `author` is an object `{name, email?, url?}`.
 
-See existing plugins for examples:
-- **Skills**: `src/harness/skills/debugging/SKILL.md`
-- **Agents**: `.claude/agents/dev-python-expert.md`
-- **Commands**: `src/harness/plugins/context-engineering/commands/create-agent.md`
+### Authoring new plugins
 
-For detailed plugin development, use the `context-engineering:plugin-development` skill.
+The canonical home for shared plugins is **swe-marketplace** — open a PR there. The harness's own pipeline-specific plugin (`cgf-agents`) stays in-tree because it's tightly coupled to harness internals.
+
+To scaffold from inside an interactive session, ask the `context-engineering:plugin-dev` skill or `context-engineering:context-engineer` agent.
 
 ---
 
