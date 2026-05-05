@@ -2,9 +2,8 @@
 
 Tests plugin discovery, agent namespacing, and skill metadata collection.
 Manual command/hook discovery has been dropped (SDK auto-loads them via
-``plugins=`` — see REFACTOR.md Part 2 Phase 2). Hook types now live in
-``harness.hooks`` and have their own test file; plugin commands are
-SDK-auto-loaded so no harness-side test is needed.
+``plugins=`` — see REFACTOR.md Part 2 Phase 2). Plugin commands and hooks
+are SDK-auto-loaded so no harness-side type or test is needed.
 """
 
 from __future__ import annotations

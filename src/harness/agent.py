@@ -26,11 +26,9 @@ from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, RuntimeConfig, get_config
 from harness.health import HealthServer
-from harness.hooks import HookRegistry
 from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
-from harness.hooks import HookEvent
 from harness.plugin_manager import PluginManager
 from harness.security import sanitize_sensitive_data
 
@@ -192,10 +190,6 @@ class AgentSession:
         # Get plugin paths for SDK to auto-load commands/hooks/skills/MCP
         self.plugins = self.plugin_manager.get_plugin_paths()
         self.plugin_base = plugin_base  # Keep for backward compatibility
-
-        # Hook registry is kept for harness-internal hooks. Plugin hooks
-        # and slash commands are SDK-auto-loaded via ``plugins=`` now.
-        self.hook_registry = HookRegistry(cwd=str(self.config.workspace_dir))
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
@@ -738,31 +732,12 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         self.health_server = HealthServer(session=self)
         await self.health_server.start()
 
-        # Trigger SessionStart hooks (REFACTOR.md Part 2 Phase 2: SDK-canonical event name)
-        if self.hook_registry:
-            try:
-                hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.SESSION_START,
-                    context={"agent_name": self.agent_name},
-                )
-                if hook_results:
-                    logger.debug(
-                        "SessionStart hooks triggered",
-                        count=len(hook_results),
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Failed to trigger SessionStart hooks",
-                    error=str(e),
-                )
-
         # Consolidated startup log (debug level to avoid spinner interference)
         logger.debug(
             "Agent session ready",
             agent=self.agent_name,
             mcp_servers=len(self.mcp_servers),
             skills=len(self.discovered_skills),
-            hooks=len(self.hook_registry) if self.hook_registry else 0,
             checkpoint_interval=f"{self.checkpoint_manager.interval}s",
             health_port=8080,
             metrics_port=9090,
@@ -1519,24 +1494,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
     async def shutdown(self) -> None:
         """Gracefully shutdown the agent session and cleanup SDK client."""
         logger.info("Shutting down agent session", agent=self.agent_name)
-
-        # Trigger Stop hooks before shutdown
-        if self.hook_registry:
-            try:
-                hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.STOP,
-                    context={"agent_name": self.agent_name},
-                )
-                if hook_results:
-                    logger.debug(
-                        "Stop hooks triggered",
-                        count=len(hook_results),
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Failed to trigger Stop hooks",
-                    error=str(e),
-                )
 
         # Cancel all background tasks first
         if self._background_tasks:
