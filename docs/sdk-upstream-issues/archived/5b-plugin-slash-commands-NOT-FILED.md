@@ -1,4 +1,31 @@
-# SDK Upstream Issue 5b — Plugin slash commands silently no-op in `ClaudeSDKClient` streaming sessions
+# SDK Upstream Issue 5b — NOT FILED (follow-up bisection invalidated original finding)
+
+> **Status: ARCHIVED, NOT FILED.** A second bisection on 2026-05-05
+> (after the de-risk pass and after we read Anthropic's official
+> [Slash Commands in the SDK](https://code.claude.com/docs/en/agent-sdk/slash-commands)
+> doc) showed that plugin slash commands ARE registered correctly by
+> the SDK and ARE invokable — just under their **namespaced form**:
+> ``/cgf-agents:cgf``, ``/research-team:coordinator``, etc. The
+> harness's smoke test was sending the bare form ``/cgf``, which has
+> no entry in the registered ``slash_commands`` list and silently
+> no-ops because the SDK swallows unknown slash commands as no-ops
+> (verified consistent with ``/totally-fake-command``).
+>
+> **Slash commands aren't deprecated.** They were merged with Skills
+> on 24 Jan 2026 — every skill auto-registers as a slash command
+> too. Legacy ``.claude/commands/`` still works.
+>
+> **Implication for the harness:** the SystemMessage banner already
+> shows the namespaced form (``cgf-agents:cgf-optimize``); we just
+> need to teach users to invoke with ``/`` prefix. CLAUDE.md
+> "Known Limitations" gained a slash-command namespacing entry.
+>
+> See [`docs/sdk-upstream-issues/DERISK-RESULTS.md`](../DERISK-RESULTS.md)
+> for the full bisection (Test 7+8) and the official SDK doc reference.
+
+---
+
+# Original draft (do not file)
 
 **Target repo:** https://github.com/anthropics/claude-agent-sdk-python
 

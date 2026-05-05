@@ -28,6 +28,36 @@ For all SILENT_NOOP results, the session terminated in <20 ms with
 `num_turns=0`, `total_cost_usd=0`, `is_error=False`, and zero
 input/output tokens.
 
+## Follow-up bisection — slash commands (added 2026-05-05)
+
+After the initial de-risk above pointed at slash commands as the
+remaining real issue, a closer reading of Anthropic's official
+[Slash Commands in the SDK](https://code.claude.com/docs/en/agent-sdk/slash-commands)
+doc showed that the SDK exposes the available command list via the
+`SystemMessage(subtype="init").data["slash_commands"]` field. We never
+inspected that.
+
+A throwaway probe (``scripts/derisk_slash_init.py``) opened a session,
+captured the slash_commands list, and matched against the commands we
+expected:
+
+| # | Probe | Result |
+|---|---|---|
+| 7 | Inspect `slash_commands` list | **29 entries** — includes `cgf-agents:cgf`, `cgf-agents:cgf-optimize`, `research-team:coordinator`, `research-team:joplin-research`, `context-engineering:agent-dev` (and 5 sibling skills), built-in `/clear`/`/compact`/`/context`/etc. |
+| 8a | Bare `/cgf status` (no entry in list) | SILENT_NOOP (14 ms, 0 turns) |
+| 8b | **Namespaced** `/cgf-agents:cgf status` (matches list entry) | **PASS** — 4 turns, 17.9 s, real CGF status report |
+| 8c | `/totally-fake-command-that-does-not-exist` | SILENT_NOOP (14 ms, 0 turns) |
+
+**Conclusion: 5b is also INVALID.** Plugin slash commands are
+registered correctly under their namespaced form. The original test
+was sending a non-existent command name. Silent-no-op on unknown
+slash commands is consistent SDK behavior across the board (built-in
+or plugin), presumably for forward compat with TUI-only commands.
+
+This means **both 5a and 5b are not-file**. The full set of SDK
+gaps the de-risk supposedly identified turned out to be harness
+configuration / user-input issues, not SDK bugs.
+
 ## Conclusions
 
 ### Issue 5a — Plugin agents not exposed to Task tool — **INVALID, DO NOT FILE**
@@ -54,7 +84,16 @@ workaround until now.
 ~50-LoC further simplification, eligible as a Block 3.5 cleanup
 commit before Block 4 starts. Tests 1a/1b/1c are the proof.
 
-### Issue 5b — Plugin slash commands silently no-op — **REAL, FILE WITH CONFIDENCE**
+### Issue 5b — ~~Plugin slash commands silently no-op — REAL, FILE WITH CONFIDENCE~~ → **INVALIDATED 2026-05-05**
+
+> **Superseded by the follow-up bisection above.** Plugin slash
+> commands ARE invokable; they require the namespaced form
+> ``/plugin-name:command-name``. The original test was sending the
+> bare form ``/cgf`` which has no registered match. Silent no-op on
+> unknown commands is consistent SDK behavior. Original analysis
+> below preserved for archaeology.
+
+**~~REAL, FILE WITH CONFIDENCE~~**
 
 Slash commands sent through `ClaudeSDKClient.query()` return after
 8-17 ms with zero turns, zero tokens, no error, and no model
