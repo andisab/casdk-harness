@@ -33,19 +33,20 @@ scrape_configs:
           agent: 'agent-three'
           role: 'validator'
 
-  # PostgreSQL
-  - job_name: 'postgres'
+  # OpenTelemetry Collector — SDK-emitted metrics (claude_sdk_* namespace).
+  # The collector receives OTLP from agents and exposes them on :8889 for scrape.
+  - job_name: 'otel-collector-sdk'
     static_configs:
-      - targets: ['postgres:9187']
+      - targets: ['otel-collector:8889']
         labels:
-          service: 'database'
+          source: 'claude-sdk-harness'
 
-  # Redis
-  - job_name: 'redis'
+  # OpenTelemetry Collector self-metrics (collector internals + pipeline health).
+  - job_name: 'otel-collector-self'
     static_configs:
-      - targets: ['redis:9121']
+      - targets: ['otel-collector:8888']
         labels:
-          service: 'cache'
+          source: 'claude-sdk-harness-collector'
 
   # Prometheus self-monitoring
   - job_name: 'prometheus'

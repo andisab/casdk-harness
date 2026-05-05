@@ -126,6 +126,19 @@ RUN chown -R claude:claude /app /opt/plugins
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1
 
+# OpenTelemetry defaults (overridable via docker-compose / env). When the
+# bundled otel-collector service is unreachable (e.g., direct `docker run`),
+# the SDK silently no-ops; flip CLAUDE_CODE_ENABLE_TELEMETRY=0 to fully disable.
+ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+ENV OTEL_METRIC_EXPORT_INTERVAL=10000
+ENV OTEL_METRICS_INCLUDE_SESSION_ID=false
+ENV OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+ENV OTEL_SERVICE_NAME=casdk-harness
+
 USER claude
 
 # Signal handling
@@ -200,6 +213,18 @@ RUN mkdir -p /workspace /memory /logs && \
 
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1
+
+# OpenTelemetry defaults (overridable via docker-compose / env). See
+# development stage above for behavior notes.
+ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+ENV OTEL_METRIC_EXPORT_INTERVAL=10000
+ENV OTEL_METRICS_INCLUDE_SESSION_ID=false
+ENV OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+ENV OTEL_SERVICE_NAME=casdk-harness
 
 USER claude
 

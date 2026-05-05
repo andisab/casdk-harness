@@ -42,6 +42,24 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # OTel vars use literal values (NOT shell interpolation) so harness telemetry
+      # always routes to the bundled collector regardless of what the host shell
+      # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
+      # edit these values directly or use a docker-compose override file.
+      # Both OTEL_METRICS_EXPORTER and OTEL_LOGS_EXPORTER are REQUIRED — without
+      # them the Claude Code CLI silently emits nothing.
+      - CLAUDE_CODE_ENABLE_TELEMETRY=1
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
+      # Cardinality control — drop high-cardinality labels that would create a
+      # unique series per session/user. Keep model + query_source + type
+      # which are the useful aggregation dimensions.
+      - OTEL_METRICS_INCLUDE_SESSION_ID=false
+      - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+      - OTEL_SERVICE_NAME=casdk-harness-main
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude-plugin:/app/.claude-plugin:ro
@@ -102,6 +120,24 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # OTel vars use literal values (NOT shell interpolation) so harness telemetry
+      # always routes to the bundled collector regardless of what the host shell
+      # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
+      # edit these values directly or use a docker-compose override file.
+      # Both OTEL_METRICS_EXPORTER and OTEL_LOGS_EXPORTER are REQUIRED — without
+      # them the Claude Code CLI silently emits nothing.
+      - CLAUDE_CODE_ENABLE_TELEMETRY=1
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
+      # Cardinality control — drop high-cardinality labels that would create a
+      # unique series per session/user. Keep model + query_source + type
+      # which are the useful aggregation dimensions.
+      - OTEL_METRICS_INCLUDE_SESSION_ID=false
+      - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+      - OTEL_SERVICE_NAME=casdk-harness-agent-two
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -155,6 +191,24 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # OTel vars use literal values (NOT shell interpolation) so harness telemetry
+      # always routes to the bundled collector regardless of what the host shell
+      # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
+      # edit these values directly or use a docker-compose override file.
+      # Both OTEL_METRICS_EXPORTER and OTEL_LOGS_EXPORTER are REQUIRED — without
+      # them the Claude Code CLI silently emits nothing.
+      - CLAUDE_CODE_ENABLE_TELEMETRY=1
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - OTEL_METRIC_EXPORT_INTERVAL=10000
+      # Cardinality control — drop high-cardinality labels that would create a
+      # unique series per session/user. Keep model + query_source + type
+      # which are the useful aggregation dimensions.
+      - OTEL_METRICS_INCLUDE_SESSION_ID=false
+      - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+      - OTEL_SERVICE_NAME=casdk-harness-agent-three
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -205,6 +259,35 @@ services:
       retries: 5
 
   # ===========================================================================
+  # OpenTelemetry Collector
+  # Bridges native OTLP signals from the Claude Agent SDK (gated by
+  # CLAUDE_CODE_ENABLE_TELEMETRY=1 in agent containers) into Prometheus.
+  # ===========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_VERSION:-0.119.0}
+    container_name: claude-otel-collector
+    hostname: otel-collector
+    command: ["--config=/etc/otel-collector/otel-collector.yml"]
+    volumes:
+      - ./config/monitoring/otel-collector.yml:/etc/otel-collector/otel-collector.yml:ro
+    ports:
+      # OTLP ingest exposed on host so non-containerized agents can send signals.
+      - "${OTEL_GRPC_PORT:-4317}:4317"   # OTLP gRPC receiver
+      - "${OTEL_HTTP_PORT:-4318}:4318"   # OTLP HTTP receiver
+      # 8888 (collector self-metrics) and 8889 (SDK metrics for prometheus) are
+      # NOT mapped to the host — they're scraped by prometheus over the docker
+      # network. Avoids port conflicts with common host services (Jupyter
+      # frequently uses 8888). Use `docker compose exec` or the prometheus UI
+      # at http://localhost:9090 to inspect metrics from the host.
+    restart: unless-stopped
+    networks:
+      - claude-network
+    # Note: otelcol-contrib is distroless — no shell, wget, or curl — so a
+    # standard docker healthcheck cannot probe the :13133 health_check endpoint.
+    # Liveness is observable via Prometheus' scrape of :8888 (otel-collector-self
+    # job in prometheus.yml) and the collector's startup logs.
+
+  # ===========================================================================
   # Prometheus Monitoring
   # ===========================================================================
   prometheus:
@@ -223,6 +306,9 @@ services:
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      otel-collector:
+        condition: service_started
     restart: unless-stopped
     networks:
       - claude-network
