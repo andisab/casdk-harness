@@ -1226,7 +1226,7 @@ Skill Directory Structure:
 - Use MCP content block format for claude_agent_sdk pattern
 - Include a test snippet or companion test file
 - Output path: tools/{name}.py
-- Reference skill: mcp-tool-creation"""
+- Reference skill: mcp-tool-dev"""
 
         elif resource_type == "mcp_server":
             # Determine language from spec
@@ -1248,7 +1248,7 @@ Skill Directory Structure:
 - Include unit tests for each tool handler
 - Include README with tool listing and client configuration
 - Output path: mcp-servers/{name}/
-- Reference skill: mcp-server-creation"""
+- Reference skill: mcp-server-dev"""
 
         return ""
 

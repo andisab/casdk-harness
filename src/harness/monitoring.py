@@ -104,102 +104,78 @@ def start_authenticated_http_server(port: int = 9090) -> WSGIServer | None:
         return None
 
 # Prometheus Metrics
+#
+# Naming convention: harness-specific metrics use the `harness_` prefix.
+# Token, cost, and cache metrics that the Claude Code CLI now emits natively
+# (claude_code_token_usage_tokens_total, claude_code_cost_usage_USD_total —
+# both segmented by model + query_source + type) have been removed in favor
+# of the SDK-emitted equivalents. CGF metrics keep their `cgf_` prefix.
 agent_requests_total = Counter(
-    "agent_requests_total",
-    "Total agent requests",
+    "harness_agent_requests_total",
+    "Total agent requests handled by the harness",
     ["agent", "status"],
 )
 
 agent_duration_seconds = Histogram(
-    "agent_duration_seconds",
+    "harness_agent_duration_seconds",
     "Agent execution time in seconds",
     ["agent"],
 )
 
 agent_active_sessions = Gauge(
-    "agent_active_sessions",
+    "harness_agent_active_sessions",
     "Number of active agent sessions",
     ["agent"],
 )
 
 checkpoint_size_bytes = Gauge(
-    "checkpoint_size_bytes",
+    "harness_checkpoint_size_bytes",
     "Size of checkpoint files in bytes",
 )
 
 workspace_files_total = Gauge(
-    "workspace_files_total",
+    "harness_workspace_files_total",
     "Total number of files in workspace",
 )
 
 memory_usage_bytes = Gauge(
-    "memory_usage_bytes",
+    "harness_memory_usage_bytes",
     "Memory usage in bytes",
     ["component"],
-)
-
-api_tokens_used = Counter(
-    "api_tokens_used_total",
-    "Total API tokens used",
-    ["model", "type"],
-)
-
-api_cost_dollars = Counter(
-    "api_cost_dollars_total",
-    "Total API cost in dollars",
-    ["model"],
 )
 
 # Interactive Session Metrics
 # Note: session_id removed from labels to prevent unbounded Prometheus cardinality
 # Per-session metrics are tracked in-memory via SessionMetrics class instead
 interactive_session_prompts_total = Counter(
-    "interactive_session_prompts_total",
+    "harness_session_prompts_total",
     "Total user prompts in interactive sessions",
     ["agent"],
 )
 
 interactive_session_responses_total = Counter(
-    "interactive_session_responses_total",
+    "harness_session_responses_total",
     "Total agent responses in interactive sessions",
     ["agent"],
 )
 
 interactive_session_duration_seconds = Histogram(
-    "interactive_session_duration_seconds",
+    "harness_session_duration_seconds",
     "Interactive session duration in seconds",
     ["agent"],
     buckets=[10, 30, 60, 120, 300, 600, 1800, 3600, 7200],  # Up to 2 hours
 )
 
 interactive_tool_calls_total = Counter(
-    "interactive_tool_calls_total",
+    "harness_tool_calls_total",
     "Total tool calls in interactive sessions",
     ["agent", "tool_name", "status"],
 )
 
 interactive_message_types_total = Counter(
-    "interactive_message_types_total",
+    "harness_message_types_total",
     "Count of message types in interactive sessions",
     ["agent", "message_type"],
-)
-
-interactive_cache_read_tokens = Counter(
-    "interactive_cache_read_tokens_total",
-    "Total cache read tokens in interactive sessions",
-    ["agent", "model"],
-)
-
-interactive_cache_creation_tokens = Counter(
-    "interactive_cache_creation_tokens_total",
-    "Total cache creation tokens in interactive sessions",
-    ["agent", "model"],
-)
-
-interactive_cache_hit_ratio = Gauge(
-    "interactive_cache_hit_ratio",
-    "Cache hit ratio for interactive sessions (read / total input)",
-    ["agent"],
 )
 
 # CGF (ContextGrad Framework) Metrics
@@ -391,29 +367,6 @@ class MetricsCollector:
         agent_active_sessions.labels(agent=agent).set(count)
 
     @staticmethod
-    def record_token_usage(model: str, token_type: str, count: int) -> None:
-        """
-        Record API token usage.
-
-        Args:
-            model: Model name
-            token_type: Type of tokens (input, output, cached)
-            count: Number of tokens used
-        """
-        api_tokens_used.labels(model=model, type=token_type).inc(count)
-
-    @staticmethod
-    def record_api_cost(model: str, cost: float) -> None:
-        """
-        Record API cost.
-
-        Args:
-            model: Model name
-            cost: Cost in dollars
-        """
-        api_cost_dollars.labels(model=model).inc(cost)
-
-    @staticmethod
     def set_memory_usage(component: str, bytes_used: int) -> None:
         """
         Set memory usage for a component.
@@ -423,71 +376,6 @@ class MetricsCollector:
             bytes_used: Memory usage in bytes
         """
         memory_usage_bytes.labels(component=component).set(bytes_used)
-
-    @staticmethod
-    def record_tokens(agent: str, model: str, usage: dict[str, Any]) -> None:
-        """
-        Record token usage and calculate API costs from usage dictionary.
-
-        Handles usage data from Claude Agent SDK and tracks both token counts
-        and associated costs based on model pricing.
-
-        Args:
-            agent: Agent name
-            model: Model name (e.g., 'claude-sonnet-4-5-20250929')
-            usage: Usage dictionary with token counts:
-                - input_tokens: Number of input tokens
-                - output_tokens: Number of output tokens
-                - cache_read_input_tokens: Number of cached input tokens (optional)
-
-        Pricing (as of October 2025):
-            - Sonnet 4.5: $0.003/1K input, $0.015/1K output, $0.0003/1K cached
-        """
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
-        cached_tokens = usage.get("cache_read_input_tokens", 0)
-
-        # Record individual token types
-        if input_tokens > 0:
-            MetricsCollector.record_token_usage(model, "input", input_tokens)
-
-        if output_tokens > 0:
-            MetricsCollector.record_token_usage(model, "output", output_tokens)
-
-        if cached_tokens > 0:
-            MetricsCollector.record_token_usage(model, "cached", cached_tokens)
-
-        # Calculate cost based on model pricing (December 2025 pricing)
-        # Pricing per 1K tokens:
-        # - claude-opus-4-5-*:   $0.015 input, $0.075 output, $0.0015 cached
-        # - claude-sonnet-4-5-*: $0.003 input, $0.015 output, $0.0003 cached
-        # - claude-3-5-haiku-*:  $0.001 input, $0.005 output, $0.0001 cached
-        model_lower = model.lower()
-        if "opus" in model_lower:
-            input_rate, output_rate, cached_rate = 0.015, 0.075, 0.0015
-        elif "haiku" in model_lower:
-            input_rate, output_rate, cached_rate = 0.001, 0.005, 0.0001
-        else:  # Default to Sonnet pricing
-            input_rate, output_rate, cached_rate = 0.003, 0.015, 0.0003
-
-        cost = (
-            (input_tokens / 1000.0) * input_rate
-            + (output_tokens / 1000.0) * output_rate
-            + (cached_tokens / 1000.0) * cached_rate
-        )
-
-        if cost > 0:
-            MetricsCollector.record_api_cost(model, cost)
-
-            logger.debug(
-                "Recorded token usage and cost",
-                agent=agent,
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cached_tokens=cached_tokens,
-                cost_dollars=cost,
-            )
 
     @staticmethod
     def record_user_prompt(agent: str) -> None:
@@ -546,35 +434,6 @@ class MetricsCollector:
         interactive_message_types_total.labels(
             agent=agent, message_type=message_type
         ).inc()
-
-    @staticmethod
-    def update_cache_metrics(
-        agent: str, model: str, cache_read: int, cache_creation: int, total_input: int
-    ) -> None:
-        """
-        Update cache-related metrics and calculate hit ratio.
-
-        Args:
-            agent: Agent name
-            model: Model name
-            cache_read: Number of cache read tokens
-            cache_creation: Number of cache creation tokens
-            total_input: Total input tokens
-        """
-        if cache_read > 0:
-            interactive_cache_read_tokens.labels(agent=agent, model=model).inc(
-                cache_read
-            )
-
-        if cache_creation > 0:
-            interactive_cache_creation_tokens.labels(agent=agent, model=model).inc(
-                cache_creation
-            )
-
-        # Calculate and update cache hit ratio
-        if total_input > 0:
-            hit_ratio = cache_read / total_input
-            interactive_cache_hit_ratio.labels(agent=agent).set(hit_ratio)
 
     # CGF (ContextGrad Framework) Metrics Methods
 

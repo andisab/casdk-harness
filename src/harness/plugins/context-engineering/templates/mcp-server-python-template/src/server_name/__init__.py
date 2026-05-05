@@ -1,1 +1,0 @@
-"""{Server Name} MCP Server."""

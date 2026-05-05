@@ -36,8 +36,41 @@ TEMPLATE_MAP: dict[str, str] = {
     "hook": "hook-configuration-template.md",
 }
 
-# Default template directory (relative to harness package)
-DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent.parent / "plugins" / "context-engineering" / "templates"
+# Default template directory.
+#
+# After Step 2b, the canonical templates live in the swe-marketplace
+# context-engineering plugin (loaded via the SWE_MARKETPLACE_PATH /
+# SWE_MARKETPLACE_REF env vars; see config.HarnessConfig). We resolve at
+# import time so the path is stable for tests; runtime callers should
+# prefer ``get_template_loader(template_dir=...)`` for explicit overrides.
+def _resolve_default_template_dir() -> Path:
+    """Pick the canonical template directory.
+
+    Priority:
+      1. Marketplace context-engineering/templates (post-Step 2b canonical).
+      2. Legacy in-tree path (pre-Step 2b; kept as a transitional fallback
+         for tests that have not migrated yet — will be dropped once all
+         callers point at marketplace).
+    """
+    try:
+        from harness.config import HarnessConfig
+
+        config = HarnessConfig()
+        marketplace = config.swe_marketplace_resolved_path
+        if marketplace is not None:
+            candidate = marketplace / "plugins" / "context-engineering" / "templates"
+            if candidate.exists():
+                return candidate
+    except Exception:
+        pass
+
+    # Fallback: legacy in-tree path. Returned even if it does not exist —
+    # the loader logs a warning when files are missing. Removed in Step 2b
+    # finalize.
+    return Path(__file__).parent.parent.parent / "plugins" / "context-engineering" / "templates"
+
+
+DEFAULT_TEMPLATE_DIR = _resolve_default_template_dir()
 
 
 @dataclass

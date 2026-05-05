@@ -19,19 +19,15 @@ from claude_agent_sdk import (
     ProcessError,
     ResultMessage,
 )
-from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.checkpoint import CheckpointManager
-from harness.commands import CommandRegistry
 from harness.config import HarnessConfig, RuntimeConfig, get_config
 from harness.health import HealthServer
-from harness.hooks import HookRegistry
 from harness.mcp_loader import MCPConfigLoader
 from harness.messaging import CircuitBreakerOpenError, RedisMessageBroker
 from harness.monitoring import MetricsCollector
-from harness.plugin_manager import HookEvent, PluginManager
+from harness.plugin_manager import PluginManager
 from harness.security import sanitize_sensitive_data
 
 # In-process MCP servers (Method A)
@@ -170,24 +166,28 @@ class AgentSession:
         # Plugin configuration via PluginManager
         from pathlib import Path
         plugin_base = Path(__file__).parent / "plugins"
+        plugin_dirs: list[Path] = []
+        # Marketplace first; in-tree last so in-tree wins on duplicate plugin name
+        # (lets us migrate plugins one-by-one without immediate breakage).
+        marketplace_path = self.config.swe_marketplace_resolved_path
+        if marketplace_path is not None:
+            marketplace_plugin_dir = marketplace_path / "plugins"
+            if marketplace_plugin_dir.exists():
+                plugin_dirs.append(marketplace_plugin_dir)
+                logger.info(
+                    "swe-marketplace plugin source resolved",
+                    path=str(marketplace_plugin_dir),
+                )
+        plugin_dirs.append(plugin_base)
         self.plugin_manager = PluginManager(
-            plugin_dirs=[plugin_base],
+            plugin_dirs=plugin_dirs,
             enabled_plugins=self.config.enabled_plugins_list,
-            use_sdk_only=self.config.plugin_use_sdk_only,
         )
-        self.plugin_manager.discover_plugins()
-        self.plugin_manager.load_all_plugins()
+        self.plugin_manager.discover()
 
-        # Get plugin paths for SDK (still passed for future SDK support)
+        # Get plugin paths for SDK to auto-load commands/hooks/skills/MCP
         self.plugins = self.plugin_manager.get_plugin_paths()
         self.plugin_base = plugin_base  # Keep for backward compatibility
-
-        # Initialize registries for commands and hooks
-        self.command_registry = CommandRegistry()
-        self.command_registry.register_all(self.plugin_manager.get_all_commands())
-
-        self.hook_registry = HookRegistry(cwd=str(self.config.workspace_dir))
-        self.hook_registry.register_all(self.plugin_manager.get_all_hooks())
 
         self.checkpoint_manager = checkpoint_manager or CheckpointManager(
             checkpoint_dir=self.config.checkpoint_dir,
@@ -583,52 +583,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
 
         return system_prompt
 
-    def _load_plugin_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Load agent definitions from plugins via PluginManager.
-
-        TEMPORARY WORKAROUND (2025-12): SDK passes --plugin-dir to CLI but
-        plugin agents don't appear in the agents list. PluginManager manually
-        loads them so they're available via the Task tool.
-
-        Set PLUGIN_USE_SDK_ONLY=true to disable this workaround when SDK is fixed.
-
-        Returns:
-            Dict mapping namespaced agent names to SDK AgentDefinition objects
-            Keys use format: plugin-name:agent-name
-        """
-        plugin_agents = self.plugin_manager.get_all_agents()
-
-        if plugin_agents:
-            logger.info(
-                "Discovered plugin agents",
-                count=len(plugin_agents),
-                agents=list(plugin_agents.keys()),
-            )
-
-        return plugin_agents
-
-    def _convert_to_sdk_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Get plugin agents for SDK Task tool dispatch.
-
-        REFACTOR.md Phase 3 (verified 2026-05-04): harness agents are now
-        auto-discovered from `.claude/agents/` via `setting_sources=["project"]`,
-        so they no longer need programmatic registration here. Plugin agents
-        still require it — `plugins=[{type:local,path:...}]` does not expose
-        them to Task with the `plugin:resource` namespacing the harness uses.
-
-        Returns:
-            Dict mapping namespaced plugin agent names to SDK AgentDefinition.
-        """
-        plugin_agents = self._load_plugin_agents()
-
-        logger.debug(
-            "Registering plugin agents for SDK Task dispatch",
-            plugin_agents=len(plugin_agents),
-            agents=list(plugin_agents.keys()),
-        )
-
-        return plugin_agents
-
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
         import os
@@ -644,9 +598,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         model = self.runtime.model
         permission_mode = self.runtime.permission_mode
 
-        # Convert harness agents to SDK format
-        sdk_agents = self._convert_to_sdk_agents()
-
         # Built-in tools + MCP browser automation tools
         allowed_tools = [
             # Built-in SDK tools
@@ -661,24 +612,28 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             "Building SDK options",
             allowed_tools_count=len(allowed_tools),
             mcp_servers=list(self.mcp_servers.keys()),
-            agents_count=len(sdk_agents),
             permission_mode=permission_mode,
             model=model,
         )
 
+        # Plugin sub-agents are exposed to the Task tool by the SDK directly
+        # via ``plugins=`` (verified 2026-05-05; see docs/REFACTOR.md
+        # "SDK upstream investigation"). Harness sub-agents are auto-discovered
+        # from ``.claude/agents/`` through ``setting_sources=["project"]``.
+        # No ``agents=`` workaround needed.
         return ClaudeAgentOptions(
             allowed_tools=allowed_tools,
             permission_mode=permission_mode,
             max_turns=self.config.claude_max_turns,
             cwd="/app",  # SDK needs /app to find .claude/skills/
             model=model,
-            mcp_servers=self.mcp_servers,  # Register custom MCP servers
-            agents=sdk_agents,  # Register custom subagents for Task tool
-            setting_sources=["project"],  # REFACTOR.md Part 2 Phase 1: hermetic container; project-only auto-discovers .claude/agents/, .claude/skills/, .claude/commands/
-            plugins=self.plugins,  # Phase 1B: Enable plugin loading
+            mcp_servers=self.mcp_servers,
+            setting_sources=["project"],
+            plugins=self.plugins,
+            skills="all",  # SDK 0.1.72+: "all" or list[str]; None hides skills from the Skill tool
             system_prompt=system_prompt,
-            env=cli_env,  # Pass environment to CLI subprocess
-            stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
+            env=cli_env,
+            stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),
         )
 
     async def start(self) -> None:
@@ -735,32 +690,12 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         self.health_server = HealthServer(session=self)
         await self.health_server.start()
 
-        # Trigger SessionStart hooks (REFACTOR.md Part 2 Phase 2: SDK-canonical event name)
-        if self.hook_registry:
-            try:
-                hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.SESSION_START,
-                    context={"agent_name": self.agent_name},
-                )
-                if hook_results:
-                    logger.debug(
-                        "SessionStart hooks triggered",
-                        count=len(hook_results),
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Failed to trigger SessionStart hooks",
-                    error=str(e),
-                )
-
         # Consolidated startup log (debug level to avoid spinner interference)
         logger.debug(
             "Agent session ready",
             agent=self.agent_name,
             mcp_servers=len(self.mcp_servers),
             skills=len(self.discovered_skills),
-            commands=len(self.command_registry) if self.command_registry else 0,
-            hooks=len(self.hook_registry) if self.hook_registry else 0,
             checkpoint_interval=f"{self.checkpoint_manager.interval}s",
             health_port=8080,
             metrics_port=9090,
@@ -957,16 +892,11 @@ Use them via: Skill tool with skill name (e.g., "debugging")
                             )
                     first_message = False
 
-                # Track token usage from ResultMessage
+                # Accumulate token usage for in-process budget tracking. Prometheus
+                # token + cost counters are emitted by the Claude Code CLI directly
+                # (claude_code_token_usage_tokens_total, claude_code_cost_usage_USD_total).
                 if isinstance(message, ResultMessage) and hasattr(message, "usage"):
                     usage = message.usage
-                    self.metrics.record_tokens(
-                        agent=self.agent_name,
-                        model=self.config.claude_model,
-                        usage=usage,
-                    )
-
-                    # Accumulate total usage for budget tracking
                     input_tokens = usage.get("input_tokens", 0)
                     output_tokens = usage.get("output_tokens", 0)
                     self.tokens_used += input_tokens + output_tokens
@@ -1517,24 +1447,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
     async def shutdown(self) -> None:
         """Gracefully shutdown the agent session and cleanup SDK client."""
         logger.info("Shutting down agent session", agent=self.agent_name)
-
-        # Trigger Stop hooks before shutdown
-        if self.hook_registry:
-            try:
-                hook_results = await self.hook_registry.trigger_async(
-                    HookEvent.STOP,
-                    context={"agent_name": self.agent_name},
-                )
-                if hook_results:
-                    logger.debug(
-                        "Stop hooks triggered",
-                        count=len(hook_results),
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Failed to trigger Stop hooks",
-                    error=str(e),
-                )
 
         # Cancel all background tasks first
         if self._background_tasks:

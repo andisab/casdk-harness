@@ -21,8 +21,8 @@ Usage:
 
     # Streaming invocation with terminal progress UX
     async for message in call_agent(
-        agent_name="research-team:lead-research-coordinator",
-        prompt="Research quantum computing",
+        agent_name="research-team:research-specialist",
+        prompt="Research quantum computing hardware in 2026",
         verbose=True,
     ):
         pass  # Progress is printed automatically by AgentProgress
@@ -115,10 +115,8 @@ def _load_plugin_agents() -> dict[str, Any]:
         _plugin_manager = PluginManager(
             plugin_dirs=[plugin_base],
             enabled_plugins=None,
-            use_sdk_only=False,
         )
-        _plugin_manager.discover_plugins()
-        _plugin_manager.load_all_plugins()
+        _plugin_manager.discover()
         _plugin_agents_cache = _plugin_manager.get_all_agents()
 
         logger.debug(
@@ -160,7 +158,7 @@ def get_agent_info(agent_name: str) -> dict[str, Any]:
 
     Args:
         agent_name: Name of the agent (e.g., "python-expert",
-                   "research-team:lead-research-coordinator")
+                   "research-team:research-specialist")
 
     Returns:
         Dictionary with agent details:
@@ -429,8 +427,8 @@ async def call_agent_simple(
 
         >>> # With verbose progress
         >>> response = await call_agent_simple(
-        ...     "research-team:lead-research-coordinator",
-        ...     "Research quantum computing",
+        ...     "research-team:research-specialist",
+        ...     "Research quantum computing hardware in 2026",
         ...     verbose=True
         ... )
 

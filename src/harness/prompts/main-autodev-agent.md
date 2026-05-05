@@ -42,29 +42,25 @@ Task(subagent_type="python-expert", description="…", prompt="…")
 Task(subagent_type="research-team:research-specialist", description="…", prompt="…")
 ```
 
-**Available Custom Agents**: `python-expert`, `typescript-expert`, `go-expert`, `nodejs-expert`, `react-expert`, `refactor-agent`, `database-expert`, `sql-expert`, `docker-engineer`, `k8s-engineer`, `gcp-architect`, `gitlab-ci-expert`, `sdet-expert`, `code-review-expert`, `research-team:research-specialist`, `research-team:lead-research-coordinator`, `context-engineering:context-engineer`
+**Available Custom Agents**: `python-expert`, `typescript-expert`, `go-expert`, `nodejs-expert`, `react-expert`, `refactor-agent`, `database-expert`, `sql-expert`, `docker-engineer`, `k8s-engineer`, `gcp-architect`, `gitlab-ci-expert`, `sdet-expert`, `code-review-expert`, `research-team:research-specialist`, `research-team:research-report-writer`, `context-engineering:context-engineer`
 
 For programmatic/standalone Python invocation (e.g., CGF runners outside an SDK session), use `harness.subagent.call_agent_simple()`.
 
-### Research Agent
+### Research
 
-Heavy-duty research with parallel multi-agent execution via direct invocation:
+Heavy-duty research with parallel multi-agent execution is available via the
+`research-team:coordinator` skill. It runs in the main agent thread (where
+`Task` calls are first-level and can spawn researcher subagents in parallel),
+decomposes the topic into 2-5 subtopics, verifies output on disk, and
+synthesizes via `research-team:research-report-writer`.
 
-```python
-from harness.subagent import call_agent
-
-async for message in call_agent(
-    "research-team:lead-research-coordinator",
-    "Research authentication patterns and best practices for FastAPI applications"
-):
-    process(message)
+```
+Skill(skill="research-team:coordinator", args="Research authentication patterns and best practices for FastAPI applications")
 ```
 
-**How it works**: The Research agent automatically:
-1. Breaks your topic into 2-4 subtopics
-2. Spawns parallel researcher subagents (web search + optionally local files)
-3. Synthesizes findings via report-writer subagent
-4. Saves final report to `/workspace/temp/research/reports/`
+**Why a skill, not an agent**: agents are always spawned as subagents, and the
+nested-spawn constraint blocks an agent from invoking `Task` itself. The skill
+runs in the main thread, so its `Task` calls succeed.
 
 #### When to use Research vs Explore
 
@@ -77,34 +73,6 @@ async for message in call_agent(
 | Find all API endpoints | `Explore` | Pattern matching |
 | Research API design patterns | `Research` | Comprehensive industry survey |
 
-#### Scope Examples
-
-**External research** (web only):
-```python
-async for msg in call_agent(
-    "research-team:lead-research-coordinator",
-    "Research the latest developments in quantum computing"
-):
-    process(msg)
-```
-
-**Internal research** (codebase):
-```python
-async for msg in call_agent(
-    "research-team:lead-research-coordinator",
-    "Research how authentication works in this codebase"
-):
-    process(msg)
-```
-
-**Hybrid research** (comparison):
-```python
-async for msg in call_agent(
-    "research-team:lead-research-coordinator",
-    "Research authentication patterns - compare our /workspace implementation with industry best practices"
-):
-    process(msg)
-``` 
 
 
 ## Step 1: Get Your Bearings (MANDATORY)

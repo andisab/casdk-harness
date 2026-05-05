@@ -1,0 +1,77 @@
+# OpenTelemetry Collector configuration for Claude Agent SDK Harness.
+#
+# Bridges native OTLP signals from the Claude Agent SDK (gated by
+# CLAUDE_CODE_ENABLE_TELEMETRY=1 in the agent containers) into the
+# existing Prometheus + Grafana stack.
+#
+# Pipelines:
+#   metrics -> prometheus exporter (scraped by prometheus service on :8889)
+#   traces  -> debug exporter (stdout; no Tempo/Jaeger backend yet)
+#   logs    -> debug exporter (stdout; no Loki yet)
+#
+# Health: zpages on :55679, health_check on :13133.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    send_batch_size: 1024
+    timeout: 10s
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Prometheus exporter — exposes SDK-emitted metrics on :8889/metrics
+  # for the prometheus service to scrape. No namespace prefix: the CLI
+  # already emits under the `claude_code.*` namespace (auto-converted to
+  # `claude_code_*` by Prometheus), and the prometheus.yml scrape job
+  # adds a `source="claude-sdk-harness"` label for ownership.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    send_timestamps: true
+    metric_expiration: 5m
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Debug exporter — prints to collector stdout. Used for traces + logs
+  # until we add a Tempo/Loki backend (out of scope for Block 4).
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  extensions: [health_check, zpages]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

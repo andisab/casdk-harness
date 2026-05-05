@@ -101,8 +101,8 @@ def test_plugin_resources_exist():
     assert (ce_path / "agents").exists(), "context-engineering plugin missing agents/"
     assert (ce_path / "skills").exists(), "context-engineering plugin missing skills/"
     assert (
-        ce_path / "skills" / "skill-creation" / "SKILL.md"
-    ).exists(), "context-engineering plugin missing skill-creation skill"
+        ce_path / "skills" / "skill-dev" / "SKILL.md"
+    ).exists(), "context-engineering plugin missing skill-dev skill"
 
     # research-team plugin
     rt_path = base_path / "research-team"

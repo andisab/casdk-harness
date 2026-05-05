@@ -1,13 +1,18 @@
 # Alert Rules for Claude Agent SDK Harness
+#
+# Rule conventions:
+#   - Harness-specific metrics use the `harness_` prefix.
+#   - SDK-emitted metrics use the `claude_code_` prefix (via the OTel collector).
+#   - All thresholds are dev-friendly defaults; tune per environment.
 
 groups:
   - name: agent_alerts
     interval: 30s
     rules:
-      # High error rate
+      # High error rate (harness-tracked agent requests)
       - alert: HighErrorRate
         expr: |
-          rate(agent_requests_total{status="error"}[5m]) > 0.05
+          rate(harness_agent_requests_total{status="error"}[5m]) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -15,10 +20,10 @@ groups:
           summary: "High error rate detected for {{ $labels.agent }}"
           description: "Agent {{ $labels.agent }} has error rate above 5% (current: {{ $value }})"
 
-      # Slow response time
+      # Slow response time (harness agent duration)
       - alert: SlowResponseTime
         expr: |
-          histogram_quantile(0.95, rate(agent_duration_seconds_bucket[5m])) > 30
+          histogram_quantile(0.95, rate(harness_agent_duration_seconds_bucket[5m])) > 30
         for: 10m
         labels:
           severity: warning
@@ -29,7 +34,7 @@ groups:
       # No active sessions (when expected)
       - alert: NoActiveSessions
         expr: |
-          agent_active_sessions == 0
+          harness_agent_active_sessions == 0
         for: 15m
         labels:
           severity: info
@@ -43,7 +48,7 @@ groups:
       # High memory usage
       - alert: HighMemoryUsage
         expr: |
-          memory_usage_bytes{component=~".*"} > 7000000000
+          harness_memory_usage_bytes > 7000000000
         for: 5m
         labels:
           severity: warning
@@ -54,7 +59,7 @@ groups:
       # Large checkpoint files
       - alert: LargeCheckpointSize
         expr: |
-          checkpoint_size_bytes > 1000000000
+          harness_checkpoint_size_bytes > 1000000000
         for: 10m
         labels:
           severity: info
@@ -65,7 +70,7 @@ groups:
       # Disk space low (workspace)
       - alert: WorkspaceFilesHigh
         expr: |
-          workspace_files_total > 10000
+          harness_workspace_files_total > 10000
         for: 30m
         labels:
           severity: info
@@ -76,24 +81,49 @@ groups:
   - name: cost_alerts
     interval: 1h
     rules:
-      # High API costs
+      # High API costs — uses SDK-emitted cost counter (segmented by model)
       - alert: HighAPICost
         expr: |
-          rate(api_cost_dollars_total[1h]) > 10
+          sum(rate(claude_code_cost_usage_USD_total[1h])) * 3600 > 10
         for: 1h
         labels:
           severity: warning
         annotations:
           summary: "High API costs detected"
-          description: "API cost rate is ${{ $value }}/hour (threshold: $10/hour)"
+          description: "API cost is ${{ $value }}/hour (threshold: $10/hour)"
 
-      # High token usage
+      # High token usage — uses SDK-emitted token counter (segmented by model + type + query_source)
       - alert: HighTokenUsage
         expr: |
-          rate(api_tokens_used_total[1h]) > 1000000
+          sum by (model) (rate(claude_code_token_usage_tokens_total[1h])) * 3600 > 1000000
         for: 1h
         labels:
           severity: info
         annotations:
           summary: "High token usage for {{ $labels.model }}"
           description: "Using {{ $value }} tokens/hour (threshold: 1M tokens/hour)"
+
+  - name: pipeline_alerts
+    interval: 30s
+    rules:
+      # OTel collector down — pipeline broken, no SDK metrics flowing
+      - alert: OTelCollectorDown
+        expr: |
+          up{job="otel-collector-self"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenTelemetry Collector is down"
+          description: "Collector has been unreachable for 2m. SDK telemetry (claude_code_*) is not flowing into Prometheus."
+
+      # AlertManager down — no alerts can fire
+      - alert: AlertManagerDown
+        expr: |
+          absent(up{job="alertmanager"}) or up{job="alertmanager"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AlertManager is down"
+          description: "Prometheus cannot deliver alerts."

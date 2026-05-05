@@ -6,10 +6,7 @@
     "name": "Andis A. Blukis",
     "email": "andis.blukis@gmail.com"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/andisab/ab-casdk-harness"
-  },
+  "repository": "https://github.com/andisab/ab-casdk-harness",
   "license": "MIT",
   "keywords": [
     "cgf",
@@ -17,12 +14,25 @@
     "prompt-engineering",
     "agentic"
   ],
-  "dependencies": {
-    "context-engineering": ">=1.0.0",
-    "research-team": ">=0.1.0"
-  },
-  "agents": ["./agents"],
-  "skills": ["./skills"],
-  "commands": ["./commands"],
-  "configuration": {}
+  "dependencies": [
+    "context-engineering",
+    "research-team"
+  ],
+  "agents": [
+    "./agents/cgf-coherence-validator.md",
+    "./agents/cgf-criteria-synthesizer.md",
+    "./agents/cgf-orchestrator.md",
+    "./agents/cgf-prompt-optimizer.md",
+    "./agents/cgf-research-lead.md",
+    "./agents/cgf-resource-architect.md",
+    "./agents/cgf-result-evaluator.md",
+    "./agents/cgf-test-architect.md",
+    "./agents/cgf-test-validator.md"
+  ],
+  "skills": [
+    "./skills/cgf-optimize"
+  ],
+  "commands": [
+    "./commands/cgf.md"
+  ]
 }

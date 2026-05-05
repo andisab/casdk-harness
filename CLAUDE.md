@@ -27,9 +27,16 @@ Technical reference for developers working on this repository and for Claude's o
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds
 
 ### Completed Recently
+- **Block 4 Part 3 — Observability (2026-05-05)** — Five phases, four commits, ~1,300 LoC of new infra (~440 LoC of deprecated harness metrics + tests dropped):
+  - Phase 3A (`53d6748`) — OTel Collector sidecar (gRPC :4317 / HTTP :4318); SDK telemetry routed to bundled collector via literal compose env vars (not shell-interpolated, so host-shell OTel envvars don't leak into harness containers); cardinality knobs (`OTEL_METRICS_INCLUDE_SESSION_ID/ACCOUNT_UUID=false`); collector exposes SDK metrics on :8889 for Prometheus scrape.
+  - Phase 3B (`f025870`) — Dropped 5 instruments + 4 methods from `monitoring.py` that the SDK now emits natively (`api_tokens_used_total`, `api_cost_dollars_total`, both cache-token counters, the cache-hit-ratio gauge, `record_tokens()` with its hardcoded pricing table). Renamed 11 surviving harness instruments with `harness_` prefix. Dropped 14 tests; 1534/0/0 passing.
+  - Phase 3C (`e4494cc`) — Two pre-provisioned Grafana dashboards (`/d/casdk-overview`, `/d/casdk-cgf`) replacing the placeholder JSON. 26 panels total covering session health, tokens/cost (segmented by model + query_source), tool calls, latency p50/p95/p99, system resources, CGF tracer activity, and optimization quality.
+  - Phase 3D (`34cfaba`) — AlertManager service (`prom/alertmanager:v0.27.0`) + a tiny stdlib-Python webhook-debug receiver. Discovered + fixed: Prometheus had `rule_files`/`alerting:` blocks nowhere in its config and `alerting.yml` wasn't even bind-mounted into the container — every rule on disk had been dead since the project started. 10 rules now active across 4 groups including pipeline self-monitoring (`OTelCollectorDown`, `AlertManagerDown`).
+  - Phase 3E — `docs/OBSERVABILITY.md` (architecture, dashboards, rule authoring, first-response actions, real-receiver wiring); README "Monitoring" section updated; this file's known-limitations + TODO entries removed.
+  - **Net surface change:** harness now self-monitors its own observability pipeline (OTel collector, AlertManager) on top of monitoring application behavior; SDK telemetry adds `query_source` (main/auxiliary/subagent) segmentation that the previous harness counters never had; total stack: 7 services (was 4) — main-agent, prometheus, grafana, otel-collector, alertmanager, alertmanager-webhook, plus the multi-agent profile services.
 - **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
   - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
-  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Plugin agents still need programmatic registration with `plugin:resource` namespacing. Replaced alias dict in `definitions.py` with directory walker.
+  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Replaced alias dict in `definitions.py` with directory walker. (Originally noted "Plugin agents still need programmatic registration" — that was wrong; corrected in the 2026-05-05 5a follow-up. SDK exposes plugin agents to Task via `plugins=[]` directly. See [docs/REFACTOR.md "SDK upstream investigation"](./docs/REFACTOR.md#sdk-upstream-investigation-closed-2026-05-05).)
   - Step 3: Dropped `MODEL_MAP` defensive translation (Phase 1 made it a no-op).
   - Step 4: Extracted `AgentProgress` + `Colors` + helpers to `harness/agent_progress.py`.
   - Step 5: Dropped unused `register_workspace_agent` / `unregister` / `clear` API (zero callers in src/ or tests/).
@@ -53,14 +60,25 @@ Technical reference for developers working on this repository and for Claude's o
   - [x] resource_plan.schema.json and resource-plan.yaml output
 
 ### Known Limitations
-- Grafana overview dashboard is placeholder (stub file) — handled by REFACTOR.md Part 3C
-- AlertManager not configured (alerting rules defined but unused) — handled by REFACTOR.md Part 3D
+- **Plugin slash commands require `/plugin-name:command-name` namespaced form (verified 2026-05-05).** When a plugin defines a slash command (e.g. `cgf-agents/commands/cgf.md`), the SDK registers it under `cgf-agents:cgf`, not bare `cgf`. Invoking `/cgf` from a streaming session silently no-ops in 14 ms because the SDK swallows unknown slash commands as no-ops (consistent behavior, also true for filesystem-discovered commands and built-ins). Use `/cgf-agents:cgf` to invoke. The SystemMessage banner already shows the namespaced names. See [docs/REFACTOR.md "SDK upstream investigation"](./docs/REFACTOR.md#sdk-upstream-investigation-closed-2026-05-05) for the full test matrix; `scripts/derisk_slash_init.py` is the live regression probe.
+- **Sub-agent `HOME` mismatch (surfaced 2026-05-05).** When a sub-agent's Bash tool expands `~` in a path, it sometimes resolves to `/root` even though the runtime user is `claude` (uid 996, `$HOME=/home/claude`). The Write tool that follows then fails with `EACCES`. Symptom: research-team:research-specialist's "save notes to `~/Documents/ClaudeResearch/...`" pattern needs a fallback retry with `/home/claude/...`. Likely a CLI-subprocess env-passthrough gap. Workaround: skill prompts that use tilde paths usually retry with the literal path. Real fix candidates: (a) explicitly set `HOME=/home/claude` in `_build_sdk_options()` env; (b) update marketplace skills that author paths to use absolute forms; (c) ensure Dockerfile aligns HOME for all tool subprocesses. Track for Block 4 prep.
 
 ### TODOs
-- [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
-- [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] **Block 2 next:** Part 2 Phase 2 full — collapse `plugin_manager.py` to <80 LoC; delete `src/harness/commands.py`; slim `hooks.py`. Gated on Part 1C swe-marketplace adoption decision (see REFACTOR.md). Phase 2 minimal (event renames) is done.
 
+- [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
+  bug (full description above in Known Limitations). Three fix
+  candidates queued; (a) one-line env passthrough in
+  `_build_sdk_options()` is the leading suspect. Verify root cause
+  before committing to a candidate.
+- [ ] **`make interactive` terminal behavior / messaging review.**
+  The interactive session's terminal output during the 5a smoke test
+  showed several rough edges that should be characterized before
+  fixing: corrupted/truncated panel borders in the Rich UI, repeated
+  "Thinking..." displays, long verbose logging interleaved with the
+  conversation, hard-to-scan message dumps. Audit `harness/cli.py`
+  and `harness/interactive.py` (and possibly `harness/agent_progress.py`)
+  to identify which renderer is responsible for each artifact, then
+  decide what to clean up vs. accept as cost-of-doing-business.
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
 
@@ -476,7 +494,7 @@ AGENT_MEMORY_LIMIT=8G
 #### Plugin Settings
 ```bash
 ENABLED_PLUGINS=context-engineering,research-team  # Comma-separated (empty = all)
-PLUGIN_USE_SDK_ONLY=false                          # Disable workarounds when SDK fixed
+# PLUGIN_USE_SDK_ONLY removed (Block 3 Step 3a, 2026-05-04) — workarounds deleted, no flag needed
 ```
 
 **Python defaults** (`config.py`):

@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, PropertyMock
 
 import pytest
 
@@ -15,8 +15,9 @@ PLUGIN_BASE_PATH = (
     Path(__file__).parent.parent.parent / "src" / "harness" / "plugins"
 )
 
-# Correct plugin names (cgf-agents, context-engineering, research-team)
-PLUGINS = ["cgf-agents", "context-engineering", "research-team"]
+# In-tree plugin names. After Step 2b, only cgf-agents stays in-tree;
+# context-engineering and research-team are consumed from swe-marketplace.
+PLUGINS = ["cgf-agents"]
 
 
 def test_plugin_paths_exist():
@@ -49,7 +50,12 @@ def test_plugin_manifests_valid():
 
 
 def test_agent_session_plugin_configuration(tmp_path: Path):
-    """Verify AgentSession includes plugin configuration."""
+    """Verify AgentSession includes plugin configuration.
+
+    Stubs out ``swe_marketplace_resolved_path`` so the assertion verifies the
+    in-tree plugin set independently of whether a local swe-marketplace clone
+    exists at .plugins/swe-marketplace.
+    """
     # Create required temp directories
     (tmp_path / "workspace").mkdir(exist_ok=True)
     (tmp_path / "memory").mkdir(exist_ok=True)
@@ -64,6 +70,12 @@ def test_agent_session_plugin_configuration(tmp_path: Path):
         patch("harness.agent.docker_server"),
         patch("harness.agent.context7_server"),
         patch("harness.agent.memory_server"),
+        patch.object(
+            type(mock_config),
+            "swe_marketplace_resolved_path",
+            new_callable=PropertyMock,
+            return_value=None,
+        ),
     ):
         mock_redis_instance = MagicMock()
         mock_redis_instance.connect.side_effect = ConnectionError(
@@ -75,8 +87,8 @@ def test_agent_session_plugin_configuration(tmp_path: Path):
         session = AgentSession(agent_name="test", config=mock_config)
 
         assert hasattr(session, "plugins"), "AgentSession missing plugins attribute"
-        assert len(session.plugins) == 3, (
-            f"Expected 3 plugins, got {len(session.plugins)}"
+        assert len(session.plugins) == 1, (
+            f"Expected 1 in-tree plugin (cgf-agents), got {len(session.plugins)}"
         )
 
         # Verify plugin paths are absolute and valid

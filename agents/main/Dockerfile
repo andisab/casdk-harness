@@ -109,11 +109,35 @@ COPY config/ ./config/
 COPY tests/ ./tests/
 COPY .claude/ ./.claude/
 
+# Clone swe-marketplace plugin source. Pin via SWE_MARKETPLACE_REF (build arg)
+# for reproducibility; empty = HEAD of default branch.
+ARG SWE_MARKETPLACE_REF=
+COPY scripts/synthesize_marketplace_manifests.py /tmp/synthesize_marketplace_manifests.py
+RUN git clone https://github.com/andisab/swe-marketplace.git /opt/plugins/swe-marketplace \
+    && if [ -n "$SWE_MARKETPLACE_REF" ]; then \
+         git -C /opt/plugins/swe-marketplace checkout "$SWE_MARKETPLACE_REF"; \
+       fi \
+    && python3 /tmp/synthesize_marketplace_manifests.py /opt/plugins/swe-marketplace \
+    && rm -rf /opt/plugins/swe-marketplace/.git /tmp/synthesize_marketplace_manifests.py
+
 # Set ownership
-RUN chown -R claude:claude /app
+RUN chown -R claude:claude /app /opt/plugins
 
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1
+
+# OpenTelemetry defaults (overridable via docker-compose / env). When the
+# bundled otel-collector service is unreachable (e.g., direct `docker run`),
+# the SDK silently no-ops; flip CLAUDE_CODE_ENABLE_TELEMETRY=0 to fully disable.
+ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+ENV OTEL_METRIC_EXPORT_INTERVAL=10000
+ENV OTEL_METRICS_INCLUDE_SESSION_ID=false
+ENV OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+ENV OTEL_SERVICE_NAME=casdk-harness
 
 USER claude
 
@@ -139,6 +163,17 @@ FROM deps AS builder
 COPY src/ ./src/
 COPY config/ ./config/
 COPY .claude/ ./.claude/
+
+# Clone swe-marketplace plugin source for production image. Pin via
+# SWE_MARKETPLACE_REF (build arg); empty = HEAD of default branch.
+ARG SWE_MARKETPLACE_REF=
+COPY scripts/synthesize_marketplace_manifests.py /tmp/synthesize_marketplace_manifests.py
+RUN git clone https://github.com/andisab/swe-marketplace.git /opt/plugins/swe-marketplace \
+    && if [ -n "$SWE_MARKETPLACE_REF" ]; then \
+         git -C /opt/plugins/swe-marketplace checkout "$SWE_MARKETPLACE_REF"; \
+       fi \
+    && python3 /tmp/synthesize_marketplace_manifests.py /opt/plugins/swe-marketplace \
+    && rm -rf /opt/plugins/swe-marketplace/.git /tmp/synthesize_marketplace_manifests.py
 
 # Run any build steps (if needed)
 RUN python -m compileall src/
@@ -166,15 +201,30 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/config ./config
 COPY --from=builder /app/.claude ./.claude
 
+# Copy swe-marketplace plugin source from builder
+COPY --from=builder /opt/plugins/swe-marketplace /opt/plugins/swe-marketplace
+
 # Create non-root user
 RUN groupadd -r claude && useradd -r -g claude -d /app -s /bin/bash claude
 
 # Create necessary directories
 RUN mkdir -p /workspace /memory /logs && \
-    chown -R claude:claude /app /workspace /memory /logs
+    chown -R claude:claude /app /workspace /memory /logs /opt/plugins
 
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1
+
+# OpenTelemetry defaults (overridable via docker-compose / env). See
+# development stage above for behavior notes.
+ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+ENV OTEL_METRIC_EXPORT_INTERVAL=10000
+ENV OTEL_METRICS_INCLUDE_SESSION_ID=false
+ENV OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
+ENV OTEL_SERVICE_NAME=casdk-harness
 
 USER claude
 
