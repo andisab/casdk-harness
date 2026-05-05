@@ -303,6 +303,7 @@ services:
       - '--web.enable-lifecycle'
     volumes:
       - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/monitoring/alerting.yml:/etc/prometheus/alerting.yml:ro
       - prometheus_data:/prometheus
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
@@ -317,6 +318,52 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # ===========================================================================
+  # AlertManager — routes Prometheus alerts to receivers
+  # ===========================================================================
+  alertmanager:
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.27.0}
+    container_name: claude-alertmanager
+    hostname: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:${ALERTMANAGER_PORT:-9093}'
+    volumes:
+      - ./config/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    depends_on:
+      alertmanager-webhook:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - claude-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ===========================================================================
+  # AlertManager debug webhook receiver — logs payloads to stdout for dev.
+  # Replace with a real receiver (Slack, PagerDuty, email) for production.
+  # ===========================================================================
+  alertmanager-webhook:
+    image: python:3.12-alpine
+    container_name: claude-alertmanager-webhook
+    hostname: alertmanager-webhook
+    command: ["python", "/app/webhook_debug.py"]
+    volumes:
+      - ./config/monitoring/alertmanager_webhook_debug.py:/app/webhook_debug.py:ro
+    ports:
+      - "${ALERTMANAGER_WEBHOOK_PORT:-9099}:5001"
+    restart: unless-stopped
+    networks:
+      - claude-network
 
   # ===========================================================================
   # Grafana Dashboards
@@ -366,4 +413,6 @@ volumes:
   prometheus_data:
     driver: local
   grafana_data:
+    driver: local
+  alertmanager_data:
     driver: local

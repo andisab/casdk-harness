@@ -1,0 +1,46 @@
+# AlertManager configuration for the Claude Agent Harness.
+#
+# Default route delivers everything to a local debug webhook (the alertmanager-
+# debug-receiver service in docker-compose.yml). This makes alert flow visible
+# to dev users without requiring Slack/email/PagerDuty credentials.
+#
+# To wire a real receiver:
+#   1. Add a new entry under `receivers:` (e.g., slack_configs, email_configs).
+#   2. Add a route under `route.routes:` with a matcher and that receiver name.
+# See https://prometheus.io/docs/alerting/latest/configuration/ for the full schema.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Default sink for unrouted alerts.
+  receiver: 'webhook-debug'
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 4h
+
+  routes:
+    # Critical alerts get a tighter cadence so they don't sit silently.
+    - matchers:
+        - severity = critical
+      receiver: 'webhook-debug'
+      group_wait: 5s
+      repeat_interval: 1h
+
+inhibit_rules:
+  # If the OTel collector is down, suppress noisy SDK-data-driven alerts
+  # (no SDK signal → cost/token metrics flatline → false alarms).
+  - source_matchers:
+      - alertname = OTelCollectorDown
+    target_matchers:
+      - alertname =~ "HighAPICost|HighTokenUsage"
+    equal: ['cluster']
+
+receivers:
+  # Local debug receiver — visible at http://localhost:9099/alerts.
+  # The webhook-debug-receiver service in compose just logs every payload to stdout.
+  - name: 'webhook-debug'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook:5001/'
+        send_resolved: true
