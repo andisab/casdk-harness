@@ -59,9 +59,26 @@ Technical reference for developers working on this repository and for Claude's o
 - **Sub-agent `HOME` mismatch (surfaced 2026-05-05).** When a sub-agent's Bash tool expands `~` in a path, it sometimes resolves to `/root` even though the runtime user is `claude` (uid 996, `$HOME=/home/claude`). The Write tool that follows then fails with `EACCES`. Symptom: research-team:research-specialist's "save notes to `~/Documents/ClaudeResearch/...`" pattern needs a fallback retry with `/home/claude/...`. Likely a CLI-subprocess env-passthrough gap. Workaround: skill prompts that use tilde paths usually retry with the literal path. Real fix candidates: (a) explicitly set `HOME=/home/claude` in `_build_sdk_options()` env; (b) update marketplace skills that author paths to use absolute forms; (c) ensure Dockerfile aligns HOME for all tool subprocesses. Track for Block 4 prep.
 
 ### TODOs
+
+**Block 4 prep (small fixes; not gating Block 4):**
+- [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
+  bug (full description above in Known Limitations). Three fix
+  candidates queued; (a) one-line env passthrough in
+  `_build_sdk_options()` is the leading suspect. Verify root cause
+  before committing to a candidate.
+- [ ] **`make interactive` terminal behavior / messaging review.**
+  The interactive session's terminal output during the 5a smoke test
+  showed several rough edges that should be characterized before
+  fixing: corrupted/truncated panel borders in the Rich UI, repeated
+  "Thinking..." displays, long verbose logging interleaved with the
+  conversation, hard-to-scan message dumps. Audit `harness/cli.py`
+  and `harness/interactive.py` (and possibly `harness/agent_progress.py`)
+  to identify which renderer is responsible for each artifact, then
+  decide what to clean up vs. accept as cost-of-doing-business.
+
+**Block 4 (Part 3 Observability) — see `~/.claude/plans/block4-part3-observability.md`:**
 - [ ] Configure AlertManager in docker-compose for `alerting.yml` rules → REFACTOR.md Part 3D
 - [ ] Remove postgres exporter target from `prometheus.yml` (service doesn't exist) → REFACTOR.md Part 3D
-- [ ] **Block 2 next:** Part 2 Phase 2 full — collapse `plugin_manager.py` to <80 LoC; delete `src/harness/commands.py`; slim `hooks.py`. Gated on Part 1C swe-marketplace adoption decision (see REFACTOR.md). Phase 2 minimal (event renames) is done.
 
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
