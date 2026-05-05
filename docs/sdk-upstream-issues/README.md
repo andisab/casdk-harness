@@ -1,85 +1,94 @@
 # SDK Upstream Issue Drafts
 
-Two GitHub issue bodies awaiting your review before filing against
-[`anthropics/claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python).
-Both surfaced during Block 3 verification and share a root cause class:
-the SDK's `plugins=` field doesn't fully surface plugin resources to
-streaming-mode consumers — but the symptoms differ enough to warrant
-two issues so the SDK team can close them independently.
-
-## Issue 5a — Plugin agents not exposed to Task tool with `plugin:agent` namespacing
-
-**File:** [`5a-plugin-agent-namespacing.md`](./5a-plugin-agent-namespacing.md)
-
-**One-line:** Plugin sub-agents declared in `<plugin>/agents/*.md` are loaded
-by the SDK but cannot be dispatched via the Task tool — neither bare
-(`Task(subagent_type="foo")`) nor namespaced (`Task(subagent_type="my-plugin:foo")`).
-
-**Why it matters:** Forces every SDK-based harness to ship a parallel
-~100-LoC plugin-agent loader that re-walks `agents/*.md`, parses
-frontmatter, and registers each agent under `plugin:agent` keys via the
-separate `agents=` parameter. The casdk-harness's `plugin_manager.py`
-exists almost entirely to work around this gap.
-
-**Repro shape:** A valid plugin (passes `claude plugin validate`) is
-loaded via `plugins=[{"type": "local", "path": "..."}]`. Task dispatch
-to any namespacing form returns `Unknown agent`.
-
-**Verified:** 2026-05-04, casdk-harness Phase 3 verification (commit
-`f704536`); re-verified post-Phase-2 cleanup (commit `bc3e8db`).
+> **Status after de-risk pass (2026-05-05):** One issue (5b) is **real**
+> and ready to file. One issue (5a) was **invalidated** by the de-risk
+> and is archived as not-filed. See [`DERISK-RESULTS.md`](./DERISK-RESULTS.md)
+> for the full test matrix and decision rationale.
 
 ## Issue 5b — Plugin slash commands silently no-op in `ClaudeSDKClient` streaming sessions
 
 **File:** [`5b-plugin-slash-commands.md`](./5b-plugin-slash-commands.md)
+**Status:** Ready to file. Self-contained — does not depend on any
+external repo link.
 
 **One-line:** Sending a plugin-defined slash command (e.g. `/cgf status`)
-through `ClaudeSDKClient.query()` returns `success` after ~20 ms with
-`num_turns=0` and zero tokens — neither expanded into a prompt nor
-errored as unrecognized. The same command works in the standalone
+through `ClaudeSDKClient.query()` returns `success` after ~10-20 ms
+with `num_turns=0` and zero tokens — neither expanded into a prompt
+nor errored as unrecognized. The same command works in the standalone
 `claude` TUI.
+
+**Evidence strength after de-risk:** The bug reproduces across both
+plugin loading pathways (`plugins=[]` and `claude plugin install`),
+both `setting_sources` variants (`["project"]` and `["user", "project"]`),
+and multiple plugins from different sources. The probe is small enough
+(~120 LoC) to be inlined in the issue body, so no external repo link
+is needed.
 
 **Why it matters:** Worse than a hard error. Chat-style harness UIs
 display a successful round-trip with empty output; users can't tell
 whether the command was rejected, misspelled, or doing background
-work. The casdk-harness shipped a non-functional `CommandRegistry` for
-two release cycles before the gap was understood and the registry was
-deleted.
+work. Real-world example: the casdk-harness shipped a non-functional
+`CommandRegistry` for two release cycles before the gap was
+understood, then deleted it once it was clear nothing was wired up
+to dispatch the registered commands.
 
-**Repro shape:** Plugin with valid `commands/foo.md` (frontmatter +
-body with `$1`/`$ARGUMENTS` placeholders). Send `"/foo bar"` via
-`ClaudeSDKClient`. Receive `ResultMessage(num_turns=0, total_cost_usd=0)`
-with no AssistantMessage and no error.
+## Issue 5a — Archived (not filed)
 
-**Verified:** 2026-05-04, casdk-harness post-Phase-2 smoke (`/cgf status`
-against in-tree `cgf-agents` plugin and equivalent commands in
-marketplace plugins).
+**File:** [`archived/5a-plugin-agent-namespacing-NOT-FILED.md`](./archived/5a-plugin-agent-namespacing-NOT-FILED.md)
+**Status:** Archived as not-filed. The de-risk pass showed that the
+SDK's `plugins=` field correctly exposes plugin sub-agents to the
+Task tool — both bare names and `plugin:agent` namespacing work. The
+original Phase 3 finding was an artifact of the synthesizer producing
+CLI-invalid `plugin.json` files; once those were fixed in 3a (commit
+`0e8b31e`), plugin agents became reachable, but the harness was
+already programmatically registering them via `agents=` and we never
+tested without the workaround until the de-risk pass.
+
+**Implication for the harness:** the `_register_agents` /
+`_parse_agent_file` / `get_all_agents` methods in
+`src/harness/plugin_manager.py` are now redundant, as is the
+`agents=sdk_agents` wiring in `agent.py` `_build_sdk_options()`.
+Removing them is a ~50-LoC further simplification, queued as a
+**Block 3.5 follow-up commit** before Block 4 starts. Tests 1a/1b/1c
+in `DERISK-RESULTS.md` are the proof.
 
 ---
 
 ## Filing checklist
 
-After review, file via `gh`:
+After review, file 5b via `gh`:
 
 ```bash
 gh issue create \
   --repo anthropics/claude-agent-sdk-python \
-  --title "Plugin agents loaded via plugins=[] not exposed to Task tool with plugin:agent namespacing" \
-  --body-file docs/sdk-upstream-issues/5a-plugin-agent-namespacing.md
-
-gh issue create \
-  --repo anthropics/claude-agent-sdk-python \
-  --title "Plugin slash commands not invokable from ClaudeSDKClient streaming sessions (silent no-op)" \
+  --title "Plugin slash commands silently no-op in ClaudeSDKClient streaming sessions (0 turns, 0 tokens, no error)" \
   --body-file docs/sdk-upstream-issues/5b-plugin-slash-commands.md
 ```
 
-Each issue body has one `[#TBD]` placeholder in the **Related** section.
-After both are filed, edit each draft to replace `[#TBD]` with the other
-issue's number, then commit the cross-link update.
+5b's body has no external links and no `[#TBD]` placeholders to fix
+post-filing — it's complete as-is.
 
-## What I'm asking you to check before filing
+## What I'm asking you to check before filing 5b
 
-- **Tone.** Each draft frames the gap as a request for behavior alignment, not a complaint. Adjust if you'd prefer warmer/cooler phrasing.
-- **Repro accuracy.** I assert SDK 0.1.72 in both. Confirm you'd file at this exact pin (vs. retesting on a newer point release first).
-- **Workaround link.** Both drafts link to `andisab/casdk-harness` at commit SHAs (`bc3e8db` for 5a; `d28b9ac` for 5b). If you'd rather not link the personal fork, swap for `provectus/casdk-harness` or omit the link.
-- **Issue 5b's "Expected" section** lists two alternative fixes (expand-and-forward vs. clear-error). If you have a strong preference, narrow it to one.
-- **Both drafts are self-contained** — they don't assume the reader has cross-linked context. Trim or expand as you see fit.
+- **Tone.** The draft frames the gap as a request for behavior
+  alignment, not a complaint. Adjust if you'd prefer warmer/cooler.
+- **Repro accuracy.** I assert SDK 0.1.72; the matrix in
+  `DERISK-RESULTS.md` was run against this version. Confirm you'd
+  file at this exact pin (vs. retesting on a newer point release first).
+- **Probe attachment.** I included an inline minimal probe (~30 LoC)
+  in the body. The full `scripts/derisk_plugin_loading.py` (120 LoC)
+  is committed in the harness for future regression testing — happy
+  to also attach as a gist or in a comment if reviewers want it.
+- **"Companion finding" footnote.** The body mentions that plugin
+  agents *do* work via Task. Trim or expand this section based on
+  whether you think it's helpful context or noise.
+
+## Files in this directory
+
+| File | Purpose |
+|---|---|
+| `README.md` (this file) | Review surface and filing instructions |
+| `5b-plugin-slash-commands.md` | The issue body to file |
+| `DERISK-RESULTS.md` | Test matrix + decision rationale (links from 5b) |
+| `PRE-FILING-DERISK.md` | Original de-risk plan; superseded by results |
+| `archived/5a-plugin-agent-namespacing-NOT-FILED.md` | Archived original 5a draft, kept for archaeology |

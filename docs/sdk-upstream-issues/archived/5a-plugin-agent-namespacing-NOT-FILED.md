@@ -1,4 +1,20 @@
-# SDK Upstream Issue 5a — Plugin agents not exposed to Task tool with `plugin:agent` namespacing
+# SDK Upstream Issue 5a — NOT FILED (de-risk invalidated original finding)
+
+> **Status: ARCHIVED, NOT FILED.** The 2026-05-05 de-risk pass
+> ([`DERISK-RESULTS.md`](../DERISK-RESULTS.md)) showed that the SDK's
+> `plugins=` field correctly exposes plugin sub-agents to the Task
+> tool — both as bare names and `plugin:agent` namespaced. The
+> original Phase 3 finding was an artifact of the synthesizer
+> producing CLI-invalid `plugin.json` files at the time, not an SDK
+> bug. This draft is preserved for archaeology only.
+>
+> The harness's `_register_agents` / `agents=sdk_agents` workaround
+> is now redundant and queued for removal as a Block 3.5 follow-up
+> commit. Tests 1a/1b/1c in DERISK-RESULTS.md are the proof.
+
+---
+
+# Original draft (do not file)
 
 **Target repo:** https://github.com/anthropics/claude-agent-sdk-python
 
