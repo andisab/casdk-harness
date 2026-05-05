@@ -365,16 +365,26 @@ branch: casdk-auth-feature
 
 ## Monitoring
 
+The harness ships a self-contained OTel + Prometheus + Grafana + AlertManager stack.
+SDK telemetry (`claude_code_*`) flows through an OTel Collector sidecar; harness
+metrics (`harness_*`, `cgf_*`) are scraped directly. Two dashboards and a set of
+alert rules are pre-provisioned.
+
 | Service | URL | Purpose |
 |---------|-----|---------|
-| **Grafana** | http://localhost:3000 | Dashboards (login: admin/admin) |
-| **Prometheus** | http://localhost:9090 | Metrics and queries |
+| **Grafana** | http://localhost:3000 | Dashboards (default login: `admin` / `${GRAFANA_PASSWORD:-changeme123}`) |
+| **Prometheus** | http://localhost:9090 | Metrics + alert rule status |
+| **AlertManager** | http://localhost:9093 | Alert routing + silences |
 
 ```bash
 make logs           # View all logs
 make logs-main      # View main agent logs
 make health         # Check service health
 ```
+
+**Full guide:** [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) covers architecture,
+the two dashboards (overview + CGF), how to add alert rules, first-response actions
+for each rule, and how to wire a real receiver (Slack/email/PagerDuty).
 
 ---
 
