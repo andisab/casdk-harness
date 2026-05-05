@@ -29,7 +29,7 @@ Technical reference for developers working on this repository and for Claude's o
 ### Completed Recently
 - **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
   - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
-  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Plugin agents still need programmatic registration with `plugin:resource` namespacing. Replaced alias dict in `definitions.py` with directory walker.
+  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Replaced alias dict in `definitions.py` with directory walker. (Originally noted "Plugin agents still need programmatic registration" — that was wrong; corrected in the 2026-05-05 5a follow-up after [`docs/sdk-upstream-issues/DERISK-RESULTS.md`](docs/sdk-upstream-issues/DERISK-RESULTS.md) showed the SDK exposes plugin agents to Task via `plugins=[]` directly. The workaround was removed.)
   - Step 3: Dropped `MODEL_MAP` defensive translation (Phase 1 made it a no-op).
   - Step 4: Extracted `AgentProgress` + `Colors` + helpers to `harness/agent_progress.py`.
   - Step 5: Dropped unused `register_workspace_agent` / `unregister` / `clear` API (zero callers in src/ or tests/).
@@ -476,7 +476,7 @@ AGENT_MEMORY_LIMIT=8G
 #### Plugin Settings
 ```bash
 ENABLED_PLUGINS=context-engineering,research-team  # Comma-separated (empty = all)
-PLUGIN_USE_SDK_ONLY=false                          # Disable workarounds when SDK fixed
+# PLUGIN_USE_SDK_ONLY removed (Block 3 Step 3a, 2026-05-04) — workarounds deleted, no flag needed
 ```
 
 **Python defaults** (`config.py`):

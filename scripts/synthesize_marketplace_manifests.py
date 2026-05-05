@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
-"""Synthesize per-plugin .claude-plugin/plugin.json shims from a marketplace.json.
+"""Synthesize per-plugin .claude-plugin/plugin.json shims as a fallback.
 
-The swe-marketplace stores its plugin metadata in a single top-level
-``.claude-plugin/marketplace.json``; individual plugin directories don't ship a
-per-plugin manifest. The Claude Code CLI (which loads plugins via
-``--plugin-dir``) expects ``<plugin>/.claude-plugin/plugin.json`` per plugin,
-so we lift each marketplace entry into a per-plugin shim after sync.
+As of swe-marketplace 2026-05-05, each plugin in the marketplace ships
+its own ``<plugin>/.claude-plugin/plugin.json`` file directly — so most
+modern marketplace clones don't need synthesis at all. This script
+remains as a fallback for older marketplace pins that predate that
+change, and for any custom marketplace that ships only a top-level
+``.claude-plugin/marketplace.json``.
 
-Each marketplace entry is already in the CLI's expected schema — agents and
-skills as explicit file/sub-dir paths, author as an object, etc. We just strip
-the marketplace-only ``source`` field and write the rest verbatim. This is
-intentionally lossless: the harness's own ``PluginManager`` walks plugin
-directories directly and ignores manifest fields, so any transformation here
-would only risk breaking the CLI's stricter ``plugin validate`` schema.
+Behavior:
+
+- For each plugin entry in ``marketplace.json``, check if the plugin
+  directory already has a ``.claude-plugin/plugin.json``. If yes,
+  **skip** — the upstream-shipped manifest wins.
+- Only synthesize for plugins that lack a manifest. Lift the marketplace
+  entry verbatim (minus marketplace-only fields ``source`` /
+  ``category`` / ``strict``) into the per-plugin path.
+
+This is intentionally lossless: the harness's own ``PluginManager``
+walks plugin directories directly and doesn't depend on these
+manifests, so the only consumer that sees them is the SDK CLI. Keeping
+this script additive ensures upstream-shipped manifests aren't
+clobbered by an older synthesis output.
 
 Usage:
     python3 scripts/synthesize_marketplace_manifests.py <marketplace_root>
@@ -25,7 +34,7 @@ from pathlib import Path
 
 
 # Fields the marketplace uses internally that are not part of the per-plugin
-# plugin.json schema. Strip them when synthesizing the shim.
+# plugin.json schema. Strip them when synthesizing a shim.
 _MARKETPLACE_ONLY_FIELDS = {"source", "category", "strict"}
 
 
@@ -38,6 +47,7 @@ def synthesize(marketplace_root: Path) -> int:
     data = json.loads(manifest_file.read_text())
     plugins = data.get("plugins", [])
     written = 0
+    skipped = 0
 
     for entry in plugins:
         name = entry.get("name")
@@ -50,14 +60,21 @@ def synthesize(marketplace_root: Path) -> int:
             print(f"warn: plugin source missing for '{name}' at {plugin_dir}", file=sys.stderr)
             continue
 
-        shim = {k: v for k, v in entry.items() if k not in _MARKETPLACE_ONLY_FIELDS}
-
         out = plugin_dir / ".claude-plugin" / "plugin.json"
+        if out.exists():
+            # Upstream-shipped manifest wins — never overwrite it.
+            skipped += 1
+            continue
+
+        shim = {k: v for k, v in entry.items() if k not in _MARKETPLACE_ONLY_FIELDS}
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(shim, indent=2) + "\n")
         written += 1
 
-    print(f"Synthesized {written} plugin.json shim(s) in {marketplace_root}")
+    print(
+        f"Synthesized {written} plugin.json shim(s) in {marketplace_root}; "
+        f"skipped {skipped} (already shipped upstream)."
+    )
     return 0
 
 

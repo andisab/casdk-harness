@@ -19,10 +19,8 @@ from claude_agent_sdk import (
     ProcessError,
     ResultMessage,
 )
-from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.checkpoint import CheckpointManager
 from harness.config import HarnessConfig, RuntimeConfig, get_config
 from harness.health import HealthServer
@@ -585,46 +583,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
 
         return system_prompt
 
-    def _load_plugin_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Return plugin agents in plugin-name:agent-name namespaced form.
-
-        SDK plugin loading via ``plugins=`` does not yet expose plugin agents
-        to the Task tool with namespacing, so PluginManager loads them
-        explicitly. Tracked upstream — see Block 3 Step 5.
-        """
-        plugin_agents = self.plugin_manager.get_all_agents()
-
-        if plugin_agents:
-            logger.info(
-                "Discovered plugin agents",
-                count=len(plugin_agents),
-                agents=list(plugin_agents.keys()),
-            )
-
-        return plugin_agents
-
-    def _convert_to_sdk_agents(self) -> dict[str, SDKAgentDefinition]:
-        """Get plugin agents for SDK Task tool dispatch.
-
-        REFACTOR.md Phase 3 (verified 2026-05-04): harness agents are now
-        auto-discovered from `.claude/agents/` via `setting_sources=["project"]`,
-        so they no longer need programmatic registration here. Plugin agents
-        still require it — `plugins=[{type:local,path:...}]` does not expose
-        them to Task with the `plugin:resource` namespacing the harness uses.
-
-        Returns:
-            Dict mapping namespaced plugin agent names to SDK AgentDefinition.
-        """
-        plugin_agents = self._load_plugin_agents()
-
-        logger.debug(
-            "Registering plugin agents for SDK Task dispatch",
-            plugin_agents=len(plugin_agents),
-            agents=list(plugin_agents.keys()),
-        )
-
-        return plugin_agents
-
     def _build_sdk_options(self) -> ClaudeAgentOptions:
         """Build SDK options with MCP servers and configuration."""
         import os
@@ -640,9 +598,6 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         model = self.runtime.model
         permission_mode = self.runtime.permission_mode
 
-        # Convert harness agents to SDK format
-        sdk_agents = self._convert_to_sdk_agents()
-
         # Built-in tools + MCP browser automation tools
         allowed_tools = [
             # Built-in SDK tools
@@ -657,25 +612,27 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             "Building SDK options",
             allowed_tools_count=len(allowed_tools),
             mcp_servers=list(self.mcp_servers.keys()),
-            agents_count=len(sdk_agents),
             permission_mode=permission_mode,
             model=model,
         )
 
+        # Plugin sub-agents are exposed to the Task tool by the SDK directly
+        # via ``plugins=`` (verified 2026-05-05 in DERISK-RESULTS.md). Harness
+        # sub-agents are auto-discovered from ``.claude/agents/`` through
+        # ``setting_sources=["project"]``. No ``agents=`` workaround needed.
         return ClaudeAgentOptions(
             allowed_tools=allowed_tools,
             permission_mode=permission_mode,
             max_turns=self.config.claude_max_turns,
             cwd="/app",  # SDK needs /app to find .claude/skills/
             model=model,
-            mcp_servers=self.mcp_servers,  # Register custom MCP servers
-            agents=sdk_agents,  # Register custom subagents for Task tool
-            setting_sources=["project"],  # REFACTOR.md Part 2 Phase 1: hermetic container; project-only auto-discovers .claude/agents/, .claude/skills/, .claude/commands/
-            plugins=self.plugins,  # Phase 1B: Enable plugin loading
-            skills="all",  # SDK 0.1.72+: must be "all" or list[str]; None hides skills from the Skill tool
+            mcp_servers=self.mcp_servers,
+            setting_sources=["project"],
+            plugins=self.plugins,
+            skills="all",  # SDK 0.1.72+: "all" or list[str]; None hides skills from the Skill tool
             system_prompt=system_prompt,
-            env=cli_env,  # Pass environment to CLI subprocess
-            stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),  # Capture stderr
+            env=cli_env,
+            stderr=lambda msg: logger.debug(f"[CLI stderr] {msg}"),
         )
 
     async def start(self) -> None:

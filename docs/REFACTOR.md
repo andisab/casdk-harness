@@ -269,7 +269,21 @@ In both branches: `~~Verify `skills=` parameter exists~~` is **closed** as of Ph
 
 **Phase 3 — Slim `direct_agent.py` and lean on SDK loading conventions (~2 days; `main`) ✓ DONE 2026-05-04**
 
-Landed across 6 commits (`a4315d7` through Step 6 commit). Final state: `direct_agent.py` (780 LoC) → `subagent.py` (~530 LoC) + new `agent_progress.py` (196 LoC). Harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`; plugin agents continue to be programmatically registered (the SDK's `plugins=[{type:local,path:...}]` does not auto-expose them with `plugin:resource` namespacing). Both runtime-verified.
+> **ERRATUM (2026-05-05):** The Phase 3 verification experiment below
+> concluded that the SDK's `plugins=[]` field does not expose plugin
+> agents to the Task tool, requiring programmatic registration as a
+> workaround. **This was wrong** — the actual cause was the
+> synthesizer producing CLI-invalid `plugin.json` files, which the
+> SDK silently dropped. Once the synthesizer was rewritten in
+> Block 3 Step 3a (commit `0e8b31e`) and the cgf-agents in-tree
+> manifest was schema-corrected, plugin agents became reachable via
+> Task with both bare and `plugin:agent` namespacing. The
+> programmatic registration workaround was removed in the
+> Block 3 Step 5a follow-up (commit TBD). See
+> [`docs/sdk-upstream-issues/DERISK-RESULTS.md`](sdk-upstream-issues/DERISK-RESULTS.md)
+> for the full bisection.
+
+Landed across 6 commits (`a4315d7` through Step 6 commit). Final state: `direct_agent.py` (780 LoC) → `subagent.py` (~530 LoC) + new `agent_progress.py` (196 LoC). Harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Plugin agents are exposed to Task by the SDK directly via `plugins=[]` (post-erratum verification 2026-05-05). The original Phase 3 finding kept the programmatic registration workaround as a precaution; it was later confirmed redundant and removed.
 
 Step-by-step record (kept for archeology):
 
