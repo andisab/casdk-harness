@@ -20,6 +20,7 @@ Version 2.0 | December 19, 2025
    - [Pattern 6: Peer-to-Peer Coordination](#pattern-6-peer-to-peer-coordination)
    - [Pattern 7: Hybrid Pipeline Architecture](#pattern-7-hybrid-pipeline-architecture)
    - [Pattern 8: Event-Driven Async](#pattern-8-event-driven-async)
+   - [Pattern 9: Advisor Strategy](#pattern-9-advisor-strategy)
 5. [Advanced Components](#advanced-components)
 6. [Production Patterns](#production-patterns)
 7. [Framework-Specific Best Practices](#framework-specific-best-practices)
@@ -33,7 +34,7 @@ Version 2.0 | December 19, 2025
 
 ### Overview
 
-Multi-agent orchestration is the art and science of coordinating multiple AI agents to solve complex problems that exceed the capabilities of a single agent. This guide presents **eight orchestration patterns** identified through comprehensive research and analysis of production multi-agent systems, with specific focus on implementation using the **Claude Agent SDK**.
+Multi-agent orchestration is the art and science of coordinating multiple AI agents to solve complex problems that exceed the capabilities of a single agent. This guide presents **nine orchestration patterns** identified through comprehensive research and analysis of production multi-agent systems, with specific focus on implementation using the **Claude Agent SDK**.
 
 > **Note: Design Specification**
 > This document contains design specifications with example code. The patterns and implementations shown here are reference designs, not working code in the repository. The `src/harness/orchestration/` directory does not yet exist. See [ORCHESTRATION_ROADMAP.md](./ORCHESTRATION_ROADMAP.md) for implementation status and timeline.
@@ -50,6 +51,7 @@ Multi-agent orchestration is the art and science of coordinating multiple AI age
 | **Peer-to-Peer** | Dynamic environments, fault tolerance | High | Very High | Custom |
 | **Hybrid Pipeline** | Production systems, multi-phase workflows | Medium-High | High | Direct |
 | **Event-Driven Async** | Distributed systems, long-running | High | Very High | Redis |
+| **Advisor Strategy** | Mixed-complexity workflows, token-economy-sensitive long-running agents | Low-Medium | Medium | Direct |
 
 ### Key Insights from Research
 
@@ -119,8 +121,11 @@ Start
   ├─ Production system with multiple phases?
   │  └─> Hybrid Pipeline
   │
-  └─ Long-running/distributed/async?
-     └─> Event-Driven Async
+  ├─ Long-running/distributed/async?
+  │  └─> Event-Driven Async
+  │
+  └─ Cheap model fine for most turns, but occasional hard decisions need stronger reasoning?
+     └─> Advisor Strategy
 ```
 
 ### Pattern Relationships
@@ -136,6 +141,8 @@ Swarm (extreme P2P with many simple agents)
 
 Mediator + Peer-to-Peer = Hybrid with fallback
 Hierarchical + Blackboard = Multi-level collaboration
+Advisor + Sequential Pipeline = Token-economical refinement loop
+Advisor + Hierarchical = Coordinator delegates to advisor for hard subtasks
 ```
 
 ---
@@ -1910,6 +1917,289 @@ class EventDrivenCoordinator:
             self.broker.disconnect()
             self.broker = None
 ```
+
+---
+
+### Pattern 9: Advisor Strategy
+
+**Complexity: Low-Medium | Scalability: Medium | SDK Support: Direct**
+
+**Source: Anthropic — "Effective harnesses for long-running agents" / Code with Claude 2026 (cited by Bolt's Eric Simmons: "Better architectural decisions on complex tasks, no overhead on simple ones.")**
+
+#### Core Concept
+
+Two-tier model strategy that gives a cheap **executor** (Sonnet or Haiku) an
+**on-demand intelligence boost** from a stronger **advisor** (Opus) — at
+roughly the same blended cost as running the executor alone, because the
+advisor is invoked only when a hard decision warrants it.
+
+The executor handles every turn of the main loop. When it hits a step that
+needs heavier reasoning (architectural decision, ambiguous code path, complex
+refactor, recovery from a failed attempt), it requests advice. The advisor
+reads the shared context, returns a recommendation, and the executor resumes.
+
+#### Architecture
+
+```
+                 Main loop
+                    │
+                    ▼
+         ┌──────────────────────┐
+         │      Executor        │   ← runs every turn
+         │   (Sonnet / Haiku)   │
+         └──┬────────────────┬──┘
+       Read │                │ Tool call
+       /write                ▼
+         ┌──▼──────────┐  ┌─────────────────┐
+         │   Shared    │  │     Advisor     │   ← on-demand only
+         │  context    │◄─┤      (Opus)     │
+         │  conv+tools │  │  Reviews context│
+         │  +history   │  │   Sends advice  │
+         └─────────────┘  └─────────────────┘
+```
+
+#### Key Characteristics
+
+- **Asymmetric model tiers**: cheap on the hot path, expensive only when needed.
+- **Single shared context**: both models read the same conversation, tool history, and workspace state. No context handoff to engineer.
+- **Executor decides when to consult**: gating heuristic lives in the executor's prompt, not in a separate router.
+- **Synchronous boost**: not parallel ensemble — the executor pauses, gets advice, then continues.
+- **Token economy by design**: most turns ~Sonnet-priced; occasional Opus calls are short (advisor reads context but doesn't run tools).
+
+#### Token Economy
+
+This pattern explicitly optimizes blended cost on long-running agents where
+most turns are mechanical (pattern-match, edit a file, run a test) and only a
+small fraction need deep reasoning.
+
+| Turn type | Model | Frequency | Cost share |
+|---|---|---|---|
+| Routine | Executor (Sonnet/Haiku) | ~85-95% | dominant volume, low unit cost |
+| Hard decision | Advisor (Opus) | ~5-15% | high unit cost, low volume |
+| Blended cost | mixed | — | typically 1.0-1.5× pure-Sonnet, vs 3-5× pure-Opus |
+
+Numbers depend heavily on the gating heuristic. A good rule of thumb: if the
+executor consults the advisor on more than 20-25% of turns, you're better off
+just running Opus throughout.
+
+#### When to Invoke the Advisor (Gating Heuristics)
+
+The pattern hinges on a good "should I consult?" rule. Common heuristics:
+
+1. **Self-assessed complexity** — executor's prompt asks "rate this step's complexity 1-5; if ≥4, request advisor."
+2. **Failure recovery** — if a tool call failed twice or tests keep regressing, escalate.
+3. **Domain keywords** — explicit triggers: "architectural decision", "design tradeoff", "API contract", "schema migration".
+4. **Token-budget signal** — if the executor is about to exceed a per-step token cap, pause and consult.
+5. **Explicit user signal** — `[ADVISOR]` keyword from the user or from another agent.
+
+The first two are the most robust. Keyword-based triggers drift over time and
+become noisy.
+
+#### Advantages
+
+- ✅ **Cost-efficient**: blended cost ~Sonnet-equivalent for long sessions
+- ✅ **Quality where it matters**: Opus reasoning available without paying for it on every turn
+- ✅ **Simpler than hierarchical**: no decomposition, no parallel coordination
+- ✅ **Easy to bolt onto existing single-agent loops**: add a tool/sub-agent call
+- ✅ **Shared context**: no serialization/deserialization between models
+
+#### Trade-offs
+
+- ⚠️ **Gating heuristic is the hard part**: bad gating either blows the budget (over-consulting Opus) or misses the value (under-consulting)
+- ⚠️ **Latency spike on advisor calls**: Opus is slower than Sonnet; the executor blocks while waiting
+- ⚠️ **Two model behaviors to debug**: when output is wrong, was it the executor or the advice?
+- ⚠️ **Not for fully predictable workflows**: if every turn is hard, just run Opus. If every turn is easy, just run Haiku.
+
+#### Best Use Cases
+
+- **Coding agents on long sessions** (the original Bolt use case): most edits are mechanical; architectural pivots are rare but high-value
+- **Autonomous task execution** with mixed-complexity tasks (the harness's `make autonomous` mode is a natural fit)
+- **Refactoring and migration workflows**: per-file edits are routine, scheme decisions are not
+- **Debugging assistants**: routine triage on cheap, root-cause analysis on expensive
+- **Interactive sessions** where the user trusts the agent for routine work but wants stronger reasoning available on demand
+
+#### Implementation
+
+```python
+# src/harness/orchestration/patterns/advisor_strategy.py
+
+import asyncio
+from typing import Any, Dict
+from harness.subagent import call_agent_simple
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+
+class AdvisorStrategy:
+    """Executor (cheap) + on-demand Advisor (expensive) two-tier pattern.
+
+    The executor runs every turn; the advisor is consulted only when the
+    executor decides it needs deeper reasoning. Both share the same context
+    (conversation, tool history, workspace state) — no handoff payload.
+    """
+
+    def __init__(
+        self,
+        executor_agent: str = "general-purpose",
+        advisor_agent: str = "general-purpose",
+        executor_model: str = "sonnet",
+        advisor_model: str = "opus",
+        advisor_timeout_s: int = 60,
+    ):
+        self.executor_agent = executor_agent
+        self.advisor_agent = advisor_agent
+        self.executor_model = executor_model
+        self.advisor_model = advisor_model
+        self.advisor_timeout_s = advisor_timeout_s
+        self.advisor_call_count = 0
+        self.executor_call_count = 0
+
+    async def step(
+        self,
+        user_input: str,
+        shared_context: str,
+    ) -> Dict[str, Any]:
+        """One turn of the executor; consult advisor if it asks."""
+        executor_prompt = self._build_executor_prompt(user_input, shared_context)
+
+        executor_response = await call_agent_simple(
+            self.executor_agent,
+            executor_prompt,
+            model=self.executor_model,
+        )
+        self.executor_call_count += 1
+
+        if self._executor_requested_advice(executor_response):
+            advisor_prompt = self._extract_advisor_question(executor_response)
+            logger.info(
+                "Executor requested advisor",
+                advisor_calls=self.advisor_call_count + 1,
+                executor_calls=self.executor_call_count,
+            )
+
+            try:
+                async with asyncio.timeout(self.advisor_timeout_s):
+                    advice = await call_agent_simple(
+                        self.advisor_agent,
+                        f"Shared context:\n{shared_context}\n\n"
+                        f"Question from executor:\n{advisor_prompt}",
+                        model=self.advisor_model,
+                    )
+                self.advisor_call_count += 1
+
+                # Re-run executor with the advice in context
+                executor_response = await call_agent_simple(
+                    self.executor_agent,
+                    self._build_executor_prompt(
+                        user_input, shared_context, advice=advice
+                    ),
+                    model=self.executor_model,
+                )
+                self.executor_call_count += 1
+                return {
+                    "response": executor_response,
+                    "consulted_advisor": True,
+                    "advice": advice,
+                }
+            except asyncio.TimeoutError:
+                logger.warning("Advisor timeout, proceeding without advice")
+                return {"response": executor_response, "consulted_advisor": False}
+
+        return {"response": executor_response, "consulted_advisor": False}
+
+    def _build_executor_prompt(
+        self,
+        user_input: str,
+        shared_context: str,
+        advice: str | None = None,
+    ) -> str:
+        prompt = f"""You are the executor in an Advisor strategy. You handle every turn.
+For routine work, just do it. For hard decisions (architecture, design tradeoffs,
+ambiguous paths, recovery from repeated failures), instead emit:
+
+    [REQUEST_ADVISOR: <one-sentence question>]
+
+Then stop. The advisor will respond and you'll be re-invoked with the advice.
+
+Shared context:
+{shared_context}
+
+User input:
+{user_input}
+"""
+        if advice:
+            prompt += f"\n\nAdvisor said:\n{advice}\n\nProceed with this guidance.\n"
+        return prompt
+
+    def _executor_requested_advice(self, response: str) -> bool:
+        return "[REQUEST_ADVISOR:" in response
+
+    def _extract_advisor_question(self, response: str) -> str:
+        start = response.find("[REQUEST_ADVISOR:") + len("[REQUEST_ADVISOR:")
+        end = response.find("]", start)
+        return response[start:end].strip()
+
+    @property
+    def advisor_consult_rate(self) -> float:
+        """Fraction of turns that escalated to the advisor.
+
+        Healthy range: 5-20%. Above 25% suggests the executor is undersized;
+        consider promoting the executor to Opus directly.
+        """
+        if self.executor_call_count == 0:
+            return 0.0
+        return self.advisor_call_count / self.executor_call_count
+
+
+# Example: bolt-on to harness autonomous mode
+async def example_autonomous_with_advisor():
+    strategy = AdvisorStrategy(
+        executor_agent="python-expert",
+        advisor_agent="general-purpose",  # Opus-driven coordinator
+        executor_model="sonnet",
+        advisor_model="opus",
+    )
+
+    shared_context = "Workspace: /workspace/projects/my-app\nTask: refactor auth module"
+
+    result = await strategy.step(
+        "Continue with the next pending task in task_list.json",
+        shared_context,
+    )
+
+    if result["consulted_advisor"]:
+        logger.info("Advisor consulted", advice_preview=result["advice"][:100])
+
+    logger.info(
+        "Strategy stats",
+        executor_calls=strategy.executor_call_count,
+        advisor_calls=strategy.advisor_call_count,
+        consult_rate_pct=round(strategy.advisor_consult_rate * 100, 1),
+    )
+```
+
+#### Performance Characteristics
+
+- **Latency**: executor turns ~Sonnet-fast; advisor turns add Opus latency (~3-5× slower) but are infrequent
+- **Throughput**: same as executor alone for routine turns; bottlenecked by advisor on hard turns
+- **Token usage**: Most volume on executor; advisor receives full context but produces short advice (small output token cost)
+- **Cost**: typically 1.0-1.5× pure-Sonnet; compare to 3-5× for pure-Opus
+- **Scalability**: scales with executor count; advisor becomes bottleneck if many executors share one advisor (consider an advisor pool or a Mediator in front)
+
+#### Composes Well With
+
+- **Sequential Pipeline**: each stage uses Advisor strategy internally → same cost-efficiency at each step
+- **Hierarchical Coordination**: the *manager* runs Advisor strategy; workers can be plain executors
+- **Hybrid Pipeline**: production-ready pattern; use Advisor for the planning + synthesis stages where reasoning quality matters
+- **Mediator**: route some calls to Advisor strategy and others to single-tier agents based on task complexity
+
+#### Anti-patterns
+
+- ❌ **Always-consult**: defeats the purpose. Just use Opus.
+- ❌ **Never-consult**: defeats the purpose. Just use Sonnet/Haiku.
+- ❌ **Fire-and-forget advisor**: if the executor doesn't actually use the advice, the call was wasted budget.
+- ❌ **Advisor reaches for tools**: the advisor reviews and recommends; it doesn't act. Tool execution stays with the executor (otherwise context fragments).
 
 ---
 

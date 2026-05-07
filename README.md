@@ -433,11 +433,26 @@ docker stats         # Resource usage
 
 ## Resources
 
+### Project documentation
+
 - [QUICKSTART.md](./QUICKSTART.md) — 5-minute setup
 - [CLAUDE.md](./CLAUDE.md) — Technical reference (architecture, CGF internals, configuration, gotchas)
 - [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md) — CGF deep dive
 - [docs/REFACTOR.md](./docs/REFACTOR.md) — Reorganization status, observability operator guide, hardening priorities
+- [docs/ORCHESTRATION_PATTERNS.md](./docs/ORCHESTRATION_PATTERNS.md) — Multi-agent orchestration patterns reference
 - [docs/examples/](./docs/examples/) — Spec templates
+
+### Anthropic engineering references
+
+Primary design influences for the harness — long-running agent design, harness architecture, and reference implementations:
+
+- [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Anthropic engineering blog post on what makes long-running agent harnesses work in practice
+- [Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) — Companion piece on architectural patterns for long-running agent applications
+- [`anthropics/claude-quickstarts` — autonomous-coding](https://github.com/anthropics/claude-quickstarts/tree/main/autonomous-coding) — Anthropic's reference autonomous coding agent quickstart
+- [`anthropics/cwc-long-running-agents`](https://github.com/anthropics/cwc-long-running-agents) — Code-with-Claude long-running agent examples and patterns
+
+### Anthropic SDK documentation
+
 - [Claude Agent SDK Documentation](https://docs.claude.com/en/api/agent-sdk/overview)
 - [Claude Code Documentation](https://docs.claude.com/en/docs/claude-code/)
 
