@@ -382,7 +382,7 @@ make logs-main      # View main agent logs
 make health         # Check service health
 ```
 
-**Full guide:** [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) covers architecture,
+**Full guide:** [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability) covers architecture,
 the two dashboards (overview + CGF), how to add alert rules, first-response actions
 for each rule, and how to wire a real receiver (Slack/email/PagerDuty).
 

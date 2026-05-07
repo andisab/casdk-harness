@@ -1,30 +1,382 @@
-# Harness Reorganization & Forward Plan
+# Harness Status, Forward Plan, Hardening & Observability
 
-## Status
+This is the canonical engineering reference for the casdk-harness, consolidating
+what used to live in three separate docs (REFACTOR.md, HARDENING.md, OBSERVABILITY.md).
+Five sections, each independently useful:
 
-This document originally tracked a multi-block reorganization of the harness
-(branch surgery, plugin loader modernization, observability stack). **As of
-2026-05-05 all four reorganization blocks are complete and merged to `main`.**
-The document now serves two purposes:
-
-1. **Look back** — a compact record of what shipped, with pointers to the PRs
-   and commits that hold the detail.
-2. **Look forward** — the plan for the next major work item, **Stage 3 (Eval
-   Harness)**, which is the original purpose of `contextgrad-framework`.
+1. **[Status](#1-status)** — what's shipped, current numbers, branch state.
+2. **[Forward plan](#2-forward-plan)** — Stage 3 (Eval Harness) and beyond.
+3. **[Hardening](#3-hardening)** — security + test-coverage priorities.
+4. **[Observability](#4-observability)** — operator guide for the bundled stack.
+5. **[Reference](#5-reference)** — Anthropic-canonical pointers, what-shipped log, SDK upstream investigation, verification rule.
 
 ---
 
-## Anthropic-canonical references
+## 1. Status
+
+**As of 2026-05-07:**
+
+- All four reorganization blocks (1, 2, 3, 4) merged to `main`.
+- `main` and `contextgrad-framework` are equal (both at PR #5 merge `ece4269`); `contextgrad-framework` is reserved for forthcoming Stage 3 work.
+- **Tests:** 1534 unit passing (51 files, 1379 distinct + parametrize), 41 integration tests across 21 files, 82 e2e tests across 5 files.
+- **CGF Stages 1+2 shipped on `main`:** protocol layer, resource architect, DESIGN phase, MCP tool/server creation skills with Python+TypeScript scaffolds.
+- **Multi-resource pipeline working end-to-end:** `PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE`.
+- **Observability stack live:** OTel Collector → Prometheus, two pre-provisioned Grafana dashboards, AlertManager + 10 active alert rules.
+
+| Stage | Status | Where |
+|---|---|---|
+| **Stage 1 — Protocol layer + resource architect + DESIGN phase** | shipped | `main`, via Block 1 |
+| **Stage 2 — MCP tool/server creation skills + Python/TypeScript scaffolds** | shipped | `main`, via Block 1 |
+| **Stage 3 — Evaluation Framework** | **not started** | `contextgrad-framework` |
+| **Stage 4 — Integration & hardening** | not started; depends on Stage 3 | `contextgrad-framework` |
+
+Two phases exist in the `OptimizationPhase` enum but are not yet wired into the
+orchestrator: `EVAL_DESIGN` and `EXECUTION_EVAL` — those are Stage 3's job.
+
+---
+
+## 2. Forward plan
+
+### Stage 3 — Eval Harness
+
+Branch: `contextgrad-framework` (currently equal to `main`).
+
+Reference spec: `docs/CGF-EVAL-FRAMEWORK.md` (draft).
+
+**Goals:**
+
+1. **`cgf-eval-architect` agent** — generates eval suites from resource specs (the same SPEC.md that drives optimization). Output: structured eval manifest (testcases, expected behaviors, grading rubrics).
+2. **Grader infrastructure** — three tiers, escalating in cost and richness:
+   - **Deterministic** — pattern-match outputs, exact-match assertions, schema validation. Cheapest, suitable for syntactic checks.
+   - **Trajectory-based** — uses CGF tracer spans (already collected) to grade based on tool-call sequences, error rates, and execution paths rather than just final outputs.
+   - **LLM-judge** — for behavioral / qualitative criteria where the first two tiers can't reach.
+3. **Sandboxed agent-session eval harness** — runs the optimized resource against the eval suite in an isolated session, captures traces, scores against the grading rubric. Produces both per-testcase verdicts and an aggregate score.
+4. **Wire `EVAL_DESIGN` and `EXECUTION_EVAL` phases** into `multi_resource_orchestrator.py`. Both already exist in the `OptimizationPhase` enum; the orchestrator currently skips them.
+5. **Feedback loop** — execution results feed back into `cgf-prompt-optimizer` for refinement (closes the gradient loop CGF is named after).
+
+**Bonus:** Block 4 Phase 3C shipped a `casdk-cgf` Grafana dashboard with placeholder panels in a "Future" row. Stage 3 is what populates them — phase transitions, optimizer iterations, eval scores. No dashboard work needed; the panels are already provisioned.
+
+**Open questions for Stage 3:**
+
+- **Eval suite storage format.** YAML (matches existing CGF SPEC pattern) vs JSON (machine-friendlier) vs hybrid. Recommend YAML for human authoring + the workspace already-canonical pattern.
+- **Sandbox isolation level.** Run the eval session in a fresh subprocess? Fresh container? In-process? Trade-off: realism (subprocess/container is closer to real usage) vs latency/cost (in-process is fastest).
+- **Grader composition.** When deterministic + trajectory + LLM-judge all apply to the same testcase, how do their scores combine? Worst-of, weighted average, or each tier produces its own column in the result?
+- **Failure mode for LLM-judge.** If the judge model itself errors or hits rate-limit mid-eval, do we retry, mark "no decision", or fail the run? Cost-conscious design suggests retry-once-then-mark.
+
+### Stage 4 — Integration & hardening (after Stage 3 stabilizes)
+
+End-to-end pipeline tests across the new phases, checkpoint/resume across the
+new phases, ACCEPT/REFINE/REJECT human-review gates surfacing in the orchestrator.
+
+### Independent forward TODOs
+
+Two items unrelated to Stage 3 but worth addressing when bandwidth allows:
+
+- **Sub-agent `HOME` mismatch** — when sub-agents (e.g., `research-team:research-specialist`) expand `~` in paths via Bash, it sometimes resolves to `/root` while the runtime user is `claude` (`$HOME=/home/claude`). The subsequent Write tool fails with `EACCES`. Three fix candidates queued; (a) explicit `HOME=/home/claude` env passthrough in `_build_sdk_options()` is the leading suspect.
+- **`make interactive` terminal UX audit** — corrupted Rich panel borders, repeated "Thinking..." displays, verbose logs interleaved with conversation. Audit `harness/cli.py`, `harness/interactive.py`, possibly `harness/agent_progress.py`.
+
+---
+
+## 3. Hardening
+
+Security + test-coverage prioritization. Items below are the open work; resolved
+items are listed at the end of this section for reference.
+
+### Priority summary (open items)
+
+| Priority | Open items | Effort estimate |
+|----------|-----------|-----------------|
+| **P0 Critical** | 3 | ~20h |
+| **P1 High** | 2 | ~6h |
+| **P2 Medium** | 6 | ~16h |
+| **P3 Low** | 4 | ~11h |
+| **Test gaps** (P1) | 3 modules | ~12h |
+
+### P0 — Critical (block release)
+
+#### CRIT-01: Plaintext checkpoint data
+- **CVSS:** 9.1 | **Location:** `src/harness/checkpoint.py` (567 LOC) | **Effort:** ~8h
+- Checkpoints store complete agent state in plaintext JSON, including conversation history (may contain API keys / passwords), workspace snapshots, and session tokens.
+- **Impact:** PII exposure, credential leakage, GDPR/HIPAA violations.
+- **Remediation:** AES-256-GCM encryption + HMAC-SHA256 integrity, keys in vault (KMS/HashiCorp Vault), 30-day key rotation. Sanitization layer (`sanitize_sensitive_data()` in `security.py`) is already applied but is not a substitute for encryption.
+
+#### CRIT-02: SSH private keys in containers
+- **CVSS:** 8.8 | **Location:** `docker-compose.yml` lines 69-70, 149-150, 220-221 | **Effort:** ~4h
+- SSH private keys mounted into all three agent containers (`./.ssh:/home/claude/.ssh:ro`). Compromised container = stolen credentials.
+- **Impact:** Repository access, lateral movement, supply-chain attack.
+- **Remediation:** Replace with ephemeral GitHub/GitLab PATs via git credential helper (24h expiry). Drop the SSH bind mounts. Move to container-level secret injection.
+
+#### God-object refactor — `agent.py`
+- **Location:** `src/harness/agent.py` (1603 LOC) | **Effort:** ~8h
+- `AgentSession` still owns 9+ responsibilities. Block 3 split out the plugin pipeline (`plugin_manager.py` 637 → 182 LoC) but the rest of the decomposition is open.
+- **Proposed structure:**
+  ```
+  AgentSession        ~300 LOC   session lifecycle + dispatch
+  ├── MCPServerManager ~200 LOC  MCP discovery + lifecycle
+  ├── SessionManager   ~150 LOC  state transitions
+  ├── CheckpointManager        already separate (567 LOC, see CRIT-01)
+  └── MetricsCollector         already separate (499 LOC, post-Block-4 trim)
+  ```
+- **Note:** `multi_resource_orchestrator.py` (2157 LOC) and `autonomous.py` (1618 LOC) are now the largest files in the tree. They're candidates for the same treatment in a future pass.
+
+### P1 — High (fix before production)
+
+| Issue | CVSS | Location | Effort |
+|-------|------|----------|--------|
+| Missing rate limiting | 7.5 | `src/harness/autonomous.py` (1618 LOC, no rate-limit primitives) | 4h |
+| Redis password in env vars | 7.0 | `.env.example` | 2h |
+
+#### Test coverage gaps (P1)
+
+| Module | LOC | Tests | Status |
+|--------|-----|-------|--------|
+| `optimization/api.py` | 421 | **0** | Public API still untested |
+| `optimization/cli/section_optimize.py` | ~300 | 0 | Entry point untested |
+| `cli.py` (Rich UI formatting) | 581 | partial | Linked to interactive UX audit (Section 2) |
+
+Closed since the previous HARDENING revision: `optimization/orchestrator.py` (511 LOC) has 8 tests in `test_orchestrator_design_phase.py`; `optimization/multi_resource_orchestrator.py` (2157 LOC) has 43 tests in `test_multi_resource_orchestrator.py`; `optimizers/agentic_optimizer.py` is exercised by 30 tests in `test_optimizers.py`; `pipeline` has 12 tests.
+
+### P2 — Medium
+
+| Issue | CVSS | Location | Effort |
+|-------|------|----------|--------|
+| Security headers missing | 6.5 | `docker-compose.prod.yml` | 3h |
+| Docker socket exposure | 9.0 | `mcp_servers/docker` | 4h |
+| Checkpoint cleanup race | — | `checkpoint.py` | 2h |
+| Error message sanitization | 5.0 | `agent.py` (~lines 600-630 area) | 2h |
+| Dependency vulnerability scanning | 5.5 | `pyproject.toml` (no `.github/workflows/` yet) | 2h |
+| Cost budget enforcement | 4.0 | `monitoring.py` cost path | 3h |
+
+### P3 — Low
+
+| Issue | CVSS | Location | Effort |
+|-------|------|----------|--------|
+| Memory graph encryption | 5.0 | `mcp_servers/memory` | 4h |
+| Container image signing | 5.0 | Build pipeline | 3h |
+| Redis stream ACLs | 4.5 | `messaging.py` | 3h |
+| Test workspace isolation | 6.0 | `docker-compose.yml` | 1h |
+
+### Recently resolved
+
+| Item | CVSS | Resolution |
+|-------|------|------------|
+| ~~CRIT-03: Log sanitization~~ | 7.5 | `sanitize_sensitive_data()` in `security.py`, applied to prompt storage |
+| ~~HIGH-04: Bash bypass flag (`--allow-all-commands`)~~ | 8.8 | Flag removed entirely; verified absent from `src/` |
+| ~~P2: Session timeout~~ | 5.3 | `_check_session_timeout()` enforces `claude_session_timeout` |
+| ~~P3: Default passwords~~ | 3.0 | All `.env.example` defaults use `CHANGE_ME_BEFORE_PRODUCTION` placeholders |
+| ~~P3: Metrics auth~~ | 3.5 | Optional basic auth via `METRICS_AUTH_TOKEN` |
+| ~~Plugin SDK Workaround (`agent.py:64-72`)~~ | — | Removed in Block 3 follow-up `d8571b2`; `_register_agents` / `agents=sdk_agents` workaround was redundant once plugin manifests passed `claude plugin validate` |
+
+---
+
+## 4. Observability
+
+The harness ships a self-contained observability stack: native OpenTelemetry signals
+from the Claude Code CLI flow through a sidecar OTel Collector into Prometheus,
+where they power two pre-provisioned Grafana dashboards and AlertManager-delivered
+alerting rules.
+
+### Architecture
+
+```
+┌──────────────────┐  OTLP/gRPC  ┌──────────────────┐  scrape  ┌────────────┐
+│ Claude Code CLI  ├────────────►│  OTel Collector  ├─────────►│ Prometheus │
+│  (in main-agent) │  :4317      │  (claude_code_*) │  :8889   │  (TSDB)    │
+└──────────────────┘             └──────────────────┘          └─────┬──────┘
+                                                                     │
+            ┌────────────────────────────────────────────────────────┤
+            │ scrape :9090 (harness_*)                               │
+            │ scrape :8888 (otelcol_*)                               │
+┌───────────┴──────┐                                                 │
+│   main-agent     │                                                 │
+│ (harness_*       │                                                 │
+│  prometheus_     │            ┌─────────────────┐  alert push      │
+│  client port)    │            │  AlertManager   │◄─────────────────┘
+└──────────────────┘            └────────┬────────┘
+                                         │ webhook
+                                         ▼
+                                ┌──────────────────┐         ┌─────────┐
+                                │ webhook receiver │         │ Grafana │
+                                │ (logs to stdout) │         │ (UI/    │
+                                └──────────────────┘         │  panels)│
+                                                             └─────────┘
+```
+
+Two metric sources feed Prometheus:
+
+1. **Native SDK telemetry (`claude_code_*` namespace)** — emitted by the Claude Code CLI when `CLAUDE_CODE_ENABLE_TELEMETRY=1` and the OTLP exporter envvars are set (compose hardcodes both — see `docker-compose.yml`). The collector receives OTLP on `:4317` (gRPC) or `:4318` (HTTP) and re-exposes on `:8889` for Prometheus.
+2. **Harness instruments (`harness_*` and `cgf_*` namespaces)** — `prometheus_client` counters/gauges/histograms inside `src/harness/monitoring.py`, scraped from each agent container's `:9090` (host-mapped to `:9091`+).
+
+### Service map
+
+| Service | Container | Host port | Purpose |
+|---|---|---|---|
+| OTel Collector | `claude-otel-collector` | `:4317` (gRPC), `:4318` (HTTP) | OTLP ingest from SDK |
+| Prometheus | `claude-prometheus` | `:9090` | TSDB + rule evaluation |
+| Grafana | `claude-grafana` | `:3000` | Dashboards (default login: `admin` / `${GRAFANA_PASSWORD:-changeme123}`) |
+| AlertManager | `claude-alertmanager` | `:9093` | Alert routing |
+| AlertManager webhook (debug) | `claude-alertmanager-webhook` | `:9099` | Logs alert payloads to stdout |
+
+`8888` (collector self-metrics) and `8889` (SDK metrics exporter) are intentionally
+**not** mapped to the host — they're scraped over the docker network. Inspect them
+via the Prometheus UI at `http://localhost:9090`.
+
+### Dashboards
+
+Two dashboards are auto-provisioned via `config/monitoring/dashboards/dashboard-provider.yml`.
+Files are watched with `updateIntervalSeconds: 10`, so editing the JSON on disk
+propagates without a Grafana restart.
+
+#### Overview (`/d/casdk-overview`)
+
+Single-pane dashboard for day-to-day use. Five rows:
+
+| Row | Panels |
+|---|---|
+| Session Health | Active sessions, sessions started (1h), prompts (1h), tokens (1h), cost (1h), cache hit ratio |
+| Tokens & Cost | Tokens/min by model+query_source, cost/hour by model, token type mix (stacked), cumulative cost, cost per session, top models |
+| Tools & Messages | Top tools, tool error rate, message type distribution, agent request rate by status |
+| Latency | Agent request duration p50/p95/p99, session duration heatmap |
+| System (collapsed) | Checkpoint size, workspace files, memory usage by component |
+
+#### CGF (`/d/casdk-cgf`)
+
+CGF optimization framework activity:
+
+| Row | Panels |
+|---|---|
+| Tracer Activity | Spans collected/exported (selected range), adapter transform success rate, mean composite reward, spans-by-kind, spans-by-exporter |
+| Optimization Quality | Composite reward distribution heatmap, feedback dimensions (per resource_type/dimension), adapter transforms by status |
+| Future (collapsed) | Stage 3 eval-harness placeholder — populated when phase-transition + per-iteration eval metrics land |
+
+### Adding a new alert rule
+
+Rules live in `config/monitoring/alerting.yml`, evaluated by Prometheus, routed by
+AlertManager. Convention: harness metrics use `harness_*`, SDK metrics use
+`claude_code_*`.
+
+1. Add a rule under an existing `groups[*].rules` list (or create a new group):
+
+   ```yaml
+   - alert: MyAlertName
+     expr: |
+       histogram_quantile(0.99, rate(harness_agent_duration_seconds_bucket[5m])) > 60
+     for: 5m
+     labels:
+       severity: warning
+     annotations:
+       summary: "Agent p99 latency > 60s"
+       description: "Agent {{ $labels.agent }} p99 is {{ $value }}s."
+   ```
+
+2. Validate locally before committing:
+
+   ```bash
+   docker run --rm --entrypoint promtool \
+     -v "$PWD/config/monitoring/alerting.yml:/x/alerting.yml:ro" \
+     prom/prometheus:latest check rules /x/alerting.yml
+   ```
+
+3. Reload Prometheus to pick up the new rule (no restart needed):
+
+   ```bash
+   curl -XPOST http://localhost:9090/-/reload
+   ```
+
+   Or, if running with the bundled compose, recreate the prometheus service:
+   `docker compose up -d --force-recreate prometheus`.
+
+4. Verify the rule appears via `http://localhost:9090/rules`.
+
+### First-response actions
+
+Common alert payloads and what to check first.
+
+| Alert | Likely cause | First-response |
+|---|---|---|
+| **`OTelCollectorDown`** | Collector container crashed or OOM-killed | `docker compose ps otel-collector` and `docker compose logs otel-collector` |
+| **`AlertManagerDown`** | AM container down or scrape job misconfigured | `docker compose ps alertmanager`; check `prometheus.yml` alertmanager target |
+| **`HighErrorRate`** | Agent throwing — bad permissions, API timeouts, or tool failures | `make logs-main`; look for ERROR-level entries; check `harness_tool_calls_total{status="error"}` |
+| **`SlowResponseTime`** | API throttling, retries, or large prompt context | Check Prometheus `claude_code_token_usage_tokens_total{type="input"}` rate; look for token spikes |
+| **`HighAPICost`** | Loops, oversized prompts, or expensive model in subagent role | Inspect `Cost ($/hour) by Model` panel on Overview dashboard; review `query_source` split |
+| **`HighTokenUsage`** | Same as above — usually correlated with HighAPICost | Same panel |
+| **`HighMemoryUsage`** | Large workspace or runaway tracer | `docker stats` and check `harness_memory_usage_bytes{component}` panel |
+| **`LargeCheckpointSize`** | Old/stale checkpoints not pruned | `ls -la memory/checkpoints/` and `make checkpoint-clean` if available |
+| **`NoActiveSessions`** | Informational — main-agent idle for 15m | None required; suppress with a silence in AlertManager UI if expected |
+
+### Adding a real receiver
+
+The bundled `webhook-debug` receiver only logs to stdout — fine for development,
+not actionable in production. To wire Slack / email / PagerDuty, edit
+`config/monitoring/alertmanager.yml`:
+
+```yaml
+receivers:
+  - name: 'slack-prod'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/...'
+        channel: '#alerts'
+        send_resolved: true
+
+route:
+  receiver: 'slack-prod'      # change default
+  routes:
+    - matchers: [severity = critical]
+      receiver: 'slack-prod'  # or a separate pager-style receiver
+```
+
+Then validate and reload:
+
+```bash
+docker run --rm --entrypoint amtool \
+  -v "$PWD/config/monitoring/alertmanager.yml:/x/alertmanager.yml:ro" \
+  prom/alertmanager:v0.27.0 check-config /x/alertmanager.yml
+docker compose restart alertmanager
+```
+
+### Testing alert delivery
+
+Inject a synthetic alert directly via the AM v2 API to test routing without
+waiting for a rule to fire:
+
+```bash
+curl -XPOST -H 'Content-Type: application/json' \
+  --data '[{
+    "labels": {"alertname":"TestAlert","severity":"warning"},
+    "annotations": {"summary":"manual smoke test"},
+    "startsAt": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"
+  }]' http://localhost:9093/api/v2/alerts
+
+# After ~10s (group_wait), check the receiver:
+docker compose logs alertmanager-webhook | tail -30
+```
+
+### Why bundled, not external?
+
+The harness deliberately routes its own telemetry to the bundled collector
+rather than inheriting host-shell OTel envvars (which a developer's Claude Code
+configuration commonly sets to a personal/corporate collector). That isolation
+is hardcoded in `docker-compose.yml`; to redirect to an external collector for
+production, edit the `OTEL_EXPORTER_OTLP_ENDPOINT` value directly or use a
+docker-compose override file.
+
+### What's not bundled
+
+- **Tracing UI (Tempo / Jaeger).** The collector receives OTLP traces and ships them to a debug exporter (stdout). Add a Tempo backend if you need span querying — out of scope for the bundled stack.
+- **Log aggregation (Loki).** Same situation: OTLP logs pipeline goes to stdout. Add Loki / Promtail if structured-log search is required.
+- **Authentication on Prometheus / AlertManager.** Exposed without auth on the host (dev posture). Bind only to the docker network or front with a reverse proxy for any non-local deployment.
+
+---
+
+## 5. Reference
+
+### Anthropic-canonical references
 
 Two published Anthropic implementations match this harness's shape and remain
 useful as design north stars:
 
-- **`anthropics/claude-agent-sdk-demos/research-agent`** — closest analog for
-  programmatic resource loading. Uses `ClaudeAgentOptions(setting_sources=["project"], agents={...}, hooks={...})`
-  directly with no custom plugin loader.
-- **`anthropics/claude-cookbooks/claude_agent_sdk/chief_of_staff_agent`** —
-  closest analog for filesystem-based discovery. Uses `.claude/agents/`,
-  `.claude/commands/`, `.claude/hooks/`, `.claude/output-styles/` directly.
+- **`anthropics/claude-agent-sdk-demos/research-agent`** — closest analog for programmatic resource loading. Uses `ClaudeAgentOptions(setting_sources=["project"], agents={...}, hooks={...})` directly with no custom plugin loader.
+- **`anthropics/claude-cookbooks/claude_agent_sdk/chief_of_staff_agent`** — closest analog for filesystem-based discovery. Uses `.claude/agents/`, `.claude/commands/`, `.claude/hooks/`, `.claude/output-styles/` directly.
 
 Plugin distribution follows `anthropics/claude-plugins-official` and
 `anthropics/skills` (both ship `.claude-plugin/marketplace.json`). Hosting
@@ -35,129 +387,26 @@ Agent SDK and migrating to [Managed Agents](https://platform.claude.com/docs/en/
 for long-running asynchronous sessions. Not a near-term migration, but worth
 keeping in mind as the harness scales beyond what self-hosted infra can support.
 
----
+### What shipped — Block log
 
-## What shipped (chronological)
-
-Execution happened in four "Blocks" rather than the Part/Phase taxonomy this
-doc was originally drafted in. CLAUDE.md and MEMORY.md track the Block
-terminology; this section is the canonical map.
+Execution happened in four "Blocks." Phase-level detail lives in the no-squash
+commit messages on each promotion PR.
 
 | Block | Date | Scope | Promotion |
 |---|---|---|---|
 | **Block 1** | 2026-05-01/02 | Branch reorganization: 73 commits of Stage 1+2 CGF work + multi-resource pipeline promoted from `contextgrad-framework` to `main`; branch reset off the new main. | [PR #1](https://github.com/andisab/casdk-harness/pull/1) |
 | **Block 2** | 2026-05-04 | SDK bump (`>=0.1.72`); filesystem agent discovery via `.claude/agents/`; hook event SDK-canonical names; `direct_agent.py` → `subagent.py` rename + slim. | [PR #2](https://github.com/andisab/casdk-harness/pull/2) |
-| **Block 3** | 2026-05-04/05 | Plugin pipeline modernization: marketplace adoption (research-team, context-engineering); `plugin_manager.py` collapsed to discovery + namespacing; `commands.py` and `hooks.py` deleted; SDK upstream investigation closed (no issues filed). | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
-| **Block 4** | 2026-05-05 | Observability: OTel Collector sidecar bridging SDK telemetry into Prometheus; harness metrics renamed `harness_*`; SDK-duplicate counters dropped; two pre-provisioned Grafana dashboards; AlertManager + alert rules wired (rules had been dead since project start). New `docs/OBSERVABILITY.md`. | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
+| **Block 3** | 2026-05-04/05 | Plugin pipeline modernization: marketplace adoption (research-team, context-engineering); `plugin_manager.py` collapsed 637 → 182 LoC; `commands.py` and `hooks.py` deleted; SDK upstream investigation closed (no issues filed). | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
+| **Block 4** | 2026-05-05 | Observability: OTel Collector sidecar bridging SDK telemetry into Prometheus; harness metrics renamed `harness_*`; SDK-duplicate counters dropped; two pre-provisioned Grafana dashboards; AlertManager + alert rules wired (rules had been dead since project start). | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
 
 Block 3 and Block 4 shipped together in PR #3 because both were authored on
-`contextgrad-framework` after Block 2's promotion.
+`contextgrad-framework` after Block 2's promotion. Two follow-up doc-only PRs
+(#4, #5) refreshed `docs/REFACTOR.md` and `CLAUDE.md` to match the new state.
 
-For phase-level detail, see:
-- Commit messages on each Block's promotion PR (no-squash merges preserve every phase SHA on `main`).
-- `CLAUDE.md` "Completed Recently" section.
-- `~/.claude/projects/-Users-andisblukis-Projects-ab-github-ab-casdk-harness/memory/MEMORY.md` "Recent Work" section.
+For phase-level detail, see commit messages on the promotion PRs and CLAUDE.md
+"Completed Recently" section.
 
----
-
-## CGF Stage status
-
-The "Stage" taxonomy tracks the CGF (ContextGrad Framework) feature surface,
-independent of the Block taxonomy used for reorganization work.
-
-| Stage | Status | Where |
-|---|---|---|
-| **Stage 1 — Protocol layer + resource architect + DESIGN phase** | shipped | `main`, via Block 1 |
-| **Stage 2 — MCP tool/server creation skills + Python/TypeScript scaffolds** | shipped | `main`, via Block 1 |
-| **Stage 3 — Evaluation Framework** | **not started** | `contextgrad-framework` (slim, off `main`) |
-| **Stage 4 — Integration & hardening** | not started; depends on Stage 3 | `contextgrad-framework` |
-
-The multi-resource orchestrator state machine `PLANNING → RESEARCH → DESIGN →
-GENERATE → ITERATE → VALIDATE` is fully wired and tested end-to-end. Two
-phases exist in the `OptimizationPhase` enum but are not yet wired into the
-orchestrator: `EVAL_DESIGN` and `EXECUTION_EVAL` — those are Stage 3's job.
-
----
-
-## Next: Stage 3 — Eval Harness
-
-Branch: `contextgrad-framework` (currently equal to `main`).
-
-Reference spec: `docs/CGF-EVAL-FRAMEWORK.md` (draft).
-
-### Goals
-
-1. **`cgf-eval-architect` agent** — generates eval suites from resource specs
-   (the same SPEC.md that drives optimization). Output: structured eval
-   manifest (testcases, expected behaviors, grading rubrics).
-2. **Grader infrastructure** — three tiers, escalating in cost and richness:
-   - **Deterministic** — pattern-match outputs, exact-match assertions, schema
-     validation. Cheapest, suitable for syntactic checks.
-   - **Trajectory-based** — uses CGF tracer spans (already collected) to grade
-     based on tool-call sequences, error rates, and execution paths rather
-     than just final outputs.
-   - **LLM-judge** — for behavioral / qualitative criteria where the first
-     two tiers can't reach.
-3. **Sandboxed agent-session eval harness** — runs the optimized resource
-   against the eval suite in an isolated session, captures traces, scores
-   against the grading rubric. Produces both per-testcase verdicts and an
-   aggregate score.
-4. **Wire `EVAL_DESIGN` and `EXECUTION_EVAL` phases** into
-   `multi_resource_orchestrator.py`. Both already exist in the
-   `OptimizationPhase` enum; the orchestrator currently skips them.
-5. **Feedback loop** — execution results feed back into `cgf-prompt-optimizer`
-   for refinement (closes the gradient loop CGF is named after). This makes
-   the optimizer's iteration choices data-driven rather than purely
-   self-critique-driven.
-
-### Bonus: live data for the CGF dashboard
-
-Block 4 Phase 3C shipped a `casdk-cgf` Grafana dashboard with placeholder
-panels in a "Future" row. Stage 3 is what populates them — phase transitions,
-optimizer iterations, eval scores. No dashboard work needed; the panels are
-already provisioned.
-
-### Open questions for Stage 3
-
-- **Eval suite storage format.** YAML (matches existing CGF SPEC pattern) vs
-  JSON (machine-friendlier) vs hybrid. Recommend YAML for human authoring +
-  the workspace already-canonical pattern.
-- **Sandbox isolation level.** Run the eval session in a fresh subprocess?
-  Fresh container? In-process? Trade-off: realism (subprocess/container is
-  closer to real usage) vs latency/cost (in-process is fastest).
-- **Grader composition.** When deterministic + trajectory + LLM-judge all
-  apply to the same testcase, how do their scores combine? Worst-of, weighted
-  average, or each tier produces its own column in the result?
-- **Failure mode for LLM-judge.** If the judge model itself errors or hits
-  rate-limit mid-eval, do we retry, mark "no decision", or fail the run?
-  Cost-conscious design suggests retry-once-then-mark.
-
-### Stage 4 (after Stage 3 stabilizes)
-
-End-to-end pipeline tests, checkpoint/resume across the new phases,
-ACCEPT/REFINE/REJECT human-review gates surfacing in the orchestrator.
-
----
-
-## Independent forward TODOs
-
-Two items queued in CLAUDE.md "TODOs" that are unrelated to Stage 3 but worth
-addressing when bandwidth allows:
-
-- **Sub-agent `HOME` mismatch** — when sub-agents (e.g.,
-  `research-team:research-specialist`) expand `~` in paths via Bash, it
-  sometimes resolves to `/root` while the runtime user is `claude`
-  (`$HOME=/home/claude`). The subsequent Write tool fails with `EACCES`.
-  Three fix candidates queued; (a) explicit `HOME=/home/claude` env
-  passthrough in `_build_sdk_options()` is the leading suspect.
-- **`make interactive` terminal UX audit** — corrupted Rich panel borders,
-  repeated "Thinking..." displays, verbose logs interleaved with conversation.
-  Audit `harness/cli.py`, `harness/interactive.py`, possibly
-  `harness/agent_progress.py`.
-
----
-
-## SDK upstream investigation (closed 2026-05-05)
+### SDK upstream investigation (closed 2026-05-05)
 
 Block 3 Step 5 originally planned to file two issues against
 [`anthropics/claude-agent-sdk-python`](https://github.com/anthropics/claude-agent-sdk-python).
@@ -165,7 +414,7 @@ Both went through bisection passes, both turned out to be invalid. **Neither
 was filed.** The investigation is preserved here in case the same suspicions
 resurface later.
 
-### Issue candidate 5a — Plugin agents not exposed to Task tool with `plugin:agent` namespacing
+#### Issue candidate 5a — Plugin agents not exposed to Task tool with `plugin:agent` namespacing
 
 **Original suspicion:** Block 2 Phase 3's verification experiment showed that
 with the harness's `agents=sdk_agents` programmatic registration disabled,
@@ -194,7 +443,7 @@ was redundant. Removed in the 5a follow-up commit (`d8571b2`).
 `harness.subagent` (which uses standalone `query()` with the agent's prompt as
 `system_prompt`, not Task dispatch) and the SystemMessage banner display.
 
-### Issue candidate 5b — Plugin slash commands silently no-op in `ClaudeSDKClient` streaming sessions
+#### Issue candidate 5b — Plugin slash commands silently no-op in `ClaudeSDKClient` streaming sessions
 
 **Original suspicion:** Sending `/cgf status` from a streaming session
 returned `ResultMessage(success, num_turns=0, total_cost_usd=0)` after ~14 ms
@@ -230,38 +479,22 @@ Claude. Legacy `.claude/commands/` still works.
 CLAUDE.md "Known Limitations" so future sessions don't relitigate. The
 SystemMessage banner already shows commands in the namespaced form.
 
-### Probe scripts retained for future regressions
+#### Probe scripts retained for future regressions
 
-- `scripts/derisk_plugin_loading.py` — exercises plugin-agent dispatch via
-  Task without the workaround, configurable per-test via env vars
-  (`DERISK_AGENTS_WORKAROUND`, `DERISK_SETTING_SOURCES`, `DERISK_USE_PLUGINS`,
-  `DERISK_PROBE`).
-- `scripts/derisk_slash_init.py` — opens a session and dumps the
-  `system/init.slash_commands` list.
+- `scripts/derisk_plugin_loading.py` — exercises plugin-agent dispatch via Task without the workaround, configurable per-test via env vars (`DERISK_AGENTS_WORKAROUND`, `DERISK_SETTING_SOURCES`, `DERISK_USE_PLUGINS`, `DERISK_PROBE`).
+- `scripts/derisk_slash_init.py` — opens a session and dumps the `system/init.slash_commands` list.
 
 Re-run either after any SDK bump to confirm both behaviors still hold. If a
 future SDK release changes plugin loading semantics, the probes will surface
 it before the harness's runtime smoke does.
 
-### Lessons
+#### Lessons
 
-1. **A failing test against an undocumented field is not a bug** — read the
-   SDK's official docs for the field's actual contract before drafting an
-   issue. Both findings were resolved by reading the docs we hadn't read yet
-   (the `claude plugin validate` schema for 5a; the
-   `system/init.slash_commands` list for 5b).
-2. **De-risk before filing.** Caught the misframing on both issues before
-   they shipped to Anthropic. Worth the 25 minutes.
-3. **The synthesizer bug class is sneaky.** Producing manifests that the CLI
-   silently drops (rather than erroring on) caused both Block 2 Phase 3's
-   wrong "plugin agents need programmatic registration" finding AND the
-   original mass-skill-failure during Block 3 Step 3a smoke testing. Always
-   validate generated artifacts (`claude plugin validate <plugin>`) at every
-   layer, not just at the SDK boundary.
+1. **A failing test against an undocumented field is not a bug** — read the SDK's official docs for the field's actual contract before drafting an issue. Both findings were resolved by reading the docs we hadn't read yet (the `claude plugin validate` schema for 5a; the `system/init.slash_commands` list for 5b).
+2. **De-risk before filing.** Caught the misframing on both issues before they shipped to Anthropic. Worth the 25 minutes.
+3. **The synthesizer bug class is sneaky.** Producing manifests that the CLI silently drops (rather than erroring on) caused both Block 2 Phase 3's wrong "plugin agents need programmatic registration" finding AND the original mass-skill-failure during Block 3 Step 3a smoke testing. Always validate generated artifacts (`claude plugin validate <plugin>`) at every layer, not just at the SDK boundary.
 
----
-
-## Verification rule (still binding for Stage 3)
+### Verification rule (still binding for Stage 3)
 
 **Tests pass ≠ feature works.** Plugin/agent loading silently degrades in
 ways unit tests do not catch (path mismatches, namespace collisions, swallowed
@@ -271,11 +504,7 @@ is declared complete.
 
 Required at every phase boundary:
 
-1. **Run the full test suite and report actual numbers** — `make test-unit && make test-integration`,
-   not "tests pass." Include passed/failed/skipped counts.
-2. **Boot the harness and inspect the runtime registry** — capture the actual
-   values of `discovered_skills`, `agents`, `plugins`. Names, not just counts.
-3. **Invoke at least one resource end-to-end** for any change that touches
-   loading. Confirm the actual response, not just that the call returned.
-4. **Stop and ask the user to do their own verification run** before declaring
-   any phase complete.
+1. **Run the full test suite and report actual numbers** — `make test-unit && make test-integration`, not "tests pass." Include passed/failed/skipped counts.
+2. **Boot the harness and inspect the runtime registry** — capture the actual values of `discovered_skills`, `agents`, `plugins`. Names, not just counts.
+3. **Invoke at least one resource end-to-end** for any change that touches loading. Confirm the actual response, not just that the call returned.
+4. **Stop and ask the user to do their own verification run** before declaring any phase complete.
