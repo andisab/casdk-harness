@@ -4,11 +4,18 @@ ARG PYTHON_VERSION=3.12
 # =============================================================================
 # Stage 1: Base - Common dependencies for all stages
 # =============================================================================
-FROM python:${PYTHON_VERSION}-slim AS base
+# Pinned by digest for reproducibility. Resolved 2026-05-07; bump deliberately.
+FROM python:${PYTHON_VERSION}-slim@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da879e4590c18c2e3 AS base
 
-# Install system dependencies including Node.js for MCP servers
-# Includes Playwright browser dependencies for Chromium
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies including Node.js for MCP servers.
+# Includes Playwright browser dependencies for Chromium.
+# BuildKit cache mounts speed up repeat builds; sharing=locked avoids parallel
+# corruption when the same layer is used by multiple stages. The cache mount
+# replaces the older `rm -rf /var/lib/apt/lists/*` pattern.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
@@ -28,8 +35,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxdamage1 \
     libxfixes3 \
     libxkbcommon0 \
-    libxrandr2 \
-    && rm -rf /var/lib/apt/lists/*
+    libxrandr2
+
+# uv from the official Astral image — single source of truth across all stages.
+# Avoids a `pip install uv` step in deps + a separate `curl install.sh` in dev.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# uv on Linux containers can't hardlink between the cache mount and target FS.
+# Setting copy mode silences the warning and avoids per-install fallback logic.
+ENV UV_LINK_MODE=copy
 
 WORKDIR /app
 
@@ -37,9 +51,6 @@ WORKDIR /app
 # Stage 2: Dependencies - Install Python dependencies with caching
 # =============================================================================
 FROM base AS deps
-
-# Install uv for faster dependency management
-RUN pip install --no-cache-dir uv
 
 # Copy dependency files and source code
 COPY pyproject.toml ./
@@ -54,30 +65,27 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # =============================================================================
 FROM deps AS development
 
-# Install tini for signal handling
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+# Install tini (for signal handling) and the GitHub CLI in a single layer.
+# Combining: shared apt-update overhead, single rm at the end via cache mount.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        tini \
+        gpg \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh
 
 # Install development dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system -e ".[dev]"
 
 # Install Claude Code CLI via npm (more reliable than install.sh)
-RUN npm install -g @anthropic-ai/claude-code
-
-# Install standalone uv/uvx for running Python MCP servers
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    cp /root/.local/bin/uv /usr/local/bin/uv && \
-    cp /root/.local/bin/uvx /usr/local/bin/uvx && \
-    chmod +x /usr/local/bin/uv /usr/local/bin/uvx
-
-# Install GitHub CLI (gh)
-RUN apt-get update && apt-get install -y --no-install-recommends gpg \
-    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && apt-get update && apt-get install -y --no-install-recommends gh \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/root/.cache/npm \
+    npm install -g @anthropic-ai/claude-code
 
 # Install GitLab CLI (glab)
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -87,21 +95,44 @@ RUN ARCH=$(dpkg --print-architecture) && \
     chmod +x /usr/local/bin/glab && \
     rm -rf /tmp/bin
 
-# Install Playwright Chromium browser for MCP server
-# Must be done before switching to non-root user
+# Install Chrome-for-Testing for the @playwright/mcp server.
+#
+# Why CfT and not chrome / chromium:
+# - `chrome` (Google Chrome stable) has no Linux arm64 build — fails on Apple Silicon.
+# - `chromium` (the regular Playwright channel) installs into a different cache
+#   layout than @playwright/mcp's `--browser=chromium` expects.
+# - `chrome-for-testing` is Playwright's cross-platform CfT build (arm64 + amd64)
+#   and is what the MCP server actually launches.
+#
+# Permissions follow Microsoft's official Playwright Docker image pattern:
+# `chmod -R 777 ${PLAYWRIGHT_BROWSERS_PATH}` — browser binaries stay root-owned
+# (read-only at runtime), but the parent dir is world-writable so the MCP can
+# create per-session profile dirs (`mcp-chrome-for-testing-XXX`) at launch.
+# Without this, the runtime user gets EACCES on first browser_navigate.
+#
+# PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright makes browsers user-agnostic so
+# install-as-root and run-as-claude resolve the same path.
+#
+# @playwright/mcp is pinned to a known-good version (lessons learned from the
+# `@latest`-resolution drift between 2026-05-06 and 2026-05-07 builds, where
+# the default browser channel changed). Bump deliberately on a schedule.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+ARG PLAYWRIGHT_MCP_VERSION=0.0.74
 RUN --mount=type=cache,target=/root/.cache/npm \
-    npx playwright install --with-deps chromium
+    npx playwright install-deps chromium \
+    && mkdir -p ${PLAYWRIGHT_BROWSERS_PATH} \
+    && npx @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} install-browser chrome-for-testing \
+    && chmod -R 777 ${PLAYWRIGHT_BROWSERS_PATH}
 
 # Create non-root user for development with home directory
 RUN groupadd -r claude && \
-    useradd -r -g claude -m -d /home/claude claude && \
-    chown -R claude:claude /home/claude
+    useradd -r -g claude -m -d /home/claude claude
 
-# Copy source code and tests
-COPY src/ ./src/
-COPY config/ ./config/
-COPY tests/ ./tests/
-COPY .claude/ ./.claude/
+# Copy source code and tests with claude ownership baked in (skips a chown layer).
+COPY --chown=claude:claude src/ ./src/
+COPY --chown=claude:claude config/ ./config/
+COPY --chown=claude:claude tests/ ./tests/
+COPY --chown=claude:claude .claude/ ./.claude/
 
 # Clone swe-marketplace plugin source. Pin via SWE_MARKETPLACE_REF (build arg)
 # for reproducibility; empty = HEAD of default branch.
@@ -112,10 +143,11 @@ RUN git clone https://github.com/andisab/swe-marketplace.git /opt/plugins/swe-ma
          git -C /opt/plugins/swe-marketplace checkout "$SWE_MARKETPLACE_REF"; \
        fi \
     && python3 /tmp/synthesize_marketplace_manifests.py /opt/plugins/swe-marketplace \
-    && rm -rf /opt/plugins/swe-marketplace/.git /tmp/synthesize_marketplace_manifests.py
-
-# Set ownership
-RUN chown -R claude:claude /app /opt/plugins
+    && rm -rf /opt/plugins/swe-marketplace/.git /tmp/synthesize_marketplace_manifests.py \
+    && chown -R claude:claude /app /opt/plugins
+# /opt/ms-playwright stays root:root — browsers are read-only at runtime
+# (mode 0755 lets claude execute them) and chowning it here would duplicate
+# the entire ~956 MB browser tree into this layer.
 
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1
@@ -175,14 +207,16 @@ RUN python -m compileall src/
 # =============================================================================
 # Stage 5: Production - Minimal production image
 # =============================================================================
-FROM python:${PYTHON_VERSION}-slim AS production
+FROM python:${PYTHON_VERSION}-slim@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da879e4590c18c2e3 AS production
 
-# Install only runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install only runtime dependencies (cached apt lists; no manual rm).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-    tini \
-    && rm -rf /var/lib/apt/lists/*
+    tini
 
 WORKDIR /app
 
@@ -190,20 +224,20 @@ WORKDIR /app
 COPY --from=deps /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
 COPY --from=deps /usr/local/bin /usr/local/bin
 
-# Copy application code from builder
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/config ./config
-COPY --from=builder /app/.claude ./.claude
-
-# Copy swe-marketplace plugin source from builder
-COPY --from=builder /opt/plugins/swe-marketplace /opt/plugins/swe-marketplace
-
 # Create non-root user
 RUN groupadd -r claude && useradd -r -g claude -d /app -s /bin/bash claude
 
-# Create necessary directories
+# Copy application code from builder, owned by claude.
+COPY --from=builder --chown=claude:claude /app/src ./src
+COPY --from=builder --chown=claude:claude /app/config ./config
+COPY --from=builder --chown=claude:claude /app/.claude ./.claude
+
+# Copy swe-marketplace plugin source from builder, owned by claude.
+COPY --from=builder --chown=claude:claude /opt/plugins/swe-marketplace /opt/plugins/swe-marketplace
+
+# Create necessary writable directories
 RUN mkdir -p /workspace /memory /logs && \
-    chown -R claude:claude /app /workspace /memory /logs /opt/plugins
+    chown -R claude:claude /workspace /memory /logs
 
 # Set unbuffered output (CRITICAL for container streams)
 ENV PYTHONUNBUFFERED=1

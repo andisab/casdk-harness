@@ -75,6 +75,50 @@ Two items unrelated to Stage 3 but worth addressing when bandwidth allows:
 - **Sub-agent `HOME` mismatch** — when sub-agents (e.g., `research-team:research-specialist`) expand `~` in paths via Bash, it sometimes resolves to `/root` while the runtime user is `claude` (`$HOME=/home/claude`). The subsequent Write tool fails with `EACCES`. Three fix candidates queued; (a) explicit `HOME=/home/claude` env passthrough in `_build_sdk_options()` is the leading suspect.
 - **`make interactive` terminal UX audit** — corrupted Rich panel borders, repeated "Thinking..." displays, verbose logs interleaved with conversation. Audit `harness/cli.py`, `harness/interactive.py`, possibly `harness/agent_progress.py`.
 
+### Build improvements
+
+Tier 1 + 2.3 + 2.4 from the 2026-05-07 build review shipped (see commit
+`build(docker): drop redundant uv install...`). Two follow-up commits handled
+the Playwright fallout:
+
+1. **Browser channel correction.** `@playwright/mcp` defaults to `--browser=chrome`
+   (Google Chrome stable), which has no Linux arm64 build — fails on Apple Silicon.
+   We now install **chrome-for-testing** (Playwright's cross-platform CfT build,
+   arm64 + amd64) via `npx @playwright/mcp install-browser chrome-for-testing`
+   and pass `--browser chromium` in `.mcp.json` (which the MCP maps to CfT).
+2. **Permissions per Microsoft's official Playwright Docker pattern.** Browsers
+   are installed at `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright` and the parent
+   dir is `chmod -R 777` so non-root runtime users can create per-session
+   profile dirs (`mcp-chrome-for-testing-XXX`). Browser binaries themselves stay
+   root-owned (immutable, good for layer dedup). Verified end-to-end via
+   JSON-RPC against the MCP server running as the `claude` user.
+3. **`@playwright/mcp` pinned to `0.0.74`** in both build (`PLAYWRIGHT_MCP_VERSION`
+   build arg) and runtime (`.mcp.json`). The earlier `@latest` caused two
+   separate regressions over a 24-hour window when upstream defaults drifted.
+
+The pieces below remain queued.
+
+#### Image size — recommended next
+
+- **Prune `/opt/ms-playwright/chromium-1223/`** if `chromium_headless_shell-1223` covers all use cases. The `install-browser chrome-for-testing` step installs both the full chromium binary (~620 MB) and the headless-shell variant (~333 MB). The MCP server in headless mode (default) likely only uses headless-shell. Verification spike: take a screenshot, render a page, run a console-error check — all with the full chromium dir removed via `RUN rm -rf /opt/ms-playwright/chromium-1223` after install. If everything passes, ~620 MB drops out of the image. *Effort: ~1h with smoke tests.*
+- **Drop CJK + emoji fonts** pulled in by `playwright install-deps`. The deps macro installs `fonts-ipafont-gothic` (3.5 MB), `fonts-noto-color-emoji` (10.1 MB), `fonts-wqy-zenhei` (7.5 MB), `fonts-freefont-ttf` (5.3 MB) — useful only if rendering pages with Asian scripts or emoji. Skipping `install-deps` and curating system libs explicitly saves ~25 MiB. Tradeoff: full-page screenshots of CJK-heavy pages will use fallback fonts. *Effort: ~2h, includes a curated apt list.*
+
+#### Build infrastructure
+
+- **GHCR registry push cache.** `docker-compose.prod.yml` has `cache_to: type=registry,ref=${REGISTRY}/main:cache,mode=max` configured but it requires authenticated `docker login ghcr.io` to actually push. The dev compose's anonymous `cache_from` was removed in the Tier 1 commit because the cache image either didn't exist or wasn't world-readable. To re-enable cross-environment cache sharing: (a) confirm a CI job actually pushes the cache image, (b) make the cache image public on GHCR, (c) restore `cache_from` in dev compose. Until then, every fresh checkout pays the full cold-build cost. *Effort: ~3h including CI wiring.*
+- **Restructure `deps` stage for finer cache invalidation.** Currently `COPY src/` precedes `uv pip install --system -e .`, so any `src/` edit busts the deps install. Splitting into two installs (`uv pip install --system -r <(uv pip compile pyproject.toml)` for third-party deps first, then `uv pip install --system -e . --no-deps` after `COPY src/`) saves ~2-3s per src-only rebuild. Pattern is well-known but requires sequencing care. *Effort: ~2h.*
+
+#### Larger spikes (do separately)
+
+- **Bump `PYTHON_VERSION=3.13`** in the Dockerfile + `pyproject.toml` `requires-python` + `mypy` config. 3.13 has measurable interpreter perf wins (~10-15% on some workloads) and shorter startup. Risk: needs verification that `claude-agent-sdk`, `mcp`, `pydantic-core`, `cryptography`, `aiohttp`, `uvloop` all ship arm64 wheels for 3.13 (most do as of early 2026). Required: `make build && make test-unit && make test-integration` clean. *Effort: ~3h.*
+- **Bump `glab` from v1.46.1** (Sept 2024) to current (~v1.50+). Pin update only, low risk. Bundle with the next dependency-refresh pass. *Effort: ~30min.*
+
+#### Considered and rejected
+
+- **`python:3.12-alpine`** instead of `python:3.12-slim`. Many native wheels (`pydantic-core`, `cryptography`, `uvloop`, `aiohttp`) need musl rebuilds or aren't available. Almost certainly net-negative. Skip.
+- **Move `npx playwright install` into `base` stage** to share across variants. Negative: would bloat the production image with browser binaries it doesn't use. Skip.
+- **Combine `tini` install into a non-`gh` apt step.** Already done in the Tier 1 commit alongside the `gh` install — single combined apt step now handles both.
+
 ---
 
 ## 3. Hardening

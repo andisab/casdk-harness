@@ -19,8 +19,6 @@ services:
       context: .
       dockerfile: agents/main/Dockerfile
       target: ${BUILD_TARGET:-development}
-      cache_from:
-        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
     image: ${REGISTRY:-claudeagentsdk-harness}/main:${IMAGE_TAG:-latest}
@@ -104,8 +102,6 @@ services:
       context: .
       dockerfile: agents/main/Dockerfile
       target: ${BUILD_TARGET:-development}
-      cache_from:
-        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
     image: ${REGISTRY:-claudeagentsdk-harness}/agent-two:${IMAGE_TAG:-latest}
     container_name: claude-agent-two
     hostname: agent-two
@@ -175,8 +171,6 @@ services:
       context: .
       dockerfile: agents/main/Dockerfile
       target: ${BUILD_TARGET:-development}
-      cache_from:
-        - ${REGISTRY:-ghcr.io/andisab/claudeagentsdk-harness}/main:cache
     image: ${REGISTRY:-claudeagentsdk-harness}/agent-three:${IMAGE_TAG:-latest}
     container_name: claude-agent-three
     hostname: agent-three
