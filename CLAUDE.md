@@ -35,7 +35,7 @@ Technical reference for developers working on this repository and for Claude's o
   - **Net surface change:** harness now self-monitors its own observability pipeline (OTel collector, AlertManager) on top of monitoring application behavior; SDK telemetry adds `query_source` (main/auxiliary/subagent) segmentation that the previous harness counters never had; total stack: 7 services (was 4) — main-agent, prometheus, grafana, otel-collector, alertmanager, alertmanager-webhook, plus the multi-agent profile services.
 - **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
   - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
-  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Replaced alias dict in `definitions.py` with directory walker. (Originally noted "Plugin agents still need programmatic registration" — that was wrong; corrected in the 2026-05-05 5a follow-up. SDK exposes plugin agents to Task via `plugins=[]` directly. See [docs/REFACTOR.md "SDK upstream investigation"](./docs/REFACTOR.md#sdk-upstream-investigation-closed-2026-05-05).)
+  - Step 2: Dropped harness portion of `_convert_to_sdk_agents()` in `agent.py` — harness agents now auto-discover from `.claude/agents/` via `setting_sources=["project"]`. Replaced alias dict in `definitions.py` with directory walker. (Originally noted "Plugin agents still need programmatic registration" — that was wrong; corrected in the 2026-05-05 5a follow-up. SDK exposes plugin agents to Task via `plugins=[]` directly. See [Verified SDK Loading Behavior](#verified-sdk-loading-behavior-2026-05-05) below.)
   - Step 3: Dropped `MODEL_MAP` defensive translation (Phase 1 made it a no-op).
   - Step 4: Extracted `AgentProgress` + `Colors` + helpers to `harness/agent_progress.py`.
   - Step 5: Dropped unused `register_workspace_agent` / `unregister` / `clear` API (zero callers in src/ or tests/).
@@ -59,7 +59,7 @@ Technical reference for developers working on this repository and for Claude's o
   - [x] resource_plan.schema.json and resource-plan.yaml output
 
 ### Known Limitations
-- **Plugin slash commands require `/plugin-name:command-name` namespaced form (verified 2026-05-05).** When a plugin defines a slash command (e.g. `cgf-agents/commands/cgf.md`), the SDK registers it under `cgf-agents:cgf`, not bare `cgf`. Invoking `/cgf` from a streaming session silently no-ops in 14 ms because the SDK swallows unknown slash commands as no-ops (consistent behavior, also true for filesystem-discovered commands and built-ins). Use `/cgf-agents:cgf` to invoke. The SystemMessage banner already shows the namespaced names. See [docs/REFACTOR.md "SDK upstream investigation"](./docs/REFACTOR.md#sdk-upstream-investigation-closed-2026-05-05) for the full test matrix; `scripts/derisk_slash_init.py` is the live regression probe.
+- **Plugin slash commands require `/plugin-name:command-name` namespaced form.** Bare `/cgf` silent-no-ops; use `/cgf-agents:cgf`. Full SDK loading semantics in [Verified SDK Loading Behavior](#verified-sdk-loading-behavior-2026-05-05) above; `scripts/derisk_slash_init.py` is the live regression probe.
 - **Sub-agent `HOME` mismatch (surfaced 2026-05-05).** When a sub-agent's Bash tool expands `~` in a path, it sometimes resolves to `/root` even though the runtime user is `claude` (uid 996, `$HOME=/home/claude`). The Write tool that follows then fails with `EACCES`. Symptom: research-team:research-specialist's "save notes to `~/Documents/ClaudeResearch/...`" pattern needs a fallback retry with `/home/claude/...`. Likely a CLI-subprocess env-passthrough gap. Workaround: skill prompts that use tilde paths usually retry with the literal path. Real fix candidates: (a) explicitly set `HOME=/home/claude` in `_build_sdk_options()` env; (b) update marketplace skills that author paths to use absolute forms; (c) ensure Dockerfile aligns HOME for all tool subprocesses. Track for Block 4 prep.
 
 ### TODOs
@@ -351,6 +351,90 @@ Plugin commands and hooks load via SDK-native auto-discovery from each plugin's 
 | `PostToolUse` | Post-processing |
 | `UserPromptSubmit` | Prompt rewriting / observation |
 | `Notification` | UI hints |
+
+#### Verified SDK Loading Behavior (2026-05-05)
+
+How the SDK actually loads plugin resources, after a bisection pass corrected
+some earlier mistaken assumptions. Re-verify with the probe scripts below
+after any SDK bump.
+
+##### Plugin agents — auto-exposed to Task
+
+`ClaudeAgentOptions(plugins=[{type:"local", path:...}])` exposes plugin agents
+to the Task tool natively. **Both bare and namespaced forms dispatch:**
+
+- `Task(subagent_type="cgf-orchestrator")` — bare
+- `Task(subagent_type="cgf-agents:cgf-orchestrator")` — namespaced
+
+No programmatic `agents=` registration is needed for plugin agents. Earlier
+in Block 2 Phase 3 the harness kept a `_register_agents` workaround under the
+mistaken belief that `plugins=` didn't expose plugin agents to Task. The
+actual cause was CLI-invalid manifests being silently dropped (see below).
+Workaround removed in Block 3 Step 5a follow-up `d8571b2`.
+
+##### Plugin manifests must pass `claude plugin validate`
+
+The CLI silently drops invalid `.claude-plugin/plugin.json` files — no error,
+no warning. Plugins with invalid manifests appear "missing" at runtime even
+though the directory exists on disk. Common schema gotchas:
+
+| Field | Required shape |
+|-------|---------------|
+| `agents` | array of file paths (`./agents/foo.md`) — NOT a parent dir |
+| `skills` | array of subdir paths (`./skills/foo`) |
+| `repository` | string URL |
+| `dependencies` | array |
+| `author` | object `{name, email, url}` |
+
+Validate during dev: `docker compose exec main-agent claude plugin validate <path>`.
+
+##### Plugin slash commands need namespaced form
+
+`/plugin-name:command-name` works. Bare `/cgf` silently no-ops in 14ms with
+zero turns and zero cost. The SDK silent-no-ops on ALL unknown slash commands —
+built-ins, plugin commands, and entirely fake commands all behave identically
+(presumably forward-compat with future TUI-only commands).
+
+The authoritative list of registered commands is at
+`SystemMessage(subtype="init").data["slash_commands"]`. The SystemMessage
+banner already shows commands in their namespaced form.
+
+##### Slash commands + Skills were unified 2026-01-24
+
+Both live in `~/.claude/skills/` (or in plugins' `commands/`/`skills/`
+directories), both use markdown + YAML frontmatter, both are invoked with `/`.
+Skills additionally support autonomous invocation by Claude. Legacy
+`.claude/commands/` still works.
+
+##### SDK plugin skills require `skills="all"`
+
+`ClaudeAgentOptions(skills="all")` is required for plugin skills to load.
+Default `None` makes the Skill tool reject every plugin skill with
+`"Unknown skill: <name>"`. Plugin discovery via `plugins=[]` is what
+surfaces them; `skills="all"` adds bare `Skill` to allowed_tools but
+applies no wire-level filter.
+
+##### Regression probes (re-run after any SDK bump)
+
+- `scripts/derisk_plugin_loading.py` — exercises plugin-agent dispatch via
+  Task without the legacy workaround. Configurable per-test via env vars
+  (`DERISK_AGENTS_WORKAROUND`, `DERISK_SETTING_SOURCES`, `DERISK_USE_PLUGINS`,
+  `DERISK_PROBE`).
+- `scripts/derisk_slash_init.py` — opens a session and dumps the
+  `SystemMessage(subtype="init").data["slash_commands"]` list.
+
+##### Lessons (still binding for future SDK debugging)
+
+1. **Read SDK docs for the field's actual contract before drafting issues.**
+   A failing test against an undocumented field is not a bug. The two
+   suspicions documented above resolved by reading docs we hadn't read yet
+   (the `claude plugin validate` schema; the `system/init.slash_commands`
+   list).
+2. **Validate generated artifacts at every layer.** The synthesizer bug class
+   is sneaky — producing manifests that the CLI silently drops (rather than
+   erroring on) caused both the wrong "plugin agents need programmatic
+   registration" finding AND the original mass-skill-failure during Block 3
+   Step 3a smoke testing.
 
 #### Container Agents
 
