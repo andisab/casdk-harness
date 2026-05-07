@@ -194,13 +194,7 @@ Check for: security issues, edge cases, test coverage gaps.
 ```
 
 ### Browser Automation Testing
-When building web applications and UI/UX, verify features through the actual UI using browser automation.
-
-**Two Browser MCP Servers Available:**
-
-#### 1. Playwright MCP (Primary) - Fast, DOM-based interactions
-
-Uses accessibility tree for LLM-friendly structured data. No vision model needed. Runs faster and more efficiently than Puppeteer. 
+When building web applications and UI/UX, verify features through the actual UI using the **Playwright MCP server**. It uses the accessibility tree for LLM-friendly structured data — no vision model needed, fast, and handles the full UI testing workflow on its own.
 
 | Tool | Description |
 |------|-------------|
@@ -208,7 +202,7 @@ Uses accessibility tree for LLM-friendly structured data. No vision model needed
 | `browser_navigate_back` | Return to previous page |
 | `browser_navigate_forward` | Advance to next page |
 | `browser_snapshot` | Capture accessibility snapshot (DOM structure with element refs) |
-| `browser_take_screenshot` | Capture visual screenshot (can't act on it, use snapshot for actions) |
+| `browser_take_screenshot` | Capture visual screenshot (use `snapshot` for actions, `screenshot` for verification) |
 | `browser_click` | Click on an element using ref from snapshot |
 | `browser_hover` | Hover over page elements |
 | `browser_type` | Input text into editable fields |
@@ -226,35 +220,15 @@ Uses accessibility tree for LLM-friendly structured data. No vision model needed
 | `browser_resize` | Adjust browser window dimensions |
 | `browser_close` | Close the browser instance |
 
-#### 2. Puppeteer MCP (Visual Verification) - Screenshot-based
-
-Simpler API for quick visual and layout verification via CSS selectors.
-
-| Tool | Description |
-|------|-------------|
-| `puppeteer_navigate` | Navigate to any URL in the browser |
-| `puppeteer_screenshot` | Take a screenshot (full page or specific element via CSS selector) |
-| `puppeteer_click` | Click an element via CSS selector |
-| `puppeteer_fill` | Fill out an input field |
-| `puppeteer_select` | Select an option from a `<select>` element |
-| `puppeteer_hover` | Hover over an element |
-| `puppeteer_evaluate` | Execute JavaScript in the browser console |
-
-**IMPORTANT: Separate Browser Instances**
-
-Playwright and Puppeteer run in SEPARATE browsers with independent state:
-- They do NOT share cookies, sessions, or localStorage
-- If you log in via Playwright, Puppeteer will NOT be logged in
-
 **Recommended Testing Workflow:**
 
 ```
-1. browser_navigate to http://localhost:3000       (Playwright)
-2. browser_snapshot to see element refs            (Playwright)
-3. browser_click/browser_fill_form to interact     (Playwright)
-4. puppeteer_navigate to SAME URL                  (Puppeteer - required!)
-5. puppeteer_screenshot for visual verification    (Puppeteer)
-6. browser_console_messages to check for errors    (Playwright)
+1. browser_navigate to http://localhost:3000   # Open the app
+2. browser_snapshot                            # Get element refs from the accessibility tree
+3. browser_click / browser_fill_form           # Interact using refs from the snapshot
+4. browser_take_screenshot                     # Capture visual state for verification
+5. browser_console_messages                    # Check for runtime errors
+6. browser_network_requests                    # Inspect API traffic if needed
 ```
 
 **DO:**

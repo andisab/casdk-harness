@@ -89,17 +89,6 @@ PLAYWRIGHT_TOOLS = [
     "mcp__playwright__browser_run_code",
 ]
 
-# Puppeteer MCP tools for browser automation (visual verification)
-PUPPETEER_TOOLS = [
-    "mcp__puppeteer__puppeteer_navigate",
-    "mcp__puppeteer__puppeteer_screenshot",
-    "mcp__puppeteer__puppeteer_click",
-    "mcp__puppeteer__puppeteer_fill",
-    "mcp__puppeteer__puppeteer_select",
-    "mcp__puppeteer__puppeteer_hover",
-    "mcp__puppeteer__puppeteer_evaluate",
-]
-
 
 class AgentTimeoutError(Exception):
     """Raised when agent execution exceeds the configured timeout."""
@@ -602,10 +591,8 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         allowed_tools = [
             # Built-in SDK tools
             "Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "Skill",
-            # Playwright MCP tools (DOM-based, faster)
+            # Playwright MCP tools (DOM-based browser automation)
             *PLAYWRIGHT_TOOLS,
-            # Puppeteer MCP tools (visual verification)
-            *PUPPETEER_TOOLS,
         ]
 
         logger.debug(

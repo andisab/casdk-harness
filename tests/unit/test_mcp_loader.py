@@ -21,18 +21,13 @@ def base_config(temp_config_dir):
 
     Note: git, docker, context7, github, memory are now in-process servers (Method A),
     so they are not included in the subprocess config.
-    Only playwright and puppeteer remain as Tier 2 subprocess servers.
+    Only playwright remains as a Tier 2 subprocess server.
     """
     config = {
         "mcpServers": {
             "playwright": {
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-playwright"],
-                "env": {}
-            },
-            "puppeteer": {
-                "command": "npx",
-                "args": ["-y", "@anthropic-ai/mcp-server-puppeteer"],
                 "env": {}
             }
         }
@@ -89,7 +84,6 @@ class TestLoadConfig:
         assert "mcpServers" in config
         # Only subprocess servers remain in config (Tier 2)
         assert "playwright" in config["mcpServers"]
-        assert "puppeteer" in config["mcpServers"]
         # In-process servers (git, docker, context7, github, memory)
         # not in subprocess config
         assert "git" not in config["mcpServers"]
@@ -106,8 +100,6 @@ class TestLoadConfig:
         config = loader.load_config(base_config, plugin_paths=[plugin_config])
 
         assert "mcpServers" in config
-        # Base servers
-        assert "puppeteer" in config["mcpServers"]
         # Plugin server (override with custom args)
         assert "playwright" in config["mcpServers"]
         assert "--headless" in config["mcpServers"]["playwright"]["args"]
@@ -392,7 +384,7 @@ class TestGetTier:
 
     Note: All fast servers (git, docker, context7, github, memory) are now
     in-process servers (Method A), so TIER_1 is empty.
-    Only playwright and puppeteer remain in TIER_2 as subprocess servers.
+    Only playwright remains in TIER_2 as a subprocess server.
     """
 
     def test_tier1_is_empty(self, loader):
@@ -402,9 +394,8 @@ class TestGetTier:
 
     def test_tier2_servers(self, loader):
         """Test Tier 2 server identification (Slow subprocess - 120s timeout)."""
-        # Only playwright and puppeteer are tier 2 subprocess servers
+        # Only playwright is a tier 2 subprocess server
         assert loader.get_tier("playwright") == 2
-        assert loader.get_tier("puppeteer") == 2
 
     def test_unknown_server_defaults_to_tier1(self, loader):
         """Test unknown servers default to Tier 1."""
@@ -424,7 +415,7 @@ class TestFilterByTier:
     """Tests for filter_by_tier method.
 
     Note: git, docker, context7, github, memory are now in-process servers.
-    Only playwright and puppeteer remain as subprocess servers (Tier 2).
+    Only playwright remains as a subprocess server (Tier 2).
     Tier 1 is empty.
     """
 
@@ -433,7 +424,6 @@ class TestFilterByTier:
         config = {
             "mcpServers": {
                 "playwright": {"command": "npx", "args": [], "env": {}},
-                "puppeteer": {"command": "npx", "args": [], "env": {}},
                 "unknown-server": {"command": "npx", "args": [], "env": {}},
             }
         }
@@ -444,24 +434,21 @@ class TestFilterByTier:
         assert len(filtered["mcpServers"]) == 1
         assert "unknown-server" in filtered["mcpServers"]
         assert "playwright" not in filtered["mcpServers"]
-        assert "puppeteer" not in filtered["mcpServers"]
 
     def test_filter_tier2_only(self, loader):
         """Test filtering for Tier 2 subprocess servers only (Slow - 120s)."""
         config = {
             "mcpServers": {
                 "playwright": {"command": "npx", "args": [], "env": {}},
-                "puppeteer": {"command": "npx", "args": [], "env": {}},
                 "unknown-server": {"command": "npx", "args": [], "env": {}},
             }
         }
 
         filtered = loader.filter_by_tier(config, tier=2, check_keys=False)
 
-        # Only playwright and puppeteer are tier 2
-        assert len(filtered["mcpServers"]) == 2
+        # Only playwright is tier 2
+        assert len(filtered["mcpServers"]) == 1
         assert "playwright" in filtered["mcpServers"]
-        assert "puppeteer" in filtered["mcpServers"]
         assert "unknown-server" not in filtered["mcpServers"]
 
     @patch.dict(os.environ, {}, clear=True)
@@ -507,7 +494,7 @@ class TestLoadTier:
     """Tests for load_tier convenience method.
 
     Note: git, docker, context7, github, memory are now in-process servers.
-    Only playwright and puppeteer remain as subprocess servers in Tier 2.
+    Only playwright remains as a subprocess server in Tier 2.
     Tier 1 is empty.
     """
 
@@ -525,9 +512,8 @@ class TestLoadTier:
         tier2_config = loader.load_tier(base_config, tier=2, check_keys=True)
 
         assert "mcpServers" in tier2_config
-        # Tier 2 has playwright and puppeteer
+        # Tier 2 has playwright
         assert "playwright" in tier2_config["mcpServers"]
-        assert "puppeteer" in tier2_config["mcpServers"]
 
     def test_load_tier_with_plugins(self, loader, base_config, plugin_config):
         """Test loading tier with plugin configuration merged."""
@@ -543,6 +529,3 @@ class TestLoadTier:
         # Should have playwright from plugin with override (has --headless arg)
         assert "playwright" in tier2_config["mcpServers"]
         assert "--headless" in tier2_config["mcpServers"]["playwright"]["args"]
-
-        # Should have puppeteer from base
-        assert "puppeteer" in tier2_config["mcpServers"]

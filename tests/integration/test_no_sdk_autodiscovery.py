@@ -52,10 +52,10 @@ async def test_no_duplicate_servers_from_sdk_autodiscovery():
 
     # Verify expected server count
     # In-process (Method A): docker, context7, memory (3 servers)
-    # Subprocess (Method B): playwright, puppeteer (2 servers)
-    # Total: 5 servers
-    assert len(server_names) == 5, (
-        f"Unexpected server count: {len(server_names)}. Expected 5 servers. "
+    # Subprocess (Method B): playwright (1 server)
+    # Total: 4 servers
+    assert len(server_names) == 4, (
+        f"Unexpected server count: {len(server_names)}. Expected 4 servers. "
         f"Servers loaded: {server_names}"
     )
 
@@ -69,7 +69,6 @@ async def test_no_duplicate_servers_from_sdk_autodiscovery():
 
     # Verify subprocess servers
     assert "playwright" in server_names, "Playwright server (subprocess) should always be loaded"
-    assert "puppeteer" in server_names, "Puppeteer server (subprocess) should always be loaded"
 
 
 @pytest.mark.integration

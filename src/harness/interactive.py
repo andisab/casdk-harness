@@ -105,7 +105,7 @@ async def run_interactive_session() -> None:
                 "Briefly introduce yourself in 2-3 short paragraphs. Include: "
                 "1) Who you are (name, that you're built on Anthropic's Claude Agent SDK), "
                 "2) Key capabilities (tools you have access to like file operations, bash, "
-                "web browsers via Playwright/Puppeteer, Docker, library docs, spawning sub-agents), "
+                "web browser via Playwright, Docker, library docs, spawning sub-agents), "
                 "3) Your working directory setup (/app vs /workspace), "
                 "4) Available CLI tools (git, gh, glab with SSH keys configured). "
                 "End by asking how you can help. Keep it concise and friendly."

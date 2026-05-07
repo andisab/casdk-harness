@@ -14,7 +14,7 @@ Technical reference for developers working on this repository and for Claude's o
 - Autonomous mode with Tech Lead + Main agent (`autonomous.py`)
 - Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager) — see [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability)
 - Checkpoint & recovery system with hourly auto-save
-- 5 MCP servers (3 in-process + 2 subprocess)
+- 4 MCP servers (3 in-process + 1 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
 - Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
@@ -194,7 +194,7 @@ casdk-harness/
 
 #### Key Module Details
 
-- **agent.py** (`AgentSession`): SDK lifecycle (start, execute, shutdown), MCP server registration (5 servers), automatic checkpointing, metrics collection, retry logic with exponential backoff
+- **agent.py** (`AgentSession`): SDK lifecycle (start, execute, shutdown), MCP server registration (4 servers), automatic checkpointing, metrics collection, retry logic with exponential backoff
 - **autonomous.py**: `AutonomousRunner` + `ProgressManager` classes. Workspace state detection (6 states), Tech Lead Q&A with resume (`qa_session.json`), completion signal parsing, configurable delay, external repo support with `casdk-` branch naming
 - **checkpoint.py**: Auto-save every hour (configurable via `CLAUDE_CHECKPOINT_INTERVAL`), keeps last 5 checkpoints (`CHECKPOINT_KEEP_COUNT`), atomic writes with file locking, recovery from latest on startup
 
@@ -523,7 +523,7 @@ When running inside the harness container:
 
 #### Available Tools
 
-**MCP Servers** (5 total):
+**MCP Servers** (4 total):
 
 | Server | Type | Purpose |
 |--------|------|---------|
@@ -531,7 +531,6 @@ When running inside the harness container:
 | `context7` | In-process | Library documentation lookup |
 | `memory` | In-process | Knowledge graph persistence |
 | `playwright` | Subprocess | DOM-based browser automation |
-| `puppeteer` | Subprocess | Visual browser automation |
 
 **CLI Tools** (use via Bash):
 - `git` - Version control (SSH keys in `.ssh/`)

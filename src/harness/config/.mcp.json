@@ -3,10 +3,6 @@
     "playwright": {
       "command": "npx",
       "args": ["@playwright/mcp@latest"]
-    },
-    "puppeteer": {
-      "command": "npx",
-      "args": ["puppeteer-mcp-server"]
     }
   }
 }

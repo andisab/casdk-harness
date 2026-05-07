@@ -92,12 +92,6 @@ RUN ARCH=$(dpkg --print-architecture) && \
 RUN --mount=type=cache,target=/root/.cache/npm \
     npx playwright install --with-deps chromium
 
-# Install Puppeteer Chrome browser for MCP server
-# Separate from Playwright to avoid conflicts
-# Use @puppeteer/browsers package with version specifier
-RUN --mount=type=cache,target=/root/.cache/npm \
-    npx @puppeteer/browsers install chrome@stable
-
 # Create non-root user for development with home directory
 RUN groupadd -r claude && \
     useradd -r -g claude -m -d /home/claude claude && \
