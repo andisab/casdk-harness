@@ -96,6 +96,12 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
         while iteration < self.config.max_iterations:
             iteration += 1
 
+            # Phase A.5: include eval feedback when this resource was
+            # flagged for refinement by EXECUTION_EVAL on a prior round.
+            feedback_block = _build_feedback_block(
+                self._state.feedback_history, resource.path
+            )
+
             # Build prompt for optimizer
             prompt = f"""Optimize resource for multi-resource plugin.
 
@@ -108,7 +114,7 @@ Quality threshold: {self.config.quality_threshold}
 Plugin context:
 - Name: {self._spec.name}
 - Purpose: {self._spec.purpose}
-
+{feedback_block}
 Run agentic optimization (default mode).
 Load eval_criteria from research/eval_criteria.yaml if available.
 Apply research heuristics and self-critique.
@@ -682,3 +688,82 @@ def get_word_count(
         return 0
     content = path.read_text()
     return len(content.split())
+
+
+# ---------------------------------------------------------------------------
+# Phase A.5 feedback injection
+# ---------------------------------------------------------------------------
+
+
+def _build_feedback_block(
+    feedback_history: list[dict[str, Any]],
+    resource_path: str,
+) -> str:
+    """Render an EXECUTION_EVAL feedback block for the optimizer prompt.
+
+    Returns an empty string when there's no feedback for this resource;
+    otherwise a markdown section describing which scenarios the previous
+    candidate failed.  Held-out scenarios are excluded by the writer
+    (:mod:`._orchestrator_phases.execution_eval`), so this function only
+    sees scenarios safe to surface.
+    """
+    if not feedback_history:
+        return ""
+
+    # Collect entries for this specific resource, most-recent first.
+    entries: list[dict[str, Any]] = []
+    for entry in feedback_history:
+        for resource_entry in entry.get("regressions", []):
+            if resource_entry.get("path") == resource_path:
+                entries.append(
+                    {
+                        "feedback_iteration": entry.get(
+                            "feedback_iteration", "?"
+                        ),
+                        "candidate_pass_rate": resource_entry.get(
+                            "candidate_pass_rate", 0.0
+                        ),
+                        "baseline_pass_rate": resource_entry.get(
+                            "baseline_pass_rate", 0.0
+                        ),
+                        "win_rate": resource_entry.get("win_rate", 0.0),
+                        "failing_scenarios": resource_entry.get(
+                            "failing_scenarios", []
+                        ),
+                    }
+                )
+
+    if not entries:
+        return ""
+
+    # Use the most-recent entry — older ones are stale and would confuse.
+    latest = entries[-1]
+    failing = latest["failing_scenarios"][:8]  # cap to keep prompt bounded
+    scenario_lines = "\n".join(
+        f"  - {s.get('scenario_id', '?')} ({s.get('level', '?')}, "
+        f"baseline {s.get('baseline_pass_rate', 0.0):.2f} → "
+        f"candidate {s.get('candidate_pass_rate', 0.0):.2f}) — {s.get('outcome', '?')}"
+        for s in failing
+    )
+    overflow = (
+        f"  ... plus {len(latest['failing_scenarios']) - 8} more"
+        if len(latest["failing_scenarios"]) > 8
+        else ""
+    )
+
+    return f"""
+
+## Feedback from previous EXECUTION_EVAL (round {latest["feedback_iteration"]})
+
+Your previous candidate did not promote.  Aggregate scores:
+  candidate pass_rate: {latest["candidate_pass_rate"]:.2f}
+  baseline pass_rate:  {latest["baseline_pass_rate"]:.2f}
+  win_rate:            {latest["win_rate"]:.2f}
+
+Scenarios where the candidate did NOT beat the baseline:
+{scenario_lines}
+{overflow}
+
+Use these failures to guide this iteration.  Held-out scenarios are
+intentionally not shown — do not infer or attempt to enumerate them.
+"""

@@ -20,6 +20,10 @@ DEFAULT_QUALITY_THRESHOLD = 0.85
 DEFAULT_MAX_ITERATIONS = 5
 DEFAULT_MAX_REFINEMENT = 1  # Reduced from 3 to limit refinement loops
 
+# Phase A.5: simple-threshold eval gate.  Phase B replaces with bootstrap CI.
+DEFAULT_EVAL_PROMOTION_EPSILON = 0.0
+DEFAULT_MAX_FEEDBACK_ITERATIONS = 2
+
 
 # ---------------------------------------------------------------------------
 # Agent names for delegation
@@ -31,6 +35,7 @@ AGENT_ITERATE = "cgf-agents:cgf-prompt-optimizer"
 AGENT_EVALUATE = "cgf-agents:cgf-result-evaluator"
 AGENT_VALIDATE = "cgf-agents:cgf-coherence-validator"
 AGENT_DESIGN = "cgf-agents:cgf-resource-architect"
+AGENT_EVAL_ARCHITECT = "cgf-agents:cgf-eval-architect"
 
 
 # ---------------------------------------------------------------------------
