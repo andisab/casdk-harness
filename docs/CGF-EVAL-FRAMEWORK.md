@@ -138,13 +138,25 @@ Extracted implicit plugin contracts into a shared protocol layer and added a res
 Added MCP tool and server creation capabilities to the context-engineering plugin, with orchestrator support for MCP resource types.
 
 **Built:**
-- `src/harness/plugins/context-engineering/skills/mcp-tool-creation/` — Skill with FastMCP patterns, Anthropic tool description best practices, signal protocol
-- `src/harness/plugins/context-engineering/skills/mcp-server-creation/` — Skill covering Python (FastMCP) and TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx
+- `skills/mcp-tool-creation/` — Skill with FastMCP patterns, Anthropic tool description best practices, signal protocol
+- `skills/mcp-server-creation/` — Skill covering Python (FastMCP) and TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx
 - 3 templates: `mcp-tool-template.py`, `mcp-server-python-template/`, `mcp-server-typescript-template/`
 - `resource-type-guide.md` updated with MCP Tool and MCP Server sections, decision matrix entries, quality checklists
 - `context-engineer.md` agent updated with MCP awareness, resource types 10-11, signal examples
 - Orchestrator: conditional MCP directory creation, purpose lookup, generation instructions, plugin.json entries
 - **47 tests** passing
+
+> **Where these live now:** the `context-engineering` plugin moved out of
+> the harness in Block 3 Step 2 and is consumed from the swe-marketplace
+> clone (`/opt/plugins/swe-marketplace/plugins/context-engineering/` in the
+> container, `<repo>/.plugins/swe-marketplace/...` after `make plugins-sync`
+> for local dev). The two skills were also renamed
+> `mcp-tool-creation` → `mcp-tool-dev` and
+> `mcp-server-creation` → `mcp-server-dev` to match the marketplace
+> `*-dev` naming convention. Of the 47 unit tests originally landed for
+> Stage 2, 11 orchestrator-side tests remain in the harness; the 36 that
+> asserted file paths inside the plugin were deleted on 2026-05-08
+> (those are now swe-marketplace's responsibility to test).
 
 ---
 
