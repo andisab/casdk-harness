@@ -204,6 +204,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*.py" = ["ARG"]
+# Graders share a uniform (transcript, scenario) signature dictated by
+# BaseGrader.grade; some implementations don't need both inputs but must
+# accept them for the interface contract.
+"src/harness/optimization/graders/*.py" = ["ARG002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["harness", "mcp_servers"]
