@@ -37,6 +37,8 @@ from harness.monitoring import (
 from harness.optimization._orchestrator_helpers import (
     DEFAULT_EVAL_PROMOTION_EPSILON,
     DEFAULT_MAX_FEEDBACK_ITERATIONS,
+    eval_phase_span,
+    new_eval_task_id,
     versioned_path,
 )
 from harness.optimization.eval_harness import EvalHarness, EvalResults
@@ -68,8 +70,27 @@ async def run_phase(self: MultiResourceOrchestrator) -> None:
         return
 
     phase_start = time.time()
+    task_id = new_eval_task_id()
     try:
-        await _run_phase_body(self)
+        async with eval_phase_span(
+            "eval.execution",
+            task_id=task_id,
+            phase="EXECUTION_EVAL",
+        ) as span:
+            # Stash task_id on the orchestrator so per-resource sub-spans
+            # can correlate without threading it through every helper.
+            self._eval_task_id = task_id  # type: ignore[attr-defined]
+            await _run_phase_body(self)
+            # Final outcome attribute is set after the body decides
+            # forward / loop / escalate; record here for the wrap-up.
+            # contextlib.suppress: span ops must never break the flow.
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                span.set_attribute(
+                    "harness.eval.feedback_history_length",
+                    len(self._state.feedback_history) if self._state else 0,
+                )
     finally:
         # Phase A.6: record duration for every exit path.
         harness_eval_phase_duration_seconds.labels(
@@ -141,74 +162,101 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
 
         results_dir = workspace / "eval" / "results" / f"{resource.path}-v{resource.version}"
 
-        try:
-            results = await harness.run(
-                eval_suite_path=suite_path,
-                baseline_resource=baseline_path,
-                candidate_resource=candidate_path,
-                results_dir=results_dir,
-            )
-        except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
-            logger.error(
-                "EXECUTION_EVAL: Harness raised; treating as regression",
-                path=resource.path,
-                error=str(exc),
-            )
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, f"harness error: {exc}",
-            )
-            # Mark for refinement so the loop has a chance to recover.
-            self._state.update_resource(
-                resource.path,
-                status="needs_refinement",
-                error=f"Eval harness error: {exc}",
-            )
-            continue
+        # Per-resource sub-span (Phase A.7).  Captures the eval task_id
+        # from the parent span via self._eval_task_id, plus per-resource
+        # attributes that show up in OTel trace explorers.
+        per_resource_task_id = getattr(self, "_eval_task_id", "unknown")
+        async with eval_phase_span(
+            "eval.execution.resource",
+            task_id=per_resource_task_id,
+            phase="EXECUTION_EVAL",
+            extra={
+                "harness.eval.resource_path": resource.path,
+                "harness.eval.resource_type": resource.resource_type,
+                "harness.eval.resource_version": resource.version,
+            },
+        ) as resource_span:
+            try:
+                results = await harness.run(
+                    eval_suite_path=suite_path,
+                    baseline_resource=baseline_path,
+                    candidate_resource=candidate_path,
+                    results_dir=results_dir,
+                )
+            except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
+                logger.error(
+                    "EXECUTION_EVAL: Harness raised; treating as regression",
+                    path=resource.path,
+                    error=str(exc),
+                )
+                resource_span.set_attribute("harness.eval.outcome", "error")
+                resource_span.set_attribute("harness.eval.error", str(exc)[:200])
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, f"harness error: {exc}",
+                )
+                # Mark for refinement so the loop has a chance to recover.
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    error=f"Eval harness error: {exc}",
+                )
+                continue
 
-        per_resource_results.append((resource, results))
+            per_resource_results.append((resource, results))
 
-        # Per-scenario / per-arm telemetry (Phase A.6).
-        _emit_scenario_metrics(results)
+            # Per-scenario / per-arm telemetry (Phase A.6).
+            _emit_scenario_metrics(results)
 
-        if _should_promote(results, epsilon):
-            promotions.append(resource)
-            self._state.update_resource(resource.path, status="optimized")
-            self._finalize_single_resource(resource.path)
-            # Tokens-to-goal: at promotion, observe the cumulative tokens
-            # for this resource.  Phase A approximation: per-run total only;
-            # cumulative across feedback iterations is a Phase B refinement.
-            harness_eval_tokens_to_goal.labels(
-                resource_type=resource.resource_type
-            ).observe(results.total_tokens)
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "promoted",
-                results.candidate_pass_rate,
+            # Span outcome attributes set after we know the verdict.
+            resource_span.set_attribute(
+                "harness.eval.candidate_pass_rate", results.candidate_pass_rate
             )
-            logger.info(
-                "EXECUTION_EVAL: Promoted",
-                path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
+            resource_span.set_attribute(
+                "harness.eval.baseline_pass_rate", results.baseline_pass_rate
             )
-        else:
-            regressions.append((resource, results))
-            self._state.update_resource(
-                resource.path,
-                status="needs_refinement",
-                refinement_count=resource.refinement_count + 1,
-            )
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "regression",
-                results.candidate_pass_rate,
-            )
-            logger.warning(
-                "EXECUTION_EVAL: Regression",
-                path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
-            )
+            resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
+
+            if _should_promote(results, epsilon):
+                promotions.append(resource)
+                self._state.update_resource(resource.path, status="optimized")
+                self._finalize_single_resource(resource.path)
+                # Tokens-to-goal: at promotion, observe the cumulative tokens
+                # for this resource.  Phase A approximation: per-run total only;
+                # cumulative across feedback iterations is a Phase B refinement.
+                harness_eval_tokens_to_goal.labels(
+                    resource_type=resource.resource_type
+                ).observe(results.total_tokens)
+                resource_span.set_attribute("harness.eval.outcome", "promoted")
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, "promoted",
+                    results.candidate_pass_rate,
+                )
+                logger.info(
+                    "EXECUTION_EVAL: Promoted",
+                    path=resource.path,
+                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                    win_rate=f"{results.win_rate:.2f}",
+                )
+            else:
+                regressions.append((resource, results))
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    refinement_count=resource.refinement_count + 1,
+                )
+                resource_span.set_attribute("harness.eval.outcome", "regressed")
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, "regression",
+                    results.candidate_pass_rate,
+                )
+                logger.warning(
+                    "EXECUTION_EVAL: Regression",
+                    path=resource.path,
+                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                    win_rate=f"{results.win_rate:.2f}",
+                )
 
     # --- aggregate write ---
     aggregate_path = _write_aggregate_results(
