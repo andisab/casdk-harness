@@ -31,6 +31,7 @@ dependencies = [
     # Data Validation & Serialization
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "jsonschema>=4.21.0",  # Eval-suite manifest validation (CGF Stage 3)
 
     # HTTP & API
     "httpx>=0.26.0",
