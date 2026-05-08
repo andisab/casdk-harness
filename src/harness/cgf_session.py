@@ -1341,12 +1341,12 @@ Then output: [SPEC_READY]
         """Build prompt for cgf-orchestrator with spec context."""
         try:
             orchestrator_prompt = load_prompt(
-                "plugins/cgf-agents/agents/cgf-orchestrator"
+                "plugins/cgf-agents/agents/design/cgf-orchestrator"
             )
         except FileNotFoundError:
             # Try alternate path
             orchestrator_path = (
-                Path("src/harness/plugins/cgf-agents/agents/cgf-orchestrator.md")
+                Path("src/harness/plugins/cgf-agents/agents/design/cgf-orchestrator.md")
             )
             if orchestrator_path.exists():
                 orchestrator_prompt = orchestrator_path.read_text()
