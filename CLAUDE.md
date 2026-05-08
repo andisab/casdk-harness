@@ -19,13 +19,29 @@ Technical reference for developers working on this repository and for Claude's o
 - Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
 - Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
 - 14 harness agents (in `.claude/agents/`) + plugin agents reachable via `Task(subagent_type="plugin:agent")` or `harness.subagent.call_agent()` for standalone Python invocation
-- **CGF Optimization Framework** (1,534 unit tests passing as of 2026-05-05):
+- **CGF Optimization Framework** (1,702 unit tests + 16 integration tests passing as of 2026-05-08):
   - Stage 1: Protocol layer, resource architect agent, DESIGN phase — **shipped**
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds — **shipped**
-  - Stage 3: Eval Harness — **not started**, draft spec in `docs/CGF-EVAL-FRAMEWORK.md`
-  - Stage 4: Integration & hardening — not started, depends on Stage 3
+  - **Stage 3 Phase A: Eval Harness — shipped 2026-05-08**, six PRs (#7-#13 + A.7).
+    - A.1 schema, A.2 cgf-eval-architect agent, A.3 graders package, A.4 EvalHarness runner, A.5 EVAL_DESIGN+EXECUTION_EVAL orchestrator wiring, A.6 telemetry+Grafana, A.7 tracer spans + E2E integration test + smoke fixture.
+    - Pipeline: RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE (9 phases).
+    - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
+    - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
+    - Smoke fixture at `docs/examples/cgf-eval-smoke/SPEC.md` for end-to-end runtime validation.
+  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-FRAMEWORK.md`.
+  - Stage 4: Integration & hardening — not started, depends on Phase D completion.
 
 ### Completed Recently
+- **CGF Stage 3 Phase A — Eval Harness shipped (2026-05-08)** — Six PRs (#7, #8, #9, #11, #12, #13) plus A.7 closing PR, all merged to `contextgrad-eval`. Phases A.1 through A.7 cover the full eval framework end-to-end:
+  - **A.1 (#7)** — `eval_suite.schema.json` (Draft-07) with polymorphic graders + trajectory assertions; `jsonschema>=4.21.0` runtime dep; 37 schema-validation tests.
+  - **A.2 (#7)** — `cgf-eval-architect` agent (sonnet, 100 turns); reorganized `cgf-agents/agents/` into `design/` and `eval/` subdirs; `plugin_manager.glob → rglob` runtime fix.
+  - **A.3 (#8)** — `harness/optimization/graders/` package: ~600 LoC across 8 modules (scenario, transcript, base, deterministic, llm_judge, trajectory, composite, __init__). 72 tests covering all grader types + transcript-builder + the no_decision retry path.
+  - **A.4 (#9)** — `harness/optimization/eval_harness/` package: EvalHarness runner with two-arm baseline-vs-candidate execution, in-process runtime (Phase C will add ephemeral container). Loader validates against the schema; 37 tests.
+  - **Refactor (#11)** — Pure refactor: extracted phase methods from `multi_resource_orchestrator.py` (2157 LoC → 702 LoC) into `_orchestrator_phases/` package with mounting via class-attribute assignment.
+  - **A.5 (#12)** — Wired EVAL_DESIGN and EXECUTION_EVAL into the orchestrator. Per-resource EvalHarness invocation; simple-threshold promotion gate; loop-back to ITERATE with feedback (max 2 rounds, held-out scenarios stripped). 26 tests.
+  - **A.6 (#13)** — Five Prometheus instruments (`harness_eval_phase_duration_seconds`, `harness_eval_tokens_to_goal`, `harness_eval_scenarios_total`, `harness_eval_arm_score`, `harness_eval_judge_no_decision_total`); five env vars (`CGF_DESIGN_MODEL`, `CGF_JUDGE_MODEL`, `CGF_EVAL_TOKEN_BUDGET`, `CGF_EVAL_PROMOTION_EPSILON`, `CGF_EVAL_HELD_OUT_FRACTION`) wired through docker-compose.yml + `.env.example`; Grafana "Future" placeholder row replaced with five real panels. 29 tests.
+  - **A.7 (this branch)** — OTel tracer spans for eval phases (`harness.eval.{task_id,phase,resource_path,resource_type,outcome,candidate_pass_rate,baseline_pass_rate,win_rate,...}`), wrapping degrades to no-op when tracer unavailable. End-to-end integration test exercising the full 9-phase pipeline with mocked SDK calls (`tests/integration/test_full_pipeline_integration.py`). Runtime smoke fixture at `docs/examples/cgf-eval-smoke/SPEC.md` (greeter agent + calculator skill, `make optimize`-able with cost ~$0.10–$0.50 using sonnet, less with haiku). 11 + 2 new tests.
+  - **Net Phase A:** ~3500 LoC production code + ~3000 LoC tests across the seven PRs. The pipeline closes the optimization loop end-to-end: agents generate resources, the architect designs an eval suite, candidates run against baselines, the gate decides promotion, and feedback loops back to ITERATE until threshold or max-feedback. Phase B (bootstrap-CI gate, multi-judge ensemble) is the natural next major drop.
 - **Block 4 Part 3 — Observability (2026-05-05)** — Five phases, four commits, ~1,300 LoC of new infra (~440 LoC of deprecated harness metrics + tests dropped):
   - Phase 3A (`53d6748`) — OTel Collector sidecar (gRPC :4317 / HTTP :4318); SDK telemetry routed to bundled collector via literal compose env vars (not shell-interpolated, so host-shell OTel envvars don't leak into harness containers); cardinality knobs (`OTEL_METRICS_INCLUDE_SESSION_ID/ACCOUNT_UUID=false`); collector exposes SDK metrics on :8889 for Prometheus scrape.
   - Phase 3B (`f025870`) — Dropped 5 instruments + 4 methods from `monitoring.py` that the SDK now emits natively (`api_tokens_used_total`, `api_cost_dollars_total`, both cache-token counters, the cache-hit-ratio gauge, `record_tokens()` with its hardcoded pricing table). Renamed 11 surviving harness instruments with `harness_` prefix. Dropped 14 tests; 1534/0/0 passing.

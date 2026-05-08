@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING
 import structlog
 
 from harness.monitoring import harness_eval_phase_duration_seconds
-from harness.optimization._orchestrator_helpers import AGENT_EVAL_ARCHITECT
+from harness.optimization._orchestrator_helpers import (
+    AGENT_EVAL_ARCHITECT,
+    eval_phase_span,
+    new_eval_task_id,
+)
 from harness.optimization.protocols.signals import SignalType
 
 if TYPE_CHECKING:
@@ -44,6 +48,7 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
         return
 
     phase_start = time.time()
+    task_id = new_eval_task_id()
 
     from harness.subagent import call_agent_simple
 
@@ -54,6 +59,13 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
         logger.warning(
             "EVAL_DESIGN: No generated resources; skipping eval-suite design",
         )
+        async with eval_phase_span(
+            "eval.design",
+            task_id=task_id,
+            phase="EVAL_DESIGN",
+            extra={"harness.eval.outcome": "skipped"},
+        ):
+            pass
         return
 
     # Ensure the eval/ directory exists for the architect to write into.
@@ -159,3 +171,15 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
     harness_eval_phase_duration_seconds.labels(
         phase="EVAL_DESIGN"
     ).observe(time.time() - phase_start)
+    # Final tracer span with outcome attribute.
+    outcome = "success" if self._state.eval_suite_path else "no_suite_written"
+    async with eval_phase_span(
+        "eval.design",
+        task_id=task_id,
+        phase="EVAL_DESIGN",
+        extra={
+            "harness.eval.outcome": outcome,
+            "harness.eval.resource_count": len(generated),
+        },
+    ):
+        pass
