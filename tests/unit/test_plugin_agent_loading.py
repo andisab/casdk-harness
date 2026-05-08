@@ -23,7 +23,13 @@ class TestPluginAgentLoading:
     def test_plugin_agents_directory_structure(self):
         """Each in-tree plugin advertised in tests has its agent files on disk."""
         # Post-Step 2b: only cgf-agents stays in-tree.
-        expected = {"cgf-agents": ["cgf-orchestrator.md"]}
+        # Phase A.2: agents reorganized into design/ and eval/ subdirs.
+        expected = {
+            "cgf-agents": [
+                "design/cgf-orchestrator.md",
+                "eval/cgf-eval-architect.md",
+            ],
+        }
 
         for plugin_name, agent_files in expected.items():
             agents_dir = PLUGIN_BASE / plugin_name / "agents"
