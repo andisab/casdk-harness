@@ -1,0 +1,684 @@
+"""ITERATE phase implementation.
+
+Delegates to the ``cgf-prompt-optimizer`` agent (one or more iterations
+per resource).  Parses ``[ITERATE_COMPLETE:{path}]`` and quality scores;
+loops until quality crosses the configured threshold or
+``max_iterations`` is reached.  Maintains a multi-resource CHANGELOG of
+quality deltas.
+
+Functions mounted onto :class:`MultiResourceOrchestrator` as:
+
+- ``_delegate_iteration`` ← :func:`delegate`
+- ``_evaluate_resource_quality`` ← :func:`evaluate_resource_quality`
+- ``_evaluate_resource_quality_full`` ← :func:`evaluate_resource_quality_full`
+- ``_parse_iteration_result`` ← :func:`parse_iteration_result`
+- ``_create_changelog_header`` ← :func:`create_changelog_header`
+- ``_format_iteration_entry`` ← :func:`format_iteration_entry`
+- ``_insert_changelog_entry`` ← :func:`insert_changelog_entry`
+- ``_update_changelog`` ← :func:`update_changelog`
+- ``_get_word_count`` ← :func:`get_word_count`
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import structlog
+
+from harness.optimization._orchestrator_helpers import (
+    AGENT_ITERATE,
+    validate_write_path,
+    versioned_path,
+)
+from harness.optimization.protocols.signals import SignalType
+from harness.progress import ResourceQuality, ResourceStatus
+
+if TYPE_CHECKING:
+    from harness.optimization.multi_resource_orchestrator import (
+        MultiResourceOrchestrator,
+    )
+
+logger = structlog.get_logger(__name__)
+
+
+async def delegate(self: MultiResourceOrchestrator) -> None:
+    """Delegate resource iteration to cgf-prompt-optimizer agent.
+
+    For each generated resource, spawns the optimizer agent.
+    Parses [ITERATE_COMPLETE:{path}] signals and quality scores.
+    Loops until quality >= threshold or max iterations reached.
+    """
+    if not self._state or not self._spec:
+        return
+
+    from harness.subagent import call_agent_simple
+
+    workspace = self.config.workspace_dir
+
+    # Get resources that need optimization
+    resources_to_optimize = (
+        self._state.get_generated_resources()
+        + self._state.get_needs_refinement_resources()
+    )
+
+    logger.info(
+        "ITERATE: Starting optimization",
+        total=len(resources_to_optimize),
+        threshold=self.config.quality_threshold,
+    )
+
+    for resource in resources_to_optimize:
+        # Guard: skip resources with no file (e.g. failed generation)
+        if resource.version == 0:
+            resource_file = workspace / resource.path
+            if not resource_file.exists():
+                logger.warning(
+                    "ITERATE: Skipping - no file exists",
+                    path=resource.path,
+                )
+                self._state.update_resource(
+                    resource.path,
+                    status="failed",
+                    error="No file available for optimization",
+                )
+                self._save_state()
+                continue
+
+        self._state.update_resource(resource.path, status="in_progress")
+        self._save_state()
+
+        iteration = 0
+        current_quality = 0.0
+
+        while iteration < self.config.max_iterations:
+            iteration += 1
+
+            # Build prompt for optimizer
+            prompt = f"""Optimize resource for multi-resource plugin.
+
+Workspace: {workspace}
+Resource: {workspace / resource.path}
+Resource type: {resource.resource_type}
+Iteration: {iteration}/{self.config.max_iterations}
+Quality threshold: {self.config.quality_threshold}
+
+Plugin context:
+- Name: {self._spec.name}
+- Purpose: {self._spec.purpose}
+
+Run agentic optimization (default mode).
+Load eval_criteria from research/eval_criteria.yaml if available.
+Apply research heuristics and self-critique.
+
+Save optimized version to:
+{workspace / versioned_path(resource.path, resource.version + 1)}
+
+When complete, emit signals:
+[ITERATE_COMPLETE:{resource.path}]
+version: {resource.version + 1}
+quality_overall: {{0.0-1.0}}
+quality_completeness: {{0.0-1.0}}
+quality_accuracy: {{0.0-1.0}}
+quality_clarity: {{0.0-1.0}}
+word_count: {{count}}
+[SUMMARY]
+{{1-2 sentence summary of key improvements}}
+[/SUMMARY]
+"""
+
+            logger.info(
+                "ITERATE: Running iteration",
+                path=resource.path,
+                iteration=iteration,
+                timeout=self.config.iterate_timeout,
+            )
+            self._emit_progress(
+                "ITERATE", resource.path, f"iteration {iteration}"
+            )
+
+            try:
+                # Pass timeout directly to agent
+                response = await call_agent_simple(
+                    AGENT_ITERATE,
+                    prompt,
+                    verbose=self.config.verbose or self.config.follow_logs,
+                    timeout=float(self.config.iterate_timeout),
+                )
+
+                # Parse signal and quality
+                iter_signals = self._signal_parser.parse(response)
+                iter_complete = [
+                    s for s in iter_signals
+                    if s.type == SignalType.ITERATE_COMPLETE
+                    and s.resource_path == resource.path
+                ]
+                if iter_complete:
+                    # Parse iteration result
+                    result = self._parse_iteration_result(response)
+
+                    # Get quality score with all dimensions
+                    quality_full = None
+                    if result["quality_overall"] is not None:
+                        current_quality = result["quality_overall"]
+                    else:
+                        # Fallback: use evaluator for full quality
+                        quality_full = await self._evaluate_resource_quality_full(
+                            resource
+                        )
+                        current_quality = (
+                            quality_full.overall if quality_full else 0.0
+                        )
+
+                    # Get word counts for CHANGELOG
+                    workspace = self.config.workspace_dir
+                    original_path = workspace / resource.path
+                    word_count_before = self._get_word_count(original_path)
+                    word_count_after = (
+                        result["word_count"]
+                        if result["word_count"]
+                        else word_count_before
+                    )
+
+                    # Get quality before this iteration
+                    quality_before = (
+                        resource.quality.overall if resource.quality else 0.0
+                    )
+
+                    # Update CHANGELOG
+                    self._update_changelog(
+                        resource=resource,
+                        iteration=iteration,
+                        quality_before=quality_before,
+                        quality_after=current_quality,
+                        word_count_before=word_count_before,
+                        word_count_after=word_count_after,
+                        summary=result["summary"] or "",
+                    )
+
+                    # Update state with full quality dimensions
+                    if quality_full:
+                        quality = quality_full
+                    else:
+                        quality = ResourceQuality(
+                            overall=current_quality,
+                            completeness=result.get(
+                                "quality_completeness", 0.0
+                            ),
+                            accuracy=result.get("quality_accuracy", 0.0),
+                            clarity=result.get("quality_clarity", 0.0),
+                        )
+                    self._state.update_resource(
+                        resource.path,
+                        version=resource.version + 1,
+                        iterations=iteration,
+                        quality=quality,
+                    )
+                    self._save_state()
+
+                    logger.info(
+                        "ITERATE: Iteration complete",
+                        path=resource.path,
+                        iteration=iteration,
+                        quality=f"{current_quality:.2f}",
+                    )
+
+                    # Check threshold
+                    if current_quality >= self.config.quality_threshold:
+                        self._state.update_resource(
+                            resource.path, status="optimized"
+                        )
+                        # Immediately finalize this resource
+                        self._finalize_single_resource(resource.path)
+                        logger.info(
+                            "ITERATE: Resource meets threshold",
+                            path=resource.path,
+                            quality=f"{current_quality:.2f}",
+                        )
+                        self._emit_progress(
+                            "ITERATE",
+                            resource.path,
+                            "complete",
+                            current_quality,
+                        )
+                        break
+
+                else:
+                    # Fallback: check if versioned file was created
+                    versioned_file = workspace / versioned_path(
+                        resource.path, resource.version + 1
+                    )
+                    if versioned_file.exists():
+                        # File exists - use evaluator for full quality
+                        fallback_quality = (
+                            await self._evaluate_resource_quality_full(resource)
+                        )
+                        current_quality = (
+                            fallback_quality.overall if fallback_quality else 0.0
+                        )
+
+                        if current_quality > 0:
+                            quality = (
+                                fallback_quality
+                                if fallback_quality
+                                else ResourceQuality(overall=current_quality)
+                            )
+                            self._state.update_resource(
+                                resource.path,
+                                version=resource.version + 1,
+                                iterations=iteration,
+                                quality=quality,
+                            )
+                            self._save_state()
+
+                            logger.info(
+                                "ITERATE: File created (no signal)",
+                                path=resource.path,
+                                quality=f"{current_quality:.2f}",
+                            )
+
+                            if current_quality >= self.config.quality_threshold:
+                                self._state.update_resource(
+                                    resource.path, status="optimized"
+                                )
+                                # Immediately finalize this resource
+                                self._finalize_single_resource(resource.path)
+                                break
+                    else:
+                        logger.warning(
+                            "ITERATE: No completion signal or file",
+                            path=resource.path,
+                            iteration=iteration,
+                        )
+
+            except TimeoutError:
+                logger.error(
+                    "ITERATE: Iteration timed out",
+                    path=resource.path,
+                    iteration=iteration,
+                    timeout=self.config.iterate_timeout,
+                )
+                self._emit_progress(
+                    "ITERATE", resource.path,
+                    f"iteration {iteration} timeout"
+                )
+                break
+            except Exception as e:
+                logger.error(
+                    "ITERATE: Iteration failed",
+                    path=resource.path,
+                    iteration=iteration,
+                    error=str(e),
+                )
+                break
+
+        # Final status if not already optimized
+        if self._state.resources[resource.path].status != "optimized":
+            if current_quality > 0:
+                self._state.update_resource(
+                    resource.path, status="needs_refinement"
+                )
+            else:
+                self._state.update_resource(
+                    resource.path,
+                    status="failed",
+                    error="Optimization failed to produce quality score",
+                )
+
+        self._save_state()
+
+    logger.info(
+        "ITERATE: Complete",
+        optimized=len(self._state.get_optimized_resources()),
+        needs_refinement=len(self._state.get_needs_refinement_resources()),
+        failed=len(self._state.get_failed_resources()),
+    )
+
+
+async def evaluate_resource_quality(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+) -> float:
+    """Evaluate resource quality using the quality evaluator.
+
+    Args:
+        resource: Resource to evaluate.
+
+    Returns:
+        Quality score (0.0-1.0).
+    """
+    quality = await self._evaluate_resource_quality_full(resource)
+    return quality.overall if quality else 0.0
+
+
+async def evaluate_resource_quality_full(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+) -> ResourceQuality | None:
+    """Evaluate resource quality and return full dimension scores.
+
+    Args:
+        resource: Resource to evaluate.
+
+    Returns:
+        ResourceQuality with all dimension scores, or None on failure.
+    """
+    if not self._evaluator or not self._spec:
+        return None
+
+    workspace = self.config.workspace_dir
+
+    # Find latest version - preserve parent directory structure
+    version = resource.version
+    if version > 0:
+        path = workspace / versioned_path(resource.path, version)
+    else:
+        path = workspace / resource.path
+
+    if not path.exists():
+        return None
+
+    content = path.read_text()
+
+    score = await self._evaluator.evaluate(
+        resource_content=content,
+        resource_type=resource.resource_type,
+        spec=self._spec,
+        resource_name=Path(resource.path).stem,
+    )
+
+    # Map QualityScore to ResourceQuality
+    return ResourceQuality(
+        completeness=score.completeness,
+        accuracy=score.accuracy,
+        clarity=score.clarity,
+        overall=score.overall,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CHANGELOG management
+# ---------------------------------------------------------------------------
+
+
+def parse_iteration_result(
+    self: MultiResourceOrchestrator,
+    response: str,
+) -> dict[str, Any]:
+    """Parse agent response for quality, word count, and summary.
+
+    Args:
+        response: Raw response from cgf-prompt-optimizer agent.
+
+    Returns:
+        Dict with keys: quality_overall, word_count, summary
+    """
+    result: dict[str, Any] = {
+        "quality_overall": None,
+        "word_count": None,
+        "summary": None,
+    }
+
+    # Extract quality_overall: X.XX (multiple patterns for permissiveness)
+    quality_patterns = [
+        r"quality_overall:\s*([\d.]+)",
+        r"quality:\s*([\d.]+)",
+        r"overall[_\s]?score:\s*([\d.]+)",
+        r"score:\s*([\d.]+)",
+    ]
+    for pattern in quality_patterns:
+        quality_match = re.search(pattern, response, re.IGNORECASE)
+        if quality_match:
+            val = float(quality_match.group(1))
+            # Ensure it's a valid quality score (0.0-1.0)
+            if 0.0 <= val <= 1.0:
+                result["quality_overall"] = val
+                break
+
+    # Extract dimension scores (completeness, accuracy, clarity)
+    for dim in ["completeness", "accuracy", "clarity"]:
+        for pattern in [
+            rf"quality_{dim}:\s*([\d.]+)",
+            rf"{dim}:\s*([\d.]+)",
+        ]:
+            match = re.search(pattern, response, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                if 0.0 <= val <= 1.0:
+                    result[f"quality_{dim}"] = val
+                    break
+
+    # Extract word_count: XXX
+    word_match = re.search(r"word_count:\s*(\d+)", response)
+    if word_match:
+        result["word_count"] = int(word_match.group(1))
+
+    # Extract [SUMMARY]...[/SUMMARY]
+    summary_match = re.search(
+        r"\[SUMMARY\]\s*(.*?)\s*\[/SUMMARY\]", response, re.DOTALL
+    )
+    if summary_match:
+        result["summary"] = summary_match.group(1).strip()
+
+    return result
+
+
+def create_changelog_header(
+    self: MultiResourceOrchestrator,
+    changelog_path: Path,
+) -> None:
+    """Create CHANGELOG.md with header.
+
+    Args:
+        changelog_path: Path to write CHANGELOG.md
+    """
+    if not self._spec:
+        return
+
+    # Determine resource counts from state
+    resource_counts: dict[str, int] = {}
+    if self._state:
+        for resource in self._state.resources.values():
+            rtype = resource.resource_type
+            resource_counts[rtype] = resource_counts.get(rtype, 0) + 1
+
+    counts_str = ", ".join(
+        f"{count} {rtype}{'s' if count > 1 else ''}"
+        for rtype, count in sorted(resource_counts.items())
+    )
+
+    header = f"""# CGF Optimization Changelog: {self._spec.name}
+
+**Plugin:** {self._spec.name}
+**Resources:** {counts_str or 'TBD'}
+**Mode:** agentic
+**Started:** {datetime.now(UTC).strftime('%Y-%m-%d')}
+**Status:** IN_PROGRESS
+
+---
+"""
+    # Validate path
+    validate_write_path(changelog_path, self.config.workspace_dir)
+
+    changelog_path.write_text(header)
+    logger.info("CHANGELOG: Created", path=str(changelog_path))
+
+
+def format_iteration_entry(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+    iteration: int,
+    quality_before: float,
+    quality_after: float,
+    word_count_before: int,
+    word_count_after: int,
+    summary: str,
+) -> str:
+    """Format a single iteration entry for CHANGELOG.
+
+    Args:
+        resource: The resource being optimized
+        iteration: Iteration number
+        quality_before: Quality score before this iteration
+        quality_after: Quality score after this iteration
+        word_count_before: Word count before
+        word_count_after: Word count after
+        summary: Summary of changes from agent
+
+    Returns:
+        Formatted markdown entry
+    """
+    # Calculate deltas
+    quality_delta = quality_after - quality_before
+    quality_pct = (
+        f"+{quality_delta * 100:.0f}%"
+        if quality_delta >= 0
+        else f"{quality_delta * 100:.0f}%"
+    )
+
+    word_delta = word_count_after - word_count_before
+    word_pct = (
+        f"+{(word_delta / word_count_before * 100):.0f}%"
+        if word_count_before > 0
+        else "N/A"
+    )
+
+    version = resource.version + 1
+    versioned = versioned_path(resource.path, version)
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    entry = f"""
+### Iteration {iteration} ({date_str})
+
+**Output:** {versioned}
+**Quality:** {quality_before:.2f} → {quality_after:.2f} ({quality_pct})
+**Words:** {word_count_before} → {word_count_after} ({word_pct})
+
+#### Summary
+
+{summary or 'No summary provided.'}
+
+---
+"""
+    return entry
+
+
+def insert_changelog_entry(
+    self: MultiResourceOrchestrator,
+    changelog_path: Path,
+    resource_path: str,
+    entry: str,
+) -> None:
+    """Insert entry into appropriate resource section of CHANGELOG.
+
+    For multi-resource, organizes entries by resource path.
+
+    Args:
+        changelog_path: Path to CHANGELOG.md
+        resource_path: Resource path for section header
+        entry: Formatted iteration entry
+    """
+    content = changelog_path.read_text()
+
+    # Resource section header
+    section_header = f"## Resource: {resource_path}"
+
+    if section_header in content:
+        # Insert after section header (before first ### Iteration)
+        section_start = content.index(section_header)
+        after_header = section_start + len(section_header)
+        # Find the next line after section header
+        next_newline = content.find("\n", after_header)
+        if next_newline == -1:
+            next_newline = len(content)
+        insert_pos = next_newline + 1
+        content = content[:insert_pos] + entry + content[insert_pos:]
+    else:
+        # Create new resource section
+        # Insert before first resource section or at end of header
+        first_resource = content.find("\n## Resource:")
+        if first_resource != -1:
+            # Insert before existing resource sections
+            insert_pos = first_resource + 1
+        else:
+            # Insert after header separator
+            header_end = content.find("---\n")
+            insert_pos = header_end + 4 if header_end != -1 else len(content)
+
+        new_section = f"\n{section_header}\n{entry}"
+        content = content[:insert_pos] + new_section + content[insert_pos:]
+
+    # Validate path
+    validate_write_path(changelog_path, self.config.workspace_dir)
+
+    changelog_path.write_text(content)
+    logger.info(
+        "CHANGELOG: Entry added",
+        resource=resource_path,
+        path=str(changelog_path),
+    )
+
+
+def update_changelog(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+    iteration: int,
+    quality_before: float,
+    quality_after: float,
+    word_count_before: int,
+    word_count_after: int,
+    summary: str,
+) -> None:
+    """Update unified CHANGELOG.md with resource iteration entry.
+
+    Creates header on first call. Appends to resource section on subsequent
+    calls. For multi-resource, organizes entries by resource path.
+
+    Args:
+        resource: The resource being optimized
+        iteration: Iteration number
+        quality_before: Quality score before iteration
+        quality_after: Quality score after iteration
+        word_count_before: Word count before
+        word_count_after: Word count after
+        summary: Summary of improvements from agent
+    """
+    changelog_path = self.config.workspace_dir / "CHANGELOG.md"
+
+    # Build iteration entry
+    entry = self._format_iteration_entry(
+        resource,
+        iteration,
+        quality_before,
+        quality_after,
+        word_count_before,
+        word_count_after,
+        summary,
+    )
+
+    if not changelog_path.exists():
+        # Create with header
+        self._create_changelog_header(changelog_path)
+
+    # Insert entry into appropriate resource section
+    self._insert_changelog_entry(changelog_path, resource.path, entry)
+
+
+def get_word_count(
+    self: MultiResourceOrchestrator,
+    path: Path,
+) -> int:
+    """Get word count from a file.
+
+    Args:
+        path: Path to file
+
+    Returns:
+        Word count, or 0 if file doesn't exist
+    """
+    if not path.exists():
+        return 0
+    content = path.read_text()
+    return len(content.split())
