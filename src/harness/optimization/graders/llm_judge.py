@@ -184,6 +184,18 @@ class LLMJudgeGrader(BaseGrader):
         return str(getattr(first, "text", first))
 
     def _no_decision(self, reason: str) -> GraderResult:
+        # Phase A.6 telemetry: bump the counter so operators can see how
+        # often the judge model fails to decide.  Imported lazily so unit
+        # tests that don't exercise prometheus state stay decoupled from
+        # the registry.
+        try:
+            from harness.monitoring import harness_eval_judge_no_decision_total
+
+            model = _resolve_judge_model(self.eval_model)
+            harness_eval_judge_no_decision_total.labels(model=model).inc()
+        except Exception:  # noqa: BLE001 — telemetry MUST NOT break grading
+            pass
+
         return GraderResult(
             passed=False,
             score=0.0,

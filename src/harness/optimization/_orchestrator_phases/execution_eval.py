@@ -21,12 +21,19 @@ make that distinction visible at the call site.
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from harness.monitoring import (
+    harness_eval_arm_score,
+    harness_eval_phase_duration_seconds,
+    harness_eval_scenarios_total,
+    harness_eval_tokens_to_goal,
+)
 from harness.optimization._orchestrator_helpers import (
     DEFAULT_EVAL_PROMOTION_EPSILON,
     DEFAULT_MAX_FEEDBACK_ITERATIONS,
@@ -60,6 +67,18 @@ async def run_phase(self: MultiResourceOrchestrator) -> None:
     if not self._state or not self._spec:
         return
 
+    phase_start = time.time()
+    try:
+        await _run_phase_body(self)
+    finally:
+        # Phase A.6: record duration for every exit path.
+        harness_eval_phase_duration_seconds.labels(
+            phase="EXECUTION_EVAL"
+        ).observe(time.time() - phase_start)
+
+
+async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
+    """The actual phase logic; wrapped by run_phase for timing."""
     workspace = self.config.workspace_dir
 
     # --- precondition checks ---
@@ -148,10 +167,19 @@ async def run_phase(self: MultiResourceOrchestrator) -> None:
 
         per_resource_results.append((resource, results))
 
+        # Per-scenario / per-arm telemetry (Phase A.6).
+        _emit_scenario_metrics(results)
+
         if _should_promote(results, epsilon):
             promotions.append(resource)
             self._state.update_resource(resource.path, status="optimized")
             self._finalize_single_resource(resource.path)
+            # Tokens-to-goal: at promotion, observe the cumulative tokens
+            # for this resource.  Phase A approximation: per-run total only;
+            # cumulative across feedback iterations is a Phase B refinement.
+            harness_eval_tokens_to_goal.labels(
+                resource_type=resource.resource_type
+            ).observe(results.total_tokens)
             self._emit_progress(
                 "EXECUTION_EVAL", resource.path, "promoted",
                 results.candidate_pass_rate,
@@ -404,3 +432,38 @@ def _write_aggregate_results(
     )
     logger.info("EXECUTION_EVAL: Wrote aggregate", path=str(out_path))
     return out_path
+
+
+def _emit_scenario_metrics(results: EvalResults) -> None:
+    """Emit per-scenario / per-arm Prometheus telemetry (Phase A.6).
+
+    Walks the scenarios in ``results`` and records:
+
+    - ``harness_eval_scenarios_total{level, status, arm}`` for each
+      (scenario, arm) pair.  Status is one of ``pass | fail | no_decision``;
+      derived from the arm's ``pass_caret_k`` (all decisive trials passed)
+      and ``decisive`` count (any decisive trial at all).
+    - ``harness_eval_arm_score{arm, level}`` histogram observation of
+      the arm's pass-rate.
+
+    Held-out scenarios are NOT excluded — operators monitoring the gate
+    want visibility into held-out outcomes too.  The optimizer-feedback
+    layer is what filters held_out, not telemetry.
+    """
+    for sr in results.scenarios:
+        for arm_name, arm in (
+            ("baseline", sr.baseline),
+            ("candidate", sr.candidate),
+        ):
+            if arm.decisive == 0:
+                status = "no_decision"
+            elif arm.pass_caret_k >= 1.0:
+                status = "pass"
+            else:
+                status = "fail"
+            harness_eval_scenarios_total.labels(
+                level=sr.level, status=status, arm=arm_name
+            ).inc()
+            harness_eval_arm_score.labels(
+                arm=arm_name, level=sr.level
+            ).observe(arm.pass_rate)
