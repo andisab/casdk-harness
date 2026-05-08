@@ -208,6 +208,12 @@ ignore = [
 # BaseGrader.grade; some implementations don't need both inputs but must
 # accept them for the interface contract.
 "src/harness/optimization/graders/*.py" = ["ARG002"]
+# Phase modules contain free functions mounted onto MultiResourceOrchestrator
+# as methods via class-attribute assignment.  They keep ``self`` in the
+# signature to match the original method shape (so callers like
+# ``self._parse_iteration_result(...)`` work via Python's descriptor
+# protocol), even when the function body doesn't reference ``self``.
+"src/harness/optimization/_orchestrator_phases/*.py" = ["ARG001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["harness", "mcp_servers"]
