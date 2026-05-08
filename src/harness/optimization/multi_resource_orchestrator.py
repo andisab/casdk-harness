@@ -53,11 +53,14 @@ import structlog
 
 from harness.optimization._orchestrator_helpers import (
     AGENT_DESIGN,
+    AGENT_EVAL_ARCHITECT,
     AGENT_EVALUATE,
     AGENT_GENERATE,
     AGENT_ITERATE,
     AGENT_RESEARCH,
     AGENT_VALIDATE,
+    DEFAULT_EVAL_PROMOTION_EPSILON,
+    DEFAULT_MAX_FEEDBACK_ITERATIONS,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_REFINEMENT,
     DEFAULT_QUALITY_THRESHOLD,
@@ -67,6 +70,12 @@ from harness.optimization._orchestrator_helpers import (
 )
 from harness.optimization._orchestrator_phases import (
     design as _design_phase,
+)
+from harness.optimization._orchestrator_phases import (
+    eval_design as _eval_design_phase,
+)
+from harness.optimization._orchestrator_phases import (
+    execution_eval as _execution_eval_phase,
 )
 from harness.optimization._orchestrator_phases import (
     generate as _generate_phase,
@@ -111,11 +120,14 @@ _versioned_path = versioned_path  # noqa: F841 — public alias (used by tests)
 
 __all__ = [
     "AGENT_DESIGN",
+    "AGENT_EVAL_ARCHITECT",
     "AGENT_EVALUATE",
     "AGENT_GENERATE",
     "AGENT_ITERATE",
     "AGENT_RESEARCH",
     "AGENT_VALIDATE",
+    "DEFAULT_EVAL_PROMOTION_EPSILON",
+    "DEFAULT_MAX_FEEDBACK_ITERATIONS",
     "DEFAULT_MAX_ITERATIONS",
     "DEFAULT_MAX_REFINEMENT",
     "DEFAULT_QUALITY_THRESHOLD",
@@ -175,6 +187,11 @@ class MultiResourceConfig:
     iterate_timeout: int = 600    # 10 minutes per iteration
     validate_timeout: int = 300   # 5 minutes
     design_timeout: int = 900     # 15 minutes for resource architecture
+    eval_design_timeout: int = 600  # 10 minutes for eval-suite design
+    execution_eval_timeout: int = 1800  # 30 minutes for full eval run
+    # Phase A.5 eval gate
+    eval_promotion_epsilon: float | None = None  # None → use env / default
+    max_feedback_iterations: int | None = None   # None → use env / default
     # Progress display settings
     show_progress: bool = True
     follow_logs: bool = True
@@ -410,11 +427,26 @@ class MultiResourceOrchestrator:
 
             elif phase == OptimizationPhase.GENERATE:
                 await self._delegate_generation()
+                self._advance_phase(OptimizationPhase.EVAL_DESIGN)
+
+            elif phase == OptimizationPhase.EVAL_DESIGN:
+                await self._delegate_eval_design()
                 self._advance_phase(OptimizationPhase.ITERATE)
 
             elif phase == OptimizationPhase.ITERATE:
                 await self._delegate_iteration()
-                self._advance_phase(OptimizationPhase.VALIDATE)
+                self._advance_phase(OptimizationPhase.EXECUTION_EVAL)
+
+            elif phase == OptimizationPhase.EXECUTION_EVAL:
+                await self._run_execution_eval()
+                # _run_execution_eval handles its own phase transition:
+                # - All promoted → advances to VALIDATE
+                # - Regressions remain & under max_feedback → loops back to ITERATE
+                # - Regressions remain & at max_feedback → escalates to VALIDATE
+                # - Suite missing or no resources → falls through (advance below)
+                if self._state.current_phase == OptimizationPhase.EXECUTION_EVAL:
+                    # No transition handled internally → forward to VALIDATE
+                    self._advance_phase(OptimizationPhase.VALIDATE)
 
             elif phase == OptimizationPhase.VALIDATE:
                 await self._delegate_validation()
@@ -625,6 +657,7 @@ class MultiResourceOrchestrator:
     _get_resource_purpose = _generate_phase.get_resource_purpose
     _get_resource_instructions = _generate_phase.get_resource_instructions
     _generate_plugin_json = _generate_phase.generate_plugin_json
+    _delegate_eval_design = _eval_design_phase.delegate
     _delegate_iteration = _iterate_phase.delegate
     _evaluate_resource_quality = _iterate_phase.evaluate_resource_quality
     _evaluate_resource_quality_full = _iterate_phase.evaluate_resource_quality_full
@@ -634,6 +667,7 @@ class MultiResourceOrchestrator:
     _insert_changelog_entry = _iterate_phase.insert_changelog_entry
     _update_changelog = _iterate_phase.update_changelog
     _get_word_count = _iterate_phase.get_word_count
+    _run_execution_eval = _execution_eval_phase.run_phase
     _delegate_validation = _validate_phase.delegate
 
 
