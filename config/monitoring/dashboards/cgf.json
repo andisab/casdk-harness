@@ -376,33 +376,130 @@
     {
       "id": 300,
       "type": "row",
-      "title": "Future (Stage 3 Eval Harness)",
+      "title": "Eval Framework (Stage 3 Phase A)",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 30
       },
-      "collapsed": true,
-      "panels": [
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 30,
+      "title": "Eval Phase Duration (p50, p95)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "description": "Wall-clock duration of EVAL_DESIGN and EXECUTION_EVAL phases.  EVAL_DESIGN should usually complete within minutes; EXECUTION_EVAL scales with scenario count \u00d7 trials \u00d7 arms.",
+      "targets": [
         {
-          "id": 30,
-          "title": "Phase Transitions / Eval Scores (placeholder)",
-          "type": "timeseries",
-          "gridPos": {
-            "h": 8,
-            "w": 24,
-            "x": 0,
-            "y": 31
-          },
-          "description": "Placeholder \u2014 populated when Stage 3 (eval harness) lands. Will track CGF phase transitions (PLANNING \u2192 RESEARCH \u2192 DESIGN \u2192 GENERATE \u2192 ITERATE \u2192 VALIDATE) and per-iteration eval scores.",
-          "targets": [
-            {
-              "expr": "vector(0)",
-              "legendFormat": "no data yet",
-              "refId": "A"
-            }
-          ]
+          "expr": "histogram_quantile(0.50, sum(rate(harness_eval_phase_duration_seconds_bucket[5m])) by (phase, le))",
+          "legendFormat": "p50 {{phase}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(harness_eval_phase_duration_seconds_bucket[5m])) by (phase, le))",
+          "legendFormat": "p95 {{phase}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "title": "Tokens to Goal (per resource type)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "description": "Distribution of tokens spent until a candidate promotes, observed at promotion time.  Phase A approximation: per-run total only; Phase B will include cumulative tokens across feedback iterations.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(harness_eval_tokens_to_goal_bucket[15m])) by (resource_type, le))",
+          "legendFormat": "p50 {{resource_type}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(harness_eval_tokens_to_goal_bucket[15m])) by (resource_type, le))",
+          "legendFormat": "p95 {{resource_type}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "title": "Scenarios by Outcome (rate)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "description": "Per-scenario outcomes by arm.  The candidate ``pass`` rate climbing while ``fail`` and ``no_decision`` shrink is the visual signature of a healthy optimizer loop.",
+      "targets": [
+        {
+          "expr": "sum(rate(harness_eval_scenarios_total[5m])) by (status, arm)",
+          "legendFormat": "{{arm}} \u2014 {{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "title": "Per-Arm Pass Rate Distribution (last 1h)",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "description": "Histogram-quantile view of per-scenario arm pass-rates.  Compare candidate p50 vs baseline p50 to read promotion strength at a glance.",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(harness_eval_arm_score_bucket[1h])) by (arm, level, le))",
+          "legendFormat": "p50 {{arm}} ({{level}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "unit": "percentunit"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "title": "LLM-Judge No-Decision Events",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "description": "How often the LLM-judge grader hits the retry-once-then-mark-no-decision escape hatch.  A non-trivial rate here means the judge model is unstable for the current rubrics \u2014 either tighten rubrics, switch to a stronger judge model, or (Phase B) enable the judge-ensemble fallback.",
+      "targets": [
+        {
+          "expr": "sum(rate(harness_eval_judge_no_decision_total[15m])) by (model)",
+          "legendFormat": "{{model}}",
+          "refId": "A"
         }
       ]
     }

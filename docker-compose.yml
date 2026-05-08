@@ -40,6 +40,14 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -116,6 +124,14 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -185,6 +201,14 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,

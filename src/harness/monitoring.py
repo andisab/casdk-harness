@@ -211,6 +211,64 @@ cgf_feedback_dimensions = Gauge(
 )
 
 
+# CGF Stage 3 — Eval Framework Metrics (Phase A.6)
+#
+# Cardinality notes:
+# - ``arm`` ∈ {baseline, candidate} (2 values)
+# - ``level`` ∈ {unit, trajectory, e2e} (3 values)
+# - ``status`` ∈ {pass, fail, no_decision} (3 values)
+# - ``phase`` ∈ {EVAL_DESIGN, EXECUTION_EVAL} (2 values)
+# - ``model`` is the judge model alias / ID — bounded to a small set
+# - ``resource_type`` ∈ the project-defined enum (~7 values)
+#
+# We deliberately do NOT label by ``scenario_id`` — that would unboundedly
+# grow as new SPECs are evaluated.  Per-scenario detail lives in
+# ``eval-results.json`` on disk.
+
+harness_eval_tokens_to_goal = Histogram(
+    "harness_eval_tokens_to_goal",
+    "Tokens spent per resource until a candidate promotes (sum across "
+    "feedback iterations).  Observed at promotion time.",
+    ["resource_type"],
+    buckets=[
+        10_000,
+        50_000,
+        100_000,
+        500_000,
+        1_000_000,
+        5_000_000,
+        10_000_000,
+    ],
+)
+
+harness_eval_scenarios_total = Counter(
+    "harness_eval_scenarios_total",
+    "Eval scenarios run, by level, status, and arm.",
+    ["level", "status", "arm"],
+)
+
+harness_eval_arm_score = Histogram(
+    "harness_eval_arm_score",
+    "Per-scenario arm pass-rate distribution (0.0-1.0) by arm and level.",
+    ["arm", "level"],
+    buckets=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+harness_eval_phase_duration_seconds = Histogram(
+    "harness_eval_phase_duration_seconds",
+    "Wall-clock duration of EVAL_DESIGN and EXECUTION_EVAL phases.",
+    ["phase"],
+    buckets=[10, 30, 60, 120, 300, 600, 1800, 3600, 7200],
+)
+
+harness_eval_judge_no_decision_total = Counter(
+    "harness_eval_judge_no_decision_total",
+    "LLM-judge no-decision events (parse failures or transport errors "
+    "after retry).  By judge model.",
+    ["model"],
+)
+
+
 class MetricsCollector:
     """Collects and exports metrics for monitoring.
 

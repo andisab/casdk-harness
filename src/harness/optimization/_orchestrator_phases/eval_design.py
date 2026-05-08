@@ -13,10 +13,12 @@ Function mounted onto :class:`MultiResourceOrchestrator` as
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import structlog
 
+from harness.monitoring import harness_eval_phase_duration_seconds
 from harness.optimization._orchestrator_helpers import AGENT_EVAL_ARCHITECT
 from harness.optimization.protocols.signals import SignalType
 
@@ -40,6 +42,8 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     """
     if not self._spec or not self._state:
         return
+
+    phase_start = time.time()
 
     from harness.subagent import call_agent_simple
 
@@ -152,3 +156,6 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
             )
 
     self._save_state()
+    harness_eval_phase_duration_seconds.labels(
+        phase="EVAL_DESIGN"
+    ).observe(time.time() - phase_start)
