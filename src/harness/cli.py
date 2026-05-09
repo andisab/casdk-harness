@@ -219,8 +219,9 @@ def print_rich_message(
     )
     console.print(panel, end="\n\n")
 
-    # Log to structlog as well for observability
-    logger.info(
+    # Log to structlog as well for observability. DEBUG, not INFO — at INFO
+    # this fires once per panel and clutters the chat surface.
+    logger.debug(
         "Message displayed",
         message_type=type,
         message_length=len(message),
@@ -294,7 +295,7 @@ def get_user_input(console: Console) -> str:
         User input string
     """
     user_input = Prompt.ask("\n[bold yellow]You[/bold yellow]", console=console)
-    logger.info("User input received", input_length=len(user_input))
+    logger.debug("User input received", input_length=len(user_input))
     print()
     return user_input
 
@@ -455,6 +456,10 @@ def parse_and_print_message(
             )
 
     elif isinstance(message, AssistantMessage):
+        # Coalesce ThinkingBlocks: an assistant turn often emits many of them,
+        # and rendering one full green Panel per block buries the actual reply.
+        # One dim "Thinking…" line per turn, regardless of block count.
+        thinking_announced = False
         for block in message.content:
             if isinstance(block, TextBlock):
                 print_rich_message("assistant", block.text, console)
@@ -465,8 +470,9 @@ def parse_and_print_message(
                     f"Tool: <{block.name}>\n\n{tool_input_str}",
                     console,
                 )
-            elif isinstance(block, ThinkingBlock):
-                print_rich_message("assistant", "Thinking...", console)
+            elif isinstance(block, ThinkingBlock) and not thinking_announced:
+                console.print("[dim italic]Thinking…[/dim italic]\n")
+                thinking_announced = True
 
     elif isinstance(message, UserMessage):
         for block in message.content:
