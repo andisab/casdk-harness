@@ -5,6 +5,9 @@ combining the AgentSession infrastructure with Rich console UI.
 """
 
 import asyncio
+import atexit
+import contextlib
+import readline
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +34,31 @@ from harness.config import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# Persistent input history. The /memory volume is mounted into the container
+# so this survives `make down`/`make up` cycles. Importing `readline` (above)
+# is what wires arrow-keys, in-line cursor movement, and Ctrl+A/E/W/U/R into
+# the built-in input() that Rich's Prompt.ask() delegates to — without the
+# import, input() falls back to dumb-tty editing.
+_HISTORY_FILE = Path("/memory/.interactive_history")
+_HISTORY_MAX_LINES = 1000
+
+
+def _setup_input_history() -> None:
+    """Load persistent input history and register save-on-exit."""
+    readline.set_history_length(_HISTORY_MAX_LINES)
+    if _HISTORY_FILE.exists():
+        # File unreadable → start fresh, don't fail startup.
+        with contextlib.suppress(OSError):
+            readline.read_history_file(str(_HISTORY_FILE))
+    atexit.register(_save_input_history)
+
+
+def _save_input_history() -> None:
+    """Persist input history to the /memory volume."""
+    with contextlib.suppress(OSError):
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        readline.write_history_file(str(_HISTORY_FILE))
 
 
 async def run_interactive_session() -> None:
@@ -62,6 +90,9 @@ async def run_interactive_session() -> None:
 
     # Configure logging using centralized function
     configure_logging(runtime)
+
+    # Wire arrow-key/history line editing into Prompt.ask()
+    _setup_input_history()
 
     logger.info("Runtime config created", model=runtime.model, quiet=runtime.quiet)
 
@@ -132,13 +163,13 @@ async def run_interactive_session() -> None:
                 session.metrics.record_user_prompt(agent_name)
 
                 # Execute agent task
-                logger.info(
+                logger.debug(
                     "Processing user input",
                     prompt_length=len(user_input),
                 )
 
                 async for message in session.execute(user_input):
-                    logger.info(
+                    logger.debug(
                         "Message received in interactive loop",
                         message_type=type(message).__name__,
                         message_repr=repr(message)[:200],
