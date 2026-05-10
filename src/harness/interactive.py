@@ -156,7 +156,7 @@ async def run_interactive_session() -> None:
                 # (where Rich's Prompt.ask returned an empty string), so treat
                 # EOF as an explicit exit signal.
                 try:
-                    user_input = get_user_input(console)
+                    user_input = await get_user_input(console)
                 except EOFError:
                     logger.info("EOF received — exiting")
                     break
