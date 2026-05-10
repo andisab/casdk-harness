@@ -408,9 +408,13 @@ def format_tool_result(content: any) -> str:
         return json.dumps(content, indent=2)
 
 
-def get_user_input(console: Console) -> str:
+async def get_user_input(console: Console) -> str:
     """
     Get user input via prompt_toolkit (paste-aware, history-aware).
+
+    Must be awaited from within a running asyncio loop — uses prompt_toolkit's
+    async API because the sync `session.prompt(...)` calls `asyncio.run()`
+    internally, which raises when an outer loop is already running.
 
     Args:
         console: Rich console instance (used for leading whitespace; the
@@ -422,7 +426,7 @@ def get_user_input(console: Console) -> str:
     """
     console.print()  # blank line above the prompt for breathing room
     session = _get_prompt_session()
-    user_input = session.prompt(HTML("<b><ansiyellow>You</ansiyellow></b>: "))
+    user_input = await session.prompt_async(HTML("<b><ansiyellow>You</ansiyellow></b>: "))
     logger.debug("User input received", input_length=len(user_input))
     console.print()
     return user_input
