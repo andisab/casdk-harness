@@ -19,7 +19,7 @@ Technical reference for developers working on this repository and for Claude's o
 - Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
 - Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
 - 14 harness agents (in `.claude/agents/`) + plugin agents reachable via `Task(subagent_type="plugin:agent")` or `harness.subagent.call_agent()` for standalone Python invocation
-- **CGF Optimization Framework** (1,534 unit tests passing as of 2026-05-05):
+- **CGF Optimization Framework** (1,499 unit tests passing as of 2026-05-08):
   - Stage 1: Protocol layer, resource architect agent, DESIGN phase — **shipped**
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds — **shipped**
   - Stage 3: Eval Harness — **not started**, draft spec in `docs/CGF-EVAL-FRAMEWORK.md`
@@ -863,7 +863,7 @@ uv run python -m harness.optimization.cli.section_optimize \
 
 ### Test Coverage
 
-**Current total: 1534 unit tests passing as of 2026-05-05** (1548 baseline post-Block-3, minus 14 dropped in Block 4 Phase 3B for SDK-duplicate metrics).
+**Current total: 1499 unit tests passing as of 2026-05-08** (1548 baseline post-Block-3 → 1534 after Block 4 Phase 3B → 1499 after dropping 35 stale `test_mcp_resource_generation.py` checks that asserted file paths inside the (now external) swe-marketplace clone of the `context-engineering` plugin).
 
 CGF-specific test areas (in `tests/unit/test_optimization/`):
 - OpenTelemetry tracing, optimization store, resource registry, adapter framework, reward system
