@@ -13,17 +13,19 @@ from datetime import datetime
 from pathlib import Path
 
 import structlog
-from claude_agent_sdk import AssistantMessage, ToolUseBlock
+from claude_agent_sdk import AssistantMessage, ResultMessage, ToolUseBlock
 from rich.console import Console
 from rich.status import Status
 
 from harness.agent import AgentSession
 from harness.cli import (
+    SessionTotals,
     display_session_info,
     get_user_input,
     parse_and_print_message,
     parser,
     print_goodbye_banner,
+    print_status_footer,
     print_welcome_banner,
 )
 from harness.config import (
@@ -103,6 +105,9 @@ async def run_interactive_session() -> None:
     agent_name = "main"
     print_welcome_banner(console, agent_name, runtime.model)
 
+    # Cumulative session metrics for the status footer printed after each turn.
+    totals = SessionTotals()
+
     # Create and start agent session with loading spinner
     # Spinner wraps both constructor AND start() since both do I/O
     session_start_time = datetime.now()
@@ -147,8 +152,14 @@ async def run_interactive_session() -> None:
         # Main conversation loop
         while True:
             try:
-                # Get user input
-                user_input = get_user_input(console)
+                # Get user input — prompt_toolkit raises EOFError on Ctrl+D
+                # (where Rich's Prompt.ask returned an empty string), so treat
+                # EOF as an explicit exit signal.
+                try:
+                    user_input = get_user_input(console)
+                except EOFError:
+                    logger.info("EOF received — exiting")
+                    break
 
                 # Check for exit commands
                 if user_input.lower() in ("exit", "quit", "q"):
@@ -214,6 +225,14 @@ async def run_interactive_session() -> None:
                         print_stats=print_stats,
                         quiet=args.quiet,
                     )
+
+                    # Status footer after each completed turn (ResultMessage
+                    # is the SDK's "turn ended" signal). Always-on, concise —
+                    # complementary to the verbose --stats table above.
+                    if isinstance(message, ResultMessage):
+                        totals.update_from_result(message)
+                        if not args.quiet:
+                            print_status_footer(console, totals, runtime.model)
 
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal")

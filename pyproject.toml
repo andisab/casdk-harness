@@ -53,6 +53,8 @@ dependencies = [
     # CLI
     "click>=8.1.7",
     "rich>=13.7.0",
+    "prompt-toolkit>=3.0.50",  # Interactive line editing (paste, history, vi-mode)
+    "pyfiglet>=1.0.2",         # Tasteful ASCII banner at session start
 
     # Utilities
     "python-dateutil>=2.8.2",
