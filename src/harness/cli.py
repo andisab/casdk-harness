@@ -5,7 +5,12 @@ making it easy to build interactive CLI interfaces for agent conversations.
 """
 
 import argparse
+import contextlib
 import json
+import os
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 import structlog
@@ -20,12 +25,22 @@ from claude_agent_sdk import (
     ToolUseBlock,
     UserMessage,
 )
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.history import FileHistory
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
+
+# Optional dependency: ASCII banner is decorative, fall back gracefully if absent.
+try:
+    from pyfiglet import Figlet  # type: ignore[import-not-found]
+
+    _HAS_FIGLET = True
+except ImportError:  # pragma: no cover
+    _HAS_FIGLET = False
 
 from harness.agents.definitions import AGENT_DEFINITIONS
 
@@ -33,6 +48,115 @@ logger = structlog.get_logger(__name__)
 
 # Track whether init message has been displayed this session
 _init_message_shown = False
+
+# prompt_toolkit session — lazy-initialized so import-time cost is paid only
+# when interactive mode actually runs. The history file is separate from
+# readline's so neither side overwrites the other; readline still backs any
+# `Prompt.ask()` calls in autonomous.py / cgf_session.py.
+_PT_HISTORY_FILE = Path("/memory/.interactive_history_pt")
+_pt_session: PromptSession | None = None
+
+# Context window per model. The SDK doesn't expose this; default to 200K
+# (current Sonnet/Opus/Haiku family). Override with HARNESS_CONTEXT_WINDOW
+# for the 1M-token Opus variants or future models.
+_MODEL_CONTEXT_WINDOW: dict[str, int] = {
+    "claude-sonnet-4-5-20250929": 200_000,
+    "claude-opus-4-5-20250929": 200_000,
+    "claude-opus-4-7": 200_000,
+    "claude-3-5-haiku-20241022": 200_000,
+}
+_DEFAULT_CONTEXT_WINDOW = 200_000
+
+
+@dataclass
+class SessionTotals:
+    """Per-session running totals for the status footer.
+
+    Updated once per ResultMessage. The "context used" estimate uses only the
+    most recent turn's prompt + completion size, since each turn includes the
+    prior conversation in its input — summing across turns would double-count.
+    """
+
+    started_at: datetime = field(default_factory=datetime.now)
+    turns: int = 0
+    cumulative_input_tokens: int = 0
+    cumulative_output_tokens: int = 0
+    cumulative_cost_usd: float = 0.0
+    last_turn_total_tokens: int = 0  # input + cache_read + cache_creation + output
+
+    def update_from_result(self, message: ResultMessage) -> None:
+        """Record a completed turn into the running totals."""
+        self.turns += 1
+        usage = message.usage or {}
+        in_t = usage.get("input_tokens", 0) or 0
+        out_t = usage.get("output_tokens", 0) or 0
+        cache_r = usage.get("cache_read_input_tokens", 0) or 0
+        cache_c = usage.get("cache_creation_input_tokens", 0) or 0
+        self.cumulative_input_tokens += in_t
+        self.cumulative_output_tokens += out_t
+        if message.total_cost_usd:
+            self.cumulative_cost_usd += message.total_cost_usd
+        self.last_turn_total_tokens = in_t + cache_r + cache_c + out_t
+
+
+def _format_duration(seconds: float) -> str:
+    """Format a duration in seconds as `HhMMmSSs` / `MmSSs` / `Ss`."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m{seconds % 60:02d}s"
+
+
+def print_status_footer(
+    console: Console, totals: SessionTotals, model: str
+) -> None:
+    """Print a one-line dim status footer after each completed turn.
+
+    Format:
+        ─ session 4m12s · turn 7 · ctx 22% · 16,234 in / 4,210 out · $0.0631 · sonnet ─
+    """
+    elapsed = (datetime.now() - totals.started_at).total_seconds()
+    ctx_window = _MODEL_CONTEXT_WINDOW.get(model, _DEFAULT_CONTEXT_WINDOW)
+    ctx_pct = min(
+        100, int(round(100 * totals.last_turn_total_tokens / max(1, ctx_window)))
+    )
+    # Compact model label — strip the date suffix for readability.
+    model_label = model.replace("claude-", "").split("-")[0] if model else "?"
+    line = (
+        f"─ session {_format_duration(elapsed)}"
+        f" · turn {totals.turns}"
+        f" · ctx {ctx_pct}%"
+        f" · {totals.cumulative_input_tokens:,} in"
+        f" / {totals.cumulative_output_tokens:,} out"
+        f" · ${totals.cumulative_cost_usd:.4f}"
+        f" · {model_label} ─"
+    )
+    console.print(f"[dim]{line}[/dim]\n")
+
+
+def _get_prompt_session() -> PromptSession:
+    """Return a singleton prompt_toolkit session for interactive input.
+
+    prompt_toolkit gives us bracketed paste (multi-line works), persistent
+    file-backed history, Ctrl+R reverse search, and optional vi-mode via the
+    HARNESS_INPUT_MODE env var. Replaces the bare Rich Prompt.ask() that fell
+    back to dumb-tty input().
+    """
+    global _pt_session
+    if _pt_session is None:
+        with contextlib.suppress(OSError):
+            _PT_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        vi_mode = os.environ.get("HARNESS_INPUT_MODE", "emacs").lower() == "vi"
+        _pt_session = PromptSession(
+            history=FileHistory(str(_PT_HISTORY_FILE)),
+            vi_mode=vi_mode,
+            multiline=False,  # Esc-Enter still toggles multi-line for power users
+            enable_history_search=True,
+            mouse_support=False,  # mouse breaks terminal copy/paste in some emulators
+        )
+    return _pt_session
 
 # Plugin skills and agents discovered during startup (set by AgentSession)
 _plugin_skills: list[str] = []
@@ -286,17 +410,21 @@ def format_tool_result(content: any) -> str:
 
 def get_user_input(console: Console) -> str:
     """
-    Get user input and display it in a rich panel.
+    Get user input via prompt_toolkit (paste-aware, history-aware).
 
     Args:
-        console: Rich console instance
+        console: Rich console instance (used for leading whitespace; the
+            actual input rendering is done by prompt_toolkit).
 
     Returns:
-        User input string
+        User input string. Raises EOFError on Ctrl+D, KeyboardInterrupt on Ctrl+C
+        (interactive.py's main loop catches these).
     """
-    user_input = Prompt.ask("\n[bold yellow]You[/bold yellow]", console=console)
+    console.print()  # blank line above the prompt for breathing room
+    session = _get_prompt_session()
+    user_input = session.prompt(HTML("<b><ansiyellow>You</ansiyellow></b>: "))
     logger.debug("User input received", input_length=len(user_input))
-    print()
+    console.print()
     return user_input
 
 
@@ -539,6 +667,14 @@ def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
         agent_name: Name of the agent
         model: Model being used
     """
+    # Optional ASCII art banner — figlet adds visual identity at startup
+    # without dominating the screen. Skip silently if pyfiglet isn't installed
+    # so the harness still starts cleanly in stripped-down environments.
+    if _HAS_FIGLET:
+        with contextlib.suppress(Exception):
+            ascii_art = Figlet(font="small").renderText("CASDK")
+            console.print(f"[bright_cyan]{ascii_art}[/bright_cyan]", end="")
+
     banner_text = f"""
 [bold cyan]Claude Agent SDK Harness[/bold cyan]
 [dim]Interactive mode - chat with Claude as an autonomous development agent[/dim]
