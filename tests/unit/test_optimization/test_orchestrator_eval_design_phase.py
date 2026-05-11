@@ -112,17 +112,24 @@ class TestEvalDesignPhase:
 
     @pytest.mark.asyncio
     async def test_signal_received_but_no_file(self, tmp_path: Path) -> None:
+        """Architect signals success but writes nothing — fail-fast.
+
+        Previously this was tolerated as a soft failure (EXECUTION_EVAL
+        would skip). Phase A in practice has the architect describing the
+        suite inline instead of using Write, so we surface the deficiency
+        loudly rather than letting downstream phases short-circuit.
+        """
         orch = _make_orchestrator(
             tmp_path,
             generated_resources=[{"path": "agents/iac.md", "type": "agent"}],
         )
-        # Architect signals success but writes nothing.
         response = "[EVAL_DESIGN_COMPLETE]\n"
         with patch(
             "harness.subagent.call_agent_simple",
             new=AsyncMock(return_value=response),
         ):
-            await orch._delegate_eval_design()
+            with pytest.raises(ValueError, match="no eval-suite.yaml on disk"):
+                await orch._delegate_eval_design()
 
         # State should NOT mark suite as written.
         assert orch._state.eval_suite_path == ""
@@ -150,6 +157,13 @@ class TestEvalDesignPhase:
 
     @pytest.mark.asyncio
     async def test_no_signal_and_no_file(self, tmp_path: Path) -> None:
+        """Neither signal nor file — fail-fast.
+
+        Previously this was a soft-skip. Phase A's smoke-fixture run
+        revealed that EXECUTION_EVAL silently skipping makes the whole
+        pipeline appear to succeed without producing eval data, so we
+        now surface the missing deliverable as a phase failure.
+        """
         orch = _make_orchestrator(
             tmp_path,
             generated_resources=[{"path": "agents/iac.md", "type": "agent"}],
@@ -158,7 +172,8 @@ class TestEvalDesignPhase:
             "harness.subagent.call_agent_simple",
             new=AsyncMock(return_value="totally unrelated reply"),
         ):
-            await orch._delegate_eval_design()
+            with pytest.raises(ValueError, match="no completion signal AND no eval-suite.yaml"):
+                await orch._delegate_eval_design()
 
         assert orch._state.eval_suite_path == ""
 
@@ -180,6 +195,8 @@ class TestEvalDesignPhase:
 
     @pytest.mark.asyncio
     async def test_eval_directory_created(self, tmp_path: Path) -> None:
+        """eval/ directory must be created before the architect is called,
+        even on the failure path — the architect needs somewhere to Write."""
         orch = _make_orchestrator(
             tmp_path,
             generated_resources=[{"path": "agents/iac.md", "type": "agent"}],
@@ -188,9 +205,12 @@ class TestEvalDesignPhase:
             "harness.subagent.call_agent_simple",
             new=AsyncMock(return_value=""),
         ):
-            await orch._delegate_eval_design()
+            # Empty response → no signal, no file → fail-fast raises.
+            with pytest.raises(ValueError):
+                await orch._delegate_eval_design()
 
-        # The phase ensures eval/ exists for the architect to write into.
+        # The phase ensures eval/ exists for the architect to write into,
+        # regardless of how the call ended up.
         assert (tmp_path / "eval").is_dir()
 
 
