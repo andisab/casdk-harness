@@ -1,275 +1,218 @@
-# CGF Evaluation Framework & Plugin Integration
+# CGF Stage 3 — Evaluation Framework
 
-**Created:** 2026-03-02
-**Branch:** contextgrad-framework
-**Status:** Stages 1-2 complete, Stages 3-4 pending
+**Status:** Draft v2 (consolidates predecessor `CGF-EVAL-FRAMEWORK.md` v1
+2026-03-02 with `CGF-PLAN.md` 2026-05-07 and `REFACTOR.md § 2 Forward Plan`).
+**Branch:** `contextgrad-eval` (currently equal to `main`).
+**Owner:** @andisab
+**Depends on:** Stage 1 (protocol layer, phase extensions), Stage 2 (MCP
+resources to evaluate). Both shipped on `main`.
+
+> This document is the canonical Stage-3 plan. Predecessor `CGF-PLAN.md` was
+> deleted after merge; the Stage-3 section in `REFACTOR.md` is a
+> one-paragraph pointer back here.
 
 ---
 
-## Overview
+## 1. Context & Goals
 
-This plan addresses two interlocking objectives for the ContextGrad Framework:
+CGF — the **ContextGrad Framework** The premise of the framework
+is that resource quality should improve through measured comparison between
+versions, not only pointwise scoring. Stages 1 and 2 shipped the optimization
+loop (RESEARCH → DESIGN → QA → GENERATE → ITERATE → VALIDATE → COMPLETE)
+with pointwise rubric scoring against a 0.85 threshold. Stage 3 wires the
+gradient: a candidate version is promoted only when it is *provably and
+statistically better* than the prior version on a held-out scenario set.
 
-1. **Plugin Integration Improvement** — Formalize how the three plugins (research-team, context-engineering, cgf-agents) coordinate, add MCP server/tool creation to context-engineering, and insert a resource architecture decision step between research and generation.
+### What the existing pipeline does *not* yet do
 
-2. **Evaluation Framework** — Build a hybrid evaluation system combining LLM-judge assessment (fast, cheap) with sandboxed execution-based evaluation (definitive) to measure whether generated resources actually work.
+- **Comparative evaluation.** Quality is currently scored pointwise. There
+  is no head-to-head A/B between candidate and baseline (or v{n} vs v{n-1})
+  on a held-out scenario set.
+- **Trigger accuracy measurement.** For agents and skills, whether a
+  description correctly fires in the right contexts (and stays silent in
+  the wrong ones) is not measured.
+- **Token-efficiency benchmarking.** Token consumption is observable via
+  the OTel pipeline shipped in Block 4, but not labeled by eval arm, not
+  gated against baselines, and lacks a "tokens-to-goal" signal.
+- **Resource-type-aware evaluation.** Skills, agents, commands, MCP
+  servers, and plugins are all currently optimized through the same path.
+  They need different evaluation profiles.
+- **Hard role separation.** Design and evaluation agents share patterns,
+  models, and (potentially) context. For unbiased benchmarking the eval
+  pool must be isolated.
+- **Ephemeral, reproducible runtime.** Eval runs need fresh containers per
+  arm to eliminate cross-run contamination.
 
-### Key Decisions
+### Goals
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Target environment | This harness (Docker) | Long-running generate-evaluate-optimize cycles need Docker isolation |
-| Evaluation dimensions | Task completion + output quality + behavioral correctness | All three, dynamically designed per use case |
-| MCP creation scope | Tool scripts + full MCP servers (uvx/npx) | Context-engineering becomes a full resource factory |
-| Plugin architecture | Keep separate + shared protocol layer | cgf-agents orchestrates, others own their domains |
-| Evaluation execution | Hybrid: LLM-judge + sandboxed agent sessions | Fast feedback during iteration, real validation before finalization |
-| Resource architecture ownership | New dedicated agent (cgf-resource-architect) | Clean separation: architect designs, context-engineer executes |
+1. Promote a candidate version only when it is **provably and statistically
+   better** than the prior version on a held-out scenario set.
+2. Make every promotion decision **auditable**: traces, token counts, judge
+   verdicts, and statistics persist for inspection.
+3. Treat **token efficiency** as a first-class promotion signal, not a
+   side metric. Gate it *together with* quality (Goodhart trap: a candidate
+   that's shorter but worse looks efficient).
+4. **Match evaluation rigor to artifact type** — unit tests where
+   deterministic, comparative judgments where qualitative.
+5. **Decouple design from evaluation** to remove confirmation-bias loops in
+   the optimizer.
+6. **Reproducibility:** identical inputs produce identical eval outcomes
+   across runs and machines.
 
-### Reference Material
+### Reference material
 
-Design informed by five Anthropic engineering articles:
-- [Implement Tool Use: Best Practices](https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#best-practices-for-tool-definitions)
-- [Writing Tools for Agents](https://www.anthropic.com/engineering/writing-tools-for-agents)
-- [Advanced Tool Use](https://www.anthropic.com/engineering/advanced-tool-use)
-- [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
+Design informed by:
 - [Demystifying Evals for AI Agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+- [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
+- [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- [SWE-bench harness — per-task Docker pattern](https://www.swebench.com/SWE-bench/reference/harness/)
+- Wang et al. (2024) on position-bias calibration in LLM-as-Judge
+- Bradley-Terry models for aggregating pairwise comparisons (Bradley & Terry, 1952)
 
 ---
 
-## Pipeline Architecture
+## 2. Architecture
 
-The multi-resource optimization pipeline, showing completed and pending phases:
+### 2.1 Pipeline (post-Stage-3)
 
 ```
 SPEC.md (business objective + capabilities + constraints)
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 1: RESEARCH                                    [COMPLETE]  |
-|  Owner: cgf-research-lead -> research-team:research-specialists  |
-|  Input: SPEC capabilities, constraints, research_topics          |
-|  Output: research/notes/*_findings.yaml, eval_criteria.yaml      |
-|  Signal: [RESEARCH_COMPLETE]                                     |
-+------------------------------------------------------------------+
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 2: DESIGN                                      [COMPLETE]  |
-|  Owner: cgf-resource-architect (cgf-agents plugin)               |
-|  Input: SPEC + research findings + resource-type-guide           |
-|  Output: resource-plan.yaml (what to build, why, dependencies)   |
-|  Signal: [DESIGN_COMPLETE]                                       |
-|  Human checkpoint: Optional review of proposed architecture      |
-+------------------------------------------------------------------+
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 3: GENERATE                                    [COMPLETE]  |
-|  Owner: context-engineering:context-engineer                     |
-|  Input: resource-plan.yaml + research findings                   |
-|  Output: Generated resource files (agents, skills, MCP, etc.)    |
-|  Signal: [GENERATE_COMPLETE:{path}] per resource                 |
-+------------------------------------------------------------------+
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 4: EVAL-DESIGN                                 [STAGE 3]  |
-|  Owner: cgf-eval-architect (new agent in cgf-agents)             |
-|  Input: Generated resources + SPEC + research findings           |
-|  Output: eval-suite.yaml (unit, trajectory, e2e eval scenarios)  |
-|  Signal: [EVAL_DESIGN_COMPLETE]                                  |
-+------------------------------------------------------------------+
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 5: FAST-ITERATE (existing, enhanced)           [COMPLETE]  |
-|  Owner: cgf-prompt-optimizer                                     |
-|  Input: Resources + eval_criteria + research                     |
-|  Output: Versioned resources ({resource}-v{N}.md)                |
-|  Evaluation: LLM-judge (CAIR framework) -- fast, cheap           |
-|  Signal: [ITERATE_COMPLETE:{path}] + quality scores              |
-+------------------------------------------------------------------+
-    |
-    v
-+------------------------------------------------------------------+
-|  PHASE 6: EXECUTION-EVAL                              [STAGE 3]  |
-|  Owner: Python eval harness (not an agent -- deterministic)      |
-|  Input: Optimized resources + eval-suite.yaml                    |
-|  Output: eval-results.json (pass/fail per scenario, transcripts) |
-|  Method: Sandboxed agent sessions via direct_agent               |
-|  Metrics: pass@k, pass^k, tool accuracy, constraint compliance   |
-|  Signal: [EVAL_COMPLETE] + aggregate scores                      |
-+------------------------------------------------------------------+
-    |
-    +--- If scores < threshold -> loop back to FAST-ITERATE with
-    |    execution feedback (concrete failures, not LLM opinions)
-    v
-+------------------------------------------------------------------+
-|  PHASE 7: VALIDATE (existing, enhanced)               [COMPLETE]  |
-|  Owner: cgf-coherence-validator                                  |
-|  Input: All finalized resources                                  |
-|  Output: Coherence report + [VALIDATE_COMPLETE]                  |
-|  Enhanced: Also validates MCP tool schemas, dependency graph     |
-+------------------------------------------------------------------+
-    |
-    v
-  FINALIZE -> Versioned, tested resources
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 1: RESEARCH                                    [SHIPPED]  │
+│  Owner: cgf-research-lead → research-team:research-specialists   │
+│  Output: research/notes/*_findings.yaml, eval_criteria.yaml      │
+│  Signal: [RESEARCH_COMPLETE]                                     │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 2: DESIGN                                      [SHIPPED]  │
+│  Owner: cgf-resource-architect (cgf-agents/design/)              │
+│  Output: resource-plan.yaml                                      │
+│  Signal: [DESIGN_COMPLETE]                                       │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 3: GENERATE                                    [SHIPPED]  │
+│  Owner: context-engineering:context-engineer                     │
+│  Output: Generated resource files (agents, skills, MCP, etc.)    │
+│  Signal: [GENERATE_COMPLETE:{path}] per resource                 │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 4: EVAL_DESIGN                                 [STAGE 3]  │
+│  Owner: cgf-eval-architect (cgf-agents/eval/)                    │
+│  Input: Generated resources + SPEC + research findings           │
+│  Output: eval-suite.yaml (positive + negative scenarios,         │
+│          held-out flag on 20-30%, per-type grader selection)     │
+│  Signal: [EVAL_DESIGN_COMPLETE]                                  │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 5: ITERATE                                     [SHIPPED]  │
+│  Owner: cgf-prompt-optimizer (cgf-agents/design/)                │
+│  Input: Resources + eval_criteria + research                     │
+│         (held-out scenarios filtered out — gate-only)            │
+│  Output: Versioned resources ({resource}-v{N}.md)                │
+│  Signal: [ITERATE_COMPLETE:{path}] + quality scores              │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 6: EXECUTION_EVAL                              [STAGE 3]  │
+│  Owner: Python eval harness (not an agent — deterministic)       │
+│  Input: Optimized resources + eval-suite.yaml                    │
+│  Method: Two arms per scenario (baseline = v{n-1}, candidate =   │
+│          v{n}); position-balanced pairwise judge                 │
+│  Output: eval-results.json (per-arm transcripts + grader scores) │
+│          reviews/v{n}_eval.json (per-scenario verdicts)          │
+│          reviews/v{n}_review.md (gate decision + statistics)     │
+│  Signal: [EVAL_COMPLETE] + Promote | Refine | Reject verdict     │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ├── Reject  → loop back to ITERATE with execution feedback
+    ▼ Promote
+┌──────────────────────────────────────────────────────────────────┐
+│  PHASE 7: VALIDATE                                    [SHIPPED]  │
+│  Owner: cgf-coherence-validator                                  │
+│  Output: Coherence report + [VALIDATE_COMPLETE]                  │
+└──────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+  FINALIZE → Versioned, statistically-validated resources
 ```
 
----
+### 2.2 Eval-suite + grader model
 
-## Completed Work
+**Eval suite** (`workspace/{spec}/eval/eval-suite.yaml`):
 
-### Stage 1: Protocol Layer + Resource Architect (2026-03-02)
+```yaml
+config:
+  trials_per_scenario: 1            # bumped in Phase B for stat. power
+  timeout_seconds: 300
+  eval_model: opus                  # CGF_JUDGE_MODEL
+  token_budget: 1_000_000           # CGF_EVAL_TOKEN_BUDGET
 
-Extracted implicit plugin contracts into a shared protocol layer and added a resource-architect agent with a DESIGN phase between RESEARCH and GENERATE.
+scenarios:
+  - id: scn_001_positive_async
+    level: trajectory                # unit | trajectory | e2e
+    target_resource: python-expert
+    held_out: false                  # true → optimizer never sees this
+    description: "Async retry with backoff under network jitter"
+    prompt: "Write a function that retries an async HTTP call..."
+    setup:
+      files: { "input.txt": "..." }
+    graders:
+      - type: trajectory
+        assert: tool_called
+        tool: Bash
+      - type: llm_judge
+        rubric_id: rb_async_quality
+    tags: [async, error-handling]
 
-**Built:**
-- `src/harness/optimization/protocols/` — 5 modules: `signals.py` (unified signal parsing replacing scattered regex), `resource_types.py` (extensible resource type registry with 7 types), `quality.py` (unified quality + execution scoring), `state.py` (extended state schema with DESIGN/EVAL_DESIGN/EXECUTION_EVAL phases), `workspace.py` (formalized directory structure)
-- `src/harness/plugins/cgf-agents/agents/cgf-resource-architect.md` — Opus-model agent that analyzes SPEC + research + resource-type-guide to produce `resource-plan.yaml`
-- `src/harness/plugins/cgf-agents/schemas/resource_plan.schema.json` — JSON Schema for resource plans
-- Orchestrator refactored to use `SignalParser` protocol instead of ad-hoc regex
-- `OptimizationPhase` enum extended from 6 to 9 phases
-- SPEC parser extended with `ProposedMCPTool` and `ProposedMCPServer` types
-- **120 tests** passing
-
-### Stage 2: MCP Creation Skills (2026-03-02)
-
-Added MCP tool and server creation capabilities to the context-engineering plugin, with orchestrator support for MCP resource types.
-
-**Built:**
-- `skills/mcp-tool-creation/` — Skill with FastMCP patterns, Anthropic tool description best practices, signal protocol
-- `skills/mcp-server-creation/` — Skill covering Python (FastMCP) and TypeScript (@modelcontextprotocol/sdk) with packaging for uvx/npx
-- 3 templates: `mcp-tool-template.py`, `mcp-server-python-template/`, `mcp-server-typescript-template/`
-- `resource-type-guide.md` updated with MCP Tool and MCP Server sections, decision matrix entries, quality checklists
-- `context-engineer.md` agent updated with MCP awareness, resource types 10-11, signal examples
-- Orchestrator: conditional MCP directory creation, purpose lookup, generation instructions, plugin.json entries
-- **47 tests** passing
-
-> **Where these live now:** the `context-engineering` plugin moved out of
-> the harness in Block 3 Step 2 and is consumed from the swe-marketplace
-> clone (`/opt/plugins/swe-marketplace/plugins/context-engineering/` in the
-> container, `<repo>/.plugins/swe-marketplace/...` after `make plugins-sync`
-> for local dev). The two skills were also renamed
-> `mcp-tool-creation` → `mcp-tool-dev` and
-> `mcp-server-creation` → `mcp-server-dev` to match the marketplace
-> `*-dev` naming convention. Of the 47 unit tests originally landed for
-> Stage 2, 11 orchestrator-side tests remain in the harness; the 36 that
-> asserted file paths inside the plugin were deleted on 2026-05-08
-> (those are now swe-marketplace's responsibility to test).
-
----
-
-## Stage 3: Evaluation Framework (DRAFT)
-
-**Status:** Not started
-**Goal:** Build a hybrid evaluation system: an eval-architect agent that generates eval suites, a Python eval harness that runs sandboxed agent sessions, grader implementations (deterministic + trajectory + LLM-judge), and a feedback loop from execution results back to the optimizer.
-**Depends on:** Stage 1 (protocol layer, phase extensions), Stage 2 (MCP resources to evaluate)
-
-### Task 1: Eval Suite Schema
-
-**Files:**
-- Create: `src/harness/plugins/cgf-agents/schemas/eval_suite.schema.json`
-- Test: Schema validation tests
-
-**Content:**
-- Define scenario structure: id, level (unit/trajectory/e2e), target_resource, description, prompt, setup, graders, tags
-- Define grader types: exact, contains, regex, code, trajectory, llm_judge
-- Define config: trials_per_scenario, timeout_seconds, eval_model
-- Validate against JSON Schema draft-07
-
----
-
-### Task 2: Eval-Architect Agent Definition
-
-**Files:**
-- Create: `src/harness/plugins/cgf-agents/agents/cgf-eval-architect.md`
-
-**Agent design:**
-- Model: sonnet
-- Tools: Read, Write, Glob, Grep
-- Max turns: 100
-- Reads: generated resources, SPEC.md, research findings, resource plan
-- Reasons about resource type → appropriate eval strategies
-- Produces eval-suite.yaml following schema
-- Balanced test design: positive + negative cases, 40/40/20 difficulty split
-- Emits `[EVAL_DESIGN_COMPLETE]` signal
-
-**Key reasoning the agent must do:**
-- Agent resource → trajectory evals (tool usage, constraints)
-- Skill resource → unit evals (content quality, trigger accuracy)
-- MCP tool → executable evals (function correctness, error handling)
-- MCP server → server evals (tool registration, response format, error messages)
-- All types → e2e evals (full task completion)
-
----
-
-### Task 3: Grader Infrastructure
-
-**Files:**
-- Create: `src/harness/optimization/graders/__init__.py`
-- Create: `src/harness/optimization/graders/base.py`
-- Create: `src/harness/optimization/graders/deterministic.py`
-- Create: `src/harness/optimization/graders/trajectory.py`
-- Create: `src/harness/optimization/graders/llm_judge.py`
-- Create: `src/harness/optimization/graders/composite.py`
-- Test: `tests/unit/test_optimization/test_graders.py`
-
-**base.py:**
-```python
-@dataclass
-class GraderResult:
-    passed: bool
-    score: float       # 0.0-1.0
-    details: str       # Human-readable explanation
-    grader_type: str
-
-class BaseGrader(ABC):
-    @abstractmethod
-    async def grade(self, transcript: AgentTranscript, scenario: EvalScenario) -> GraderResult: ...
+  - id: scn_002_negative_trigger
+    level: unit
+    target_resource: python-expert
+    held_out: true
+    description: "Should NOT activate when query is about JavaScript"
+    prompt: "How do I add a click handler to a button?"
+    graders:
+      - type: trajectory
+        assert: no_invocation
+        target: python-expert
 ```
 
-**deterministic.py:**
-- ExactGrader: string equality
-- ContainsGrader: substring match (case-insensitive option)
-- RegexGrader: pattern match
-- CodeGrader: execute Python snippet, check assertions
+**Grader hierarchy** (`src/harness/optimization/graders/`):
 
-**trajectory.py:**
-- Parse agent transcript for tool calls
-- Assert tool_called (optionally before/after another event)
-- Assert no_tool (tool was NOT called)
-- Assert ordering (tool A before tool B)
-- Assert constraint (LLM-verified constraint from transcript)
-- This is the most complex grader — needs careful design of transcript parsing
+| Tier | Module | Purpose | Cost |
+|---|---|---|---|
+| Deterministic | `deterministic.py` (`ExactGrader`, `ContainsGrader`, `RegexGrader`, `CodeGrader`) | Syntactic checks, schema validation, executable assertions | Cheapest |
+| Trajectory | `trajectory.py` (`tool_called`, `no_tool`, `ordering`, `constraint`) | Uses CGF tracer spans + transcript to grade tool-call sequences and execution paths | Moderate |
+| LLM-judge | `llm_judge.py` (rubric-anchored) | Behavioral / qualitative criteria where the first two tiers can't reach | Most expensive |
+| Composite | `composite.py` (`AndGrader`, `OrGrader`) | Combine tiers per scenario | — |
 
-**llm_judge.py:**
-- Takes rubric + transcript/output
-- Calls eval model (configurable: haiku/sonnet/opus)
-- Parses score (1-5 scale, mapped to 0.0-1.0)
-- Pass threshold configurable per scenario
+Each tier emits its own `GraderResult` (`passed: bool`, `score: float`,
+`details: str`, `grader_type: str`). The gate combines them explicitly per
+scenario via `AndGrader`/`OrGrader` — three columns rather than worst-of, so
+debugging stays interpretable.
 
-**composite.py:**
-- AndGrader: all sub-graders must pass
-- OrGrader: at least one sub-grader must pass
-
----
-
-### Task 4: Agent Transcript Capture
-
-**Files:**
-- Create: `src/harness/optimization/graders/transcript.py`
-
-**Purpose:** Structured representation of an agent session for grading.
+**Transcript model** (`src/harness/optimization/graders/transcript.py`):
 
 ```python
 @dataclass
 class AgentTranscript:
-    messages: list[TranscriptMessage]  # All messages in order
-    tool_calls: list[ToolCall]         # Extracted tool calls
-    final_output: str                  # Last text message
+    messages: list[TranscriptMessage]   # All messages in order
+    tool_calls: list[ToolCall]          # Extracted tool calls
+    final_output: str
     total_turns: int
     total_tokens: int
+    arm: str                            # "baseline" | "candidate"
+    task_id: str                        # uuid per scenario invocation
 
 @dataclass
 class ToolCall:
@@ -280,264 +223,621 @@ class ToolCall:
     timestamp: float
 ```
 
-Build from `direct_agent.call_agent()` message stream — each yielded message includes tool call data.
+Built from `harness.subagent.call_agent()` message stream — the existing
+standalone-agent invocation path already used by CGF runners.
 
----
+### 2.3 Pool separation: design vs eval agents
 
-### Task 5: Eval Harness
+Hard rule: **eval agents never see optimizer reasoning.** Failure modes if
+violated:
 
-**Files:**
-- Create: `src/harness/optimization/eval_harness.py`
-- Test: `tests/unit/test_optimization/test_eval_harness.py`
+- Judge learns to prefer outputs that match the optimizer's stated intent →
+  optimizer can game the judge.
+- Token-efficiency analysis becomes confounded with optimizer planning
+  overhead.
 
-**Core loop:**
-```python
-class EvalHarness:
-    async def run(self, eval_suite_path: Path, workspace: Path) -> EvalResults:
-        suite = self._load_suite(eval_suite_path)
-        results = []
-        for scenario in suite.scenarios:
-            trials = []
-            for trial_num in range(suite.config.trials_per_scenario):
-                transcript = await self._run_scenario(scenario, workspace)
-                grader_results = await self._grade(scenario, transcript)
-                trials.append(TrialResult(grader_results, transcript))
-            results.append(ScenarioResult(scenario, trials))
-        return self._aggregate(results)
+Enforcement is structural, not policy. Stage 3 splits `cgf-agents/agents/`
+into two subdirectories:
+
+```
+src/harness/plugins/cgf-agents/agents/
+  design/
+    cgf-orchestrator.md
+    cgf-prompt-optimizer.md
+    cgf-research-lead.md
+    cgf-resource-architect.md
+    cgf-result-evaluator.md       # in-loop self-critique (not eval-pool)
+    cgf-test-architect.md
+    cgf-test-validator.md
+    cgf-criteria-synthesizer.md
+    cgf-coherence-validator.md
+  eval/
+    cgf-eval-architect.md         # NEW (Phase A)
+    pairwise-judge.md             # NEW (Phase B)
+    trigger-accuracy-evaluator.md # NEW (Phase B)
+    token-efficiency-analyst.md   # NEW (Phase B)
 ```
 
-**_run_scenario:**
-- Create temp directory for scenario files (setup.files)
-- Call `direct_agent.call_agent()` with target resource as system prompt
-- Capture full transcript
-- Clean up temp directory
+Eval agents launched as fresh subagent invocations with **no parent
+context** (no inherited scratchpad, no optimizer reasoning visible).
+Separate session directories (`sessions/design/` and `sessions/eval/`).
 
-**_aggregate:**
-- Calculate pass@1, pass@k, pass^k per scenario
-- Roll up by level (unit/trajectory/e2e) and by capability tag
-- Save to eval-results.json
-- Save failed trial transcripts to eval/transcripts/
+**Different model for eval vs design.** Most-cited mitigation for
+self-enhancement bias in the LLM-as-judge survey literature. New env vars:
 
----
+```
+CGF_DESIGN_MODEL=sonnet      # default
+CGF_JUDGE_MODEL=opus         # default
+```
 
-### Task 6: EVAL_DESIGN Phase in Orchestrator
+### 2.4 Telemetry: harness.eval.* attrs + tokens_to_goal
 
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
-- Test: `tests/unit/test_optimization/test_orchestrator_eval_design_phase.py`
+Block 4 shipped the full OTel + Prometheus + Grafana + AlertManager stack.
+Stage 3 layers eval-aware attributes on top of it; no new infra.
 
-**Changes:**
-- Add `AGENT_EVAL_ARCHITECT = "cgf-agents:cgf-eval-architect"` constant
-- Add `_delegate_eval_design()` method
-- Insert EVAL_DESIGN phase after GENERATE in `_run_pipeline()`
-- Parse `[EVAL_DESIGN_COMPLETE]` signal
-- Store eval_suite_path in state
+**OTel GenAI semconv** (already adopted by Block 4):
+- `gen_ai.system`, `gen_ai.request.model`, `gen_ai.response.model`
+- `gen_ai.usage.{input_tokens, output_tokens}`
+- `gen_ai.usage.cache_{creation, read}.input_tokens`
+- `gen_ai.agent.name`
 
----
+**New custom attributes** added on every span/metric emitted during an
+eval run:
 
-### Task 7: EXECUTION_EVAL Phase in Orchestrator
+| Attribute | Type | Notes |
+|---|---|---|
+| `harness.eval.task_id` | string | UUID per scenario invocation |
+| `harness.eval.arm` | string | `baseline`, `candidate`, or version label |
+| `harness.eval.outcome` | string | `success`, `failure`, `tie` |
+| `harness.resource.id` | string | resource under test |
+| `harness.resource.type` | string | `agent`, `skill`, `command`, `mcp_server`, `plugin` |
 
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
-- Test: `tests/unit/test_optimization/test_orchestrator_execution_eval.py`
+**New custom metric:**
+- `harness.tokens_to_goal` — histogram, emitted at the moment the eval
+  judge confirms task success, with all five custom attributes above.
 
-**Changes:**
-- Add `_run_execution_eval()` method (calls EvalHarness, not an agent)
-- Insert EXECUTION_EVAL phase after ITERATE in `_run_pipeline()`
-- Implement feedback loop: if pass^k < threshold, build feedback prompt and loop back to ITERATE
-- Store eval_results_path and feedback_history in state
-- Add `design_timeout` and `execution_eval_timeout` to MultiResourceConfig
-
----
-
-### Task 8: Feedback Loop Integration
-
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py` (_delegate_iteration)
-
-**Changes:**
-- When iteration is triggered by execution eval feedback:
-  - Include failing scenario details in optimizer prompt
-  - Include failure analysis from transcripts
-  - Include capability gap analysis
-  - Instruct optimizer to fix specific failures while preserving passing behavior
-- Track feedback_history in state for resume support
-- Limit feedback-driven iterations (max 2 before escalating to human review)
+**Dashboards & alerts:** Block 4 Phase 3C shipped a `casdk-cgf` Grafana
+dashboard with placeholder panels in a "Future" row. Stage 3 populates
+them — phase transitions, optimizer iterations, eval scores. No new
+dashboard work needed; the panels are already provisioned. New alert rule:
+candidate median tokens-to-goal exceeding baseline by > X% across N
+scenarios (Prometheus rule, AlertManager-routed).
 
 ---
 
-### Task 9: Integration Tests
+## 3. Phased Rollout
 
-**Files:**
-- Create: `tests/integration/test_eval_framework_integration.py`
+**Working baseline first, but rigor wired in from day one.** Each phase
+ships independently, gated by a runtime smoke + unit-test pass per the
+binding "verification rule" in REFACTOR.md.
 
-**Tests:**
-- Full eval suite generation → execution → grading round-trip (with mocked agent)
-- Feedback loop: failing eval → re-optimize → passing eval
-- Grader accuracy: known-good and known-bad transcripts scored correctly
-- Resume: interrupt mid-eval, resume from checkpoint
+### Phase A — Comparison-aware harness *(weeks 1–4)*
+
+End-state: a working `EVAL_DESIGN → EXECUTION_EVAL` loop that runs **two
+arms** per scenario (baseline = prior version or "no resource baseline" for
+first eval; candidate = current), tags all telemetry by arm, holds out
+20–30% of scenarios from the optimizer, and feeds failures back to
+`cgf-prompt-optimizer`. Promotion uses a simple threshold
+(`candidate.pass_rate ≥ baseline.pass_rate + ε`) — bootstrap CI rigor lands
+in Phase B on top of this same data shape.
+
+**Files to create:**
+
+- `src/harness/plugins/cgf-agents/schemas/eval_suite.schema.json` — JSON
+  Schema draft-07. Includes `held_out: bool` per scenario from the start.
+- `src/harness/plugins/cgf-agents/agents/eval/cgf-eval-architect.md`
+  (model: sonnet; tools: Read, Write, Glob, Grep; max turns: 100). Reasons
+  about resource type → appropriate eval strategies (see §5 matrix). Emits
+  `[EVAL_DESIGN_COMPLETE]`.
+- `src/harness/optimization/graders/__init__.py`
+- `src/harness/optimization/graders/base.py` — `BaseGrader` ABC, `GraderResult`.
+- `src/harness/optimization/graders/deterministic.py` — Exact / Contains /
+  Regex / Code graders.
+- `src/harness/optimization/graders/trajectory.py` — Tool-call assertions
+  built on transcript model. Most complex grader; careful design needed.
+- `src/harness/optimization/graders/llm_judge.py` — Rubric-anchored, reads
+  `CGF_JUDGE_MODEL`. Retry-once-then-mark-no-decision on failure.
+- `src/harness/optimization/graders/composite.py` — `AndGrader`, `OrGrader`.
+- `src/harness/optimization/graders/transcript.py` — `AgentTranscript`,
+  `ToolCall`. Built from `harness.subagent.call_agent()` message stream.
+- `src/harness/optimization/eval_harness.py` — `EvalHarness.run(suite, ws)`.
+  Runs both arms per scenario, captures transcripts, calls graders,
+  aggregates pass-rate per arm, writes `eval-results.json`.
+
+**Files to modify:**
+
+- `src/harness/optimization/multi_resource_orchestrator.py` — add
+  `AGENT_EVAL_ARCHITECT = "cgf-agents:cgf-eval-architect"` constant; add
+  `_delegate_eval_design()` (post-GENERATE); add `_run_execution_eval()`
+  (post-ITERATE; calls EvalHarness, not an agent); feedback loop in
+  `_delegate_iteration()`. Existing pipeline is at `:356-399`.
+- `src/harness/progress.py` — `EVAL_DESIGN` and `EXECUTION_EVAL` are
+  already in `OptimizationPhase`; just wire the orchestrator to reference
+  them.
+- `src/harness/optimization/protocols/signals.py` — extend with
+  `EVAL_DESIGN_COMPLETE` and `EVAL_COMPLETE` parsers via the existing
+  `SignalParser` protocol. **No new ad-hoc regex.**
+- `src/harness/optimization/protocols/quality.py` — add execution-grade
+  fields and per-arm shape to existing model.
+- `src/harness/optimization/protocols/state.py` — extend `state.json`
+  schema with `eval_suite_path`, `eval_results_path`, `feedback_history`,
+  `held_out_scenarios`. Resume support follows.
+- `agents/main/Dockerfile` and `pyproject.toml` — add OTel SDK to harness
+  Python deps if not already present (Block 4 wired Claude-side telemetry;
+  this is for harness-emitted spans).
+- `config/monitoring/otel-collector-config.yaml` — pass through
+  `harness.eval.*` and `harness.resource.*` attributes; verify they reach
+  Prometheus.
+
+**Rigor wired in from Phase A:**
+
+1. **Pool separation (structural).** Move existing 9 cgf-agents agents to
+   `agents/design/`. New `agents/eval/cgf-eval-architect.md`. Update
+   `plugin.json` agent paths. Validate via
+   `claude plugin validate src/harness/plugins/cgf-agents`. Eval agent
+   launched with no parent context; separate `sessions/eval/` directory.
+2. **Telemetry tagging.** New OTel attributes (§2.4) on every span emitted
+   during eval; new `harness.tokens_to_goal` histogram metric. Verify
+   end-to-end via Prometheus query.
+3. **Held-out scenarios.** Eval-architect generates 20–30% with
+   `held_out: true`. `_delegate_iteration()` filters held-out scenarios
+   out — they only feed the gate. Hand-authored seed (5–10) per resource
+   type, expansion via `cgf-research-lead`.
+4. **Two-arm eval (the gradient).** Every `EXECUTION_EVAL` runs both
+   `baseline` and `candidate`. Per-arm transcripts saved to
+   `eval/transcripts/{baseline,candidate}/`. Promotion is simple threshold
+   in Phase A: `candidate.pass_rate ≥ baseline.pass_rate + ε` (default
+   ε = 0.05). The bootstrap CI replaces this in Phase B on the same data.
+
+**Reuse (don't duplicate):**
+
+- `src/harness/subagent.py:call_agent()` — what `_run_scenario` should
+  call; transcript capture builds on its message stream.
+- `src/harness/optimization/quality_evaluator.py` and
+  `cgf-result-evaluator.md` are Stages-1+2 LLM-judge patterns; the new
+  `llm_judge.py` grader should reference them as prior art but **not
+  import from them** (eval-pool isolation).
+
+**Exit criteria:**
+
+- Unit tests: 1 per grader type, 1 per orchestrator phase delegation,
+  1 integration test for the round-trip with both arms. Target: ~40 new
+  tests, ~1574 total. Pre-existing 1534 unchanged.
+- **Runtime smoke:** `make optimize` on a 2-resource SPEC produces
+  `eval-suite.yaml` (with held-out flag), runs through both arms, writes
+  per-arm `eval-results.json`, and `reviews/v{n}_eval.md` with the gate
+  decision and per-arm pass-rate diff.
+- **Telemetry smoke:** query Prometheus
+  `harness_tokens_to_goal_count{arm="candidate"}` returns a non-empty
+  histogram.
+- **Plugin validation:** `claude plugin validate` passes on both renamed
+  cgf-agents subdirectories.
+
+### Phase B — Statistical promotion gating *(weeks 5–6)*
+
+End-state: the simple threshold from Phase A is replaced by a multi-signal
+statistical gate. Same data shape as Phase A — this is gating logic only.
+
+**Tasks:**
+
+1. **Pairwise judge with position balancing.** Run both A-B and B-A
+   orderings of (baseline, candidate); disagreement → tie. Module:
+   `src/harness/optimization/eval_harness/pairwise.py`. Standard mitigation
+   for position bias documented in Wang et al. (2024).
+2. **Bootstrap CI gate.** `src/harness/optimization/gating.py`. 1000
+   resamples, 95% CI, **lower bound > 0.5 to promote** (more conservative
+   than just "win rate > 0.5" — protects against false promotions on
+   small N). Decision logged with per-scenario breakdown to
+   `reviews/v{n}_eval.json` alongside the existing `v{n}_review.md`.
+3. **Token-regression check.** Median `tokens_to_goal` for candidate must
+   not exceed baseline median by more than `CGF_TOKEN_REGRESSION_TOLERANCE`
+   (default 10%, tighten over time). Token efficiency gates *together with*
+   quality, never alone.
+4. **Trigger accuracy for agents/skills.** Eval-suite scenarios already
+   include positive + negative trigger contexts (Phase A schema); now
+   compute precision and recall, gate at default precision ≥ 0.9, recall
+   ≥ 0.8. Tunable per resource via `eval_profile.yaml`.
+5. **Multi-signal gate.** All applicable signals (win-rate CI, token
+   regression, trigger precision, trigger recall) must clear for
+   promotion. Single `Gate.decide()` entry point; verdict shape:
+   `Promote | Refine | Reject`. Record full statistics in review file.
+
+**Exit criteria:**
+
+- A candidate that passed Phase A's threshold but fails any of the four
+  signals is rejected with full statistics. **Reproducibility:** identical
+  traces → byte-identical verdicts.
+- ~30 new tests (gate logic, bootstrap math, position balancing).
+
+### Phase C — Ephemeral runtime *(week 7)*
+
+End-state: identical inputs → byte-identical eval verdicts across runs and
+hosts. SWE-bench reports 99.78% determinism on this pattern; we should hit
+similar.
+
+**Tasks:**
+
+- `agents/main/Dockerfile.eval` — layered build: `harness-base` →
+  `harness-eval-base` (adds eval runners, judges, scenario loader) →
+  `harness-eval-instance` (built per resource version, bakes in candidate
+  or baseline artifact).
+- New `eval` profile in `docker-compose.yml`:
+  - `eval-worker` container with `--rm`.
+  - `tmpfs` mounts on `/workspace` and `/memory` (no checkpoint persistence
+    during eval).
+  - Trace/metric output streamed to host-mounted persistent volume.
+- Pin `CLAUDE_MODEL` to a specific date-stamped version for the eval-run
+  duration; record the pin in `eval-results.json`.
+- Disable auto-checkpointing under the `eval` profile.
+- One fresh container per scenario instance.
+- Make targets: `make eval`, `make eval-arm CANDIDATE=v3 BASELINE=v2`,
+  `make eval-clean`.
+
+**Exit criteria:** Run identical eval twice; `diff` on the statistics
+section of the review file shows no diff (or differs only in timestamps).
+~15 new tests (Dockerfile build smoke, determinism integration test).
+
+### Phase D — Calibration & CI *(weeks 8–9)*
+
+End-state: judges are trusted (Cohen's kappa ≥ 0.8 vs human labels), eval
+runs on every PR.
+
+**Tasks:**
+
+- HTML viewer for trace + verdict + human-label slot:
+  `scripts/eval-review/`. Reference pattern: skill-creator's `run_loop.py`
+  viewer.
+- `make eval-calibrate` — runs N=20–50 pairwise judgments through human
+  review; computes Cohen's kappa per (resource type × judge model × rubric
+  version). Persist scores to `docs/JUDGE-CALIBRATION.md`. Gate refuses to
+  promote when calibration is stale (older than a quarter) or below 0.8.
+- If calibration < 0.8 for a resource type, **escalate to judge ensemble**
+  (3 judges, majority vote) for that type. Carries ~3–5× cost vs single
+  judge; use only when needed.
+- `.github/workflows/eval.yml` — detect changed resources, run
+  `eval-quick` (held-out subset, fast feedback), post statistics as PR
+  comment. Failing eval blocks merge.
+- **Optimizer integration:** `cgf-prompt-optimizer` reads
+  `reviews/v{n}_eval.json` failure entries as critiques (this closes the
+  gradient loop CGF is named after). Limit feedback-driven iterations
+  (max 2 before escalating to human review).
+
+**Exit criteria:** A PR that regresses a resource gets a failing eval
+comment within 10 min on GitHub Actions; calibration page shows current
+kappa per resource type; passing PRs get statistics published. ~15 new
+tests.
 
 ---
 
-### Task 10: Documentation
+## 4. Resolved decisions (was: REFACTOR.md open questions)
 
-**Files:**
-- Modify: `CLAUDE.md` — Update pipeline diagram, agent counts, phase descriptions
-- Mark Stage 3 as implemented in this plan
+| Question | Decision | Rationale |
+|---|---|---|
+| Eval suite format | **YAML** with JSON Schema validation | Matches existing CGF SPEC pattern, human-authorable, schema gives machine validation. |
+| Sandbox isolation | **In-process for Phase A; ephemeral container in Phase C** | Phase A optimizes for iteration speed (still 2-arm comparison-aware); Phase C buys reproducibility once the harness is stable. Skipping straight to containers in Phase A risks the timeline without buying day-one rigor that matters more (telemetry, pool separation, comparison). |
+| Grader composition | **Three columns + composite gate** — each tier emits its own `GraderResult`; the gate combines them with explicit `AndGrader`/`OrGrader` per scenario. | Keeps signal separable for debugging; matches `composite.py` design. |
+| LLM-judge failure mode | **Retry-once-then-mark-no-decision** | Cost-conscious; "no decision" trials excluded from win-rate denominator (Phase B). |
+| Held-out scenario sourcing | **Hand-authored seed (5–10) + cgf-research-lead expansion to 20–30**; optimizer never sees them | Hand-authored ensures coverage of constraints the LLM might miss; expansion keeps cost down. |
+| Judge ensemble vs single | **Single judge + position balancing for Phase B; ensemble deferred to Phase D, applied per-resource-type only when calibration < 0.8** | Position balancing gets ~80% of the bias mitigation at 2× cost (vs ensemble's ~3–5×). |
+| Cost cap per eval run | **`CGF_EVAL_TOKEN_BUDGET` env var, default 1M tokens**; surfaced in `eval-results.json` | Prevents runaway feedback loops. |
+| Optimizer feedback granularity | **Scenario IDs + concrete failure outputs only**, not judge rationale | Risk: rationale leakage trains optimizer to game the judge. |
+| Model-version drift | **`CGF_MODEL_PIN` env var, recorded per eval run**; calibration is per-pin | Lets us compare apples-to-apples across pin changes. |
 
 ---
 
-## Stage 4: End-to-End Integration & Hardening (DRAFT)
+## 5. Resource-type evaluation matrix
 
-**Status:** Not started
-**Goal:** Polish the full pipeline, add checkpoint/resume for new phases, human review gates, performance optimization, comprehensive documentation, and edge case handling.
-**Depends on:** Stages 1, 2, 3
+| Resource Type | Trigger Accuracy | Pairwise Output Quality | Token Efficiency | Unit/Contract Tests | Coherence | Vs No-Resource Baseline |
+|---|---|---|---|---|---|---|
+| **agent** | ✅ | ✅ | ✅ | — | ✅ (in plugin) | ✅ |
+| **skill** | ✅ | ✅ | ✅ | — | ✅ (in plugin) | ✅ |
+| **command** | — | partial (deterministic) | ✅ | ✅ scaffold validation | ✅ | — |
+| **mcp_server** | — | — | ✅ (integration arm) | ✅ schema + errors | ✅ | — |
+| **mcp_tool** | — | — | ✅ | ✅ schema + errors + idempotency | ✅ | — |
+| **plugin** | — (per-constituent) | aggregate | aggregate | — | ✅ primary | — |
 
-### Task 1: Full Pipeline E2E Test
+Per-resource `evals/` directory layout (sits under each workspace):
 
-**Files:**
-- Create: `tests/e2e/cgf/test_full_pipeline.py`
+```
+workspace/{spec}/eval/
+  scenarios.yaml          # positive + negative trigger contexts + expected behaviors
+  goldens/                # reference outputs (where applicable)
+  held_out.yaml           # subset never seen by optimizer
+  eval_profile.yaml       # declares resource type + grader selection + thresholds
+  transcripts/
+    baseline/             # per-arm transcripts
+    candidate/
+  eval-results.json       # aggregated per-scenario results
+```
 
-**Scope:** Test the complete pipeline from SPEC.md to finalized, evaluated resources:
+**Gold sets for judge calibration** — 30–50 human-labeled examples per
+resource type (Phase D). Standard size cited in the LLM-as-judge literature
+for stable agreement baselines.
+
+---
+
+## 6. Telemetry & OTel GenAI conventions
+
+Per [OTel GenAI semconv](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/),
+already adopted in Block 4:
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `gen_ai.system` | string | `"anthropic"` |
+| `gen_ai.request.model` | string | model SHA pin during eval |
+| `gen_ai.response.model` | string | actual model that served |
+| `gen_ai.operation.name` | string | `"chat"`, `"agent_invocation"`, etc. |
+| `gen_ai.usage.input_tokens` | int | includes cached tokens |
+| `gen_ai.usage.output_tokens` | int | |
+| `gen_ai.usage.cache_creation.input_tokens` | int | subset of input_tokens |
+| `gen_ai.usage.cache_read.input_tokens` | int | subset of input_tokens |
+| `gen_ai.agent.name` | string | for agent spans |
+
+**Custom harness attributes (Stage 3):**
+
+| Attribute | Type | Notes |
+|---|---|---|
+| `harness.eval.task_id` | string | UUID per scenario invocation |
+| `harness.eval.arm` | string | `baseline`, `candidate`, or `v{n}` |
+| `harness.resource.id` | string | resource under test |
+| `harness.resource.type` | string | `agent`, `skill`, `command`, `mcp_server`, `mcp_tool`, `plugin` |
+| `harness.eval.outcome` | string | `success`, `failure`, `tie` (set on goal events) |
+
+**Custom metric:**
+
+- `harness.tokens_to_goal` — histogram, emitted on goal-completion event,
+  with all five custom attributes above.
+
+**Alert rule** (Phase A deliverable, Prometheus):
+
+```yaml
+- alert: CandidateTokenRegression
+  expr: |
+    histogram_quantile(0.5, harness_tokens_to_goal_bucket{arm="candidate"})
+      / histogram_quantile(0.5, harness_tokens_to_goal_bucket{arm="baseline"})
+      > 1.10
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Candidate median tokens-to-goal exceeds baseline by >10%"
+```
+
+---
+
+## 7. Judge bias mitigations
+
+| Bias | Description | Mitigation in this plan |
+|---|---|---|
+| Position bias | Judge prefers first or last option | Run both A-B and B-A orderings; disagreement → tie (Phase B) |
+| Verbosity bias | Judge prefers longer answers | Rubric explicitly notes length ≠ quality; token efficiency gates separately (Phase B) |
+| Self-enhancement bias | Judge prefers outputs from its own model family | Different model for judge vs generator (`CGF_JUDGE_MODEL ≠ CGF_DESIGN_MODEL`) — Phase A |
+| Authority bias | Judge swayed by claims of authority in output | Rubric anchored to behavioral criteria, not vague "is it better" |
+| Confirmation bias (loop) | Judge sees optimizer reasoning and rewards stated intent | Pool separation: eval agents launched with no parent context — Phase A |
+| Moderation bias | Judge softens verdicts on sensitive content | Out of scope; relevant for eval scenarios involving harmful content (none planned) |
+
+---
+
+## 8. Statistical methodology reference
+
+**Pairwise win rate with bootstrap CI** (Phase B):
+
+```python
+def promotion_gate(verdicts: list[Verdict], n_bootstrap=1000, ci=0.95) -> bool:
+    wins = [1 if v.candidate_wins else 0 for v in verdicts if not v.tie]
+    if len(wins) < 10:
+        return False  # insufficient sample
+    boot_means = [
+        np.mean(np.random.choice(wins, size=len(wins), replace=True))
+        for _ in range(n_bootstrap)
+    ]
+    lower = np.percentile(boot_means, (1 - ci) / 2 * 100)
+    return lower > 0.5
+```
+
+**Position balancing in pairwise judge** (Phase B):
+
+```
+For each scenario s:
+  v_AB = judge(scenario=s, first=baseline, second=candidate)
+  v_BA = judge(scenario=s, first=candidate, second=baseline)
+  if v_AB == v_BA == "first wins":  → baseline wins (consistent)
+  if v_AB == v_BA == "second wins": → candidate wins (consistent)
+  else:                              → tie (judge order-dependent → low signal)
+```
+
+**Token regression check** (Phase B):
+
+```
+median(candidate.tokens_to_goal) ≤ median(baseline.tokens_to_goal) * (1 + tolerance)
+```
+
+### Three statistical traps to avoid
+
+1. **Small-N false positives.** A candidate winning 6/10 looks like 60%
+   but the 95% CI is roughly 26%–88% — well below the "lower bound > 50%"
+   gate. Bootstrap CIs make this explicit.
+2. **Multiple testing.** Running eval on every iteration and promoting on
+   first significant win is p-hacking. Use the held-out set for promotion
+   only, not for iteration feedback.
+3. **Goodhart on token efficiency.** A candidate that produces shorter
+   but worse outputs will look efficient. Token efficiency is gated
+   *together with* quality, never alone.
+
+### Scenario maintenance
+
+Two failure modes:
+
+- **Stale scenarios** that the candidate has effectively memorized via
+  optimizer feedback.
+- **Trivial scenarios** that pass for any reasonable resource and produce
+  no signal.
+
+Mitigation: rotate ~20% of held-out scenarios per quarter, and a "scenario
+coverage" review that flags scenarios where baseline and candidate always
+agree.
+
+---
+
+## 9. Stage 4 — Integration & Hardening
+
+After Stage 3 stabilizes. Carries forward from predecessor doc.
+
+### Task 1 — Full pipeline E2E test
+
+`tests/e2e/cgf/test_full_pipeline.py`. Test the complete pipeline from
+SPEC.md to finalized, evaluated resources:
 
 ```
 SPEC.md → RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → FINALIZE
 ```
 
-**Approach:**
-- Use a simple, well-defined SPEC (e.g., a 2-resource plugin: 1 agent + 1 skill)
-- Mock external API calls but exercise all Python orchestration code
-- Verify:
-  - All phases execute in order
-  - State file updated at each transition
-  - Resource files created with correct versions
-  - Eval suite generated and executed
-  - Final resources pass quality + execution thresholds
-  - CHANGELOG.md populated correctly
-  - No orphaned temp files
+Approach: simple 2-resource plugin (1 agent + 1 skill); mock external API
+calls but exercise all Python orchestration code. Verify all phases
+execute in order, state file updated at each transition, resource files
+created with correct versions, eval suite generated and executed, final
+resources pass quality + execution thresholds, CHANGELOG.md populated, no
+orphaned temp files.
+
+### Task 2 — Checkpoint / resume for new phases
+
+Verify resume from each new phase: DESIGN, EVAL_DESIGN, EXECUTION_EVAL.
+- `resource-plan.yaml` preserved on resume from DESIGN.
+- `eval-suite.yaml` preserved on resume from EVAL_DESIGN.
+- Partial `eval-results.json` loadable on resume from EXECUTION_EVAL.
+- Test: kill orchestrator mid-phase, restart, verify correct phase resumes.
+
+### Task 3 — Human review gates
+
+Add `--review` flag with optional checkpoints after DESIGN and EVAL_DESIGN
+phases. After DESIGN: pause, display resource-plan.yaml summary, wait for
+`/cgf proceed` or `/cgf edit`. After EVAL_DESIGN: pause, display
+eval-suite.yaml summary, wait for approval. After EXECUTION_EVAL: pause,
+display eval-results.json summary with pass^k scores. State tracks
+`checkpoint_phase` and `checkpoint_approved` for resume.
+
+### Task 4 — Performance optimization
+
+- Parallel eval scenario execution (respecting API rate limits).
+- Eval result caching: skip re-running scenarios that passed in previous
+  iteration.
+- Generation parallelism for independent resources.
+- Timeout tuning: add DESIGN and EVAL_DESIGN timeouts to config.
+- Token usage tracking per phase for cost awareness.
+
+### Task 5 — Edge case handling
+
+- Empty eval results (no scenarios generated → skip EXECUTION_EVAL).
+- All scenarios fail (every pass^k = 0 → REJECT, don't loop forever).
+- MCP server build failure (compilation error → mark resource as failed,
+  continue others).
+- Resource-architect proposes 0 resources (invalid plan → error with
+  guidance).
+- SPEC has no capabilities section (minimal SPEC → resource-architect uses
+  defaults).
+- Agent timeout during eval (individual scenario timeout → mark trial as
+  fail, continue).
+- Disk space exhaustion (transcript storage → warn and truncate).
+- Circular dependencies in resource plan (validate and reject).
+- Research phase produces no findings (proceed with reduced confidence).
+
+### Task 6 — Error recovery and retry
+
+- Configurable retry for agent delegation failures (1 retry with simplified
+  prompt).
+- Eval scenario retry for transient failures (API timeout, rate limit).
+- Distinguish transient errors (retry) from permanent errors (mark failed).
+- Log all retries with structured data for debugging.
+
+### Task 7 — Comprehensive documentation update
+
+- `CLAUDE.md` — full rewrite of CGF section to reflect new pipeline.
+- `README.md` — update user-facing docs with new commands and workflow.
+- `docs/CGF-API-REFERENCE.md` — add EVAL_DESIGN / EXECUTION_EVAL phases to
+  state diagram + new artifact schemas.
+- `docs/CGF-USER-GUIDE.md` — add "Stage 3: Eval Harness" user-flow section.
+- `docs/CGF-EXAMPLES.md` — add eval-suite-generation + feedback-loop
+  examples.
+- `docs/examples/CGF_EVAL_EXAMPLE.md` — walkthrough of a full optimization
+  with eval.
+
+### Task 8 — Memory and auto-memory updates
+
+- Auto-memory `MEMORY.md` — update project status, key files, recent work.
+- Memory MCP entity for `ab-casdk-harness` — update observations to reflect
+  Stage 3 shipped.
 
 ---
 
-### Task 2: Checkpoint/Resume for New Phases
+## Appendix — Verification / runtime smoke checklist
 
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
-- Modify: `src/harness/progress.py` (state serialization)
-- Test: `tests/unit/test_optimization/test_checkpoint_resume.py`
+Each phase exit must produce a runtime smoke result, not just unit tests.
+Per the binding "verification rule" in REFACTOR.md.
 
-**Scope:**
-- Verify resume from each new phase: DESIGN, EVAL_DESIGN, EXECUTION_EVAL
-- Ensure resource-plan.yaml is preserved on resume from DESIGN
-- Ensure eval-suite.yaml is preserved on resume from EVAL_DESIGN
-- Ensure partial eval-results.json is loadable on resume from EXECUTION_EVAL
-- Test: kill orchestrator mid-phase, restart, verify correct phase resumes
+### Phase A
 
----
+```bash
+# Two-arm eval round-trip
+make optimize    # On a 2-resource test SPEC
+ls workspace/<spec>/eval/
+# Expected: eval-suite.yaml (with held_out flagged scenarios),
+#           eval-results.json (with baseline + candidate arms),
+#           transcripts/{baseline,candidate}/
 
-### Task 3: Human Review Gates
+cat workspace/<spec>/eval/eval-results.json | jq '.arms | keys'
+# Expected: ["baseline", "candidate"]
 
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
-- Modify: `src/harness/plugins/cgf-agents/commands/cgf.md` (add `/cgf review` subcommand)
+# Telemetry tagged by arm
+curl -s 'localhost:9090/api/v1/query?query=harness_tokens_to_goal_count' | jq
+# Expected: non-empty histogram tagged by arm
 
-**Scope:**
-- Add optional review checkpoints after DESIGN and EVAL_DESIGN phases
-- When `--review` flag is set:
-  - After DESIGN: pause, display resource-plan.yaml summary, wait for `/cgf proceed` or `/cgf edit`
-  - After EVAL_DESIGN: pause, display eval-suite.yaml summary, wait for approval
-  - After EXECUTION_EVAL: pause, display eval-results.json summary with pass^k scores
-- User can modify resource-plan.yaml or eval-suite.yaml before proceeding
-- State tracks `checkpoint_phase` and `checkpoint_approved` for resume
+# Pool separation on disk
+ls src/harness/plugins/cgf-agents/agents/{design,eval}/
+# Expected: design/ has 9 agents, eval/ has cgf-eval-architect.md
 
----
+# Plugin manifest validation
+docker compose exec main-agent claude plugin validate /opt/plugins/swe-marketplace/plugins/cgf-agents
+# Expected: passes
+```
 
-### Task 4: Performance Optimization
+### Phase B
 
-**Files:**
-- Modify: `src/harness/optimization/eval_harness.py`
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
+```bash
+# Statistical gating rejects regression
+make eval-arm CANDIDATE=v_regressed BASELINE=v_good
+# Expected: gate rejection in reviews/v_regressed_eval.json with
+# ci_lower_bound clearly < 0.5; review.md cites win-rate + token regression
+# + trigger precision/recall.
+```
 
-**Scope:**
-- Parallel eval scenario execution: run independent scenarios concurrently (respecting API rate limits)
-- Eval result caching: skip re-running scenarios that passed in previous iteration
-- Generation parallelism: generate independent resources (no dependency) in parallel
-- Timeout tuning: add DESIGN and EVAL_DESIGN timeouts to config
-- Token usage tracking: log total tokens consumed per phase for cost awareness
+### Phase C
 
----
+```bash
+# Determinism
+make eval && cp workspace/.../eval-results.json /tmp/run1.json
+make eval && diff /tmp/run1.json workspace/.../eval-results.json
+# Expected: identical (or differ only in timestamps)
+```
 
-### Task 5: Edge Case Handling
+### Phase D
 
-**Files:**
-- Modify: Various orchestrator and eval harness files
-- Test: `tests/unit/test_optimization/test_edge_cases.py`
+```bash
+# CI regression catch + calibration gate
+gh pr create --title "regress python-expert" --body "deliberate regression"
+# Expected: failing eval comment within 10 min on GitHub Actions
+cat docs/JUDGE-CALIBRATION.md | grep "python-expert"
+# Expected: kappa ≥ 0.8 line; if not, gate must refuse promotion until
+# `make eval-calibrate` brings it back.
+```
 
-**Scenarios to handle:**
-- Empty eval results (no scenarios generated → skip EXECUTION_EVAL)
-- All scenarios fail (every pass^k = 0 → REJECT, don't loop forever)
-- MCP server build failure (compilation error → mark resource as failed, continue others)
-- Resource-architect proposes 0 resources (invalid plan → error with guidance)
-- SPEC has no capabilities section (minimal SPEC → resource-architect uses defaults)
-- Agent timeout during eval (individual scenario timeout → mark trial as fail, continue)
-- Disk space exhaustion (transcript storage → warn and truncate)
-- Circular dependencies in resource plan (validate and reject)
-- Research phase produces no findings (proceed with reduced confidence)
+### Test count
 
----
+Unit tests: 1534 → ~1640 across Phases A–D (Phase A ~+40, Phase B ~+30,
+Phase C ~+15, Phase D ~+15). No existing test dropped.
 
-### Task 6: Error Recovery and Retry
+### Memory
 
-**Files:**
-- Modify: `src/harness/optimization/multi_resource_orchestrator.py`
-- Modify: `src/harness/optimization/eval_harness.py`
-
-**Scope:**
-- Add configurable retry for agent delegation failures (1 retry with simplified prompt)
-- Add eval scenario retry for transient failures (API timeout, rate limit)
-- Distinguish between transient errors (retry) and permanent errors (mark failed)
-- Log all retries with structured data for debugging
-
----
-
-### Task 7: Comprehensive Documentation Update
-
-**Files:**
-- Modify: `CLAUDE.md` — Full rewrite of CGF section to reflect new pipeline
-- Modify: `README.md` — Update user-facing docs with new commands and workflow
-- Create: `docs/examples/CGF_EVAL_EXAMPLE.md` — Walkthrough of a full optimization with eval
-
-**CLAUDE.md updates:**
-- Pipeline diagram with all 9 phases
-- Complete agent table (all agents across 3 plugins)
-- Resource type table (all 7 types)
-- Workspace layout with eval/ directory
-- Eval metrics explanation (pass@k, pass^k)
-- Configuration reference for all new settings
-- Troubleshooting section for eval-related issues
-
----
-
-### Task 8: Memory and Auto-Memory Updates
-
-**Files:**
-- Modify: Auto-memory MEMORY.md — Update project status, key files, recent work
-- Update: Memory MCP entity for ab-casdk-harness — Update observations
-
-**Content:**
-- Summarize the full CGF evaluation pipeline
-- Document the plugin coordination architecture
-- Note key architectural decisions and their rationale
-- Update inter-project relationships (if applicable)
-
----
-
-## Staging Summary
-
-| Stage | New Agents | New Skills | New Python Modules | Status |
-|-------|-----------|------------|-------------------|--------|
-| 1 | 1 (resource-architect) | 0 | 5 (protocols) + refactor | **Complete** (120 tests) |
-| 2 | 0 | 2 (mcp-tool, mcp-server) | 0 (templates only) | **Complete** (47 tests) |
-| 3 | 1 (eval-architect) | 0 | 6 (harness + graders) | Draft |
-| 4 | 0 | 0 | Integration tests + docs | Draft |
-
-Each stage is independently shippable. Stages 3-4 task lists are outlines — full TDD steps and exact code to be added before implementation.
+Auto-memory `MEMORY.md` updated at end of each phase with new phase label,
+file pointers, new gotchas. Memory MCP entity for `ab-casdk-harness`
+updated when Stage 3 reaches a shippable milestone (probably end of Phase
+B, when statistical promotion is real).

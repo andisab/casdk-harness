@@ -17,7 +17,7 @@ Five sections, each independently useful:
 **As of 2026-05-07:**
 
 - All four reorganization blocks (1, 2, 3, 4) merged to `main`.
-- `main` and `contextgrad-framework` are equal (both at PR #5 merge `ece4269`); `contextgrad-framework` is reserved for forthcoming Stage 3 work.
+- `main` and `contextgrad-eval` (renamed from `contextgrad-framework` on 2026-05-07) are equal; `contextgrad-eval` is reserved for forthcoming Stage 3 eval-harness work.
 - **Tests:** 1534 unit passing (51 files, 1379 distinct + parametrize), 41 integration tests across 21 files, 82 e2e tests across 5 files.
 - **CGF Stages 1+2 shipped on `main`:** protocol layer, resource architect, DESIGN phase, MCP tool/server creation skills with Python+TypeScript scaffolds.
 - **Multi-resource pipeline working end-to-end:** `PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE`.
@@ -27,8 +27,8 @@ Five sections, each independently useful:
 |---|---|---|
 | **Stage 1 — Protocol layer + resource architect + DESIGN phase** | shipped | `main`, via Block 1 |
 | **Stage 2 — MCP tool/server creation skills + Python/TypeScript scaffolds** | shipped | `main`, via Block 1 |
-| **Stage 3 — Evaluation Framework** | **not started** | `contextgrad-framework` |
-| **Stage 4 — Integration & hardening** | not started; depends on Stage 3 | `contextgrad-framework` |
+| **Stage 3 — Evaluation Framework** | **not started** | `contextgrad-eval` |
+| **Stage 4 — Integration & hardening** | not started; depends on Stage 3 | `contextgrad-eval` |
 
 Two phases exist in the `OptimizationPhase` enum but are not yet wired into the
 orchestrator: `EVAL_DESIGN` and `EXECUTION_EVAL` — those are Stage 3's job.
@@ -39,29 +39,7 @@ orchestrator: `EVAL_DESIGN` and `EXECUTION_EVAL` — those are Stage 3's job.
 
 ### Stage 3 — Eval Harness
 
-Branch: `contextgrad-framework` (currently equal to `main`).
-
-Reference spec: `docs/CGF-EVAL-FRAMEWORK.md` (draft).
-
-**Goals:**
-
-1. **`cgf-eval-architect` agent** — generates eval suites from resource specs (the same SPEC.md that drives optimization). Output: structured eval manifest (testcases, expected behaviors, grading rubrics).
-2. **Grader infrastructure** — three tiers, escalating in cost and richness:
-   - **Deterministic** — pattern-match outputs, exact-match assertions, schema validation. Cheapest, suitable for syntactic checks.
-   - **Trajectory-based** — uses CGF tracer spans (already collected) to grade based on tool-call sequences, error rates, and execution paths rather than just final outputs.
-   - **LLM-judge** — for behavioral / qualitative criteria where the first two tiers can't reach.
-3. **Sandboxed agent-session eval harness** — runs the optimized resource against the eval suite in an isolated session, captures traces, scores against the grading rubric. Produces both per-testcase verdicts and an aggregate score.
-4. **Wire `EVAL_DESIGN` and `EXECUTION_EVAL` phases** into `multi_resource_orchestrator.py`. Both already exist in the `OptimizationPhase` enum; the orchestrator currently skips them.
-5. **Feedback loop** — execution results feed back into `cgf-prompt-optimizer` for refinement (closes the gradient loop CGF is named after).
-
-**Bonus:** Block 4 Phase 3C shipped a `casdk-cgf` Grafana dashboard with placeholder panels in a "Future" row. Stage 3 is what populates them — phase transitions, optimizer iterations, eval scores. No dashboard work needed; the panels are already provisioned.
-
-**Open questions for Stage 3:**
-
-- **Eval suite storage format.** YAML (matches existing CGF SPEC pattern) vs JSON (machine-friendlier) vs hybrid. Recommend YAML for human authoring + the workspace already-canonical pattern.
-- **Sandbox isolation level.** Run the eval session in a fresh subprocess? Fresh container? In-process? Trade-off: realism (subprocess/container is closer to real usage) vs latency/cost (in-process is fastest).
-- **Grader composition.** When deterministic + trajectory + LLM-judge all apply to the same testcase, how do their scores combine? Worst-of, weighted average, or each tier produces its own column in the result?
-- **Failure mode for LLM-judge.** If the judge model itself errors or hits rate-limit mid-eval, do we retry, mark "no decision", or fail the run? Cost-conscious design suggests retry-once-then-mark.
+Branch: `contextgrad-eval`. Canonical plan: **[`docs/CGF-EVAL-FRAMEWORK.md`](./CGF-EVAL-FRAMEWORK.md)** — covers architecture, four-phase rollout (A: comparison-aware harness, B: statistical promotion gating, C: ephemeral runtime, D: calibration & CI), resolved decisions, telemetry conventions, judge-bias mitigations, and statistical methodology. Wires the previously placeholder `EVAL_DESIGN` and `EXECUTION_EVAL` phases into `multi_resource_orchestrator.py`. Block 4 Phase 3C's `casdk-cgf` Grafana "Future" panels get populated as a side-effect (no dashboard work needed).
 
 ### Stage 4 — Integration & hardening (after Stage 3 stabilizes)
 

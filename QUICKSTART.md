@@ -104,7 +104,7 @@ If you Ctrl+C, run `make autonomous` again to resume from the last checkpoint. S
 
 ### 3. Optimize Mode — CGF prompt optimization
 ---
-Improve a prompt resource (agent, skill, or whole plugin) using the ContextGrad Framework: research → design → generate → iterate → validate. An eval framework is currently in development on the contextgrad-framework branch. 
+Improve a prompt resource (agent, skill, or whole plugin) using the ContextGrad Framework: research → design → generate → iterate → validate. The core CGF framework is shipped on `main`; an eval harness extension is in active development on the `contextgrad-eval` branch.
 
 **Single resource** (improve one agent or skill):
 
