@@ -61,7 +61,7 @@ help: ## Show available targets
 	@echo ""
 	@echo "$(YELLOW)Interactive Mode:$(NC)"
 	@echo "  interactive          Start interactive conversation"
-	@echo "  interactive-quiet    Interactive without system logs"
+	@echo "  interactive-debug    Interactive with DEBUG logs, raw SDK messages, per-turn stats"
 	@echo ""
 	@echo "$(YELLOW)Autonomous Mode:$(NC)"
 	@echo "  autonomous           Start autonomous development"
@@ -254,11 +254,11 @@ interactive: ## Start interactive conversation with main agent
 	@echo "$(YELLOW)Type 'exit' or 'quit' to end the session$(NC)"
 	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive
 
-.PHONY: interactive-quiet
-interactive-quiet: ## Start interactive in quiet mode (no system logs)
-	@echo "$(GREEN)Starting interactive session in quiet mode...$(NC)"
+.PHONY: interactive-debug
+interactive-debug: ## Start interactive with verbose debug output (DEBUG logs + raw SDK msgs + per-turn stats)
+	@echo "$(GREEN)Starting interactive session in debug mode...$(NC)"
 	@echo "$(YELLOW)Type 'exit' or 'quit' to end the session$(NC)"
-	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --quiet
+	docker compose $(COMPOSE_FILES) exec -it main-agent python -m harness.interactive --debug
 
 # =============================================================================
 # Autonomous Development Mode

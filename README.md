@@ -66,7 +66,7 @@ Chat with Claude directly through a Rich console UI. Tool calls render inline, s
 make interactive                 # Default model (sonnet)
 make interactive MODEL=haiku     # Faster, cheaper
 make interactive MODEL=opus      # Most capable
-make interactive-quiet           # Suppress system logs
+make interactive-debug           # Verbose: DEBUG logs, raw SDK messages, per-turn stats table
 ```
 
 **Example prompts:**
@@ -242,8 +242,36 @@ All configuration goes through `.env` (copy from `.env.example`).
 | `AGENT_CPU_LIMIT` / `AGENT_MEMORY_LIMIT` | Per-container resource limits | `4` / `8G` |
 | `ENABLED_PLUGINS` | Comma-separated plugin allowlist (empty = all) | _empty_ |
 | `SWE_MARKETPLACE_REF` | Pin marketplace to a tag/SHA/branch (empty = HEAD) | _empty_ |
+| `LOG_LEVEL` | System-log verbosity: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` | `INFO` |
 
 See [.env.example](./.env.example) for the full list.
+
+### Logging
+
+Three layers, in increasing precedence:
+
+1. **`.env` (persistent default)** — `LOG_LEVEL=INFO` (or `DEBUG` / `WARNING` / `ERROR` / `CRITICAL`). Read at container start; `make down && make up` to apply, no rebuild needed. Affects every mode.
+2. **Per-invocation CLI flags** — override `.env` for one run:
+
+   | Flag | Effect |
+   |---|---|
+   | `--debug` / `-d` | Forces `DEBUG` plus raw SDK message dumps and the per-turn stats table |
+   | `--quiet` / `-q` | Forces `CRITICAL` (silences everything below) |
+
+   `--debug` wins if both are set.
+
+3. **Makefile shortcuts**:
+
+   | Command | Effect |
+   |---|---|
+   | `make interactive` | Uses `.env` (`LOG_LEVEL=INFO` by default) |
+   | `make interactive-debug` | Passes `--debug` |
+   | `make autonomous` | Passes `--quiet` (autonomous always runs quiet by design) |
+
+**Cheat sheet:**
+- Always-quiet sessions → `LOG_LEVEL=WARNING` in `.env`
+- One-off troubleshooting → `make interactive-debug`
+- Total silence → `python -m harness.interactive --quiet` (from inside the container)
 
 ### SSH Keys (for private repositories)
 

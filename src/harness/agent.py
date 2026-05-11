@@ -785,11 +785,9 @@ Use them via: Skill tool with skill name (e.g., "debugging")
             )
             self.state["current_task"] = None
 
-            logger.info(
-                "Task completed successfully",
-                agent=self.agent_name,
-                duration=duration,
-            )
+            # Per-task duration is captured by the Prometheus
+            # request/duration metrics above and by state["completed_tasks"];
+            # an extra INFO log on every turn just clutters the console.
 
             # End span successfully
             self._end_execution_span(
