@@ -1,0 +1,250 @@
+# Kustomization Template
+#
+# Use this template to create Flux Kustomization resources for reconciling Kubernetes manifests from Git.
+#
+# Replace the following placeholders:
+# - ${KUSTOMIZATION_NAME}: Name of the Kustomization (e.g., infrastructure, apps)
+# - ${GIT_REPO_NAME}: Name of the GitRepository source
+# - ${PATH}: Path in the repository (e.g., ./infrastructure/production)
+# - ${NAMESPACE}: Target namespace (optional, defaults to manifest namespaces)
+
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ${KUSTOMIZATION_NAME}
+  namespace: flux-system
+  labels:
+    component: ${KUSTOMIZATION_NAME}
+spec:
+  # Reconciliation interval
+  interval: 10m
+
+  # Retry interval on failure
+  retryInterval: 1m
+
+  # Timeout for operations
+  timeout: 5m
+
+  # Source reference
+  sourceRef:
+    kind: GitRepository
+    name: ${GIT_REPO_NAME}
+    namespace: flux-system
+
+  # Path in the repository
+  path: ${PATH}
+
+  # Prune resources removed from source
+  prune: true
+
+  # Wait for resources to be ready
+  wait: true
+
+  # Optional: Target namespace (overrides manifest namespaces)
+  # targetNamespace: ${NAMESPACE}
+
+  # Optional: Service account for impersonation
+  # serviceAccountName: ${SERVICE_ACCOUNT}
+
+  # Optional: Dependencies (wait for these to be ready first)
+  # dependsOn:
+  #   - name: infrastructure
+  #   - name: secrets
+
+  # Optional: Health checks
+  # healthChecks:
+  #   - apiVersion: apps/v1
+  #     kind: Deployment
+  #     name: ${DEPLOYMENT_NAME}
+  #     namespace: ${NAMESPACE}
+
+  # Optional: Post-build variable substitution
+  # postBuild:
+  #   substitute:
+  #     CLUSTER_NAME: "production"
+  #     ENVIRONMENT: "prod"
+  #   substituteFrom:
+  #     - kind: ConfigMap
+  #       name: cluster-vars
+
+  # Optional: Patches
+  # patches:
+  #   - target:
+  #       kind: Deployment
+  #       labelSelector: "app=my-app"
+  #     patch: |
+  #       - op: add
+  #         path: /spec/template/spec/securityContext
+  #         value:
+  #           runAsNonRoot: true
+
+  # Optional: Decryption (for SOPS)
+  # decryption:
+  #   provider: sops
+  #   secretRef:
+  #     name: sops-age
+
+  # Optional: Images (override image tags)
+  # images:
+  #   - name: ghcr.io/org/app
+  #     newName: ghcr.io/org/app
+  #     newTag: v1.2.3
+
+  # Optional: Suspend reconciliation
+  # suspend: false
+
+---
+# Example: Infrastructure Kustomization
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./infrastructure/production
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: nginx-ingress-controller
+      namespace: ingress-nginx
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: cert-manager
+      namespace: cert-manager
+  postBuild:
+    substitute:
+      CLUSTER_NAME: "production"
+      REGION: "us-west-2"
+
+---
+# Example: Applications Kustomization (with dependencies)
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure
+  interval: 5m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./apps/production
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: frontend
+      namespace: apps
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: backend
+      namespace: apps
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: cluster-config
+
+---
+# Example: Multi-Tenant Kustomization
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tenant-alpha
+  namespace: tenant-alpha
+spec:
+  serviceAccountName: flux-tenant-alpha
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: tenant-alpha-repo
+    namespace: tenant-alpha
+  path: ./deploy/production
+  prune: true
+  targetNamespace: tenant-alpha
+  wait: true
+
+---
+# Example: Kustomization with SOPS Decryption
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: secrets
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./secrets/production
+  prune: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  postBuild:
+    substitute:
+      CLUSTER_NAME: "production"
+
+---
+# Example: Kustomization with Patches
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps-patched
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./apps/base
+  prune: true
+  patches:
+    - target:
+        kind: Deployment
+        labelSelector: "environment=production"
+      patch: |
+        - op: replace
+          path: /spec/replicas
+          value: 3
+    - target:
+        kind: Service
+        name: frontend
+        namespace: apps
+      patch: |
+        - op: add
+          path: /spec/type
+          value: LoadBalancer
+
+---
+# Example: Kustomization with Image Override
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps-image-override
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./apps/production
+  prune: true
+  images:
+    - name: ghcr.io/org/frontend
+      newTag: v2.1.0
+    - name: ghcr.io/org/backend
+      newTag: v1.5.3

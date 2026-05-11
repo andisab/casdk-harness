@@ -1,0 +1,253 @@
+# HelmRelease Template
+#
+# Use this template to create Flux HelmRelease resources for deploying Helm charts via GitOps.
+#
+# Replace the following placeholders:
+# - ${RELEASE_NAME}: Name of the HelmRelease (e.g., nginx-ingress, prometheus)
+# - ${NAMESPACE}: Target namespace for the release
+# - ${CHART_NAME}: Name of the Helm chart
+# - ${CHART_VERSION}: Version constraint (e.g., 9.x, >=1.0.0 <2.0.0)
+# - ${HELM_REPO_NAME}: Name of the HelmRepository resource
+# - ${VALUES}: Your Helm values (indent properly)
+
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: ${RELEASE_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${RELEASE_NAME}
+spec:
+  # Reconciliation interval
+  interval: 30m
+
+  # Timeout for install/upgrade operations
+  timeout: 10m
+
+  # Chart specification
+  chart:
+    spec:
+      chart: ${CHART_NAME}
+      version: '${CHART_VERSION}'
+      sourceRef:
+        kind: HelmRepository
+        name: ${HELM_REPO_NAME}
+        namespace: flux-system
+      interval: 12h
+
+  # Helm values
+  values:
+    ${VALUES}
+
+  # Optional: Load values from ConfigMaps or Secrets
+  # valuesFrom:
+  #   - kind: ConfigMap
+  #     name: ${RELEASE_NAME}-config
+  #     valuesKey: values.yaml
+  #   - kind: Secret
+  #     name: ${RELEASE_NAME}-secrets
+  #     valuesKey: secrets.yaml
+
+  # Install configuration
+  install:
+    crds: CreateReplace  # Create or update CRDs
+    remediation:
+      retries: 3
+    # Optional: Replace existing resources on install
+    # replace: true
+
+  # Upgrade configuration
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+    cleanupOnFail: true
+    # Optional: Force resource updates
+    # force: true
+
+  # Rollback configuration
+  rollback:
+    timeout: 10m
+    cleanupOnFail: true
+    recreate: true
+
+  # Uninstall configuration
+  uninstall:
+    keepHistory: false
+
+  # Drift detection and correction
+  driftDetection:
+    mode: enabled
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
+
+  # Post-rendering (optional)
+  # postRenderers:
+  #   - kustomize:
+  #       patches:
+  #         - target:
+  #             kind: Deployment
+  #             name: ${RELEASE_NAME}
+  #           patch: |
+  #             - op: add
+  #               path: /spec/template/spec/securityContext
+  #               value:
+  #                 runAsNonRoot: true
+
+  # Health checks (optional)
+  # test:
+  #   enable: true
+  #   timeout: 5m
+
+  # Suspend reconciliation (optional)
+  # suspend: false
+
+---
+# Example: Nginx Ingress Controller
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: nginx-ingress
+  namespace: infrastructure
+spec:
+  interval: 30m
+  timeout: 10m
+  chart:
+    spec:
+      chart: nginx-ingress-controller
+      version: '9.x'
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+        namespace: flux-system
+      interval: 12h
+  values:
+    replicaCount: 3
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+    cleanupOnFail: true
+
+---
+# Example: PostgreSQL Database
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: postgresql
+  namespace: database
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: postgresql
+      version: '12.x'
+      sourceRef:
+        kind: HelmRepository
+        name: bitnami
+        namespace: flux-system
+  valuesFrom:
+    - kind: Secret
+      name: postgresql-credentials
+      valuesKey: values.yaml
+  values:
+    auth:
+      database: appdb
+      username: appuser
+    primary:
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: gp3
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  test:
+    enable: true
+
+---
+# Example: Custom Application Chart
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: my-app
+  namespace: apps
+spec:
+  interval: 10m
+  chart:
+    spec:
+      chart: ./charts/my-app
+      sourceRef:
+        kind: GitRepository
+        name: my-app-repo
+        namespace: flux-system
+      interval: 5m
+  values:
+    image:
+      repository: ghcr.io/org/my-app
+      tag: v1.2.3
+    replicaCount: 3
+    ingress:
+      enabled: true
+      className: nginx
+      hosts:
+        - host: app.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: app-tls
+          hosts:
+            - app.example.com
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+            patch: |
+              - op: add
+                path: /spec/template/metadata/annotations
+                value:
+                  prometheus.io/scrape: "true"
+                  prometheus.io/port: "9090"
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3

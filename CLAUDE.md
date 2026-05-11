@@ -27,7 +27,7 @@ Technical reference for developers working on this repository and for Claude's o
     - Pipeline: RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE (9 phases).
     - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
     - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
-    - Smoke fixture at `docs/examples/cgf-eval-smoke/SPEC.md` for end-to-end runtime validation.
+    - Smoke fixtures at `tests/smoke/` (replaced the prior single-fixture `docs/examples/cgf-eval-smoke/` 2026-05-11). Run with `make smoke FIXTURE=<name>`; current fixtures: `python-expert` (single-resource), `iac-team` (multi-resource, AWS+K8s).
   - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-FRAMEWORK.md`.
   - Stage 4: Integration & hardening — not started, depends on Phase D completion.
 

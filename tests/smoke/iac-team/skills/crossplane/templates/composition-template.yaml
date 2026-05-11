@@ -1,0 +1,165 @@
+# Crossplane Composition Template
+# Use this as a starting point for new compositions
+
+---
+# Step 1: Define the XRD (CompositeResourceDefinition)
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: x{resourcetype}s.{group}.example.com
+spec:
+  group: {group}.example.com  # e.g., database, network, compute
+  names:
+    kind: X{ResourceType}      # e.g., XPostgreSQLInstance
+    plural: x{resourcetype}s
+  claimNames:
+    kind: {ResourceType}       # e.g., PostgreSQLInstance
+    plural: {resourcetype}s
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    # Define your parameters here
+                    exampleParameter:
+                      type: string
+                      description: "Description of parameter"
+                      default: "default-value"
+                  required:
+                    - exampleParameter
+              required:
+                - parameters
+
+            status:
+              type: object
+              properties:
+                # Define status fields that will be exposed
+                exampleStatus:
+                  type: string
+
+---
+# Step 2: Create the Composition
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: {resource}-{provider}-{variant}
+  labels:
+    crossplane.io/xrd: x{resourcetype}s.{group}.example.com
+    provider: {aws|azure|gcp}
+    environment: {dev|staging|prod}
+
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  compositeTypeRef:
+    apiVersion: {group}.example.com/v1alpha1
+    kind: X{ResourceType}
+
+  resources:
+    # Define managed resources here
+    - name: {logical-name}
+      base:
+        apiVersion: {provider-api-version}
+        kind: {ManagedResourceKind}
+        spec:
+          forProvider:
+            # Provider-specific configuration
+            region: us-west-2
+            # Add more fields as needed
+
+          providerConfigRef:
+            name: {provider-config-name}
+
+      patches:
+        # Patch from composite to managed resource
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.{field}
+          toFieldPath: spec.forProvider.{field}
+
+        # Patch from managed resource to composite status
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.{field}
+          toFieldPath: status.{field}
+
+        # Transform patches (optional)
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.{sourceField}
+          toFieldPath: spec.forProvider.{targetField}
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-suffix"
+
+      # Connection details (if this resource produces credentials)
+      connectionDetails:
+        - type: FromConnectionSecretKey
+          name: {output-key}
+          fromConnectionSecretKey: {provider-secret-key}
+
+        - type: FromFieldPath
+          name: {output-key}
+          fromFieldPath: status.atProvider.{field}
+
+        - type: FromValue
+          name: {output-key}
+          value: "{static-value}"
+
+      # Readiness checks (optional, for ordering)
+      readinessChecks:
+        - type: MatchString
+          fieldPath: status.atProvider.status
+          matchString: "AVAILABLE"
+
+---
+# Step 3: Create an example Claim
+apiVersion: {group}.example.com/v1alpha1
+kind: {ResourceType}
+metadata:
+  name: example-{resource}
+  namespace: default
+spec:
+  parameters:
+    exampleParameter: "value"
+
+  # Optional: Select composition by reference
+  compositionRef:
+    name: {resource}-{provider}-{variant}
+
+  # Optional: Select composition by labels
+  compositionSelector:
+    matchLabels:
+      provider: aws
+      environment: prod
+
+  # Connection secret (if needed)
+  writeConnectionSecretToRef:
+    name: {resource}-connection
+
+---
+# Step 4: ProviderConfig (use OIDC/IRSA)
+apiVersion: {provider}.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: {provider-config-name}
+spec:
+  credentials:
+    source: InjectedIdentity  # Recommended: OIDC/IRSA/Workload Identity
+
+# If you MUST use long-lived credentials (not recommended):
+# spec:
+#   credentials:
+#     source: Secret
+#     secretRef:
+#       namespace: crossplane-system
+#       name: {provider-credentials-secret}
+#       key: credentials

@@ -576,6 +576,106 @@ optimize-dryrun: ## Validate optimization setup
 	@echo "  make optimize"
 
 # =============================================================================
+# Smoke tests (real-LLM end-to-end optimization runs)
+# =============================================================================
+#
+# Smoke fixtures live in tests/smoke/<name>/ with this shape:
+#   tests/smoke/<name>/
+#   ├── README.md          # what this fixture tests + PASS criteria
+#   ├── SPEC.md            # optimization spec (auto-discovered)
+#   ├── <baseline files>   # v0 resources
+#   ├── setup.sh           # optional pre-run provisioning (cluster, mocks)
+#   └── teardown.sh        # optional post-run cleanup
+#
+# The runner copies the fixture into workspace/<name>/, invokes setup.sh if
+# present, runs the optimization, then runs teardown.sh regardless of
+# outcome. Override SMOKE_SKIP_SETUP=1 or SMOKE_KEEP_RESOURCES=1 to bypass.
+
+.PHONY: smoke
+smoke: ## Run a smoke fixture (FIXTURE=<name>, e.g. python-expert | iac-team)
+	@if [ -z "$(FIXTURE)" ]; then \
+		echo "$(RED)Error: FIXTURE not set$(NC)"; \
+		echo "Available fixtures:"; \
+		ls tests/smoke/ 2>/dev/null | grep -v "^_\|README\|\.sh$$\|\.py$$" | sed 's/^/  - /'; \
+		echo ""; \
+		echo "Run with: make smoke FIXTURE=<name>"; \
+		exit 1; \
+	fi
+	@FIXTURE_DIR="tests/smoke/$(FIXTURE)"; \
+	if [ ! -d "$$FIXTURE_DIR" ]; then \
+		echo "$(RED)Error: fixture '$(FIXTURE)' not found at $$FIXTURE_DIR$(NC)"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$FIXTURE_DIR/SPEC.md" ]; then \
+		echo "$(RED)Error: $$FIXTURE_DIR/SPEC.md missing$(NC)"; \
+		exit 1; \
+	fi; \
+	WORKSPACE_DIR="workspace/$(FIXTURE)"; \
+	echo "$(GREEN)==> Smoke fixture: $(FIXTURE)$(NC)"; \
+	echo "  Source:    $$FIXTURE_DIR/"; \
+	echo "  Workspace: $$WORKSPACE_DIR/"; \
+	rm -rf "$$WORKSPACE_DIR"; \
+	mkdir -p "$$WORKSPACE_DIR"; \
+	cp -r "$$FIXTURE_DIR"/. "$$WORKSPACE_DIR"/; \
+	rm -f "$$WORKSPACE_DIR/README.md" "$$WORKSPACE_DIR/EXPECTED.md" \
+	      "$$WORKSPACE_DIR/setup.sh" "$$WORKSPACE_DIR/teardown.sh"; \
+	echo ""; \
+	if [ -x "$$FIXTURE_DIR/setup.sh" ] && [ "$${SMOKE_SKIP_SETUP:-0}" != "1" ]; then \
+		echo "$(CYAN)==> Running setup.sh$(NC)"; \
+		bash "$$FIXTURE_DIR/setup.sh" || { echo "$(RED)setup.sh failed$(NC)"; exit 1; }; \
+	fi; \
+	echo ""; \
+	echo "$(CYAN)==> Running optimization$(NC)"; \
+	if grep -q "## Capabilities" "$$WORKSPACE_DIR/SPEC.md" 2>/dev/null; then \
+		echo "$(CYAN)    (multi-resource path)$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -c "\
+from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization; \
+import asyncio; \
+result = asyncio.run(run_multi_resource_optimization('/workspace/$(FIXTURE)', verbose=True)); \
+print('Success!' if result.success else f'Failed: {result.error}')"; \
+		OPT_EXIT=$$?; \
+	else \
+		echo "$(CYAN)    (single-resource path)$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -m harness.cgf_session --path "/workspace/$(FIXTURE)"; \
+		OPT_EXIT=$$?; \
+	fi; \
+	echo ""; \
+	if [ -x "$$FIXTURE_DIR/teardown.sh" ]; then \
+		echo "$(CYAN)==> Running teardown.sh$(NC)"; \
+		bash "$$FIXTURE_DIR/teardown.sh" || echo "$(YELLOW)teardown.sh returned non-zero$(NC)"; \
+	fi; \
+	echo ""; \
+	if [ $${OPT_EXIT:-0} -eq 0 ]; then \
+		echo "$(GREEN)==> Smoke run completed (exit 0). Inspect artifacts:$(NC)"; \
+		echo "  workspace/$(FIXTURE)/sessions/optimization-state.json"; \
+		echo "  workspace/$(FIXTURE)/eval/"; \
+		echo "  workspace/$(FIXTURE)/CHANGELOG.md"; \
+		echo ""; \
+		echo "  Grafana CGF dashboard: http://localhost:3000/d/casdk-cgf"; \
+	else \
+		echo "$(RED)==> Smoke run FAILED (exit $$OPT_EXIT)$(NC)"; \
+		exit $$OPT_EXIT; \
+	fi
+
+.PHONY: smoke-list
+smoke-list: ## List available smoke fixtures
+	@echo "$(GREEN)Available smoke fixtures (tests/smoke/):$(NC)"
+	@for d in tests/smoke/*/; do \
+		name=$$(basename "$$d"); \
+		if [ -f "$$d/SPEC.md" ]; then \
+			caps=""; \
+			if grep -q "## Capabilities" "$$d/SPEC.md" 2>/dev/null; then \
+				caps=" $(CYAN)[multi-resource]$(NC)"; \
+			else \
+				caps=" $(CYAN)[single-resource]$(NC)"; \
+			fi; \
+			echo "  - $$name$$caps"; \
+		fi; \
+	done
+	@echo ""
+	@echo "Run: $(YELLOW)make smoke FIXTURE=<name>$(NC)"
+
+# =============================================================================
 # Testing
 # =============================================================================
 .PHONY: test
