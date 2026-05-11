@@ -53,8 +53,14 @@ _TAG_TO_SIGNAL: dict[str, SignalType] = {
 }
 
 # Regex matching a signal tag line: [TAG] or [TAG:arg]
+#
+# Permits Markdown-style inline-code / bold decoration around the signal so
+# that an agent which writes `[EVAL_DESIGN_COMPLETE]` (backtick-wrapped for
+# code formatting) or **[VALIDATE_COMPLETE]** (bold) is still detected. The
+# line must otherwise contain ONLY the signal — content on the same line
+# defeats the metadata-collection model below.
 _SIGNAL_PATTERN = re.compile(
-    r"^\[([A-Z][A-Z0-9_]+)(?::([^\]]+))?\]\s*$"
+    r"^[\s`*]*\[([A-Z][A-Z0-9_]+)(?::([^\]]+))?\][\s`*]*$"
 )
 
 # Regex matching a metadata line: key: value (with optional leading whitespace)

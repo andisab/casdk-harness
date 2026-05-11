@@ -258,3 +258,41 @@ class TestSignalParser:
         assert len(signals) == 1
         assert signals[0].metadata["resource_type"] == "agent"
         assert signals[0].metadata["word_count"] == "800"
+
+    def test_parse_signal_wrapped_in_inline_code_backticks(self) -> None:
+        """Agents that wrap the signal in inline-code (`[...]`) should still
+        be detected. Observed in cgf-eval-architect output during the
+        2026-05-11 smoke-fixture run."""
+        response = "`[EVAL_DESIGN_COMPLETE]`\n"
+        signals = self.parser.parse(response)
+        assert len(signals) == 1
+        assert signals[0].type == SignalType.EVAL_DESIGN_COMPLETE
+
+    def test_parse_signal_wrapped_in_bold_markdown(self) -> None:
+        """Agents that bold the signal with **[...]**."""
+        response = "**[VALIDATE_COMPLETE]**\n"
+        signals = self.parser.parse(response)
+        assert len(signals) == 1
+        assert signals[0].type == SignalType.VALIDATE_COMPLETE
+
+    def test_parse_signal_with_argument_in_backticks(self) -> None:
+        """Path-carrying signals still parse when backtick-wrapped."""
+        response = "`[GENERATE_COMPLETE:agents/foo.md]`\n"
+        signals = self.parser.parse(response)
+        assert len(signals) == 1
+        assert signals[0].type == SignalType.GENERATE_COMPLETE
+        assert signals[0].resource_path == "agents/foo.md"
+
+    def test_parse_signal_with_leading_indentation(self) -> None:
+        """Indented signals (4-space code block style) still parse."""
+        response = "    [RESEARCH_COMPLETE]\n"
+        signals = self.parser.parse(response)
+        assert len(signals) == 1
+        assert signals[0].type == SignalType.RESEARCH_COMPLETE
+
+    def test_parse_rejects_signal_with_trailing_content(self) -> None:
+        """Signals that share a line with prose are NOT detected — the
+        metadata-collection model relies on signals being on their own line."""
+        response = "I will emit [RESEARCH_COMPLETE] when done.\n"
+        signals = self.parser.parse(response)
+        assert signals == []
