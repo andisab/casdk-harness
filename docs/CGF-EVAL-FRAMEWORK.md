@@ -1,15 +1,27 @@
 # CGF Stage 3 — Evaluation Framework
 
-**Status:** Draft v2 (consolidates predecessor `CGF-EVAL-FRAMEWORK.md` v1
-2026-03-02 with `CGF-PLAN.md` 2026-05-07 and `REFACTOR.md § 2 Forward Plan`).
+**Status:** Stage 1 (protocol layer, phase extensions), Stage 2 (MCP
+resources to evaluate). Both shipped on `main`. This document is the 
+primary Stage-3 plan, briefly referenced in the Stage-3 section of `REFACTOR.md` as well.
 **Branch:** `contextgrad-eval` (currently equal to `main`).
 **Owner:** @andisab
-**Depends on:** Stage 1 (protocol layer, phase extensions), Stage 2 (MCP
-resources to evaluate). Both shipped on `main`.
 
-> This document is the canonical Stage-3 plan. Predecessor `CGF-PLAN.md` was
-> deleted after merge; the Stage-3 section in `REFACTOR.md` is a
-> one-paragraph pointer back here.
+---
+
+## Terminology
+
+The codebase has several overlapping "phase"-like concepts. To keep
+cross-references in this document and in CLAUDE.md / REFACTOR.md / MEMORY.md
+unambiguous:
+
+| Term | Meaning | Example |
+|---|---|---|
+| **Stage** | A major CGF rollout. Stages 1 and 2 shipped (protocol layer; MCP creation skills). **Stage 3** is this document. Stage 4 is integration & hardening. | "Stage 3 is the eval framework." |
+| **Phase A/B/C/D** | Sub-divisions of Stage 3's rollout, each shipping independently. Unqualified "Phase X" in this document always means Stage 3's Phase X. | "Phase A — Comparison-aware harness." |
+| **A.1, A.2, ...** | Individual tasks within a Phase. | "A.4 is the EvalHarness runner." |
+| **Pipeline phase** | A runtime step in the orchestrator's state machine (`RESEARCH`, `DESIGN`, `GENERATE`, `EVAL_DESIGN`, `ITERATE`, `EXECUTION_EVAL`, `VALIDATE`, `COMPLETE`). Distinct from rollout phases above. | "Wire `EVAL_DESIGN` into the orchestrator." |
+| **Block / Part** | Earlier 2026 reorganization milestones (Blocks 1–4, each with sub-Parts). Block 4 Part 3's sub-phases were also labeled `Phase 3A/B/C/D/E` — those are **not** CGF Stage 3 phases; they were the observability work. Referenced in CLAUDE.md "Completed Recently". | "Block 4 Part 3 Phase 3C shipped Grafana dashboards." |
+| **Task** | An individual item within Stage 4 (Task 1 through Task 8 in § 9 below). | "Task 3 — Human review gates." |
 
 ---
 
@@ -66,14 +78,14 @@ Design informed by:
 - [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
 - [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [SWE-bench harness — per-task Docker pattern](https://www.swebench.com/SWE-bench/reference/harness/)
-- Wang et al. (2024) on position-bias calibration in LLM-as-Judge
-- Bradley-Terry models for aggregating pairwise comparisons (Bradley & Terry, 1952)
+- [Wang et al. (2024) on position-bias calibration in LLM-as-Judge](https://arxiv.org/html/2506.22316v1)
+- [Bradley-Terry models](https://en.wikipedia.org/wiki/Bradley%E2%80%93Terry_model) for aggregating pairwise comparisons (Bradley & Terry, 1952)
 
 ---
 
 ## 2. Architecture
 
-### 2.1 Pipeline (post-Stage-3)
+### 2.1 Pipeline (post-Stage-3 completion)
 
 ```
 SPEC.md (business objective + capabilities + constraints)
@@ -305,7 +317,7 @@ scenarios (Prometheus rule, AlertManager-routed).
 
 ---
 
-## 3. Phased Rollout
+## 3. Stage 3 Phased Rollout
 
 **Working baseline first, but rigor wired in from day one.** Each phase
 ships independently, gated by a runtime smoke + unit-test pass per the
@@ -412,6 +424,8 @@ in Phase B on top of this same data shape.
   histogram.
 - **Plugin validation:** `claude plugin validate` passes on both renamed
   cgf-agents subdirectories.
+
+
 
 ### Phase B — Statistical promotion gating *(weeks 5–6)*
 

@@ -1,6 +1,6 @@
 # Harness Status, Forward Plan, Hardening & Observability
 
-This is the canonical engineering reference for the casdk-harness, consolidating
+This is the main engineering reference for recent casdk-harness hardening work, consolidating
 what used to live in three separate docs (REFACTOR.md, HARDENING.md, OBSERVABILITY.md).
 Five sections, each independently useful:
 
