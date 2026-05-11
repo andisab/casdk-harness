@@ -17,7 +17,7 @@ Five sections, each independently useful:
 **As of 2026-05-07:**
 
 - All four reorganization blocks (1, 2, 3, 4) merged to `main`.
-- `main` and `contextgrad-eval` are equal (both at PR #5 merge `ece4269`); `contextgrad-eval` (renamed 2026-05-07 from `contextgrad-framework`) is reserved for forthcoming Stage 3 work.
+- `main` and `contextgrad-eval` (renamed from `contextgrad-framework` on 2026-05-07) are equal; `contextgrad-eval` is reserved for forthcoming Stage 3 eval-harness work.
 - **Tests:** 1534 unit passing (51 files, 1379 distinct + parametrize), 41 integration tests across 21 files, 82 e2e tests across 5 files.
 - **CGF Stages 1+2 shipped on `main`:** protocol layer, resource architect, DESIGN phase, MCP tool/server creation skills with Python+TypeScript scaffolds.
 - **Multi-resource pipeline working end-to-end:** `PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE`.
@@ -39,23 +39,12 @@ orchestrator: `EVAL_DESIGN` and `EXECUTION_EVAL` — those are Stage 3's job.
 
 ### Stage 3 — Eval Harness
 
-Branch: `contextgrad-eval` (renamed 2026-05-07 from `contextgrad-framework`; equal to `main`).
+Branch: `contextgrad-eval`. Canonical plan: **[`docs/CGF-EVAL-FRAMEWORK.md`](./CGF-EVAL-FRAMEWORK.md)** — covers architecture, four-phase rollout (A: comparison-aware harness, B: statistical promotion gating, C: ephemeral runtime, D: calibration & CI), resolved decisions, telemetry conventions, judge-bias mitigations, and statistical methodology. Wires the previously placeholder `EVAL_DESIGN` and `EXECUTION_EVAL` phases into `multi_resource_orchestrator.py`. Block 4 Phase 3C's `casdk-cgf` Grafana "Future" panels get populated as a side-effect (no dashboard work needed).
 
-**Canonical plan:** [`docs/CGF-EVAL-FRAMEWORK.md`](CGF-EVAL-FRAMEWORK.md) (v2, 2026-05-07). Four phases (A → D) ship independently, gated by runtime smoke + unit-test pass:
-
-- **Phase A** — Comparison-aware in-process harness, two-arm eval (baseline vs candidate), simple-threshold promotion gate, `cgf-eval-architect` agent, three-tier graders (deterministic/trajectory/LLM-judge), wire `EVAL_DESIGN` and `EXECUTION_EVAL` into the orchestrator.
-- **Phase B** — Bootstrap-CI promotion gate, token-regression check, trigger precision/recall, pairwise judge with position balancing.
-- **Phase C** — Ephemeral container runtime (layered Dockerfile, `eval` compose profile, `make eval-*` targets) for SWE-bench-style determinism.
-- **Phase D** — Calibration harness (Cohen's kappa per resource type × judge × rubric), judge ensemble fallback, `.github/workflows/eval.yml` CI on PR.
-
-All open questions previously listed here (eval-suite format, sandbox isolation, grader composition, LLM-judge failure mode) are resolved in CGF-EVAL-FRAMEWORK.md § 0 "Key decisions".
-
-### Stage 4 — Integration & hardening (post-Phase-D)
+### Stage 4 — Integration & hardening (after Stage 3 stabilizes)
 
 End-to-end pipeline tests across the new phases, checkpoint/resume across the
 new phases, ACCEPT/REFINE/REJECT human-review gates surfacing in the orchestrator.
-Detailed planning deferred until after Phase D ships — the shape of the human-review
-UX depends on what calibration data tells us about which gates need human eyes.
 
 ### Independent forward TODOs
 
