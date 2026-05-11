@@ -261,24 +261,24 @@ Each defect → filed on a sub-branch, fixed, smoke re-run.
 
 ## Branch / merge strategy
 
-`phase-a-fixes` should land on `contextgrad-eval` once Phase 1 PASSes
-and the fixes have at least one real-LLM validation behind them.
-Mirror to `main` after Phase 2 PASSes (since main shouldn't carry
-half-validated multi-resource changes).
+`phase-a-fixes` lands on `contextgrad-eval` once Phase 1 PASSes and
+the fixes have at least one real-LLM validation behind them. All this
+work stays on `contextgrad-eval` for the foreseeable future — **no
+mirror to `main` planned**. `main` continues to hold pre-Phase-A
+work; the Phase A / eval-framework / smoke-test surface is an
+integration branch experiment until further notice.
 
-After PASS:
+After Phase 1 PASS:
 
 ```bash
 git checkout contextgrad-eval
 git merge phase-a-fixes
 git push origin contextgrad-eval
-
-# Mirror to main when Phase 2 also passes
-git checkout main
-git merge phase-a-fixes   # or contextgrad-eval, depending on how much
-                          # other contextgrad-eval work has accumulated
-git push origin main
 ```
+
+Phase 2 PASS does not trigger a `main` merge. Continue iterating on
+`contextgrad-eval` with sub-branches for each defect class as it
+surfaces.
 
 ---
 
@@ -294,8 +294,9 @@ If context clears and we pick up here next session:
 4. Fill in `tests/smoke/iac-team/setup.sh` and `teardown.sh` TODOs
 5. Run `make smoke FIXTURE=iac-team` (Phase 2)
 6. Same assessment loop
-7. Merge to `contextgrad-eval` and `main`
+7. Merge to `contextgrad-eval` only (no `main` mirror — see branch
+   strategy above)
 
-After both PASS, the branch is ready to ship. Until then, keep all
-fixes on the same branch so we can iterate without scattering
-half-done work across multiple branches.
+After both PASS, the branch is integrated into `contextgrad-eval` for
+continued iteration. The Phase A surface stays out of `main` for the
+foreseeable future.
