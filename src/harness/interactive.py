@@ -22,6 +22,7 @@ from harness.cli import (
     SessionTotals,
     display_session_info,
     get_user_input,
+    handle_slash_command,
     parse_and_print_message,
     parser,
     print_goodbye_banner,
@@ -82,12 +83,20 @@ async def run_interactive_session() -> None:
                 f"Valid options: sonnet, haiku, opus. Using default (sonnet).[/yellow]\n"
             )
 
+    # --debug is a "show me everything" toggle: bumps log level, forces raw
+    # SDK message dumps, and forces the per-turn stats table on. It supersedes
+    # --quiet when both are passed.
+    if args.debug:
+        args.print_raw = "True"
+        args.stats = "True"
+
     # Create immutable RuntimeConfig with CLI overrides applied
     runtime = RuntimeConfig.from_harness_config(
         config,
         mode="interactive",
         model_override=model_override,
         quiet=args.quiet,
+        debug=args.debug,
     )
 
     # Configure logging using centralized function
@@ -107,6 +116,8 @@ async def run_interactive_session() -> None:
 
     # Cumulative session metrics for the status footer printed after each turn.
     totals = SessionTotals()
+    # Most recent ResultMessage — drives /stats and exit-summary tables.
+    last_result: ResultMessage | None = None
 
     # Create and start agent session with loading spinner
     # Spinner wraps both constructor AND start() since both do I/O
@@ -170,6 +181,19 @@ async def run_interactive_session() -> None:
                 if not user_input.strip():
                     continue
 
+                # Intercept harness-side meta commands (/stats, /help, /clear).
+                # Plugin/SDK slash commands always include a colon
+                # (e.g. /cgf-agents:cgf) and are forwarded to the agent.
+                if user_input.startswith("/") and ":" not in user_input:
+                    if not handle_slash_command(
+                        user_input, console, totals, last_result, runtime.model
+                    ):
+                        console.print(
+                            f"[yellow]Unknown command: {user_input.strip()}. "
+                            f"Type /help for available commands.[/yellow]\n"
+                        )
+                    continue
+
                 # Record user prompt metric
                 session.metrics.record_user_prompt(agent_name)
 
@@ -231,8 +255,11 @@ async def run_interactive_session() -> None:
                     # complementary to the verbose --stats table above.
                     if isinstance(message, ResultMessage):
                         totals.update_from_result(message)
+                        last_result = message
                         if not args.quiet:
-                            print_status_footer(console, totals, runtime.model)
+                            print_status_footer(
+                                console, totals, runtime.model, last_result=message
+                            )
 
             except KeyboardInterrupt:
                 logger.info("Received interrupt signal")
@@ -301,7 +328,18 @@ async def run_interactive_session() -> None:
         logger.info(
             "Shutting down interactive session", session_duration_seconds=session_duration
         )
-        print_goodbye_banner(console)
+
+        # Final session recap — the goodbye banner embeds cumulative +
+        # last-turn stats tables when not in --quiet mode.
+        if not args.quiet:
+            print_goodbye_banner(
+                console,
+                totals=totals,
+                last_result=last_result,
+                model=runtime.model,
+            )
+        else:
+            print_goodbye_banner(console)
 
         # Ensure streams are flushed before shutdown
         await asyncio.sleep(0.1)

@@ -455,6 +455,7 @@ class RuntimeConfig:
         model_override: str | None = None,
         permission_mode_override: str | None = None,
         quiet: bool = False,
+        debug: bool = False,
     ) -> "RuntimeConfig":
         """Create RuntimeConfig from HarnessConfig with optional overrides.
 
@@ -464,6 +465,7 @@ class RuntimeConfig:
             model_override: CLI override for model
             permission_mode_override: CLI override for permission mode
             quiet: Suppress logging output
+            debug: Force DEBUG-level logging (overrides quiet if both set)
         """
         effective_model = model_override or config.claude_model
 
@@ -474,6 +476,14 @@ class RuntimeConfig:
         else:
             effective_permission = config.interactive_permission_mode
 
+        # Log-level precedence: --debug wins over --quiet wins over env config.
+        if debug:
+            effective_log_level = "DEBUG"
+        elif quiet:
+            effective_log_level = "CRITICAL"
+        else:
+            effective_log_level = config.log_level
+
         return cls(
             model=effective_model,
             permission_mode=effective_permission,
@@ -481,8 +491,8 @@ class RuntimeConfig:
             api_timeout=config.claude_api_timeout,
             session_timeout=config.claude_session_timeout,
             checkpoint_interval=config.claude_checkpoint_interval,
-            log_level="CRITICAL" if quiet else config.log_level,
-            quiet=quiet,
+            log_level=effective_log_level,
+            quiet=quiet and not debug,
         )
 
 

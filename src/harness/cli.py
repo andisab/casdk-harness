@@ -28,7 +28,8 @@ from claude_agent_sdk import (
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
-from rich.console import Console
+from rich.columns import Columns
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
@@ -81,6 +82,8 @@ class SessionTotals:
     turns: int = 0
     cumulative_input_tokens: int = 0
     cumulative_output_tokens: int = 0
+    cumulative_cache_read_tokens: int = 0
+    cumulative_cache_creation_tokens: int = 0
     cumulative_cost_usd: float = 0.0
     last_turn_total_tokens: int = 0  # input + cache_read + cache_creation + output
 
@@ -94,6 +97,8 @@ class SessionTotals:
         cache_c = usage.get("cache_creation_input_tokens", 0) or 0
         self.cumulative_input_tokens += in_t
         self.cumulative_output_tokens += out_t
+        self.cumulative_cache_read_tokens += cache_r
+        self.cumulative_cache_creation_tokens += cache_c
         if message.total_cost_usd:
             self.cumulative_cost_usd += message.total_cost_usd
         self.last_turn_total_tokens = in_t + cache_r + cache_c + out_t
@@ -109,13 +114,29 @@ def _format_duration(seconds: float) -> str:
     return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m{seconds % 60:02d}s"
 
 
+def _format_count(n: int) -> str:
+    """Compact token-count formatting: 1234 → '1k', 65362 → '65k'."""
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n // 1000}k"
+    return f"{n / 1_000_000:.1f}M"
+
+
 def print_status_footer(
-    console: Console, totals: SessionTotals, model: str
+    console: Console,
+    totals: SessionTotals,
+    model: str,
+    last_result: ResultMessage | None = None,
 ) -> None:
     """Print a one-line dim status footer after each completed turn.
 
+    Includes cumulative cache totals (read / write) and a short session_id
+    slug (first 8 chars of UUID, git-shorthash style) — both genuinely
+    add to the footer's at-a-glance value without making it unwieldy.
+
     Format:
-        ─ session 4m12s · turn 7 · ctx 22% · 16,234 in / 4,210 out · $0.0631 · sonnet ─
+        ─ 4m12s · turn 7 · ctx 22% · 16k in / 4k out · cache 65k r / 22k w · $0.0631 · sonnet · 61011358 ─
     """
     elapsed = (datetime.now() - totals.started_at).total_seconds()
     ctx_window = _MODEL_CONTEXT_WINDOW.get(model, _DEFAULT_CONTEXT_WINDOW)
@@ -124,16 +145,133 @@ def print_status_footer(
     )
     # Compact model label — strip the date suffix for readability.
     model_label = model.replace("claude-", "").split("-")[0] if model else "?"
-    line = (
-        f"─ session {_format_duration(elapsed)}"
-        f" · turn {totals.turns}"
-        f" · ctx {ctx_pct}%"
-        f" · {totals.cumulative_input_tokens:,} in"
-        f" / {totals.cumulative_output_tokens:,} out"
-        f" · ${totals.cumulative_cost_usd:.4f}"
-        f" · {model_label} ─"
+    sid_slug = (
+        last_result.session_id[:8] if last_result and last_result.session_id else None
     )
+    parts = [
+        f"─ {_format_duration(elapsed)}",
+        f"turn {totals.turns}",
+        f"ctx {ctx_pct}%",
+        f"{_format_count(totals.cumulative_input_tokens)} in"
+        f" / {_format_count(totals.cumulative_output_tokens)} out",
+        f"cache {_format_count(totals.cumulative_cache_read_tokens)} r"
+        f" / {_format_count(totals.cumulative_cache_creation_tokens)} w",
+        f"${totals.cumulative_cost_usd:.4f}",
+        model_label,
+    ]
+    if sid_slug:
+        parts.append(sid_slug)
+    line = " · ".join(parts) + " ─"
     console.print(f"[dim]{line}[/dim]\n")
+
+
+def _build_session_totals_table(
+    totals: SessionTotals, model: str, duration_s: float
+) -> Table:
+    """Build the cumulative-totals table used by /stats and the exit summary."""
+    table = Table(title="Session Totals", show_header=False, title_style="bold blue")
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="yellow")
+    table.add_row("Turns", str(totals.turns))
+    table.add_row("Duration", _format_duration(duration_s))
+    table.add_row("Input Tokens", f"{totals.cumulative_input_tokens:,}")
+    table.add_row("Output Tokens", f"{totals.cumulative_output_tokens:,}")
+    table.add_row("Cost (USD)", f"${totals.cumulative_cost_usd:.4f}")
+    ctx_window = _MODEL_CONTEXT_WINDOW.get(model, _DEFAULT_CONTEXT_WINDOW)
+    ctx_pct = min(
+        100, int(round(100 * totals.last_turn_total_tokens / max(1, ctx_window)))
+    )
+    table.add_row("Context Used", f"{ctx_pct}% of {ctx_window:,}")
+    table.add_row("Model", model)
+    return table
+
+
+def _build_last_turn_table(message: ResultMessage) -> Table:
+    """Build the last-turn breakdown table used by /stats."""
+    table = Table(title="Last Turn", show_header=False, title_style="bold blue")
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="yellow")
+    usage = message.usage or {}
+    table.add_row("Session ID", message.session_id or "—")
+    table.add_row("Result", message.subtype or "—")
+    table.add_row("Duration", f"{message.duration_ms / 1000:.2f}s")
+    table.add_row(
+        "Cost (USD)",
+        f"${message.total_cost_usd:.4f}" if message.total_cost_usd else "N/A",
+    )
+    table.add_row("Input", f"{usage.get('input_tokens', 0):,}")
+    table.add_row("Output", f"{usage.get('output_tokens', 0):,}")
+    table.add_row("Cache Read", f"{usage.get('cache_read_input_tokens', 0):,}")
+    table.add_row("Cache Created", f"{usage.get('cache_creation_input_tokens', 0):,}")
+    return table
+
+
+def render_stats(
+    totals: SessionTotals,
+    last_result: ResultMessage | None,
+    model: str,
+    console: Console,
+) -> None:
+    """Render cumulative + last-turn tables side-by-side.
+
+    Used by both the interactive `/stats` slash command and the
+    session-exit summary. If no turn has completed yet, only the
+    cumulative table is printed.
+    """
+    duration_s = (datetime.now() - totals.started_at).total_seconds()
+    totals_table = _build_session_totals_table(totals, model, duration_s)
+    if last_result is None:
+        console.print(totals_table)
+        console.print(
+            "[dim](no completed turns yet — last-turn breakdown unavailable)[/dim]\n"
+        )
+        return
+    last_turn_table = _build_last_turn_table(last_result)
+    console.print(Columns([totals_table, last_turn_table], equal=False, expand=False))
+
+
+def render_help(console: Console) -> None:
+    """Print the list of available harness-side slash commands."""
+    table = Table(title="Commands", show_header=False, title_style="bold blue")
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(style="dim")
+    table.add_row("/stats", "Show session statistics (cumulative + last turn)")
+    table.add_row("/help", "Show this help")
+    table.add_row("/clear", "Clear the screen")
+    table.add_row("exit | quit | q", "End the session")
+    console.print(table)
+    console.print(
+        "\n[dim]Plugin commands (e.g. /cgf-agents:cgf) are forwarded to the agent.[/dim]\n"
+    )
+
+
+def handle_slash_command(
+    user_input: str,
+    console: Console,
+    totals: SessionTotals,
+    last_result: ResultMessage | None,
+    model: str,
+) -> bool:
+    """Try to handle a harness-side slash command.
+
+    Returns True if the input was a recognized meta command (caller should
+    skip agent dispatch), False otherwise so the caller can forward to the
+    agent (for SDK/plugin commands like `/cgf-agents:cgf`).
+
+    Slash commands are intercepted client-side — they never reach the
+    agent, consume no tokens, and incur no API cost.
+    """
+    cmd = user_input.strip().lower()
+    if cmd == "/stats":
+        render_stats(totals, last_result, model, console)
+        return True
+    if cmd == "/help":
+        render_help(console)
+        return True
+    if cmd == "/clear":
+        console.clear()
+        return True
+    return False
 
 
 def _get_prompt_session() -> PromptSession:
@@ -198,8 +336,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "--stats",
     "-s",
-    default="True",
-    help="Print session stats on exit (default: True)",
+    default="False",
+    help="Print the full stats table after every turn (default: False; use /stats on demand instead)",
 )
 parser.add_argument(
     "--model",
@@ -224,6 +362,15 @@ parser.add_argument(
     "-q",
     action="store_true",
     help="Suppress all system logs (only show chat messages)",
+)
+parser.add_argument(
+    "--debug",
+    "-d",
+    action="store_true",
+    help=(
+        "Verbose mode: DEBUG-level logs, raw SDK messages, per-turn stats "
+        "table. Overrides --quiet if both are set."
+    ),
 )
 
 
@@ -613,53 +760,41 @@ def parse_and_print_message(
                 print_rich_message("tool_result", formatted_content, console)
 
     elif isinstance(message, ResultMessage):
+        # Per-turn data is captured by:
+        #   - compact status footer (printed by interactive.py / autonomous.py)
+        #   - /stats command (cumulative + last-turn tables on demand)
+        #   - Prometheus metrics (SDK emits token/cost via claude_code_*)
+        #   - OTel tracer spans (session_id, duration)
+        # The full Session Stats table renders only when print_stats=True
+        # (--stats=true on CLI; default is False).
         if print_stats:
-            result = message.subtype
-            session_id = message.session_id
-            duration_s = message.duration_ms / 1000
-            cost_usd = message.total_cost_usd
-            input_tokens = message.usage.get("input_tokens", 0)
-            output_tokens = message.usage.get("output_tokens", 0)
-            cache_read_tokens = message.usage.get("cache_read_input_tokens", 0)
-            cache_creation_tokens = message.usage.get("cache_creation_input_tokens", 0)
-
+            usage = message.usage or {}
             session_stats = {
-                "Session ID": session_id,
-                "Result": result,
-                "Duration (s)": f"{duration_s:.2f}",
-                "Cost (USD)": f"${cost_usd:.4f}" if cost_usd else "N/A",
-                "Input Tokens": f"{input_tokens:,}",
-                "Output Tokens": f"{output_tokens:,}",
-                "Cache Read Tokens": f"{cache_read_tokens:,}",
-                "Cache Creation Tokens": f"{cache_creation_tokens:,}",
+                "Session ID": message.session_id,
+                "Result": message.subtype,
+                "Duration (s)": f"{message.duration_ms / 1000:.2f}",
+                "Cost (USD)": (
+                    f"${message.total_cost_usd:.4f}"
+                    if message.total_cost_usd
+                    else "N/A"
+                ),
+                "Input Tokens": f"{usage.get('input_tokens', 0):,}",
+                "Output Tokens": f"{usage.get('output_tokens', 0):,}",
+                "Cache Read Tokens": f"{usage.get('cache_read_input_tokens', 0):,}",
+                "Cache Creation Tokens": (
+                    f"{usage.get('cache_creation_input_tokens', 0):,}"
+                ),
             }
-
-            if session_stats:
-                stats_table = Table(
-                    title="Session Stats",
-                    show_header=False,
-                    title_style="bold blue",
-                )
-                stats_table.add_column(style="cyan", no_wrap=True)
-                stats_table.add_column(style="yellow")
-
-                for stat_name, stat_value in session_stats.items():
-                    stats_table.add_row(stat_name, str(stat_value))
-
-                console.print(stats_table, end="\n")
-
-                # Log stats to structlog
-                logger.info(
-                    "Session completed",
-                    session_id=session_id,
-                    result=result,
-                    duration_seconds=duration_s,
-                    cost_usd=cost_usd,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cache_read_tokens=cache_read_tokens,
-                    cache_creation_tokens=cache_creation_tokens,
-                )
+            stats_table = Table(
+                title="Session Stats",
+                show_header=False,
+                title_style="bold blue",
+            )
+            stats_table.add_column(style="cyan", no_wrap=True)
+            stats_table.add_column(style="yellow")
+            for stat_name, stat_value in session_stats.items():
+                stats_table.add_row(stat_name, str(stat_value))
+            console.print(stats_table, end="\n")
 
 
 def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
@@ -676,7 +811,7 @@ def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
     # so the harness still starts cleanly in stripped-down environments.
     if _HAS_FIGLET:
         with contextlib.suppress(Exception):
-            ascii_art = Figlet(font="small").renderText("CASDK")
+            ascii_art = Figlet(font="small").renderText("CASDK HARNESS")
             console.print(f"[bright_cyan]{ascii_art}[/bright_cyan]", end="")
 
     banner_text = f"""
@@ -703,22 +838,40 @@ def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
     logger.info("Interactive session started", agent=agent_name, model=model)
 
 
-def print_goodbye_banner(console: Console) -> None:
-    """
-    Print a goodbye banner when exiting the session.
+def print_goodbye_banner(
+    console: Console,
+    totals: SessionTotals | None = None,
+    last_result: ResultMessage | None = None,
+    model: str | None = None,
+) -> None:
+    """Print the session-end panel.
 
-    Args:
-        console: Rich console instance
+    When `totals` is provided, the panel embeds the cumulative + last-turn
+    stats tables side-by-side above the persistence-confirmation line.
+    When omitted, the panel shows only the persistence line (used by
+    modes that don't track SessionTotals).
     """
-    goodbye_text = """
-[bold green]Session Ended[/bold green]
+    renderables: list = []
 
-[dim]Thank you for using Claude Agent SDK Harness![/dim]
-[dim]All session data has been saved and checkpointed.[/dim]
-    """
+    if totals is not None:
+        duration_s = (datetime.now() - totals.started_at).total_seconds()
+        totals_table = _build_session_totals_table(totals, model or "?", duration_s)
+        if last_result is not None:
+            last_turn_table = _build_last_turn_table(last_result)
+            renderables.append(
+                Columns([totals_table, last_turn_table], equal=False, expand=False)
+            )
+        else:
+            renderables.append(totals_table)
+        renderables.append(Text(""))  # blank-line spacer
+
+    renderables.append(
+        Text.from_markup("[dim]Session data saved and checkpointed.[/dim]")
+    )
+
     panel = Panel(
-        goodbye_text.strip(),
-        title="👋 Goodbye",
+        Group(*renderables),
+        title="Session ended. Goodbye! 👋",
         border_style="green",
         padding=(1, 2),
         expand=True,
