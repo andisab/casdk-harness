@@ -1,6 +1,79 @@
 # Smoke Test Validation Plan
 
-**Status as of 2026-05-11 end-of-session:** `phase-a-fixes` branch
+## ✅ Phase 1 — PASSED (2026-05-11, commit `12633e9`)
+
+Run #7 of the `python-expert` fixture met **all 10** pass criteria
+(see the "Pass criteria for Phase 1 smoke run" section below):
+
+- Exit 0; `task_list.current_phase == complete`; `iteration == 1`
+- Signal counts: `research=1`, `iterate=1`, `evaluate=1`
+- Baseline `python-expert.md` hash unchanged across the run
+- `reviews/v1_review.md` written at the correct path with parseable
+  `<cgf_directive>` XML; ACCEPT honored as terminal (no further iter)
+- Wall time ~22 min (≤25 min target)
+- 6 distinct defects surfaced + fixed across runs #1–#6; each fix
+  prevented its target defect from recurring on subsequent runs
+
+Hardening that landed with the PASS (commit `12633e9`):
+
+- **P0.1** baseline-hash integrity check + `CGF_BASELINE_HASH_CHECK` override
+- **P0.2** pair-wise `iter ≤ eval + 1` contract enforcement
+- **P0.3** hard iteration cap via `CGF_MAX_ITERATIONS` (default 3)
+- **P0.4** review-on-disk + recommendation parse; ACCEPT/REJECT force terminal
+- **P1.4** signal watchdog (warn by default; `CGF_SIGNAL_STRICT=1` to fail)
+- 10s file-poll grace period for Task-subagent filesystem-write race
+- Stopped embedding resource content in orchestrator system prompt
+  (was hitting Linux `MAX_ARG_STRLEN=128KB`)
+- Orchestrator prompt rewritten with `<critical_rules>` /
+  `<lock_step_protocol>` / `<stop_after_signal_contract>` XML sections,
+  10 Hard Rules, lock-step transcript examples
+- Evaluator prompt: SPEC.md is input #1; mandatory `<cgf_directive>`
+  XML header replaces ambiguous markdown-bullet contract
+- 40 new unit tests in `tests/unit/test_cgf_session.py`; suite at 1791
+  passing post-hardening
+
+Follow-up captured (deferred to after Phase 2): **Stage 4 Task 9 —
+CREATE-mode support** in `cgf_session.py` (commit `822722c`,
+`docs/CGF-EVAL-FRAMEWORK.md`). The orchestrator prompt documents a
+CREATE phase but the Python runner hard-codes start-in-research; this
+branch is dead from the runner's perspective. ~80–120 LoC sketch +
+fixture derived from the Phase-1A v1 output.
+
+### Runtime evidence — what's on disk now
+
+The workspace dir on the host is clean (only `.DS_Store` + `.git` —
+the smoke artifacts from run #7 were cleared post-run). The
+authoritative record of the PASS is therefore:
+
+- Commit `12633e9` message body (enumerates the 10 pass criteria met
+  by run #7, including signal counts, baseline-hash, wall time)
+- 40 new unit tests in `tests/unit/test_cgf_session.py` covering all
+  P0/P1 hardening + the XML directive parser + the 3 legacy markdown
+  fallbacks; full suite at **1791 passing** post-hardening
+- `memory/checkpoints/` shows only later autonomous-mode checkpoints
+  from 2026-05-12, not the smoke run — no live `summary.json` or
+  `task_list.json` to re-summarize from disk
+
+Re-running the smoke is the only way to regenerate the on-disk
+artifacts; the contract is now enforced in code so a regression would
+hard-fail rather than silently produce bad output.
+
+### Branch state
+
+- Branch: `phase-a-fixes` (10 commits ahead of `contextgrad-eval`,
+  branched off `7c31269`; tip commits are `12633e9` hardening and
+  `822722c` Stage 4 Task 9 doc).
+- Per the Branch / merge strategy section below, the next step after
+  Phase 1 PASS is `git merge phase-a-fixes` onto `contextgrad-eval`
+  and push. **Not yet done** — the merge is pending.
+
+**Next:** (a) merge `phase-a-fixes` → `contextgrad-eval`; (b) start
+Phase 2 (iac-team, multi-resource path) with the R1–R5 research
+questions below.
+
+---
+
+**Original status (2026-05-11 mid-session):** `phase-a-fixes` branch
 holds the Phase A defect fixes + the `tests/smoke/` framework with
 two fixtures (`python-expert`, `iac-team`). Two python-expert smoke
 runs have executed; both surfaced protocol bugs (orchestrator agent
@@ -8,7 +81,7 @@ skipping the evaluate phase, generating multiple iterations without
 targeted feedback, overwriting the pristine baseline file). This
 document is the **single source of truth** for both:
 
-- **Phase 1** — finish hardening + a clean python-expert run (single-resource path)
+- **Phase 1** — finish hardening + a clean python-expert run (single-resource path) — ✅ PASSED, see banner above
 - **Phase 2** — design + run iac-team smoke (multi-resource path)
 
 Execute Phase 1 top-to-bottom first. Phase 2 work is gated on Phase 1
