@@ -344,13 +344,13 @@ autonomous-status: ## Show autonomous development progress (use between sessions
 	@echo ""
 
 .PHONY: init-spec
-init-spec: ## Copy SPEC.example.md template to workspace/SPEC.md
+init-spec: ## Copy AUTONOMOUS_SPEC.example.md template to workspace/SPEC.md
 	@if [ -f workspace/SPEC.md ]; then \
 		echo "$(YELLOW)workspace/SPEC.md already exists$(NC)"; \
 		echo "Remove it first or edit directly: rm workspace/SPEC.md"; \
 	else \
-		cp docs/examples/SPEC.example.md workspace/SPEC.md; \
-		echo "$(GREEN)Created workspace/SPEC.md from docs/examples/SPEC.example.md$(NC)"; \
+		cp docs/examples/AUTONOMOUS_SPEC.example.md workspace/SPEC.md; \
+		echo "$(GREEN)Created workspace/SPEC.md from docs/examples/AUTONOMOUS_SPEC.example.md$(NC)"; \
 		echo "Edit workspace/SPEC.md to describe your project, then run: make autonomous"; \
 	fi
 

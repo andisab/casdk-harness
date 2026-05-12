@@ -72,7 +72,7 @@ Give Claude a SPEC.md and it builds the project end-to-end. The `workspace` dire
 make init-spec
 
 # 2. Edit workspace/SPEC.md with what you want built
-#    (see docs/examples/SPEC.example.md for reference)
+#    (see docs/examples/AUTONOMOUS_SPEC.example.md for reference)
 
 # 3. Run autonomous mode
 make autonomous
@@ -125,7 +125,7 @@ make optimize
 
 ```bash
 mkdir -p workspace/my-plugin
-cp docs/examples/MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
+cp docs/examples/CGF_MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
 # edit SPEC.md to describe purpose, capabilities, constraints
 make optimize
 ```
@@ -179,6 +179,6 @@ make doctor                # Setup diagnostics
 
 - **Full overview**: [README.md](./README.md)
 - **Technical reference**: [CLAUDE.md](./CLAUDE.md) — architecture, configuration, troubleshooting
-- **Spec templates**: [docs/examples/](./docs/examples/) — `SPEC.example.md`, `CGF_SPEC.example.md`, `MULTI_RESOURCE_SPEC.example.md`
+- **Spec templates**: [docs/examples/](./docs/examples/) — `AUTONOMOUS_SPEC.example.md`, `CGF_SPEC.example.md`, `CGF_MULTI_RESOURCE_SPEC.example.md`
 - **CGF deep dive**: [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md)
 - **Monitoring**: Grafana at <http://localhost:3000> (`admin` / `${GRAFANA_PASSWORD:-changeme123}`)

@@ -11,7 +11,7 @@
 ## Quick Start
 
 1. Create a workspace directory: `mkdir -p workspace/my-plugin`
-2. Copy this file: `cp docs/examples/MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md`
+2. Copy this file: `cp docs/examples/CGF_MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md`
 3. Edit SPEC.md with your requirements (purpose, capabilities, constraints)
 4. Run: `make optimize WORKSPACE=workspace/my-plugin`
 
