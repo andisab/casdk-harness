@@ -781,6 +781,80 @@ display eval-results.json summary with pass^k scores. State tracks
 - Memory MCP entity for `ab-casdk-harness` — update observations to reflect
   Stage 3 shipped.
 
+### Task 9 — CREATE-mode support in `cgf_session.py` (single-resource path)
+
+**Why this is here:** the orchestrator prompt (`cgf-orchestrator.md`)
+documents a CREATE phase that dispatches `context-engineering:context-engineer`
+to author an initial draft when no resource file exists. The
+multi-resource `multi_resource_orchestrator.py` path exercises this
+naturally via its GENERATE phase. The single-resource `cgf_session.py`
+path, however, hard-codes start-in-`research` and errors out when
+`_find_resource_path()` returns None — the CREATE branch in the
+orchestrator prompt is dead code from Python's perspective.
+
+This was surfaced during Phase-1A smoke validation (May 2026) when an
+attempt to author a Phase-1B "from-zero" smoke fixture revealed the
+gap. Phase 1A's refine-only smoke (`tests/smoke/python-expert/`) is the
+covered path; from-zero needs this task.
+
+**Scope (~80–120 LoC + tests + prompt updates):**
+
+- `src/harness/cgf_session.py`:
+  - Add `"create"` to `CGF_PHASES`.
+  - Detect creation mode: SPEC.md loads successfully but `spec.resource_path`
+    does not exist on disk. Distinct from the current "error: no resource
+    file" path.
+  - Initialize `task_list.current_phase = "create"` in creation mode
+    (instead of `"research"`).
+  - Add a `[CREATE_COMPLETE]` signal handler that:
+    - Verifies `spec.resource_path` now exists.
+    - Captures `baseline_hash` at this point (the freshly-created file
+      IS the baseline — there is no pristine pre-CREATE version to
+      protect).
+    - Transitions to `"research"`.
+    - Records a `create` checkpoint with the artifact path.
+  - Defer P0.1 baseline-hash capture until after `[CREATE_COMPLETE]`
+    (currently runs at start of `_run_optimization_phase`; gate on
+    `current_phase != "create"`).
+  - Resume support: a run interrupted in `create` phase resumes by
+    re-checking whether the resource exists; if yes, transition to
+    research; if no, restart CREATE.
+
+- `src/harness/plugins/cgf-agents/agents/design/cgf-orchestrator.md`:
+  - Add explicit creation-mode trigger to INIT phase: when the loaded
+    spec's resource file is missing, dispatch `context-engineering:context-engineer`
+    via Task tool with the SPEC.md content + the target resource path,
+    then emit `[CREATE_COMPLETE]` in a separate message after the Task
+    returns AND the file exists (same post-Task discipline as
+    `[EVALUATE_COMPLETE]` per Hard Rule #10).
+  - Add `[CREATE_COMPLETE]` to the phase signals table.
+  - Add a BAD transcript: dispatching context-engineer AND emitting
+    `[CREATE_COMPLETE]` in the same message → file race.
+
+- `tests/unit/test_cgf_session.py`: ~6–10 new tests
+  - Creation-mode detection (SPEC.md present, resource missing → "create" phase).
+  - Baseline-hash deferred to post-CREATE.
+  - `[CREATE_COMPLETE]` signal accepted only when resource file exists.
+  - Resume from interrupted CREATE.
+
+- `tests/smoke/python-expert-create/` fixture:
+  - `SPEC.md` derived from `workspace/python-expert/python-expert-v1.md`
+    (the Phase-1A output) — same capability surface, same target
+    improvements — so a successful CREATE run is roughly equivalent to
+    the Phase-1A refine run.
+  - No `python-expert.md` file.
+  - Pass criteria: same as Phase 1A, plus `current_phase=complete`
+    arrives via `create → research → iterate → evaluate → complete`
+    (5 phase transitions instead of 4).
+
+**Dependencies:** none — can ship after Phase 2 (iac-team multi-resource
+smoke) stabilizes. Doesn't interact with Stage 3 phases B–D.
+
+**Out of scope here (Stage 5+):** legacy `--agent NAME` CLI flag for
+creation mode without SPEC.md (`/cgf-create` slash command pattern from
+the orchestrator prompt examples). Keep CREATE driven exclusively from
+SPEC.md to match the rest of the pipeline.
+
 ---
 
 ## Appendix — Verification / runtime smoke checklist
