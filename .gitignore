@@ -111,6 +111,12 @@ coverage.xml
 .dmypy.json
 dmypy.json
 
+# ruff
+.ruff_cache/
+
+# Node / JS (MCP TypeScript scaffolds, future JS work)
+node_modules/
+
 # Jupyter
 .ipynb_checkpoints
 
