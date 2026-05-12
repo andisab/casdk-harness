@@ -636,7 +636,7 @@ print('Success!' if result.success else f'Failed: {result.error}')"; \
 		OPT_EXIT=$$?; \
 	else \
 		echo "$(CYAN)    (single-resource path)$(NC)"; \
-		docker compose $(COMPOSE_FILES) exec -T main-agent python -m harness.cgf_session --path "/workspace/$(FIXTURE)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -m harness.cgf_session --path "/workspace/$(FIXTURE)" --non-interactive; \
 		OPT_EXIT=$$?; \
 	fi; \
 	echo ""; \

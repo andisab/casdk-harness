@@ -269,6 +269,114 @@ harness_eval_judge_no_decision_total = Counter(
 )
 
 
+# Run-level status gauges (low cardinality, always populated during a run).
+# Designed for Grafana stat-panel queries like
+# ``max by (phase) (harness_run_phase_info > 0)``.
+harness_run_phase_info = Gauge(
+    "harness_run_phase_info",
+    "Current optimization run phase indicator (1 = active, 0 = inactive). "
+    "Labels: resource (workspace-relative resource path), "
+    "phase (state-machine name, e.g. research, research_iterate, design, "
+    "generate, eval_design, iterate, execution_eval, validate, complete).",
+    ["resource", "phase"],
+)
+
+harness_run_iteration = Gauge(
+    "harness_run_iteration",
+    "Current iteration count for an in-flight optimization run.",
+    ["resource"],
+)
+
+harness_run_path_info = Gauge(
+    "harness_run_path_info",
+    "Active optimization path indicator (1 = active, 0 = inactive). "
+    "path is 'single' (cgf_session.py for one resource at a time) or "
+    "'multi' (multi_resource_orchestrator.py for plugin/skill-set/workflow "
+    "SPECs). Used by the Grafana 'Active Run Status' row to render the "
+    "correct pipeline panel for the run that's currently active.",
+    ["resource", "path"],
+)
+
+_RUN_PATHS = ("single", "multi")
+
+
+def record_run_path(resource: str, path: str) -> None:
+    """Mark `path` (single | multi) as the active optimization path for
+    `resource`.  Clears the other path to 0 so the dashboard query
+    `harness_run_path_info == 1` returns exactly one path label.
+    """
+    if path not in _RUN_PATHS:
+        logger.warning("record_run_path: unknown path", path=path)
+        return
+    try:
+        for p in _RUN_PATHS:
+            harness_run_path_info.labels(resource=resource, path=p).set(
+                1 if p == path else 0
+            )
+    except Exception as e:  # pragma: no cover — observability never raises
+        logger.debug("record_run_path failed", error=str(e))
+
+_active_phases: dict[str, str] = {}
+
+# Phase progression for Grafana — ordered set of every phase name either
+# pipeline (single-resource cgf_session.py and multi-resource orchestrator) can
+# emit. Pre-seeded with value 0 at run start so the dashboard bargauge shows
+# all phases up front, with one of them transitioning to 1 as the run
+# advances. Keep this synchronized with cgf_session.py phase transitions and
+# OptimizationPhase enum (lowercased).
+KNOWN_RUN_PHASES: tuple[str, ...] = (
+    "research",
+    "design",
+    "qa",
+    "test_gen",
+    "generate",
+    "optimize",
+    "eval_design",
+    "iterate",
+    "execution_eval",
+    "evaluate",
+    "validate",
+    "finalize",
+    "complete",
+    "failed",  # contract-violation terminal state
+)
+
+
+def init_run_phases(resource: str) -> None:
+    """Seed phase gauge with 0 for every known phase so the Grafana bargauge
+    shows the full progression from the start of the run."""
+    try:
+        for phase in KNOWN_RUN_PHASES:
+            harness_run_phase_info.labels(resource=resource, phase=phase).set(0)
+    except Exception as e:  # pragma: no cover
+        logger.debug("init_run_phases failed", error=str(e))
+
+
+def record_phase_entry(resource: str, phase: str) -> None:
+    """Record entering a new phase. Marks any previous phase for the same
+    resource as inactive (set to 0) and the new phase as active (set to 1).
+
+    Safe to call from any code path; failures are swallowed so observability
+    code never breaks the pipeline.
+    """
+    try:
+        prev = _active_phases.get(resource)
+        if prev and prev != phase:
+            harness_run_phase_info.labels(resource=resource, phase=prev).set(0)
+        _active_phases[resource] = phase
+        harness_run_phase_info.labels(resource=resource, phase=phase).set(1)
+    except Exception as e:  # pragma: no cover — observability must never raise
+        logger.debug("record_phase_entry failed", error=str(e))
+
+
+def record_iteration(resource: str, iteration: int) -> None:
+    """Record current iteration count for a resource."""
+    try:
+        harness_run_iteration.labels(resource=resource).set(iteration)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_iteration failed", error=str(e))
+
+
 class MetricsCollector:
     """Collects and exports metrics for monitoring.
 

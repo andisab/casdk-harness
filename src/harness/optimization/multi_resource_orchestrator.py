@@ -92,6 +92,7 @@ from harness.optimization._orchestrator_phases import (
 from harness.optimization._orchestrator_phases import (
     validate as _validate_phase,
 )
+from harness.monitoring import init_run_phases, record_phase_entry, record_run_path
 from harness.progress import (
     MultiResourceState,
     OptimizationPhase,
@@ -395,6 +396,16 @@ class MultiResourceOrchestrator:
         if self._progress:
             self._progress.save_optimization_state(state)
 
+        # Seed run-phase gauge for Grafana from the very first phase
+        try:
+            ws = self.config.workspace_dir
+            resource_label = ws.name if ws else "unknown"
+        except Exception:
+            resource_label = "unknown"
+        record_run_path(resource_label, "multi")
+        init_run_phases(resource_label)
+        record_phase_entry(resource_label, state.current_phase.name.lower())
+
         return state
 
     async def _run_pipeline(self) -> None:
@@ -464,6 +475,14 @@ class MultiResourceOrchestrator:
 
         self._state.advance_phase(next_phase)
         self._progress.save_optimization_state(self._state)
+
+        # Update Prometheus gauge for Grafana run-status panel
+        try:
+            ws = self.config.workspace_dir
+            resource_label = ws.name if ws else "unknown"
+        except Exception:
+            resource_label = "unknown"
+        record_phase_entry(resource_label, next_phase.name.lower())
 
         logger.info(
             "Phase complete",

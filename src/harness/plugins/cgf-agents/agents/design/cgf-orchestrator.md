@@ -284,46 +284,54 @@ verbose: true
 
 ### RESEARCH_ITERATE Phase (Default Agentic Mode)
 
-**Purpose:** Improve resource using research findings + LLM critique. This is the DEFAULT optimization approach.
+**Purpose:** Produce ONE candidate version per invocation. Iteration N
+maps to exactly ONE call to the optimizer, ONE `v{N}.md` file, ONE
+`[ITERATION_COMPLETE]` signal, and exactly ONE evaluation cycle.
+**There is no inner loop here.** The outer loop is owned by the
+runner: orchestrator emits `[ITERATION_COMPLETE]`, runner injects the
+"dispatch evaluator" directive, evaluator writes review, orchestrator
+emits `[EVALUATE_COMPLETE]`, runner decides ACCEPT / REFINE / REJECT.
 
 **Guards:**
 - eval_criteria.yaml exists
 - run_state indicates RESEARCH completed
+- Current iteration N is known (starts at 1; refinement bumps to N+1)
 
-**Actions:**
-1. Update run_state.json: research_iterate_started timestamp
-2. Read current resource content
-3. Spawn cgf-agents:cgf-prompt-optimizer via Task tool:
+**Actions (one pass = one candidate):**
+1. Update run_state.json: iterate_started timestamp, current_iteration=N
+2. Read current resource content (the previous version: original on
+   iter 1, `v{N-1}.md` thereafter)
+3. Spawn cgf-agents:cgf-prompt-optimizer via Task tool, with a
+   prompt that asks for EXACTLY ONE candidate (no internal looping):
    ```
-   "Improve {resource_id} using research-based critique.
+   "Produce ONE improved candidate for {resource_id} as iteration {N}.
 
    Workspace: workspace/{resource_id}/
    Mode: AGENTIC (default - no test suite)
 
    Inputs:
-   - Resource: {resource_path}
+   - Resource (read-only baseline): {resource_path}
+     (or workspace/{resource_id}/{resource_id}-v{N-1}.md for N > 1)
    - Criteria: research/eval_criteria.yaml
    - Research: research/notes/*.yaml
+   - SPEC: workspace/{resource_id}/SPEC.md   ← user's brief
+   - Refinement directives (only if N > 1): the runner injected
+     TARGET_SECTIONS / TARGET_COMPETENCIES / REFINEMENT_HINTS in the
+     previous turn — pass them verbatim.
 
-   The cgf-prompt-optimizer will:
-   1. Analyze resource against competencies in eval_criteria.yaml
-   2. Apply domain knowledge from research findings
-   3. Use LLM self-critique to identify gaps and improvements
-   4. Generate improved resource iteratively
-   5. Evaluate quality using research criteria (no test scores)
+   Output EXACTLY ONE file:
+     workspace/{resource_id}/{resource_id}-v{N}.md
 
-   Output improved resource to workspace/{resource_id}/{resource_id}-v{N}.md"
+   Do NOT internally loop and write v{N+1}, v{N+2}.  Do NOT
+   self-evaluate.  The evaluator (cgf-result-evaluator) is a separate
+   subagent that runs AFTER you return.  Your single output file is
+   the candidate that will be graded against the original and SPEC."
    ```
-4. Wait for optimization completion (check for {resource_id}-v{N}.md)
-5. Parse improvement summary from cgf-prompt-optimizer response
-6. Update run_state.json:
-   - research_iterate_completed timestamp
-   - current_version: N
-   - improvement_summary
-7. If `review_mode: true`:
-   - Transition to CHECKPOINT_ITERATE
-8. Else:
-   - Transition to FINALIZE with recommendation=ACCEPT (research-only auto-accepts)
+4. Wait for the v{N}.md file to land on disk.
+5. Emit `[ITERATION_COMPLETE]` on its own line (same message as the
+   confirmation of write, per the STOP-after-signal contract).
+6. The runner will then inject the "dispatch evaluator" directive.
+   Follow it verbatim — do NOT preempt with another optimizer call.
 
 **Checkpoint behavior (CHECKPOINT_ITERATE):**
 - **proceed**: Accept current iteration, continue to FINALIZE
@@ -346,24 +354,46 @@ verbose: true
    ```
    "Evaluate optimization results for workspace/{resource_id}
 
-   Artifacts to analyze:
-   - Optimized: {resource_id}-v{N}.md
-   - Summary: sessions/{resource_id}-v{N}.summary.json
-   - Original: {resource_id}-orig.md
-   - Criteria: research/eval_criteria.yaml
+   Artifacts to analyze (read in this order — SPEC.md FIRST):
+   - User brief:  SPEC.md   ← ground truth for goals + target improvements
+   - Optimized:   {resource_id}-v{N}.md
+   - Summary:     sessions/{resource_id}-v{N}.summary.json
+   - Original:    {resource_id}-orig.md  (or {resource_id}.md)
+   - Criteria:    research/eval_criteria.yaml  ← synthesized rubric,
+                  use for depth-of-coverage scoring; SPEC.md outranks
+                  it when they disagree
 
-   Output review to reviews/v{N}_review.md
+   Output review to workspace/{resource_id}/reviews/v{N}_review.md
+   (top-level 'reviews/' directory at workspace root — NOT
+   research/reviews/.  Python verifies this exact path before
+   accepting [EVALUATE_COMPLETE].)
+
+   In the review's ALIGNMENT dimension, verify each item from
+   SPEC.md ## Target Improvements individually — uncovered items
+   weaken an ACCEPT recommendation.
+
    Return recommendation: ACCEPT, REFINE, or REJECT"
    ```
-4. Wait for evaluation completion
-5. Parse recommendation from agent response:
-   - Look for `RECOMMENDATION: {ACCEPT/REFINE/REJECT}`
-   - If REFINE, extract `REFINEMENT_HINTS:` list
-6. Update run_state.json:
-   - evaluate_completed timestamp
-   - recommendation (ACCEPT/REFINE/REJECT)
-   - refinement_hints (if REFINE)
-7. Transition to CHECKPOINT_EVALUATE (if review_mode) or FINALIZE
+4. **WAIT for the Task tool to return.** The Task tool is synchronous
+   from your perspective — you will see a Task tool RESULT block
+   appear in a later message. Do NOT emit `[EVALUATE_COMPLETE]` until
+   that result has arrived. The result confirms the evaluator
+   subagent finished and (importantly) the review file is on disk.
+5. **Verify the review file exists on disk** using the Read tool or
+   Glob:
+   ```
+   Read workspace/{resource_id}/reviews/v{N}_review.md
+   ```
+   If Read returns "file not found", the evaluator failed — emit
+   `[OPTIMIZATION_FAILED]` with a brief explanation, do NOT emit
+   `[EVALUATE_COMPLETE]`.
+6. Once the file exists, emit `[EVALUATE_COMPLETE]` on its own line
+   in a NEW message (NOT the same message that called the Task tool,
+   NOT the same message that initiated the file Read — give the runner
+   a clean signal in its own turn).
+7. The runner will parse the `<cgf_directive>` XML block from the
+   file, determine ACCEPT / REFINE / REJECT, and inject the next
+   directive in its reply. Follow that directive verbatim.
 
 **Checkpoint behavior (CHECKPOINT_EVALUATE):**
 - **proceed**: Accept recommendation, continue to FINALIZE
@@ -564,7 +594,7 @@ Optimization artifacts have been archived to `archive/v{N}/`.
 ### Outcome
 
 Maximum refinement iterations reached. Human review required.
-See `research/reviews/` for iteration history and recommendations.
+See `reviews/` for iteration history and recommendations.
 
 ### Iteration Summary
 
@@ -861,9 +891,11 @@ created relative to its location. User chooses where to create SPEC.md.
 │   │   ├── context7_*.yaml
 │   │   ├── websearch_*.yaml
 │   │   └── codebase_*.yaml
-│   ├── eval_criteria.yaml           # Synthesized criteria
-│   └── reviews/                     # Created during EVALUATE phase
-│       └── v1_review.md             # Evaluation report
+│   └── eval_criteria.yaml           # Synthesized criteria
+│
+├── reviews/                         # Created during EVALUATE phase
+│   ├── v1_review.md                 # Evaluation report (iteration 1)
+│   └── v2_review.md                 # Evaluation report (iteration 2)
 │
 └── sessions/                        # Runtime state (delete to reset)
     ├── task_list.json               # Phase tracking state
@@ -931,7 +963,7 @@ Directories are created AS NEEDED during optimization:
 |-----------|--------------|
 | `research/` | During RESEARCH phase |
 | `research/notes/` | When research findings are saved |
-| `research/reviews/` | During EVALUATE phase |
+| `reviews/` | During EVALUATE phase (top-level, NOT under research/) |
 | `sessions/` | During Q&A or first optimization run |
 
 **Delete `sessions/` to reset state** without losing resources or research.
@@ -1141,18 +1173,203 @@ Recommendation: ACCEPT
 </examples>
 
 <phase_signals>
-## Phase Completion Signals
+## Phase Completion Signals — STRICT CONTRACT
 
-**CRITICAL:** You MUST emit these signals when completing phases. The session runner uses these signals to track state and prompt for user checkpoints.
+**CRITICAL — these signals are a hard contract with the Python state machine.**
+The session runner's Prometheus instrumentation, Grafana dashboard, iteration
+counter, and CHANGELOG accuracy ALL depend on you emitting these signals.
+The runner will REJECT runs that reach `[OPTIMIZATION_COMPLETE]` without at
+least one `[ITERATION_COMPLETE]` AND at least one `[EVALUATE_COMPLETE]` having
+fired first — the run will exit non-zero and be flagged as a contract
+violation.
 
-| Signal | When to Emit | Purpose |
-|--------|--------------|---------|
-| `[RESEARCH_COMPLETE]` | After research/notes and eval_criteria.yaml are saved | Triggers checkpoint and phase transition |
-| `[TEST_GEN_COMPLETE]` | After test_suite.yaml is generated and validated | Triggers checkpoint before optimization |
-| `[ITERATION_COMPLETE]` | After each optimization iteration completes | Enables iteration review when configured |
-| `[EVALUATE_COMPLETE]` | After evaluation review is written | Triggers checkpoint before finalize |
-| `[OPTIMIZATION_COMPLETE]` | When optimization succeeds (ACCEPT) | Terminal signal - session ends successfully |
-| `[OPTIMIZATION_FAILED]` | When optimization fails unrecoverably | Terminal signal - session ends with failure |
+| Signal | When to Emit | Required? |
+|--------|--------------|-----------|
+| `[RESEARCH_COMPLETE]` | After research/notes and eval_criteria.yaml are saved | **MANDATORY** before any optimization |
+| `[TEST_GEN_COMPLETE]` | After test_suite.yaml generated (python/both modes only) | Only if optimizer_mode is python/both |
+| `[ITERATION_COMPLETE]` | After EACH version (v1, v2, …) is written to disk | **MANDATORY — at least one per run** |
+| `[EVALUATE_COMPLETE]` | After writing the evaluation review with `RECOMMENDATION: …` | **MANDATORY — at least one per run** |
+| `[OPTIMIZATION_COMPLETE]` | Terminal — only after prior signals fired | **MANDATORY** to end successfully |
+| `[OPTIMIZATION_FAILED]` | When unrecoverable; preempts COMPLETE | Optional |
+
+<critical_rules>
+### Hard rules (do not violate)
+
+1. **One `[ITERATION_COMPLETE]` PER VERSION, IN THE SAME MESSAGE AS THE WRITE.**
+   When you `Write` `python-expert-v1.md`, emit `[ITERATION_COMPLETE]` in the
+   **same message**. The Python runner has a signal watchdog that detects a
+   Write to `*-v\d+\.md` and expects the signal in the same turn — drift will
+   be flagged (warn) or hard-fail the run (when `CGF_SIGNAL_STRICT=1`).
+2. **`[EVALUATE_COMPLETE]` AFTER the review file lands on disk with a
+   valid `<cgf_directive>` XML block.** The review file at
+   `workspace/{resource}/reviews/v{N}_review.md` MUST exist before you
+   emit the signal, and the FIRST content in the file MUST be a
+   `<cgf_directive>...<recommendation>ACCEPT|REFINE|REJECT</recommendation>...</cgf_directive>`
+   block (see cgf-result-evaluator.md for the full schema). The Python
+   runner reads only this XML block — agent-narrated recommendations
+   in chat are ignored, and so are markdown table cells / bolded
+   section headers (those exist as legacy fallbacks but the canonical
+   form is XML).
+3. **NEVER write `v{N+1}.md` before `[EVALUATE_COMPLETE]` for `vN` has fired.**
+   The pair-wise contract is `iter_count ≤ eval_count + 1`. Skipping an
+   evaluation hard-fails the run. **In particular, do NOT call the
+   optimizer subagent (`cgf-agents:cgf-prompt-optimizer`) twice in
+   succession** — each invocation produces one candidate version, and
+   the evaluator MUST run between them. The runner's post-iteration
+   message will explicitly direct you to dispatch the evaluator next;
+   follow that directive, do not re-invoke the optimizer.
+4. **NEVER iterate after ACCEPT or REJECT.** Once the evaluator returns
+   `RECOMMENDATION: ACCEPT` (or `REJECT`), the only permitted next signal is
+   `[OPTIMIZATION_COMPLETE]` (or `[OPTIMIZATION_FAILED]`). Another
+   `[ITERATION_COMPLETE]` hard-fails the run. See the
+   **STOP-after-signal contract** below — do NOT pre-decide a next
+   iteration in the same message as `[EVALUATE_COMPLETE]`.
+5. **NEVER jump straight from `[RESEARCH_COMPLETE]` to `[OPTIMIZATION_COMPLETE]`.**
+   That skips the entire optimization loop and the runner will fail the run.
+6. **NEVER modify the original (unversioned) resource file.** Optimized
+   versions belong in `{resource}-v{N}.md`. The Python runner captures a
+   SHA-256 hash of the original at start of run and re-checks it before every
+   phase signal — mutation hard-fails the run (override with
+   `CGF_BASELINE_HASH_CHECK=0`).
+7. **Signals are line-anchored.** Each signal MUST appear on its own line —
+   not inline in prose, not inside code fences, not inside tool input.
+8. **Signal counting is structural, not narrative.** Saying "completed 2
+   iterations" in prose does NOT count. Only the literal `[ITERATION_COMPLETE]`
+   marker emitted twice counts as two iterations.
+9. **Hard iteration cap.** `CGF_MAX_ITERATIONS` (default 3) is a Python-side
+   ceiling. Once you've emitted N `[ITERATION_COMPLETE]` signals where
+   N = cap, the only legal next signal is `[OPTIMIZATION_COMPLETE]` (or
+   `[OPTIMIZATION_FAILED]`).
+10. **NEVER emit a `_COMPLETE` signal in the same message that dispatches
+    the work it's signaling completion of.** This is the most common
+    failure mode:
+    - **WRONG**: One assistant message contains
+      `<Task subagent_type="cgf-result-evaluator">...</Task>` AND
+      `[EVALUATE_COMPLETE]`. The Task tool hasn't returned yet — the
+      review file doesn't exist on disk — and the runner will fail
+      the run.
+    - **RIGHT**: First message calls the Task tool and stops. After
+      the Task tool result arrives in a later turn, verify the
+      output file exists (Read it), THEN emit `[EVALUATE_COMPLETE]`
+      in a fresh message.
+
+    Same rule for `[ITERATION_COMPLETE]`: the Write to `v{N}.md` must
+    complete (you'll see a tool_result confirming the write) before
+    `[ITERATION_COMPLETE]` is legal. In practice the Write tool
+    returns synchronously so this is usually fine, but Task dispatches
+    are NOT — they have their own message-round-trip.
+</critical_rules>
+
+<lock_step_protocol>
+### Lock-step protocol (mandatory)
+
+The protocol below is the ONLY legal ordering for the iterate→evaluate loop.
+Deviation fails the run.
+
+```
+1. Write workspace/{resource}/{resource}-vN.md (the candidate)
+2. [ITERATION_COMPLETE]                          ← same message as step 1
+3. Dispatch cgf-agents:cgf-result-evaluator via Task tool
+4. Evaluator writes workspace/{resource}/reviews/vN_review.md
+   (the review MUST begin with a <cgf_directive> XML block containing
+    <recommendation>ACCEPT|REFINE|REJECT</recommendation>, plus
+    <target_sections>/<target_competencies>/<refinement_hints> when
+    the recommendation is REFINE)
+5. [EVALUATE_COMPLETE]                           ← after review file exists
+6. Branch on recommendation:
+     ACCEPT → emit [OPTIMIZATION_COMPLETE]
+     REJECT → emit [OPTIMIZATION_FAILED] (or [OPTIMIZATION_COMPLETE]
+              if you preserve the original)
+     REFINE → start iteration N+1 using the
+              TARGET_SECTIONS / TARGET_COMPETENCIES / REFINEMENT_HINTS
+              that the Python runner injects in the next-turn prompt
+```
+
+### Example transcript (good)
+
+```
+[Orchestrator writing python-expert-v1.md ...]
+<Write tool: file_path=workspace/python-expert/python-expert-v1.md>
+
+[ITERATION_COMPLETE]
+
+Now dispatching evaluator for v1.
+<Task tool: subagent_type="cgf-agents:cgf-result-evaluator">
+
+[evaluator runs and writes workspace/python-expert/reviews/v1_review.md
+ with leading block:
+   <cgf_directive>
+     <recommendation>REFINE</recommendation>
+     <target_sections><section>examples</section></target_sections>
+     <refinement_hints>
+       <hint>Add CancelledError propagation patterns</hint>
+     </refinement_hints>
+   </cgf_directive>]
+
+Review written.
+
+[EVALUATE_COMPLETE]
+
+[Python runner injects refinement hints into the next turn.]
+
+Starting iteration 2 with the structured directives above.
+<Write tool: file_path=workspace/python-expert/python-expert-v2.md>
+
+[ITERATION_COMPLETE]
+
+Dispatching evaluator for v2.
+<Task tool: subagent_type="cgf-agents:cgf-result-evaluator">
+
+[evaluator writes reviews/v2_review.md with leading block:
+   <cgf_directive>
+     <recommendation>ACCEPT</recommendation>
+   </cgf_directive>]
+
+[EVALUATE_COMPLETE]
+
+Optimization successful.
+
+[OPTIMIZATION_COMPLETE]
+```
+
+### Example transcript (BAD — these patterns hard-fail the run)
+
+```
+# BAD: writing v1 and v2 without evaluation in between
+<Write v1.md>
+[ITERATION_COMPLETE]
+<Write v2.md>                  ← pair-wise contract violation
+[ITERATION_COMPLETE]
+
+# BAD: skipping evaluation
+<Write v1.md>
+[ITERATION_COMPLETE]
+[OPTIMIZATION_COMPLETE]        ← signal-sequence violation
+
+# BAD: continuing after ACCEPT
+[EVALUATE_COMPLETE]    (review said RECOMMENDATION: ACCEPT)
+<Write v2.md>
+[ITERATION_COMPLETE]           ← terminal-required violation
+
+# BAD: agent narrating recommendation but no review file on disk
+"My evaluation: this is good. RECOMMENDATION: ACCEPT"
+[EVALUATE_COMPLETE]            ← review file missing
+
+# BAD: review file exists but lacks <cgf_directive> XML block
+<Write reviews/v1_review.md> (content is narrative only)
+[EVALUATE_COMPLETE]            ← XML block missing → unparseable
+
+# BAD: Task dispatch AND signal in the same assistant message
+<Task subagent_type="cgf-result-evaluator">...</Task>
+[EVALUATE_COMPLETE]            ← Task hasn't returned, review file
+                                  doesn't exist yet → P0.4 hard-fail.
+                                  The signal MUST come in a separate
+                                  message AFTER the Task result lands.
+
+# BAD: agent overwriting the original
+<Write python-expert.md>       ← baseline-hash violation
+```
+</lock_step_protocol>
 
 ### Signal Format
 
@@ -1175,7 +1392,41 @@ Research complete [RESEARCH_COMPLETE] and now moving to test generation
 1. **Complete all phase work first** - Save files, update run_state.json
 2. **Report completion** - Summarize what was accomplished
 3. **Emit signal** - On its own line at the end of the completion message
-4. **Wait for continuation** - The session runner will prompt you to continue
+4. **STOP and wait for continuation** - The session runner will prompt
+   you with the next directive (which may include parsed
+   recommendation, refinement hints, or "emit terminal signal now").
+
+<stop_after_signal_contract>
+### STOP-after-signal contract (HARD RULE)
+
+**After you emit ANY phase signal (`[RESEARCH_COMPLETE]`,
+`[ITERATION_COMPLETE]`, `[EVALUATE_COMPLETE]`, etc.), your message
+MUST END.** Do not pre-decide the next phase in the same message.
+
+In particular, after `[EVALUATE_COMPLETE]`:
+
+- **NEVER** write "I'll proceed with iteration 2" or any equivalent
+  in the same message as the signal.
+- **NEVER** claim "the user has requested to continue" or otherwise
+  hallucinate user intent. The runner — not you — decides what comes
+  next based on the parsed `RECOMMENDATION:` line in the review file.
+- The Python runner reads `workspace/{resource}/reviews/v{N}_review.md`,
+  extracts the recommendation, and sends you the next directive:
+  - For **ACCEPT**: "Emit `[OPTIMIZATION_COMPLETE]` now — do NOT start
+    another iteration."
+  - For **REJECT**: "Emit `[OPTIMIZATION_FAILED]` now."
+  - For **REFINE**: a structured `TARGET_SECTIONS` /
+    `TARGET_COMPETENCIES` / `REFINEMENT_HINTS` block you must apply in
+    the next iteration.
+- Your job is to follow that directive verbatim on your next turn.
+
+**Why this matters:** the Python state machine is the source of truth
+for what phase comes next. If you pre-announce iteration 2 inside the
+EVALUATE_COMPLETE message and the recommendation is ACCEPT, you've
+created a contradiction the runner cannot resolve — and P0.4's
+terminal-required check will hard-fail the run on the next
+`[ITERATION_COMPLETE]`.
+</stop_after_signal_contract>
 
 ### Example Flow
 
