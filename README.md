@@ -107,7 +107,7 @@ make autonomous-status
 3. **Checkpoints** — Saved every hour. Run `make autonomous` again to resume.
 4. **Workspace state detection** — The runner detects empty workspaces, work-in-progress, completed runs, conflicts, and external repos, and behaves accordingly.
 
-**Spec template:** [docs/examples/SPEC.example.md](./docs/examples/SPEC.example.md)
+**Spec template:** [docs/examples/AUTONOMOUS_SPEC.example.md](./docs/examples/AUTONOMOUS_SPEC.example.md)
 
 For autonomous work on an existing repo, clone it under `/workspace/projects/` and add a `branch:` field to `SPEC.md` (the runner will create a `casdk-*` feature branch).
 
@@ -138,7 +138,7 @@ The single-resource flow runs a two-phase session: an **interactive Q&A** with t
 
 ```bash
 mkdir -p workspace/my-plugin
-cp docs/examples/MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
+cp docs/examples/CGF_MULTI_RESOURCE_SPEC.example.md workspace/my-plugin/SPEC.md
 # Edit SPEC.md: purpose, capabilities, constraints
 make optimize
 ```
