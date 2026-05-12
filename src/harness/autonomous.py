@@ -31,7 +31,7 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from harness.agent import AgentSession
-from harness.cli import parse_and_print_message
+from harness.cli import parse_and_print_message, print_autonomous_welcome_banner
 from harness.config import (
     RuntimeConfig,
     configure_logging,
@@ -1418,6 +1418,11 @@ Resume with the next question in the sequence.
         # Set up async signal handlers now that we have an event loop
         self._setup_signal_handlers()
         self._shutdown_event = asyncio.Event()
+
+        # Print welcome banner (mirrors interactive mode's startup ASCII art)
+        print_autonomous_welcome_banner(
+            self.console, self._create_runtime_config().model
+        )
 
         # Discover project directory by finding SPEC.md
         self.project_dir, spec_files = self._discover_project_dir()
