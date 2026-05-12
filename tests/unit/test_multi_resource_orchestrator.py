@@ -19,6 +19,7 @@ from harness.optimization.multi_resource_orchestrator import (
     DEFAULT_MAX_REFINEMENT,
     MultiResourceConfig,
     PathViolationError,
+    _ensure_metrics_server,
     _versioned_path,
     validate_write_path,
 )
@@ -589,3 +590,61 @@ class TestParseIterationResultDimensions:
         assert quality.completeness == 0.0
         assert quality.accuracy == 0.0
         assert quality.clarity == 0.0
+
+
+class TestEnsureMetricsServer:
+    """Coverage for the metrics-exposure helper that backstops Phase A
+    telemetry visibility in the standalone-orchestrator code path."""
+
+    def test_starts_server_when_port_free(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        called: dict[str, int] = {}
+
+        def fake_start(port: int) -> None:
+            called["port"] = port
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        _ensure_metrics_server(port=19090)
+        assert called == {"port": 19090}
+
+    def test_no_raise_when_port_in_use(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_start(port: int) -> None:
+            err = OSError("Address already in use")
+            err.errno = 98  # EADDRINUSE on Linux
+            raise err
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        # Must NOT raise — observability failures never break orchestration.
+        _ensure_metrics_server(port=19090)
+
+    def test_no_raise_on_eaddrinuse_macos(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """macOS uses errno 48 instead of 98 for EADDRINUSE."""
+
+        def fake_start(port: int) -> None:
+            err = OSError("Address already in use")
+            err.errno = 48
+            raise err
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        _ensure_metrics_server(port=19090)
+
+    def test_logs_and_swallows_unexpected_exceptions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_start(port: int) -> None:
+            raise RuntimeError("dependency missing")
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        # Defensive: any failure to expose metrics must not propagate.
+        _ensure_metrics_server(port=19090)

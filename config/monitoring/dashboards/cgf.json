@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 13,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -27,6 +27,235 @@
   },
   "panels": [
     {
+      "id": 301,
+      "type": "row",
+      "title": "Active Run Status",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false
+    },
+    {
+      "id": 303,
+      "title": "Active Resource",
+      "type": "stat",
+      "description": "Workspace name of the resource currently being optimized. Source: harness_run_phase_info{resource}.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "topk(1, max by (resource) (last_over_time(harness_run_phase_info{resource!~\"test_.*\"}[2h]) > 0))",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{resource}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 304,
+      "title": "Iteration",
+      "type": "stat",
+      "description": "Current optimization iteration (single-resource path).",
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "max(last_over_time(harness_run_iteration{resource!~\"test_.*\"}[2h]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 305,
+      "title": "Cost (selected range)",
+      "type": "stat",
+      "description": "Total Claude API cost across all models in the selected time range. Source: claude_code_cost_usage_USD_total (SDK-native).",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 9
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 306,
+      "title": "Tokens (selected range)",
+      "type": "stat",
+      "description": "Total tokens consumed across all models / query sources in the selected time range. Source: claude_code_token_usage_tokens_total.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 9
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total[$__range]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500000
+              },
+              {
+                "color": "red",
+                "value": 5000000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 100,
       "type": "row",
       "title": "Tracer Activity",
@@ -34,7 +263,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 14
       },
       "collapsed": false
     },
@@ -46,7 +275,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 1
+        "y": 15
       },
       "targets": [
         {
@@ -72,7 +301,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 1
+        "y": 15
       },
       "targets": [
         {
@@ -98,7 +327,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 1
+        "y": 15
       },
       "targets": [
         {
@@ -148,7 +377,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 1
+        "y": 15
       },
       "targets": [
         {
@@ -198,7 +427,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 5
+        "y": 19
       },
       "targets": [
         {
@@ -239,7 +468,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 5
+        "y": 19
       },
       "targets": [
         {
@@ -277,7 +506,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 27
       },
       "collapsed": false
     },
@@ -289,7 +518,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 28
       },
       "targets": [
         {
@@ -314,7 +543,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 28
       },
       "targets": [
         {
@@ -343,7 +572,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 36
       },
       "targets": [
         {
@@ -381,7 +610,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 44
       },
       "collapsed": false,
       "panels": []
@@ -394,7 +623,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 45
       },
       "description": "Wall-clock duration of EVAL_DESIGN and EXECUTION_EVAL phases.  EVAL_DESIGN should usually complete within minutes; EXECUTION_EVAL scales with scenario count \u00d7 trials \u00d7 arms.",
       "targets": [
@@ -423,7 +652,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 45
       },
       "description": "Distribution of tokens spent until a candidate promotes, observed at promotion time.  Phase A approximation: per-run total only; Phase B will include cumulative tokens across feedback iterations.",
       "targets": [
@@ -447,7 +676,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 39
+        "y": 53
       },
       "description": "Per-scenario outcomes by arm.  The candidate ``pass`` rate climbing while ``fail`` and ``no_decision`` shrink is the visual signature of a healthy optimizer loop.",
       "targets": [
@@ -466,7 +695,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 39
+        "y": 53
       },
       "description": "Histogram-quantile view of per-scenario arm pass-rates.  Compare candidate p50 vs baseline p50 to read promotion strength at a glance.",
       "targets": [
@@ -492,7 +721,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 61
       },
       "description": "How often the LLM-judge grader hits the retry-once-then-mark-no-decision escape hatch.  A non-trivial rate here means the judge model is unstable for the current rubrics \u2014 either tighten rubrics, switch to a stronger judge model, or (Phase B) enable the judge-ensemble fallback.",
       "targets": [
@@ -502,6 +731,619 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 307,
+      "title": "Phase Progression",
+      "description": "Pipeline phases for the active optimization path. Rows shown as '(N/A)' belong to the other path (single vs multi-resource) and will not be visited for this run. Active phase shows '\u25cf NOW' in green; completed phases stay grey '\u00b7'. The path discriminator is 'harness_run_path_info' (set by cgf_session.py for single and by multi_resource_orchestrator.py for multi).",
+      "type": "bargauge",
+      "gridPos": {
+        "h": 15,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"research\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single|multi\"} == 1)) or on() vector(-1)",
+          "refId": "A",
+          "legendFormat": "research",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"design\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "B",
+          "legendFormat": "design",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"qa\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "C",
+          "legendFormat": "qa",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"generate\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "D",
+          "legendFormat": "generate",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"test_gen\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single\"} == 1)) or on() vector(-1)",
+          "refId": "E",
+          "legendFormat": "test_gen",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"optimize\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single\"} == 1)) or on() vector(-1)",
+          "refId": "F",
+          "legendFormat": "optimize",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"iterate\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single|multi\"} == 1)) or on() vector(-1)",
+          "refId": "G",
+          "legendFormat": "iterate",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"eval_design\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "H",
+          "legendFormat": "eval_design",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"execution_eval\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "I",
+          "legendFormat": "execution_eval",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"evaluate\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single\"} == 1)) or on() vector(-1)",
+          "refId": "J",
+          "legendFormat": "evaluate",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"validate\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"multi\"} == 1)) or on() vector(-1)",
+          "refId": "K",
+          "legendFormat": "validate",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"finalize\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single\"} == 1)) or on() vector(-1)",
+          "refId": "L",
+          "legendFormat": "finalize",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"complete\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single|multi\"} == 1)) or on() vector(-1)",
+          "refId": "M",
+          "legendFormat": "complete",
+          "instant": true
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{phase=\"failed\",resource!~\"test_.*\"}[2h]) and on(resource) (harness_run_path_info{path=~\"single|multi\"} == 1)) or on() vector(-1)",
+          "refId": "N",
+          "legendFormat": "failed",
+          "instant": true
+        }
+      ],
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "text",
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": -1,
+          "max": 1,
+          "decimals": 0,
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "(N/A)"
+                },
+                "0": {
+                  "text": "\u00b7"
+                },
+                "1": {
+                  "text": "\u25cf NOW"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "research"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "design"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "qa"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "generate"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "test_gen"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "optimize"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "iterate"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "eval_design"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "execution_eval"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "evaluate"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "validate"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "finalize"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text-secondary",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "complete"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "dark-red",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 308,
+      "title": "Active Path",
+      "description": "Which optimization path is currently running. Set when the run begins. Single = cgf_session.py (one resource per run). Multi = multi_resource_orchestrator.py (multi-resource SPEC.md with a `## Capabilities` section).",
+      "type": "stat",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "expr": "topk(1, harness_run_path_info{resource!~\"test_.*\"} == 1)",
+          "refId": "A",
+          "instant": true,
+          "legendFormat": "{{path}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "textMode": "name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      }
     }
   ]
 }

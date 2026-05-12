@@ -294,12 +294,31 @@ Mentally check the suite against `eval_suite.schema.json`:
 - No `setup.files` paths contain `..` or start with `/`
 - Composite graders nest correctly (each child is a valid grader)
 
-**STEP 6: WRITE OUTPUT**
+**STEP 6: WRITE OUTPUT (CRITICAL — USE THE Write TOOL)**
+
+**You MUST call the `Write` tool with the full YAML contents.** The
+orchestrator validates the eval suite by checking that the file exists
+on disk — it does **not** parse your response text. If you describe the
+suite inline (in a code block, in prose, or as a manifest summary) and
+do not call `Write`, the phase will fail and your run is wasted.
+
+Required tool call:
+
 ```
-Write: {workspace}/eval/eval-suite.yaml
+Write(
+    file_path="{workspace}/eval/eval-suite.yaml",
+    content="<full YAML conforming to eval_suite.schema.json>"
+)
 ```
 
+After `Write` returns successfully, confirm with `Read` or `Glob` that
+the file is on disk before emitting the completion signal.
+
 **STEP 7: EMIT SIGNAL**
+
+Put the signal on its own line. The metadata block follows, one
+`key: value` per line:
+
 ```
 [EVAL_DESIGN_COMPLETE]
 eval_suite_path: eval/eval-suite.yaml
@@ -307,12 +326,19 @@ scenario_count: 24
 held_out_count: 6
 levels: {unit: 8, trajectory: 10, e2e: 6}
 ```
+
+**Verification before signal:** check that your turn ended with a
+successful `Write` tool call. If you reached this point without making
+a `Write` tool call, STOP — your previous output was prose, not a
+file. Re-do the write before emitting the signal.
 </workflow>
 
 <anti_patterns>
 ## Anti-Patterns to Avoid
 
 **Do NOT:**
+- **Describe the eval-suite.yaml in your response without calling the `Write` tool.** The orchestrator checks disk, not prose. Inline YAML in code blocks is invisible to the pipeline.
+- **Emit `[EVAL_DESIGN_COMPLETE]` before successfully calling `Write`.** The signal claims a deliverable; produce it first.
 - Default every scenario to e2e — unit and trajectory are cheaper and more diagnostic
 - Use llm_judge for things contains/regex/code can verify
 - Mark only the hardest scenarios held_out (skews the gate; held-out must be representative)

@@ -105,16 +105,34 @@ def _get_plugin_base_path() -> Path:
 def _load_plugin_agents() -> dict[str, Any]:
     """Load plugin agents if not already loaded.
 
+    Matches AgentSession's discovery surface: swe-marketplace plugins
+    first (so a locally-edited marketplace plugin shadows in-tree), then
+    the in-tree `src/harness/plugins/` fallback. Without this, standalone
+    invocations from harness.subagent (used by the multi-resource
+    orchestrator and CGF runners) silently miss every marketplace-hosted
+    plugin and fail with "Agent not found" mid-pipeline.
+
     Returns:
         Dictionary mapping agent names to SDK AgentDefinition objects.
     """
     global _plugin_agents_cache, _plugin_manager
 
     if _plugin_agents_cache is None:
-        plugin_base = _get_plugin_base_path()
+        from harness.config import get_config
+
+        config = get_config()
+
+        plugin_dirs: list[Path] = []
+        marketplace_path = config.swe_marketplace_resolved_path
+        if marketplace_path is not None:
+            marketplace_plugin_dir = marketplace_path / "plugins"
+            if marketplace_plugin_dir.exists():
+                plugin_dirs.append(marketplace_plugin_dir)
+        plugin_dirs.append(_get_plugin_base_path())
+
         _plugin_manager = PluginManager(
-            plugin_dirs=[plugin_base],
-            enabled_plugins=None,
+            plugin_dirs=plugin_dirs,
+            enabled_plugins=config.enabled_plugins_list,
         )
         _plugin_manager.discover()
         _plugin_agents_cache = _plugin_manager.get_all_agents()

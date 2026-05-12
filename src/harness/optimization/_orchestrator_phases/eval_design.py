@@ -135,50 +135,76 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
     ]
 
     suite_path = workspace / "eval" / "eval-suite.yaml"
-    if eval_design_signals:
-        if suite_path.exists():
-            self._state.eval_suite_path = "eval/eval-suite.yaml"
+    suite_exists = suite_path.exists()
+
+    # The agent may emit the signal inline in prose, in a code block, or
+    # alongside the YAML literal — all are signal-positive.  The
+    # authoritative success criterion is the suite file actually landing
+    # on disk; the signal is just an early hint.
+    if suite_exists:
+        self._state.eval_suite_path = "eval/eval-suite.yaml"
+        if eval_design_signals:
             logger.info(
                 "EVAL_DESIGN: Complete",
                 suite_path=str(suite_path),
             )
-            self._emit_progress("EVAL_DESIGN", "all", "complete")
         else:
-            logger.error(
-                "EVAL_DESIGN: Signal received but suite file not found",
-                expected=str(suite_path),
-            )
-            self._emit_progress(
-                "EVAL_DESIGN", "all", "failed - no suite file",
-            )
-            # Don't raise — EXECUTION_EVAL will skip when suite missing.
-    else:
-        # Check if file was created anyway.
-        if suite_path.exists():
-            self._state.eval_suite_path = "eval/eval-suite.yaml"
             logger.info(
                 "EVAL_DESIGN: Suite created (no signal)",
                 suite_path=str(suite_path),
             )
-            self._emit_progress("EVAL_DESIGN", "all", "complete")
-        else:
-            logger.warning(
-                "EVAL_DESIGN: No completion signal and no suite file",
-                response_length=len(response),
+        self._emit_progress("EVAL_DESIGN", "all", "complete")
+    else:
+        # No suite on disk — phase deliverable missing.  Fail loudly
+        # rather than letting EXECUTION_EVAL silently skip, which
+        # produces a false-positive "phases complete" run with no
+        # eval data and no Phase A telemetry.  The orchestrator's
+        # error handler will surface this as a phase failure.
+        if eval_design_signals:
+            err_msg = (
+                "EVAL_DESIGN: cgf-eval-architect emitted "
+                "[EVAL_DESIGN_COMPLETE] but no eval-suite.yaml on disk. "
+                "The agent likely described the suite inline instead of "
+                "using the Write tool. Expected file: "
+                f"{suite_path}. Response length: {len(response)} chars."
             )
+        else:
+            err_msg = (
+                "EVAL_DESIGN: cgf-eval-architect produced no completion "
+                "signal AND no eval-suite.yaml on disk. The agent failed "
+                "to deliver. Expected file: "
+                f"{suite_path}. Response length: {len(response)} chars."
+            )
+        logger.error(err_msg, signals_seen=len(eval_design_signals))
+        self._emit_progress("EVAL_DESIGN", "all", "failed - no suite file")
+        # Record the phase-duration metric and outcome span before raising,
+        # so the failure shows up in telemetry.
+        harness_eval_phase_duration_seconds.labels(
+            phase="EVAL_DESIGN"
+        ).observe(time.time() - phase_start)
+        async with eval_phase_span(
+            "eval.design",
+            task_id=task_id,
+            phase="EVAL_DESIGN",
+            extra={
+                "harness.eval.outcome": "no_suite_written",
+                "harness.eval.resource_count": len(generated),
+            },
+        ):
+            pass
+        self._save_state()
+        raise ValueError(err_msg)
 
     self._save_state()
     harness_eval_phase_duration_seconds.labels(
         phase="EVAL_DESIGN"
     ).observe(time.time() - phase_start)
-    # Final tracer span with outcome attribute.
-    outcome = "success" if self._state.eval_suite_path else "no_suite_written"
     async with eval_phase_span(
         "eval.design",
         task_id=task_id,
         phase="EVAL_DESIGN",
         extra={
-            "harness.eval.outcome": outcome,
+            "harness.eval.outcome": "success",
             "harness.eval.resource_count": len(generated),
         },
     ):

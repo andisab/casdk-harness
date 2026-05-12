@@ -48,6 +48,10 @@ services:
       - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
       - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
       - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -132,6 +136,10 @@ services:
       - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
       - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
       - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -209,6 +217,10 @@ services:
       - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
       - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
       - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,

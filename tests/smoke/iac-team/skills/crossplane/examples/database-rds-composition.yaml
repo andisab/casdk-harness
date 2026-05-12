@@ -1,0 +1,228 @@
+# Example: PostgreSQL RDS Composition with Connection Secrets
+# This demonstrates a production-ready Crossplane composition for AWS RDS
+
+---
+# 1. XRD (CompositeResourceDefinition)
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xpostgresqlinstances.database.example.com
+spec:
+  group: database.example.com
+  names:
+    kind: XPostgreSQLInstance
+    plural: xpostgresqlinstances
+  claimNames:
+    kind: PostgreSQLInstance
+    plural: postgresqlinstances
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    storageGB:
+                      type: integer
+                      minimum: 20
+                      maximum: 16384
+                      default: 20
+                    engineVersion:
+                      type: string
+                      enum: ["13.7", "14.6", "15.2"]
+                      default: "15.2"
+                    instanceClass:
+                      type: string
+                      enum: ["db.t3.micro", "db.t3.small", "db.r5.large"]
+                      default: "db.t3.small"
+                    environment:
+                      type: string
+                      enum: ["dev", "staging", "prod"]
+                  required:
+                    - environment
+              required:
+                - parameters
+            status:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                port:
+                  type: integer
+
+---
+# 2. Composition (Implementation)
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: postgresql-aws-rds
+  labels:
+    crossplane.io/xrd: xpostgresqlinstances.database.example.com
+    provider: aws
+    environment: production
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  compositeTypeRef:
+    apiVersion: database.example.com/v1alpha1
+    kind: XPostgreSQLInstance
+
+  resources:
+    # RDS Subnet Group
+    - name: subnet-group
+      base:
+        apiVersion: rds.aws.upbound.io/v1beta1
+        kind: SubnetGroup
+        spec:
+          forProvider:
+            region: us-west-2
+            subnetIdSelector:
+              matchLabels:
+                type: private
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: metadata.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-subnet-group"
+
+    # RDS Instance
+    - name: rds-instance
+      base:
+        apiVersion: rds.aws.upbound.io/v1beta1
+        kind: Instance
+        spec:
+          forProvider:
+            region: us-west-2
+            engine: postgres
+            dbName: appdb
+            username: adminuser
+            autoGeneratePassword: true
+            passwordSecretRef:
+              namespace: crossplane-system
+              key: password
+            publiclyAccessible: false
+            skipFinalSnapshot: false
+            finalSnapshotIdentifier: ""
+            storageEncrypted: true
+            multiAz: false
+            dbSubnetGroupNameSelector:
+              matchControllerRef: true
+            vpcSecurityGroupIdSelector:
+              matchLabels:
+                app: database
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        # Patch storage size
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.storageGB
+          toFieldPath: spec.forProvider.allocatedStorage
+
+        # Patch engine version
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.engineVersion
+          toFieldPath: spec.forProvider.engineVersion
+
+        # Patch instance class
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.instanceClass
+          toFieldPath: spec.forProvider.instanceClass
+
+        # Patch final snapshot identifier
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.finalSnapshotIdentifier
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-final-snapshot"
+
+        # Patch password secret name
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.passwordSecretRef.name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-password"
+
+        # Enable Multi-AZ for production
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.environment
+          toFieldPath: spec.forProvider.multiAz
+          transforms:
+            - type: map
+              map:
+                dev: false
+                staging: false
+                prod: true
+
+        # Skip final snapshot for dev
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.environment
+          toFieldPath: spec.forProvider.skipFinalSnapshot
+          transforms:
+            - type: map
+              map:
+                dev: true
+                staging: false
+                prod: false
+
+        # Export endpoint to status
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.endpoint
+          toFieldPath: status.endpoint
+
+        # Export port to status
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.port
+          toFieldPath: status.port
+
+      connectionDetails:
+        - type: FromConnectionSecretKey
+          name: username
+          fromConnectionSecretKey: username
+        - type: FromConnectionSecretKey
+          name: password
+          fromConnectionSecretKey: password
+        - type: FromFieldPath
+          name: endpoint
+          fromFieldPath: status.atProvider.endpoint
+        - type: FromValue
+          name: port
+          value: "5432"
+
+---
+# 3. Example Claim (Namespace-scoped)
+apiVersion: database.example.com/v1alpha1
+kind: PostgreSQLInstance
+metadata:
+  name: app-database
+  namespace: default
+spec:
+  parameters:
+    storageGB: 100
+    engineVersion: "15.2"
+    instanceClass: db.r5.large
+    environment: prod
+
+  compositionRef:
+    name: postgresql-aws-rds
+
+  writeConnectionSecretToRef:
+    name: app-database-connection

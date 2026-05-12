@@ -27,11 +27,21 @@ Technical reference for developers working on this repository and for Claude's o
     - Pipeline: RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE (9 phases).
     - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
     - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
-    - Smoke fixture at `docs/examples/cgf-eval-smoke/SPEC.md` for end-to-end runtime validation.
+    - Smoke fixtures at `tests/smoke/` (replaced the prior single-fixture `docs/examples/cgf-eval-smoke/` 2026-05-11). Run with `make smoke FIXTURE=<name>`; current fixtures: `python-expert` (single-resource), `iac-team` (multi-resource, AWS+K8s).
   - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-FRAMEWORK.md`.
   - Stage 4: Integration & hardening — not started, depends on Phase D completion.
 
 ### Completed Recently
+- **Phase-1 smoke hardening (2026-05-11, `phase-a-fixes` branch)** — Surfaced + fixed five defects after the python-expert smoke run revealed the orchestrator agent was skipping intermediate phase signals (state machine, dashboard, iteration counter, summary.json, and CHANGELOG all reported different numbers). Shipped:
+  - **`cgf_session.py --non-interactive` flag** — auto-continue at every phase checkpoint (was blocking `make smoke` because `docker compose exec -T` has no TTY → EOF → "Interrupted"). Wired into Makefile.
+  - **Grafana "Active Run Status" row** — Phase Progression bargauge (14 phases incl. `failed`), Active Resource, Iteration, Cost / Tokens (15min). Path-specific phases (single-only, multi-only) dimmed gray; `failed` terminal red.
+  - **Phase gauge instrumentation** — `harness_run_phase_info{resource, phase}` + `harness_run_iteration{resource}` + `init_run_phases()` seeding + `record_phase_entry()` helper. Called from `cgf_session.py` and `multi_resource_orchestrator._advance_phase` so both paths populate the same series. Dashboard uses `last_over_time(...[2h])` so the most recent phase persists across runs even after the process exits.
+  - **(A) Contract enforcement** — `cgf_session.py` rejects `[OPTIMIZATION_COMPLETE]` if `iterate` count == 0 OR `evaluate` count == 0. Run exits non-zero with `record_phase_entry(resource, "failed")` so Grafana shows the red `failed` row. CHANGELOG + task_list capture the violation.
+  - **(B) `summary.json["iterations"]` from `task_list.iteration`** — `_patch_summary_iterations` overwrites the agent's self-reported count with state-machine truth at end-of-run. Adds `"_iterations_source"` field for traceability.
+  - **(D) Orchestrator prompt hardening** — `cgf-orchestrator.md` § Phase Completion Signals rewritten with explicit "STRICT CONTRACT" framing, hard rules (one `[ITERATION_COMPLETE]` per version, `[EVALUATE_COMPLETE]` after `RECOMMENDATION:` line, never jump straight from research to complete, line-anchored emission, narrative claims don't count).
+  - **`iterate` rename** — single-resource `research_iterate` collapsed into shared `iterate` so the dashboard and signal vocabulary use one name for both paths.
+  - **20s grace pause after `[OPTIMIZATION_COMPLETE]`** — keeps metrics endpoint alive long enough for Prometheus's 15s scrape interval to capture the final `complete=1` state.
+  - Deferred follow-ups (C path-filtered dashboard, E `iterate`/`optimize` collapse, F load-bearing `task_list.iteration`) tracked in TODOs section below.
 - **CGF Stage 3 Phase A — Eval Harness shipped (2026-05-08)** — Six PRs (#7, #8, #9, #11, #12, #13) plus A.7 closing PR, all merged to `contextgrad-eval`. Phases A.1 through A.7 cover the full eval framework end-to-end:
   - **A.1 (#7)** — `eval_suite.schema.json` (Draft-07) with polymorphic graders + trajectory assertions; `jsonschema>=4.21.0` runtime dep; 37 schema-validation tests.
   - **A.2 (#7)** — `cgf-eval-architect` agent (sonnet, 100 turns); reorganized `cgf-agents/agents/` into `design/` and `eval/` subdirs; `plugin_manager.glob → rglob` runtime fix.
@@ -94,6 +104,34 @@ Technical reference for developers working on this repository and for Claude's o
   and `harness/interactive.py` (and possibly `harness/agent_progress.py`)
   to identify which renderer is responsible for each artifact, then
   decide what to clean up vs. accept as cost-of-doing-business.
+
+### CGF state-machine / observability — follow-ups (deferred 2026-05-11)
+
+After the Phase-1 smoke retrospective on `phase-a-fixes`, three further
+fixes are queued behind the just-shipped (A) signal-sequence enforcement,
+(B) summary.json single-source-of-truth, (D) orchestrator prompt
+hardening, and the Grafana gray-out of path-specific phases. Rationale
++ tradeoff matrix in chat history; brief here.
+
+- [ ] **(C) Path-filtered dashboard PHASES.** The current Grafana
+  "Phase Progression" panel shows all 14 phases with gray-out for
+  path-specific stages. A cleaner alternative is to surface a
+  `harness_run_path{value="single"|"multi"}` discriminator label and
+  render only the active path's phases. Deferred because the gray-out
+  approach (already shipped) captures ~80% of the value with much less
+  complexity. Revisit if users find the always-on rows confusing in
+  practice.
+- [ ] **(E) Collapse `iterate` / `optimize` across single + multi
+  paths.** Conceptually the same loop, but multi-resource has
+  loop-back semantics that single doesn't. Defer until Stage 3 Phase B
+  (statistical promotion gate) forces a rethink of the phase
+  vocabulary anyway. Breaking change — affects checkpoint resume.
+- [ ] **(F) Make `task_list.iteration` load-bearing.** Currently
+  write-only (used by Grafana, never read by gates or transition
+  logic). Drive `CGF_ITERATIONS` cap from it, gate promotion on it,
+  surface "iter N of M" stat in Grafana. **Locked behind (D)** —
+  worthless without reliable `[ITERATION_COMPLETE]` emission. Pair
+  with Phase B when its bootstrap-CI gate is designed.
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
 

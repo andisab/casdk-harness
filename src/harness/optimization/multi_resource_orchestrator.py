@@ -92,6 +92,7 @@ from harness.optimization._orchestrator_phases import (
 from harness.optimization._orchestrator_phases import (
     validate as _validate_phase,
 )
+from harness.monitoring import init_run_phases, record_phase_entry, record_run_path
 from harness.progress import (
     MultiResourceState,
     OptimizationPhase,
@@ -395,6 +396,16 @@ class MultiResourceOrchestrator:
         if self._progress:
             self._progress.save_optimization_state(state)
 
+        # Seed run-phase gauge for Grafana from the very first phase
+        try:
+            ws = self.config.workspace_dir
+            resource_label = ws.name if ws else "unknown"
+        except Exception:
+            resource_label = "unknown"
+        record_run_path(resource_label, "multi")
+        init_run_phases(resource_label)
+        record_phase_entry(resource_label, state.current_phase.name.lower())
+
         return state
 
     async def _run_pipeline(self) -> None:
@@ -464,6 +475,14 @@ class MultiResourceOrchestrator:
 
         self._state.advance_phase(next_phase)
         self._progress.save_optimization_state(self._state)
+
+        # Update Prometheus gauge for Grafana run-status panel
+        try:
+            ws = self.config.workspace_dir
+            resource_label = ws.name if ws else "unknown"
+        except Exception:
+            resource_label = "unknown"
+        record_phase_entry(resource_label, next_phase.name.lower())
 
         logger.info(
             "Phase complete",
@@ -676,6 +695,47 @@ class MultiResourceOrchestrator:
 # ---------------------------------------------------------------------------
 
 
+def _ensure_metrics_server(port: int = 9090) -> None:
+    """Start a prometheus_client HTTP server on `port` if one isn't running.
+
+    Long-running modes (interactive, autonomous) start the metrics server
+    as part of AgentSession initialization. The standalone-script path used
+    by `make optimize` instantiates the orchestrator directly without ever
+    creating an AgentSession, so no HTTP server gets bound and every
+    `harness_eval_*` / `harness_*` / `cgf_*` instrument records into an
+    in-process registry that Prometheus has no way to scrape. The Phase A
+    dashboard panels stay empty as a result.
+
+    Idempotent: a second call (e.g., from a nested run) catches the
+    address-already-in-use error and continues. Failures are logged but
+    never raised — metrics exposure is an observability concern, not a
+    pipeline-correctness concern.
+    """
+    try:
+        from prometheus_client import start_http_server
+
+        start_http_server(port)
+        logger.info("Metrics HTTP server started", port=port)
+    except OSError as exc:
+        # EADDRINUSE (98 on Linux, 48 on macOS) — another process is already
+        # listening, which is fine. Anything else is unexpected but
+        # non-fatal for the orchestration itself.
+        if exc.errno in (48, 98):
+            logger.debug("Metrics server already listening", port=port)
+        else:
+            logger.warning(
+                "Failed to start metrics server",
+                port=port,
+                error=str(exc),
+            )
+    except Exception as exc:  # noqa: BLE001 — defensive; never fail the run
+        logger.warning(
+            "Failed to start metrics server",
+            port=port,
+            error=str(exc),
+        )
+
+
 async def run_multi_resource_optimization(
     workspace_dir: str | Path,
     quality_threshold: float = DEFAULT_QUALITY_THRESHOLD,
@@ -731,6 +791,15 @@ async def run_multi_resource_optimization(
         show_progress=os.environ.get("CGF_SHOW_PROGRESS", "true").lower() == "true",
         follow_logs=os.environ.get("CGF_FOLLOW_LOGS", "true").lower() == "true",
     )
+
+    # Expose harness_* / cgf_* / harness_eval_* instruments to Prometheus.
+    # Long-running modes get this for free via AgentSession; the standalone
+    # orchestrator entry point has to start the server itself or the
+    # Phase A telemetry stays trapped in-process. Override port via
+    # HARNESS_METRICS_PORT (default 9090, matches the container's exposed
+    # port and the Prometheus scrape target).
+    metrics_port = int(os.environ.get("HARNESS_METRICS_PORT", "9090"))
+    _ensure_metrics_server(metrics_port)
 
     orchestrator = MultiResourceOrchestrator(config)
     return await orchestrator.run()

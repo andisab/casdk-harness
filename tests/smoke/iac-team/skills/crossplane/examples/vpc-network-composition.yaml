@@ -1,0 +1,346 @@
+# Example: Multi-Resource VPC Composition
+# Demonstrates coordinating multiple managed resources with dependencies
+
+---
+# XRD for Network
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xnetworks.infrastructure.example.com
+spec:
+  group: infrastructure.example.com
+  names:
+    kind: XNetwork
+    plural: xnetworks
+  claimNames:
+    kind: Network
+    plural: networks
+
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                parameters:
+                  type: object
+                  properties:
+                    cidrBlock:
+                      type: string
+                      pattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+                      default: "10.0.0.0/16"
+                    region:
+                      type: string
+                      default: "us-west-2"
+                    enableNatGateway:
+                      type: boolean
+                      default: true
+                  required:
+                    - cidrBlock
+                    - region
+              required:
+                - parameters
+
+            status:
+              type: object
+              properties:
+                vpcId:
+                  type: string
+                publicSubnetIds:
+                  type: array
+                  items:
+                    type: string
+                privateSubnetIds:
+                  type: array
+                  items:
+                    type: string
+
+---
+# Composition: AWS VPC with Public/Private Subnets
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: network-aws-vpc
+  labels:
+    crossplane.io/xrd: xnetworks.infrastructure.example.com
+    provider: aws
+    environment: production
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+
+  compositeTypeRef:
+    apiVersion: infrastructure.example.com/v1alpha1
+    kind: XNetwork
+
+  resources:
+    # 1. VPC
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: VPC
+        spec:
+          forProvider:
+            enableDnsHostnames: true
+            enableDnsSupport: true
+            tags:
+              Name: ""
+              ManagedBy: crossplane
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.tags.Name
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.id
+          toFieldPath: status.vpcId
+
+    # 2. Internet Gateway
+    - name: internet-gateway
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: InternetGateway
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.tags.Name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-igw"
+
+    # 3. Public Subnet (AZ-a)
+    - name: public-subnet-a
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: public
+            zone: a
+        spec:
+          forProvider:
+            availabilityZone: ""
+            cidrBlock: ""
+            mapPublicIpOnLaunch: true
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              Type: public
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.availabilityZone
+          transforms:
+            - type: string
+              string:
+                fmt: "%sa"
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+          transforms:
+            - type: string
+              string:
+                type: Regexp
+                regexp:
+                  match: '^(\d+\.\d+)\.\d+\.\d+/\d+$'
+                  group: 1
+            - type: string
+              string:
+                fmt: "%s.0.0/24"
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.tags.Name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-public-a"
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.id
+          toFieldPath: status.publicSubnetIds[0]
+
+    # 4. Private Subnet (AZ-a)
+    - name: private-subnet-a
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: private
+            zone: a
+        spec:
+          forProvider:
+            availabilityZone: ""
+            cidrBlock: ""
+            mapPublicIpOnLaunch: false
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              Type: private
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.availabilityZone
+          transforms:
+            - type: string
+              string:
+                fmt: "%sa"
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+          transforms:
+            - type: string
+              string:
+                type: Regexp
+                regexp:
+                  match: '^(\d+\.\d+)\.\d+\.\d+/\d+$'
+                  group: 1
+            - type: string
+              string:
+                fmt: "%s.10.0/24"
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.tags.Name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-private-a"
+
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.id
+          toFieldPath: status.privateSubnetIds[0]
+
+    # 5. Public Route Table
+    - name: public-route-table
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTable
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+        - type: FromCompositeFieldPath
+          fromFieldPath: metadata.name
+          toFieldPath: spec.forProvider.tags.Name
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-public-rt"
+
+    # 6. Public Route (to Internet Gateway)
+    - name: public-route
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Route
+        spec:
+          forProvider:
+            destinationCidrBlock: 0.0.0.0/0
+            gatewayIdSelector:
+              matchControllerRef: true
+            routeTableIdSelector:
+              matchControllerRef: true
+              matchLabels:
+                type: public
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+    # 7. Route Table Association (Public Subnet)
+    - name: public-rta
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTableAssociation
+        spec:
+          forProvider:
+            routeTableIdSelector:
+              matchControllerRef: true
+            subnetIdSelector:
+              matchControllerRef: true
+              matchLabels:
+                type: public
+          providerConfigRef:
+            name: aws-provider-config
+
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.region
+          toFieldPath: spec.forProvider.region
+
+---
+# Example Claim
+apiVersion: infrastructure.example.com/v1alpha1
+kind: Network
+metadata:
+  name: app-network
+  namespace: default
+spec:
+  parameters:
+    cidrBlock: "10.100.0.0/16"
+    region: "us-west-2"
+    enableNatGateway: true
+
+  compositionRef:
+    name: network-aws-vpc
