@@ -17,13 +17,18 @@ EXECUTION_EVAL → VALIDATE → COMPLETE.
 - **Cross-resource coherence** — `cgf-coherence-validator` on a plugin
   with 21 inter-referenced resources
 
-## Resources (21 baseline files)
+## Resources (18 baseline files)
 
 | Type | Count | Names |
 |---|---|---|
 | Agents | 3 | iac-analyzer, iac-generator, iac-validator |
 | Commands | 1 | iac |
-| Skills | 17 | aws-cli, aws-eks, container-analysis, crossplane, gcloud-cli, gcp-gke, github-actions, gitlab-ci, gitops-argocd, gitops-flux, helm-charts, kubernetes-native, pulumi-cdk, repo-analysis, security-validation, terraform-modules |
+| Skills | 14 | aws-cli, aws-eks, container-analysis, crossplane, github-actions, gitlab-ci, gitops-argocd, gitops-flux, helm-charts, kubernetes-native, pulumi-cdk, repo-analysis, security-validation, terraform-modules |
+
+> **Note (2026-05-11):** GCP skills (`gcloud-cli`, `gcp-gke`) were
+> removed from the SPEC to scope eval graders to a single
+> locally-provisionable infrastructure stack. The skills directory
+> count therefore dropped from 17 → 14; total resources from 21 → 18.
 
 The skills are non-trivial — some include `examples/` and `templates/`
 subdirectories with YAML/JSON snippets. The optimizer must preserve
@@ -39,7 +44,7 @@ A run is PASS when:
    - `eval/execution-eval-round-1.json` (aggregate per-arm results)
    - `eval/transcripts/baseline/` and `eval/transcripts/candidate/` populated
    - Per-resource `eval/results/{resource}-v1/eval-results.json`
-2. **All 21 resources advanced** — every resource has either
+2. **All 18 resources advanced** — every resource has either
    `status: "optimized"` or `status: "needs_refinement"` in
    `optimization-state.json`; none with `status: "failed"`
 3. **State machine reached COMPLETE**:

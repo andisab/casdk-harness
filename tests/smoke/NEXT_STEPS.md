@@ -73,6 +73,92 @@ questions below.
 
 ---
 
+## ⏳ Phase 2 — prep complete (2026-05-12, awaiting paid run)
+
+The merge to `contextgrad-eval` shipped as `4b6cb88` (pushed). Phase 2
+prep work has now landed on `phase-a-fixes`:
+
+- README inconsistency fixed: 21 → 18 resources (3 agents + 1 command
+  + 14 skills); GCP skills (`gcloud-cli`, `gcp-gke`) confirmed removed.
+- `setup.sh` rewritten from scaffold → actionable: tooling sanity probe
+  always runs; kind / localstack / real-AWS are all opt-in via
+  `SMOKE_USE_KIND=1` / `SMOKE_USE_LOCALSTACK=1` / `SMOKE_USE_REAL_AWS=1`.
+- `teardown.sh` rewritten: best-effort cleanup, honors
+  `SMOKE_KEEP_RESOURCES=1` for post-mortem.
+
+### R1–R5 decisions (resolved)
+
+**R1 — Local-infrastructure mode: no infra by default.** Phase A
+graders that don't need a cluster — `terraform validate`,
+`helm lint --strict`, `kubeconform`, `tfsec`, `trivy fs`,
+`code_syntax`, `llm_judge` — cover the SPEC's quality criteria. If
+the eval-architect picks `kubectl --dry-run=server` or any grader that
+actually hits AWS, the run will surface it as a defect and the next
+iteration opts into `SMOKE_USE_KIND=1`. Rationale: smallest-blast-radius
+first run; we don't yet know which graders the architect will pick.
+
+**R2 — Grader selection: post-run inspection.** We won't pre-constrain
+the eval-architect. After the run, inspect
+`workspace/iac-team/eval/eval-suite.yaml` and count grader types:
+
+- Agents (3) — expect trajectory + llm_judge
+- Command (1) — expect code_syntax + trajectory
+- IaC skills (14) — expect a mix of `code_syntax` (terraform/yaml
+  validation), `contains` / `regex` (link/version checks), `llm_judge`
+  (narrative quality)
+
+If everything falls back to `llm_judge`, file it as a prompt-tuning
+defect on `cgf-eval-architect.md` and re-run.
+
+**R3 — setup.sh: SHIPPED.** Actionable script, no-infra default,
+opt-in flags documented above. Adds a tooling sanity probe so missing
+CLIs in the harness image surface as warnings rather than silent
+grader failures mid-run.
+
+**R4 — teardown.sh: SHIPPED.** Same opt-in flag set; best-effort
+cleanup; `SMOKE_KEEP_RESOURCES=1` preserves state for post-mortem.
+
+**R5 — Cost ceiling: $4 target / $8 hard cap.** First-run budget:
+
+| Knob | Value | Rationale |
+|---|---|---|
+| `CGF_DESIGN_MODEL` | `sonnet` | Architect needs reasoning; haiku is too noisy at scale |
+| `CGF_JUDGE_MODEL` | `sonnet` | Skip opus for first run — catches harness defects, not subtle quality regressions |
+| `CGF_MAX_ITERATIONS` | `2` | Cap loop-backs; 18 resources × 3 iter is runaway-cost territory |
+| `CGF_EVAL_TOKEN_BUDGET` | `2_000_000` | Hard ceiling; orchestrator should refuse to start a new round once exceeded |
+| `CGF_EVAL_PROMOTION_EPSILON` | (default) | Use shipped default; tune in Phase B |
+
+Stop the run manually if Grafana cost panel exceeds **$8**.
+
+### What's still required before pushing the button
+
+1. `make build` (rebuild image so latest fixture changes are in the
+   container's `/app/tests/smoke/iac-team/`)
+2. `make up` (ensure all 6 default services healthy)
+3. Confirm `.env` has the budget knobs set per R5 (or run with inline
+   `CGF_MAX_ITERATIONS=2 CGF_DESIGN_MODEL=sonnet ... make smoke
+   FIXTURE=iac-team`)
+4. Open Grafana CGF dashboard in a browser tab so cost can be watched
+   in real time
+5. Kick off: `make smoke FIXTURE=iac-team`
+
+Expected wall time: **30–60 min**. Cost target: **$3–8**.
+
+### Assessment after the run
+
+See the "Assessment after the run" + "Likely defects to surface
+(Phase 2)" sections further below. Key questions:
+
+1. Did eval-architect pick reasonable graders, or fall back to
+   llm_judge everywhere?
+2. Did the promotion gate fire on at least one resource (either
+   promote or loop-back)?
+3. Did all five `harness_eval_*` Prometheus instruments populate?
+4. Any contract violations in logs from the Phase-1 hardening
+   (baseline-hash, iter↔eval pairing, signal watchdog)?
+
+---
+
 **Original status (2026-05-11 mid-session):** `phase-a-fixes` branch
 holds the Phase A defect fixes + the `tests/smoke/` framework with
 two fixtures (`python-expert`, `iac-team`). Two python-expert smoke
