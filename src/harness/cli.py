@@ -838,6 +838,47 @@ def print_welcome_banner(console: Console, agent_name: str, model: str) -> None:
     logger.info("Interactive session started", agent=agent_name, model=model)
 
 
+def print_autonomous_welcome_banner(console: Console, model: str) -> None:
+    """
+    Print a welcome banner for the autonomous session.
+
+    Mirrors `print_welcome_banner` (same ASCII art + panel framing) but
+    tailored to non-interactive autonomous mode — no "try these" prompts,
+    different mode label.
+
+    Args:
+        console: Rich console instance
+        model: Model being used
+    """
+    if _HAS_FIGLET:
+        with contextlib.suppress(Exception):
+            ascii_art = Figlet(font="small").renderText("CASDK HARNESS")
+            console.print(f"[bright_cyan]{ascii_art}[/bright_cyan]", end="")
+
+    banner_text = f"""
+[bold cyan]Claude Agent SDK Harness[/bold cyan]
+[dim]Autonomous mode - spec-driven development with Tech Lead Q&A + Coding Agent[/dim]
+
+[yellow]Mode:[/yellow] autonomous  [dim]|[/dim]  [yellow]Model:[/yellow] {model}
+
+[dim]Workflow:[/dim]
+  [green]1.[/green] Initializer runs Tech Lead Q&A to refine SPEC.md
+  [green]2.[/green] Continuation loop executes tasks until complete
+  [green]3.[/green] Progress saved to sessions/ — Ctrl+C is interruptible
+
+[dim]Press Ctrl+C to stop. New here? See QUICKSTART.md[/dim]
+    """
+    panel = Panel(
+        banner_text.strip(),
+        title="Welcome",
+        border_style="bright_blue",
+        padding=(1, 2),
+        expand=True,
+    )
+    console.print(panel, end="\n\n")
+    logger.info("Autonomous session started", model=model)
+
+
 def print_goodbye_banner(
     console: Console,
     totals: SessionTotals | None = None,
