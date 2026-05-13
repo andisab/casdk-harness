@@ -1,832 +1,226 @@
 # Smoke Test Validation Plan
 
-## ✅ Phase 1 — PASSED (2026-05-11, commit `12633e9`)
+## Status
 
-Run #7 of the `python-expert` fixture met **all 10** pass criteria
-(see the "Pass criteria for Phase 1 smoke run" section below):
-
-- Exit 0; `task_list.current_phase == complete`; `iteration == 1`
-- Signal counts: `research=1`, `iterate=1`, `evaluate=1`
-- Baseline `python-expert.md` hash unchanged across the run
-- `reviews/v1_review.md` written at the correct path with parseable
-  `<cgf_directive>` XML; ACCEPT honored as terminal (no further iter)
-- Wall time ~22 min (≤25 min target)
-- 6 distinct defects surfaced + fixed across runs #1–#6; each fix
-  prevented its target defect from recurring on subsequent runs
-
-Hardening that landed with the PASS (commit `12633e9`):
-
-- **P0.1** baseline-hash integrity check + `CGF_BASELINE_HASH_CHECK` override
-- **P0.2** pair-wise `iter ≤ eval + 1` contract enforcement
-- **P0.3** hard iteration cap via `CGF_MAX_ITERATIONS` (default 3)
-- **P0.4** review-on-disk + recommendation parse; ACCEPT/REJECT force terminal
-- **P1.4** signal watchdog (warn by default; `CGF_SIGNAL_STRICT=1` to fail)
-- 10s file-poll grace period for Task-subagent filesystem-write race
-- Stopped embedding resource content in orchestrator system prompt
-  (was hitting Linux `MAX_ARG_STRLEN=128KB`)
-- Orchestrator prompt rewritten with `<critical_rules>` /
-  `<lock_step_protocol>` / `<stop_after_signal_contract>` XML sections,
-  10 Hard Rules, lock-step transcript examples
-- Evaluator prompt: SPEC.md is input #1; mandatory `<cgf_directive>`
-  XML header replaces ambiguous markdown-bullet contract
-- 40 new unit tests in `tests/unit/test_cgf_session.py`; suite at 1791
-  passing post-hardening
-
-Follow-up captured (deferred to after Phase 2): **Stage 4 Task 9 —
-CREATE-mode support** in `cgf_session.py` (commit `822722c`,
-`docs/CGF-EVAL-FRAMEWORK.md`). The orchestrator prompt documents a
-CREATE phase but the Python runner hard-codes start-in-research; this
-branch is dead from the runner's perspective. ~80–120 LoC sketch +
-fixture derived from the Phase-1A v1 output.
-
-### Runtime evidence — what's on disk now
-
-The workspace dir on the host is clean (only `.DS_Store` + `.git` —
-the smoke artifacts from run #7 were cleared post-run). The
-authoritative record of the PASS is therefore:
-
-- Commit `12633e9` message body (enumerates the 10 pass criteria met
-  by run #7, including signal counts, baseline-hash, wall time)
-- 40 new unit tests in `tests/unit/test_cgf_session.py` covering all
-  P0/P1 hardening + the XML directive parser + the 3 legacy markdown
-  fallbacks; full suite at **1791 passing** post-hardening
-- `memory/checkpoints/` shows only later autonomous-mode checkpoints
-  from 2026-05-12, not the smoke run — no live `summary.json` or
-  `task_list.json` to re-summarize from disk
-
-Re-running the smoke is the only way to regenerate the on-disk
-artifacts; the contract is now enforced in code so a regression would
-hard-fail rather than silently produce bad output.
-
-### Branch state
-
-- Branch: `phase-a-fixes` (10 commits ahead of `contextgrad-eval`,
-  branched off `7c31269`; tip commits are `12633e9` hardening and
-  `822722c` Stage 4 Task 9 doc).
-- Per the Branch / merge strategy section below, the next step after
-  Phase 1 PASS is `git merge phase-a-fixes` onto `contextgrad-eval`
-  and push. **Not yet done** — the merge is pending.
-
-**Next:** (a) merge `phase-a-fixes` → `contextgrad-eval`; (b) start
-Phase 2 (iac-team, multi-resource path) with the R1–R5 research
-questions below.
-
----
-
-## Phase 2 — run #2 post-mortem (2026-05-12, network-interrupted)
-
-Run #2 (after the post-merge rebuild) made it through RESEARCH → DESIGN
-→ QA → GENERATE → EVAL_DESIGN before terminating on transient SDK
-network errors coinciding with an operator disconnect. Outcome: 9 of
-18 resources generated, 9 failed with `FailedToOpenSocket` /
-`ConnectionRefused`. Net cost ~$0.04 visible before EVAL_DESIGN
-failures. All 18 v0 baselines preserved (hashes match fixture).
-
-**Eight defects surfaced; six addressed in commit `b5eed9b`:**
-
-| # | Defect | Status (commit `b5eed9b`) |
+| Phase | Status | Next |
 |---|---|---|
-| D1 | Plugin discovery missed marketplace | ✅ resolved (run #1 → image rebuild) |
-| D2 | EVAL_DESIGN unreachable | ✅ resolved (was a D1 symptom; run #2 entered the phase) |
-| D3 | "Success!" with 0 candidates | ✅ resolved (run #2 reported "Multi-resource optimization failed") |
-| **D4** | **VALIDATE ran against baselines, misleading score** | ✅ fixed — `validate.py` early-returns to COMPLETE when no resource is in `{optimized, needs_refinement, generated}` |
-| **D5** | **`CGF_MAX_ITERATIONS` ignored** | ✅ fixed — `run_multi_resource_optimization` reads the env var when kwarg is None |
-| D6 | Smoke metrics not in Prometheus | ✅ resolved (rebuild — `Metrics HTTP server started port=9090`) |
-| D7 | SDK OTel metrics not in Prometheus | ✅ resolved (rebuild — `claude_code_*` flowing) |
-| **D8** | **Image missing helm/tfsec/trivy/kubeconform** | ✅ fixed — Dockerfile installs all four (arch-aware, pinned) |
-| **D9** | **No retry on transient SDK errors** | ✅ fixed — `call_agent_simple` retries with backoff on FailedToOpenSocket / ConnectionRefused / "returned an error result: success" / etc. Default 3 retries, 5/10/20s backoff. Configurable via `CGF_CALL_RETRIES` + `CGF_CALL_RETRY_BACKOFF` |
-| **D10** | **Misleading "error result: success" in logs and state** | ✅ fixed — `classify_sdk_error()` helper returns `(category, friendly)`; wired into `generate.py` + `eval_design.py` failure paths |
-| **D11** | **Generated SKILL.md 75% smaller than baseline** | ✅ fixed — (a) `_check_size_ratio()` warns when generated < 50% of v0; (b) skill-generation prompt now says "PRESERVE BASELINE DEPTH" (was "Keep SKILL.md under 5000 tokens" — the cause) |
+| Phase 1 — `python-expert` single-resource | ✅ **PASSED** (run #7, commit `12633e9`) | Done |
+| Phase 2 — `iac-team` multi-resource | 🟡 In progress (4 runs, last stopped early) | Implement F4 + F3 → run #5 |
 
-Test suite remains green: **1748 unit tests pass** (no regressions).
+**Immediate next action:** implement F4 (parallelize per-resource phases) + F3 (display counter fix), then launch run #5. F4 design sketch is below; estimated ~150–200 LoC production + 80–120 LoC tests; expected ~3.6× wall-time speedup.
 
-### Pre-flight for run #3
-
-The image needs a rebuild to pick up D8 (Dockerfile changes). The
-Python fixes (D4, D5, D9, D10, D11) land via volume mount on
-restart.
-
-```bash
-make build                       # picks up Dockerfile CLIs
-docker compose up -d --force-recreate main-agent
-```
-
-R5 budget knobs already wired in `.env` (`CGF_MAX_ITERATIONS=2`,
-`CGF_DESIGN_MODEL=sonnet`, `CGF_JUDGE_MODEL=sonnet`,
-`CGF_EVAL_TOKEN_BUDGET=2000000`). With D9 retry on, expect to survive
-brief network blips up to ~1 min total backoff per call.
-
-Defer D11's size warnings to per-resource inspection after EXECUTION_EVAL
-runs. If many resources trip the < 50% gate, the eval-architect
-graders should still catch quality regressions; if not, the
-context-engineer prompt needs further tightening.
+**Branch state:** `phase-a-fixes` is N commits ahead of `contextgrad-eval` (run `git log contextgrad-eval..phase-a-fixes --oneline` to see). After F4/F3 + a passing run #5, merge to `contextgrad-eval` and push.
 
 ---
 
-## F4 — Parallelize per-resource phases (design sketch, 2026-05-13)
+## F4 — Parallelize per-resource phases (next to ship)
 
 ### Problem
 
-Run #4 (after F2 fix landed) confirmed the per-resource phases work
-correctly but are **catastrophically slow** when run sequentially:
+Run #4 (post-F2-fix) confirmed the per-resource phases work but are sequential at 6–10 min per resource × 18 resources, projecting **4–8 hours** total wall-time for the iac-team fixture. The phases are I/O-bound (waiting on Claude API), so `asyncio` parallelism is the right fit.
 
-| Phase | Cost per resource | 18 resources sequential |
-|---|---|---|
-| GENERATE | 6–10 min | **2–3 h** |
-| ITERATE  | 5–8 min (when refining) | 1.5–2.5 h |
-| EXECUTION_EVAL | 3–5 min per arm × 2 arms | 1.5–3 h |
-
-Total projected wall time for a full Phase A pipeline on iac-team:
-**4–8 hours**. Cost is fine (~$3–8) — wall time is the blocker.
-
-The per-resource loops are I/O-bound (waiting on Claude API), so
-parallelism is a natural fit.
-
-### Affected files
-
-| File | LoC | Current loop |
-|---|---|---|
-| `_orchestrator_phases/generate.py` | 520 | `for resource in pending:` |
-| `_orchestrator_phases/iterate.py` | 769 | `for resource in pending:` (with inner refinement while-loop) |
-| `_orchestrator_phases/execution_eval.py` | 517 | per-resource baseline + candidate runs |
-
-### Target architecture
+### Target
 
 ```python
-# Pseudo-code for generate.py
+# generate.py pseudo-code
 sem = asyncio.Semaphore(CGF_GENERATE_CONCURRENCY)  # default 4
 
-async def _generate_one(resource: ResourceState) -> None:
+async def _generate_one(resource):
     async with sem:
         try:
             await _generate_single_resource(resource)
         except Exception as exc:
-            # Isolate failure to this resource; don't block siblings
-            self._record_failure(resource, exc)
+            self._record_failure(resource, exc)  # isolate per-resource
 
-# Replace sequential for-loop with gather
-results = await asyncio.gather(
-    *[_generate_one(r) for r in pending],
-    return_exceptions=False,  # already caught above
-)
+await asyncio.gather(*[_generate_one(r) for r in pending])
 ```
+
+### Affected files
+
+| File | LoC | Loop |
+|---|---|---|
+| `_orchestrator_phases/generate.py` | 520 | per-resource for-loop |
+| `_orchestrator_phases/iterate.py` | 769 | per-resource for-loop + inner refinement while-loop |
+| `_orchestrator_phases/execution_eval.py` | 517 | per-resource baseline + candidate runs |
 
 ### Design decisions
 
-**1. Concurrency cap, not unbounded.** `CGF_GENERATE_CONCURRENCY=4`
-(env var, default 4). 18-way parallelism risks Anthropic rate limits
-(429s) and saturates the host's Claude SDK subprocess pool. 4-way is
-empirically safe in prior multi-agent runs.
+1. **Concurrency cap, not unbounded** — `CGF_GENERATE_CONCURRENCY=4` (env, default 4). 18-way risks 429s.
+2. **Per-resource isolation** — each coroutine catches its own exceptions; one failure must not poison the gather batch.
+3. **State writes need a lock** — `asyncio.Lock()` wrapping `_state.update_resource()` + `_save_state()`.
+4. **Metrics + tracer + cost telemetry** — already async-safe (Prometheus client, OTel). No changes.
+5. **Per-call timeout stays per-call** — semaphore caps concurrency, not makespan. Worst-case: `ceil(18/4) × 10 min = 50 min` vs 180 min sequential.
+6. **Phase ordering unchanged** — GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE; only the per-resource loops inside each phase parallelize.
+7. **D9 retry covers rate-limit storms** under 4-way; if persistent, lower the env var.
+8. **No FS write conflicts** — each resource writes to its own subdirectory.
+9. **`plugin.json` is generated once, after the loop** — no race.
 
-**2. Per-resource isolation.** Each parallel coroutine catches its own
-exceptions and records failure via `_state.update_resource(... status="failed")`.
-A single resource failing must NOT poison the gather batch.
-
-**3. State writes need a lock.** `_state.update_resource()` + `_save_state()`
-mutate shared `task_list.json`. Wrap in an `asyncio.Lock` so two
-coroutines don't clobber each other:
-```python
-async with self._state_lock:
-    self._state.update_resource(...)
-    self._save_state()
-```
-
-**4. Metrics & tracer are already thread/coroutine-safe** (Prometheus
-client uses locks internally; OTel tracer is async-safe). No changes
-needed there.
-
-**5. Cost telemetry is per-process-aggregate**, not per-resource. Stays
-correct under parallelism — the OTel collector receives all events
-regardless of ordering.
-
-**6. Per-resource log lines may interleave.** Current logs use
-`structlog.get_logger()` which is async-safe; key ordering and JSON
-output preserve correctness even when lines arrive in mixed order.
-Each log line carries `resource=path` for filtering.
-
-**7. The 15-min per-call timeout STAYS PER-CALL** (not per-batch).
-With 4-way concurrency on 18 resources, the worst-case wall time is:
-- `ceil(18/4) * 10 min = 50 min` (vs 180 min sequential) — **~3.6x speedup**
-
-**8. Rate-limit retry already exists.** D9's `_is_transient_error()`
-already catches 429/rate-limit errors and retries with backoff. Under
-4-way parallelism, expect occasional retry storms — the existing
-exponential backoff handles them.
-
-**9. Phase ordering is unchanged.** GENERATE → EVAL_DESIGN → ITERATE
-→ EXECUTION_EVAL → VALIDATE sequence stays the same. Only the
-per-resource loops inside each phase parallelize.
-
-### Risks & mitigations
-
-| Risk | Mitigation |
-|---|---|
-| `asyncio.Lock` contention on state writes | Each write is sub-ms; 4 coroutines × ~30 writes per resource = negligible contention |
-| OTel span ordering looks weird in traces | Spans are intrinsically parented; ordering in viewer is fine. Add `resource_path` attribute for filtering |
-| One resource's slow LLM call holds a slot for 15 min while others finish fast | Acceptable — semaphore is bounded by concurrency, not by makespan |
-| Rate-limit storms (429) under 4-way | D9 retry handles it; if persistent, lower `CGF_GENERATE_CONCURRENCY` |
-| File-system write conflicts between resources | None — each resource writes to its own subdirectory (`skills/aws-cli/`, `skills/aws-eks/`, etc.) |
-| Workspace `.claude-plugin/plugin.json` is one shared file | Already generated AFTER the per-resource loop completes (in `_generate_plugin_json` called once at end). No race. |
-
-### Configuration knobs
+### Config knobs
 
 | Var | Default | Range |
 |---|---|---|
 | `CGF_GENERATE_CONCURRENCY` | 4 | 1–8 |
 | `CGF_ITERATE_CONCURRENCY` | 4 | 1–8 |
-| `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | 1–4 (eval is more expensive, smaller cap) |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | 1–4 (eval is more expensive) |
 
-`=1` everywhere is a kill-switch back to sequential behavior; useful
-for debugging if a regression appears.
+`=1` everywhere is the kill-switch back to sequential.
 
 ### Implementation order
 
-1. **Extract `_generate_single_resource()`** as an async function from the
-   inner body of generate.py's for-loop. ~40 LoC reshuffle, no behavior
-   change. Verify with unit tests.
-2. **Add `_state_lock = asyncio.Lock()`** to orchestrator init.
-3. **Wrap state writes in the lock** across all 3 phase files. Find via
-   `git grep '_save_state'`. ~10-15 sites.
-4. **Convert generate.py outer loop to `asyncio.gather` with semaphore.** ~25 LoC.
-5. **Repeat for iterate.py and execution_eval.py.** Each has its own
-   per-resource semantics (iterate has inner while-loop on refinement;
-   execution_eval has baseline+candidate per resource). Each gets the
-   same gather-with-semaphore treatment but at the **resource** level
-   only — inner loops stay sequential within each coroutine.
-6. **Unit tests** for the new helpers (mock LLM, verify gather + lock).
-7. **Smoke run on iac-team** at `CGF_GENERATE_CONCURRENCY=4`.
+1. Extract `_generate_single_resource()` async helper from generate.py's for-loop body (~40 LoC, no behavior change). Verify with existing tests.
+2. Add `_state_lock = asyncio.Lock()` to `MultiResourceOrchestrator.__init__`.
+3. Wrap state writes in the lock across all 3 phase files (~10–15 sites; `git grep '_save_state'`).
+4. Convert generate.py outer loop to `asyncio.gather` with semaphore (~25 LoC).
+5. Repeat for iterate.py and execution_eval.py (inner loops stay sequential within each coroutine).
+6. Unit tests for the new helpers (mock LLM, verify gather + lock contention).
+7. Smoke run on iac-team at `CGF_GENERATE_CONCURRENCY=4`.
 
-### Total estimated effort
+### Risks
 
-- Production: ~150–200 LoC across 3 files + helpers
-- Tests: ~80–120 LoC (mock-LLM concurrency tests)
-- Wall-time gain: ~3.6× speedup on 18-resource fixtures (50 min vs 180
-  min for GENERATE alone)
-- Risk: medium — concurrency is a well-trodden path with `asyncio`
-  primitives, but state-write races are easy to miss. Pair with
-  explicit asyncio lock unit tests.
-
-### When to ship
-
-Before run #5. F4 unblocks practical smoke-test iteration; without it
-each cycle is a half-day.
-
-### F3 (display counter)
-
-Smaller fix, same general area: `agent_progress.py:extract_tool_info()`
-counts only Task / Skill tool calls toward `tool_calls` but should
-include Read/Write/Edit/Bash for the progress display. ~10 LoC. Ship
-alongside F4 since both touch agent invocation observability.
+| Risk | Mitigation |
+|---|---|
+| State-write races | `asyncio.Lock` on every `_save_state()`; explicit unit test |
+| Rate-limit storms (429) | D9 retry already handles; lower concurrency env var if persistent |
+| OTel span ordering looks weird | Spans intrinsically parented; add `resource_path` attribute for filtering |
+| One slow resource holds a slot for 15 min | Acceptable — bounded by semaphore, not makespan |
 
 ---
 
-## ⏳ Phase 2 — prep complete (2026-05-12, awaiting paid run)
+## F3 — Display counter fix (bundled with F4)
 
-The merge to `contextgrad-eval` shipped as `4b6cb88` (pushed). Phase 2
-prep work has now landed on `phase-a-fixes`:
-
-- README inconsistency fixed: 21 → 18 resources (3 agents + 1 command
-  + 14 skills); GCP skills (`gcloud-cli`, `gcp-gke`) confirmed removed.
-- `setup.sh` rewritten from scaffold → actionable: tooling sanity probe
-  always runs; kind / localstack / real-AWS are all opt-in via
-  `SMOKE_USE_KIND=1` / `SMOKE_USE_LOCALSTACK=1` / `SMOKE_USE_REAL_AWS=1`.
-- `teardown.sh` rewritten: best-effort cleanup, honors
-  `SMOKE_KEEP_RESOURCES=1` for post-mortem.
-
-### R1–R5 decisions (resolved)
-
-**R1 — Local-infrastructure mode: no infra by default.** Phase A
-graders that don't need a cluster — `terraform validate`,
-`helm lint --strict`, `kubeconform`, `tfsec`, `trivy fs`,
-`code_syntax`, `llm_judge` — cover the SPEC's quality criteria. If
-the eval-architect picks `kubectl --dry-run=server` or any grader that
-actually hits AWS, the run will surface it as a defect and the next
-iteration opts into `SMOKE_USE_KIND=1`. Rationale: smallest-blast-radius
-first run; we don't yet know which graders the architect will pick.
-
-**R2 — Grader selection: post-run inspection.** We won't pre-constrain
-the eval-architect. After the run, inspect
-`workspace/iac-team/eval/eval-suite.yaml` and count grader types:
-
-- Agents (3) — expect trajectory + llm_judge
-- Command (1) — expect code_syntax + trajectory
-- IaC skills (14) — expect a mix of `code_syntax` (terraform/yaml
-  validation), `contains` / `regex` (link/version checks), `llm_judge`
-  (narrative quality)
-
-If everything falls back to `llm_judge`, file it as a prompt-tuning
-defect on `cgf-eval-architect.md` and re-run.
-
-**R3 — setup.sh: SHIPPED.** Actionable script, no-infra default,
-opt-in flags documented above. Adds a tooling sanity probe so missing
-CLIs in the harness image surface as warnings rather than silent
-grader failures mid-run.
-
-**R4 — teardown.sh: SHIPPED.** Same opt-in flag set; best-effort
-cleanup; `SMOKE_KEEP_RESOURCES=1` preserves state for post-mortem.
-
-**R5 — Cost ceiling: $4 target / $8 hard cap.** First-run budget:
-
-| Knob | Value | Rationale |
-|---|---|---|
-| `CGF_DESIGN_MODEL` | `sonnet` | Architect needs reasoning; haiku is too noisy at scale |
-| `CGF_JUDGE_MODEL` | `sonnet` | Skip opus for first run — catches harness defects, not subtle quality regressions |
-| `CGF_MAX_ITERATIONS` | `2` | Cap loop-backs; 18 resources × 3 iter is runaway-cost territory |
-| `CGF_EVAL_TOKEN_BUDGET` | `2_000_000` | Hard ceiling; orchestrator should refuse to start a new round once exceeded |
-| `CGF_EVAL_PROMOTION_EPSILON` | (default) | Use shipped default; tune in Phase B |
-
-Stop the run manually if Grafana cost panel exceeds **$8**.
-
-### What's still required before pushing the button
-
-1. `make build` (rebuild image so latest fixture changes are in the
-   container's `/app/tests/smoke/iac-team/`)
-2. `make up` (ensure all 6 default services healthy)
-3. Confirm `.env` has the budget knobs set per R5 (or run with inline
-   `CGF_MAX_ITERATIONS=2 CGF_DESIGN_MODEL=sonnet ... make smoke
-   FIXTURE=iac-team`)
-4. Open Grafana CGF dashboard in a browser tab so cost can be watched
-   in real time
-5. Kick off: `make smoke FIXTURE=iac-team`
-
-Expected wall time: **30–60 min**. Cost target: **$3–8**.
-
-### Assessment after the run
-
-See the "Assessment after the run" + "Likely defects to surface
-(Phase 2)" sections further below. Key questions:
-
-1. Did eval-architect pick reasonable graders, or fall back to
-   llm_judge everywhere?
-2. Did the promotion gate fire on at least one resource (either
-   promote or loop-back)?
-3. Did all five `harness_eval_*` Prometheus instruments populate?
-4. Any contract violations in logs from the Phase-1 hardening
-   (baseline-hash, iter↔eval pairing, signal watchdog)?
+`agent_progress.py:extract_tool_info()` counts only Task / Skill toward the `tool_calls` shown in progress output. Should also count Read / Write / Edit / Bash. Result: all agents log "0 tool calls" even when they ran fine. ~10 LoC. Pure display bug — no functional impact.
 
 ---
 
-**Original status (2026-05-11 mid-session):** `phase-a-fixes` branch
-holds the Phase A defect fixes + the `tests/smoke/` framework with
-two fixtures (`python-expert`, `iac-team`). Two python-expert smoke
-runs have executed; both surfaced protocol bugs (orchestrator agent
-skipping the evaluate phase, generating multiple iterations without
-targeted feedback, overwriting the pristine baseline file). This
-document is the **single source of truth** for both:
+## Pre-flight for run #5
 
-- **Phase 1** — finish hardening + a clean python-expert run (single-resource path) — ✅ PASSED, see banner above
-- **Phase 2** — design + run iac-team smoke (multi-resource path)
+1. F4 + F3 implementation complete; unit tests green
+2. `make build` only if Dockerfile changed (likely not for F4)
+3. `docker compose up -d --force-recreate main-agent` to pick up Python edits from volume-mounted `/app/src`
+4. Confirm `.env` budget knobs:
+   - `CGF_MAX_ITERATIONS=2`
+   - `CGF_DESIGN_MODEL=sonnet`
+   - `CGF_JUDGE_MODEL=sonnet`
+   - `CGF_EVAL_TOKEN_BUDGET=2000000`
+   - `CGF_GENERATE_CONCURRENCY=4` *(new, from F4)*
+5. Open Grafana: <http://localhost:3000/d/casdk-cgf>
+6. `make smoke FIXTURE=iac-team`
 
-Execute Phase 1 top-to-bottom first. Phase 2 work is gated on Phase 1
-passing.
+**Expected:** ~60–90 min wall-time (vs 4–8 h sequential), $3–8 cost.
 
 ---
 
-## Phase 1 — Harden + validate python-expert (single-resource path)
+## Phase 2 pass criteria (target for run #5)
 
-**Goal:** confirm the single-resource code path
-(`harness.cgf_session.py`) produces correct grading + refinement on a
-real agent. This is the cheapest, simplest test surface; if it fails,
-all the more complex multi-resource work is wasted effort.
+A successful run produces:
 
-### Bugs surfaced from run #2 (the run that prompted this plan)
+1. `workspace/iac-team/eval/eval-suite.yaml` — generated by cgf-eval-architect, validates against `eval_suite.schema.json`
+2. `workspace/iac-team/eval/execution-eval-round-*.json` — per-arm results across all 18 resources
+3. `workspace/iac-team/eval/transcripts/baseline/` and `…/candidate/` populated
+4. Per-resource `eval/results/{resource}-v1/eval-results.json`
+5. State machine reaches `current_phase: COMPLETE` with all 18 resources in `optimized` / `needs_refinement` / `failed` (no stuck-in-progress)
+6. At least one resource exhibits successful PROMOTE or feedback-loop-back to ITERATE — exercises both `_should_promote` branches
+7. Grafana CGF dashboard: all five Phase A panels populated
+8. No `[error]`-level log lines indicating contract violations from Phase-1 hardening (baseline-hash, iter↔eval pairing, signal watchdog)
 
-| # | Bug | Severity | Evidence |
-|---|---|---|---|
-| 1 | Original `python-expert.md` overwritten with v1 content | **CRITICAL — data loss** | `md5(python-expert.md) == md5(python-expert-v1.md)` after run |
-| 2 | Agent fired `[ITERATION_COMPLETE]` for iters 1+2 then skipped iter3 | High | `task_list.iteration=2` but `python-expert-v3.md` exists |
-| 3 | Three iterations produced, zero evaluations | High | No `reviews/` directory created; `EVALUATE_COMPLETE` count = 0 |
-| 4 | Iterations were untargeted (each one added a new tangential section rather than addressing eval gaps) | High | CHANGELOG lists "AsyncExitStack section added in v2" / "Anti-Pattern section added in v3" — agent's own choices, no `REFINEMENT_HINTS` source |
-| 5 | `summary.json` quality scores and word counts disagree with reality (~25% off vs `wc -w`) | Medium | Agent self-reported `v1=12850 words` but actual `wc -w` = 10344 |
-| 6 | `CHANGELOG.md` says `Status: COMPLETE` mid-run | Medium | Written at 12:42 while state-machine still in `iterate` |
-| 7 | Run took 90+ min for one resource (vs $0.50-2/15min predicted) | Medium | Cumulative $10+ spent before manual stop |
-| 8 | Dashboard couldn't route correctly because run pre-dated `record_run_path` | Low | Expected — fixes itself on next run |
+### Assessment after run #5
 
-### Plan items
+1. **Did eval-architect pick reasonable graders?** Count grader types per resource in `eval-suite.yaml`. If everything is `llm_judge`, architect prompt needs tuning.
+2. **Did the gate fire on both branches?** Check that at least one resource was rejected and at least one promoted (or accept that the baselines are uniformly bad/good and document why).
+3. **Did the feedback loop fire?** `feedback_history` length > 0 in `optimization-state.json`.
+4. **All five `harness_eval_*` Prometheus instruments populated?** If one missing, wiring defect.
+5. **F4 parallelism actually delivered the speedup?** Compare wall-time to projection.
 
-#### P0 — Correctness (blocks next smoke run)
+---
 
-##### P0.1 Protect original file
-**File:** `src/harness/cgf_session.py`
-
-- At start of `_run_optimization_phase`, compute SHA-256 of resource file
-  (whatever `_find_resource_path()` returns)
-- Store the hash in `task_list` (new field `baseline_hash`)
-- Before processing each phase signal (`[RESEARCH_COMPLETE]`,
-  `[ITERATION_COMPLETE]`, etc.), re-hash the baseline
-- If hash changed: hard-fail with explicit error referencing the file,
-  expected hash, observed hash. Call `record_phase_entry(resource,
-  "failed")` and return `False`
-- Add env-var override `CGF_BASELINE_HASH_CHECK=0` to disable
-  (default: enabled)
-
-**Test:** unit test in `tests/unit/test_cgf_session.py` that constructs
-a runner, mutates the resource file, calls the signal handler, asserts
-the run is rejected with `task_list.error` populated.
-
-**LoC estimate:** ~40
-
-##### P0.2 Pair-wise iter↔eval enforcement
-**Files:** `src/harness/cgf_session.py`, `cgf-orchestrator.md`
-
-Current contract: counts iter and eval signals independently and only
-checks at `[OPTIMIZATION_COMPLETE]`. New contract is **stateful**:
-
-- `iter_count` must never exceed `eval_count + 1`
-  (i.e. each iteration must be followed by an evaluation before the next)
-- Reject 2nd `[ITERATION_COMPLETE]` if `eval_count < 1`
-- Reject 3rd `[ITERATION_COMPLETE]` if `eval_count < 2`
-- General: on `[ITERATION_COMPLETE]`, if `iter_count > eval_count + 1`,
-  mark the violation, log error, set phase to `failed`, return `False`
-
-Update orchestrator prompt to lock-step the protocol:
-
-> After writing `*-vN.md`, you MUST emit `[ITERATION_COMPLETE]` in the
-> SAME message. You MUST then dispatch
-> `cgf-agents:cgf-result-evaluator` via Task tool. When it returns,
-> write the review to `workspace/{resource}/reviews/v{N}_review.md` and
-> emit `[EVALUATE_COMPLETE]`. Only THEN may you start another iteration
-> (if RECOMMENDATION is REFINE) OR emit `[OPTIMIZATION_COMPLETE]` (if
-> ACCEPT). You may never write `v{N+1}.md` until `[EVALUATE_COMPLETE]`
-> for `vN` has fired.
-
-**Test:** unit test feeds a synthetic content stream with two
-`[ITERATION_COMPLETE]` signals back-to-back and asserts the second one
-triggers a violation.
-
-**LoC estimate:** ~60 (Python) + prompt rewrite
-
-##### P0.3 Configurable iteration cap
-**Files:** `src/harness/config.py`, `src/harness/cgf_session.py`,
-`.env.example`
-
-- New env var: `CGF_MAX_ITERATIONS=3` (default 3)
-- Wire through `RuntimeConfig`
-- When `iter_count == CGF_MAX_ITERATIONS`, the next signal MUST be
-  `[EVALUATE_COMPLETE]` then `[OPTIMIZATION_COMPLETE]` — refuse another
-  `[ITERATION_COMPLETE]`
-- Expose `harness_run_iteration_cap{resource}` gauge so Grafana can
-  show "iter 2 of 3"
-- Deprecate or rename the existing `CGF_ITERATIONS=10` (currently
-  inactive code path; clarify in CLAUDE.md)
-
-**LoC estimate:** ~40
-
-##### P0.4 Require eval review on disk
-**Files:** `src/harness/cgf_session.py`
-
-- `[EVALUATE_COMPLETE]` is only accepted if
-  `workspace/{resource}/reviews/v{N}_review.md` exists where `N =
-  task_list.iteration` at the time
-- If review file missing: hard-fail with explicit error
-- Python parses the review for the `RECOMMENDATION: ...` line
-  (frontmatter or first-match)
-- Store recommendation in `task_list.checkpoints[-1].recommendation`
-- If recommendation is `REFINE`, parse `TARGET_SECTIONS` /
-  `TARGET_COMPETENCIES` / `REFINEMENT_HINTS` blocks; pass them as a
-  structured prompt to the next iteration so the orchestrator can't
-  ignore them
-- If recommendation is `ACCEPT`, the next signal MUST be
-  `[OPTIMIZATION_COMPLETE]` — refuse another iteration
-- If recommendation is `REJECT`, also force terminal — `[OPTIMIZATION_FAILED]`
-
-**Test:** unit test asserts missing review file → reject;
-malformed review (no RECOMMENDATION line) → reject; ACCEPT
-recommendation forces terminal on next iter attempt.
-
-**LoC estimate:** ~80 (parser + enforcement + tests)
-
-#### P1 — Compliance reinforcement (ships with P0)
-
-##### P1.5 Orchestrator prompt: explicit lock-step + evaluator dispatch
-**File:** `src/harness/plugins/cgf-agents/agents/design/cgf-orchestrator.md`
-
-Already partially rewritten in earlier work. New additions:
-
-- Make eval dispatch step-by-step explicit (Task tool call template)
-- Show example transcript:
-  ```
-  [writing v1.md...]
-  [ITERATION_COMPLETE]
-
-  Now dispatching evaluator...
-  <Task tool: subagent_type="cgf-agents:cgf-result-evaluator">
-
-  [evaluator returns review with RECOMMENDATION: REFINE]
-  [writing reviews/v1_review.md...]
-  [EVALUATE_COMPLETE]
-
-  Recommendation is REFINE. TARGET_SECTIONS: examples, best_practices.
-  REFINEMENT_HINTS: Add CancelledError propagation patterns to examples.
-  Starting iteration 2 with these constraints...
-
-  [writing v2.md...]
-  [ITERATION_COMPLETE]
-  ...
-  ```
-- Hard rule: **NEVER** write `v{N+1}.md` before `[EVALUATE_COMPLETE]` for `vN` has fired
-
-**Effort:** prompt rewrite, no code (~30 min)
-
-##### P1.4 Signal watchdog
-**File:** `src/harness/cgf_session.py`
-
-- During the optimization loop, after each tool call, inspect the tool
-  name + arguments
-- If tool is `Write` and `file_path` matches `*-v\d+\.md` (regex), set
-  a `pending_iteration_signal` flag with the version number
-- Within the same agent turn (same `async for message in
-  agent_session.execute(...)` iteration), if `[ITERATION_COMPLETE]`
-  doesn't fire, log a WARN and either:
-  - `CGF_SIGNAL_STRICT=0` (default): just warn
-  - `CGF_SIGNAL_STRICT=1`: hard-fail with violation
-
-**Test:** unit test feeds a synthetic stream with a `Write` to v1.md
-followed by another assistant message (no signal); asserts warning is
-logged (or violation raised, depending on strict mode).
-
-**LoC estimate:** ~40
-
-#### P2 — Trust boundaries (post-validation)
-
-Defer these until P0/P1 are validated by a passing smoke run. Don't
-block the next smoke on them.
-
-##### P2.6 Python-owned CHANGELOG
-- Agent writes its narrative to `agent_notes.md` instead
-- Python generates CHANGELOG from `task_list.checkpoints` +
-  recommendations + state-machine truth at end-of-run
-- Eliminates "three different iteration counts" problem
-
-##### P2.7 Summary validation
-- After agent writes `summary.json`, Python re-computes word_count,
-  line_count, section_count
-- Overwrites verifiable fields; flags quality scores as
-  `_self_reported: true` for traceability
-
-#### P3 — UX (track, don't ship in this pass)
-
-| # | Item | Rationale |
-|---|------|-----------|
-| C | Path-filtered dashboard (single vs multi pipelines as separate panels) | Partial — already shipped via path-discriminator + dashboard query (no fresh run yet validated it) |
-| D-extend | Cost-per-phase tracking | Need on each `record_phase_entry` boundary |
-| E | Collapse `iterate`/`optimize` across paths | Premature — defer to Stage 3 Phase B |
-| F | Load-bearing `task_list.iteration` | **Partially shipped via P0.3** (cap). Full version: drives gates + promotion |
-| UX-1 | Mid-run progress indicator (no 30-min Read loops) | Symptom of agent doing internal context-gathering; needs prompt + max_turns tuning |
-
-### Implementation order (Phase 1)
-
-```
-1. P0.1 (baseline hash)          ~40 LoC + 1 test    [protects from data loss]
-2. P0.3 (iteration cap)          ~40 LoC + 1 test    [prevents runaway cost]
-3. P0.2 (pair-wise enforcement)  ~60 LoC + 1 test    [fixes ordering bug]
-4. P0.4 (require review on disk) ~80 LoC + 2 tests   [forces eval to actually run]
-5. P1.5 (prompt lock-step)       prompt edit          [forces compliance]
-6. P1.4 (signal watchdog)        ~40 LoC + 1 test    [catches drift]
-```
-
-Total: ~260 LoC production + ~6 tests. Followed by:
-
-7. Clear `workspace/python-expert/`
-8. Run `make smoke FIXTURE=python-expert`
-9. Validate against pass criteria below
-10. If pass, commit; document Phase-1 PASS at the top of this file;
-    move on to Phase 2 (iac-team)
-
-### Configuration matrix (new env vars after Phase 1)
+## Configuration matrix (env vars currently used)
 
 | Var | Default | Purpose |
-|-----|---------|---------|
-| `CGF_MAX_ITERATIONS` | `3` | Max iter↔eval cycles before forced terminal |
-| `CGF_BASELINE_HASH_CHECK` | `1` | Enforce original-file protection |
-| `CGF_SIGNAL_STRICT` | `0` | Hard-fail on signal-watchdog violations (vs warn) |
-| `CGF_NON_INTERACTIVE` | `0` | Already shipped — auto-continue checkpoints (set by `make smoke`) |
-| `CGF_ITERATIONS` | `10` | DEPRECATED — see CGF_MAX_ITERATIONS |
-
-### Pass criteria for Phase 1 smoke run
-
-The next `make smoke FIXTURE=python-expert` MUST:
-
-1. Complete in ≤25 min, ≤$5
-2. Final `task_list.json` shows `current_phase: complete`,
-   `iteration ≥ 1` matching number of `*-v*.md` files
-3. `workspace/python-expert/reviews/` exists with one `v{N}_review.md`
-   per iteration
-4. `python-expert.md` (original) has unchanged hash from start of run
-5. `summary.json["iterations"]` matches `task_list.iteration` exactly
-6. CHANGELOG references at least one ACCEPT, REFINE, or REJECT
-   recommendation from a real `reviews/v{N}_review.md`
-7. Grafana CGF dashboard shows: Active Path = "single", Phase
-   Progression shows `complete` row active (green), single-only phases
-   visible, multi-only phases marked `(N/A)`
-8. `harness_run_iteration` gauge reflects the final iteration count
-9. No `[error]`-level log lines indicating contract violations
-10. Exit code 0
-
-If any criterion fails: file as defect, fix on sub-branch, re-run.
-
-### Quick reference — running Phase 1 smoke
-
-```bash
-# Ensure services are up
-make up
-
-# Verify the fixture is present
-ls tests/smoke/python-expert/
-# Expected: README.md  SPEC.md  python-expert.md
-
-# Run smoke
-make smoke FIXTURE=python-expert
-```
-
-Expect: ~$2-4 in API calls, ~15-25 min wall time (after hardening).
+|---|---|---|
+| `CGF_MAX_ITERATIONS` | 3 | Max iter↔eval cycles before forced terminal (Phase 1 + multi-resource) |
+| `CGF_BASELINE_HASH_CHECK` | 1 | Enforce original-file protection |
+| `CGF_SIGNAL_STRICT` | 0 | Hard-fail on signal-watchdog violations |
+| `CGF_CALL_RETRIES` | 3 | Transient SDK retry attempts |
+| `CGF_CALL_RETRY_BACKOFF` | 5.0 | Exponential backoff base (s) |
+| `CGF_DESIGN_MODEL` | sonnet | Eval-architect model |
+| `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
+| `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Token ceiling per eval round |
+| `CGF_GENERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource generation |
+| `CGF_ITERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource iteration |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | *(F4)* Parallel per-resource eval |
 
 ---
 
-## Phase 2 — Research + design iac-team smoke (multi-resource path)
+## Defect ledger (history)
 
-**Goal:** decide and implement the actual setup.sh / teardown.sh and
-fill in the SPEC's grader expectations so iac-team is a real
-end-to-end Phase A test, not a scaffold.
+### Runs #1-2 — pre-rebuild defects (D1–D11, all resolved)
 
-This phase splits into **research** (no LLM calls, ~30 min of
-investigation) and **implementation** (filling in the TODO blocks
-and SPEC adjustments).
+| # | Defect | Status |
+|---|---|---|
+| D1 | Plugin discovery missed swe-marketplace | ✅ Run #1 → rebuild |
+| D2 | EVAL_DESIGN unreachable | ✅ D1 symptom |
+| D3 | "Success!" with 0 candidates | ✅ Orchestrator returns error |
+| D4 | VALIDATE misleading score with no candidates | ✅ `b5eed9b` — early-skip |
+| D5 | `CGF_MAX_ITERATIONS` ignored in multi-resource | ✅ `b5eed9b` — env-var read |
+| D6 | Smoke metrics not in Prometheus | ✅ Rebuild |
+| D7 | SDK OTel metrics not in Prometheus | ✅ Rebuild |
+| D8 | Image missing helm/tfsec/trivy/kubeconform | ✅ `b5eed9b` + `914cad4` (dropped tfsec) + `2fff7ca` (added kubectl/terraform) |
+| D9 | No retry on transient SDK errors | ✅ `b5eed9b` — backoff retry in `call_agent_simple` |
+| D10 | Misleading "error result: success" | ✅ `b5eed9b` — `classify_sdk_error()` |
+| D11 | Generated SKILL.md 75% smaller than baseline | ✅ `b5eed9b` — size guard + "PRESERVE BASELINE DEPTH" prompt |
 
-### Research questions to answer before running iac-team
+### Runs #3-4 — post-rebuild defects (F1–F4)
 
-#### R1. Local-infrastructure mode
+| # | Defect | Status |
+|---|---|---|
+| F1 | `setup.sh` host-side tooling probe false-positives | 🟡 Open (cosmetic) |
+| F2 | `context-engineer` 31 turns / 0 tool calls / 15 min timeout — Skill/Task tools not granted; SDK plugins/skills not wired into standalone calls | ✅ `800f20f` (harness) + swe-marketplace `2376404` — 6 agent tool-grants + `subagent.py` SDK wiring |
+| F3 | Progress display shows "0 tool calls" even when tools called | 🟡 Open — bundled with F4 |
+| F4 | Per-resource phases sequential → 4-8h wall-time | 🟡 **Open — next to ship** (this doc, top section) |
 
-Which provisioning approach gives the right cost / fidelity tradeoff?
+### Phase 1 hardening (P0–P1, all shipped in `12633e9`)
 
-| Option | Pros | Cons | Decision criteria |
-|---|---|---|---|
-| **kind** (K8s in Docker) | Free, fast, real K8s API | No EKS-specific behavior | Best if eval graders use `kubectl --dry-run=client` / `kubeconform` |
-| **kind + localstack** | + Local AWS API emulation | localstack CE doesn't cover EKS fully (Pro does) | Best if graders need both `kubectl` AND `aws` CLI calls |
-| **Real AWS EKS** | High fidelity | Costs ($0.10/hr + data), slow to spin up (~15 min), needs cleanup | Best for periodic / pre-release smoke; overkill for daily refinement |
-| **No cluster** (terraform-validate only) | Free, fastest | Skips Helm/K8s graders entirely | Best if Phase 1 has shown the multi-resource path needs more iteration before realistic graders |
+Baseline-hash check, pair-wise iter↔eval contract, configurable iteration cap, review-on-disk + RECOMMENDATION parser, signal watchdog, XML directive contract, orchestrator + evaluator prompt rewrites, 40 new unit tests. Full breakdown in commit `12633e9` message.
 
-**Recommendation to investigate:** start with **kind only** for the
-first iac-team run. Reasons: simplest, most repeatable, and the
-SPEC's existing quality criteria
-(`kubectl --dry-run`, `helm lint`, `kubeconform`, `terraform validate`,
-`tfsec`, `trivy`) all work without cloud creds.
+---
 
-If/when smoke catches real defects in EKS-specific generation paths,
-upgrade to kind + localstack or real AWS.
-
-#### R2. What graders should cgf-eval-architect actually pick?
-
-When iac-team runs, the cgf-eval-architect agent reads the SPEC and
-designs eval scenarios with graders. We want to verify it picks
-deterministic graders where they apply rather than defaulting to
-llm_judge for everything. Research questions:
-
-- For each of the 21 resources, what's the cheapest grader that
-  would catch a real regression?
-  - Agents (3): trajectory graders (tool-call ordering) + llm_judge
-    for narrative quality
-  - Command (1): code_syntax + trajectory
-  - Skills (17): mostly `contains` / `regex` checks on output
-    content + maybe `code` graders for any Python/shell snippets
-- Does the architect, given this SPEC, actually generate those
-  graders? Or does it fall back to llm_judge for everything?
-  Inspect `eval/eval-suite.yaml` after the run to find out.
-
-#### R3. Setup.sh implementation
-
-Concrete tasks to fill in `tests/smoke/iac-team/setup.sh`:
-
-- [ ] Provision a kind cluster if not present (`kind create cluster --name casdk-smoke-iac --image kindest/node:v1.31.0`)
-- [ ] (Optional) Spin up localstack if `SMOKE_USE_LOCALSTACK=1`
-- [ ] (Optional) Verify real AWS creds if `SMOKE_USE_REAL_AWS=1`
-- [ ] Verify required CLIs are on PATH (`kubectl`, `helm`, `terraform`, `kubeconform`, `tfsec`, `trivy`)
-- [ ] Set env vars the eval graders need (e.g., `KUBECONFIG`, `AWS_ENDPOINT_URL` for localstack)
-
-#### R4. Teardown.sh implementation
-
-Concrete tasks to fill in `tests/smoke/iac-team/teardown.sh`:
-
-- [ ] Delete the kind cluster (`kind delete cluster --name casdk-smoke-iac`)
-- [ ] Stop localstack container if started
-- [ ] Tolerate "not found" / partial failures (best-effort cleanup)
-- [ ] Respect `SMOKE_KEEP_RESOURCES=1` (leave running for post-mortem)
-
-#### R5. Cost ceiling
-
-iac-team has 21 resources. With sonnet for design and opus for judge,
-worst case is ~$8/run. Decide:
-
-- Initial smoke runs: cap with `CGF_EVAL_TOKEN_BUDGET=2_000_000` to
-  prevent runaway feedback loops?
-- Use sonnet-only (skip opus judge) for the first few iterations to
-  cut cost while still catching gross harness defects?
-
-### Run
+## How to run
 
 ```bash
-# After R1-R5 are answered and setup.sh / teardown.sh are filled in:
-make smoke FIXTURE=iac-team
+make build                                          # only if Dockerfile changed
+docker compose up -d --force-recreate main-agent    # to pick up src/ edits
+make smoke FIXTURE=iac-team                         # full pipeline
+make smoke FIXTURE=python-expert                    # single-resource sanity
 ```
 
-Expect: ~$3 – $8 in API calls, ~30–60 minutes wall time.
-
-### Pass criteria (Phase 2)
-
-A successful Phase 2 produces everything python-expert produces
-**plus**:
-
-1. `workspace/iac-team/eval/eval-suite.yaml` — generated by
-   cgf-eval-architect (proves defect 2 + 3 + 4 fixes work end-to-end:
-   architect uses Write, signal is parsed despite Markdown decoration,
-   orchestrator doesn't false-positive when file missing)
-2. `workspace/iac-team/eval/execution-eval-round-*.json` — per-arm
-   eval results across all 21 resources
-3. `workspace/iac-team/eval/transcripts/` populated with baseline +
-   candidate transcripts
-4. Per-resource `eval/results/{path}-v1/eval-results.json`
-5. Prometheus / Grafana shows non-empty data on all five Phase A
-   panels (proves defect 5 metrics-exposure fix works)
-6. At least one resource exhibits either successful promotion **or**
-   refinement loop-back to ITERATE — exercising the
-   `_should_promote` gate's positive and negative paths
-
-### Assessment after the run
-
-Wider than Phase 1, because iac-team exercises more of the harness:
-
-1. **Did eval-architect pick reasonable graders?** Inspect
-   eval-suite.yaml. Count grader types per resource. If everything
-   is llm_judge, the architect's prompt may need refinement to push
-   it toward deterministic graders where applicable.
-2. **Did the gate work?** If every resource promoted, are the v1
-   versions actually better? If everything regressed, the gate
-   threshold may need tuning.
-3. **Did the feedback loop-back fire?** Check `feedback_history`
-   length in optimization-state.json. If always 0, either every
-   resource promoted (suspicious) or the loop-back code never fires
-   when it should (defect).
-4. **Did kind cluster actually validate anything?** Cross-reference
-   eval transcripts with actual `kubectl --dry-run` / `helm lint`
-   invocations. If graders never invoke the CLI tools, the cluster
-   provisioning is wasted setup.
-5. **Telemetry coverage:** every Phase A metric should have data.
-   If one is missing, that instrument is wired wrong.
-
-### Likely defects to surface (Phase 2)
-
-iac-team is bigger and exercises more code paths than python-expert.
-Expect to find:
-
-- Race conditions / order-of-operations issues across resources
-- Memory / token budget exhaustion mid-run
-- Eval graders that work on individual resources but fail on the
-  21-resource aggregate
-- Coherence validator findings that suggest real cross-resource
-  issues the architect missed
-- The "0 tool calls" anti-pattern in other agents besides eval-architect
-
-Each defect → filed on a sub-branch, fixed, smoke re-run.
+Inspect after:
+- `workspace/iac-team/sessions/optimization-state.json` — state machine
+- `workspace/iac-team/eval/` — eval artifacts
+- `workspace/iac-team/CHANGELOG.md` — narrative
+- Grafana CGF dashboard — telemetry
 
 ---
 
 ## Branch / merge strategy
 
-`phase-a-fixes` lands on `contextgrad-eval` once Phase 1 PASSes and
-the fixes have at least one real-LLM validation behind them. All this
-work stays on `contextgrad-eval` for the foreseeable future — **no
-mirror to `main` planned**. `main` continues to hold pre-Phase-A
-work; the Phase A / eval-framework / smoke-test surface is an
-integration branch experiment until further notice.
+`phase-a-fixes` lands on `contextgrad-eval` once each milestone has at least one real-LLM validation. All Phase 2 work stays on `contextgrad-eval` — no mirror to `main` planned.
 
-After Phase 1 PASS:
-
+After run #5 PASS:
 ```bash
 git checkout contextgrad-eval
 git merge phase-a-fixes
 git push origin contextgrad-eval
 ```
 
-Phase 2 PASS does not trigger a `main` merge. Continue iterating on
-`contextgrad-eval` with sub-branches for each defect class as it
-surfaces.
-
 ---
 
 ## Between-session resumption
 
-If context clears and we pick up here next session:
+If context clears:
 
-1. Read this file end-to-end.
-2. Check `git status` and `git log --oneline -10` to see what's already shipped.
-3. If Phase 1 P0/P1 items not yet done: execute the implementation order section.
-4. Run `make smoke FIXTURE=python-expert` (Phase 1 validation).
-5. If pass, document Phase-1 PASS at the top of this file.
-6. Move to Phase 2: answer R1-R5, fill in setup.sh / teardown.sh, run iac-team smoke.
-7. Same assessment loop.
-8. Merge to `contextgrad-eval` only (no `main` mirror — see branch
-   strategy above).
-
-After both pass, the branch is integrated into `contextgrad-eval` for
-continued iteration. The Phase A surface stays out of `main` for the
-foreseeable future.
+1. Read this file top-to-bottom.
+2. `git log --oneline contextgrad-eval..phase-a-fixes` — see what's unmerged.
+3. If F4 + F3 not yet shipped: follow F4's "Implementation order" section above.
+4. Run `make smoke FIXTURE=iac-team` (run #5 validation).
+5. If pass: assess against the Phase 2 pass criteria, then merge `phase-a-fixes` → `contextgrad-eval` + push.
+6. If fail: new defect → file in the F-series ledger above, fix on `phase-a-fixes`, re-run.
