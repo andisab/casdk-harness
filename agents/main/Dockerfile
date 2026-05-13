@@ -95,6 +95,42 @@ RUN ARCH=$(dpkg --print-architecture) && \
     chmod +x /usr/local/bin/glab && \
     rm -rf /tmp/bin
 
+# IaC eval tooling (D8): used by Phase A graders for terraform validate,
+# helm lint, kubeconform schema checks, tfsec / trivy static analysis.
+# All versions pinned for reproducibility; bump deliberately.
+# - helm v3.16.3 (Kubernetes package manager + linter)
+# - kubeconform v0.6.7 (K8s manifest schema validation)
+# - tfsec v1.28.11 (Terraform static security analysis; soon-deprecated in
+#   favor of trivy-config, but still the smallest single-binary option)
+# - trivy v0.58.1 (filesystem + container + IaC scanning)
+ARG HELM_VERSION=3.16.3
+ARG KUBECONFORM_VERSION=0.6.7
+ARG TFSEC_VERSION=1.28.11
+ARG TRIVY_VERSION=0.58.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then \
+        GO_ARCH="arm64"; TRIVY_ARCH="ARM64"; \
+    else \
+        GO_ARCH="amd64"; TRIVY_ARCH="64bit"; \
+    fi && \
+    # helm
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${GO_ARCH}.tar.gz" \
+        | tar -xz -C /tmp && \
+    mv "/tmp/linux-${GO_ARCH}/helm" /usr/local/bin/helm && \
+    rm -rf "/tmp/linux-${GO_ARCH}" && \
+    # kubeconform
+    curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${GO_ARCH}.tar.gz" \
+        | tar -xz -C /tmp && \
+    mv /tmp/kubeconform /usr/local/bin/kubeconform && \
+    # tfsec
+    curl -fsSL "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-${GO_ARCH}" \
+        -o /usr/local/bin/tfsec && \
+    chmod +x /usr/local/bin/tfsec && \
+    # trivy (uses "64bit" / "ARM64" suffix instead of go-style amd64/arm64)
+    curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
+        | tar -xz -C /tmp trivy && \
+    mv /tmp/trivy /usr/local/bin/trivy
+
 # Install Chrome-for-Testing for the @playwright/mcp server.
 #
 # Why CfT and not chrome / chromium:

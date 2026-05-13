@@ -739,7 +739,7 @@ def _ensure_metrics_server(port: int = 9090) -> None:
 async def run_multi_resource_optimization(
     workspace_dir: str | Path,
     quality_threshold: float = DEFAULT_QUALITY_THRESHOLD,
-    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_iterations: int | None = None,
     verbose: bool = False,
     research_timeout: int | None = None,
     generate_timeout: int | None = None,
@@ -754,10 +754,15 @@ async def run_multi_resource_optimization(
     - CGF_ITERATE_TIMEOUT (default: 600s / 10 min)
     - CGF_VALIDATE_TIMEOUT (default: 300s / 5 min)
 
+    ``max_iterations`` defaults to ``CGF_MAX_ITERATIONS`` env var (matching
+    the single-resource cgf_session.py contract from Phase 1 hardening) or
+    ``DEFAULT_MAX_ITERATIONS`` (5) if unset. Explicit kwarg overrides both.
+
     Args:
         workspace_dir: Directory containing SPEC.md.
         quality_threshold: Target quality score.
-        max_iterations: Max iterations per resource.
+        max_iterations: Max iterations per resource. ``None`` reads
+            CGF_MAX_ITERATIONS env var (fallback DEFAULT_MAX_ITERATIONS=5).
         verbose: Enable verbose output.
         research_timeout: Override research phase timeout (seconds).
         generate_timeout: Override generate phase timeout (seconds).
@@ -778,6 +783,17 @@ async def run_multi_resource_optimization(
             except ValueError:
                 pass
         return default
+
+    # max_iterations: explicit kwarg > env var > built-in default
+    if max_iterations is None:
+        env_iter = os.environ.get("CGF_MAX_ITERATIONS", "")
+        if env_iter:
+            try:
+                max_iterations = int(env_iter)
+            except ValueError:
+                max_iterations = DEFAULT_MAX_ITERATIONS
+        else:
+            max_iterations = DEFAULT_MAX_ITERATIONS
 
     config = MultiResourceConfig(
         workspace_dir=Path(workspace_dir),

@@ -36,6 +36,14 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     Spawns the validator for all optimized resources.
     Parses [VALIDATE_COMPLETE] or [VALIDATE_ISSUES:{count}] signals.
     On issues, loops affected resources back to ITERATE.
+
+    Skips validation entirely if no resources reached a candidate state
+    (``optimized`` / ``needs_refinement`` / ``generated``). Running the
+    validator against pristine baselines emits a misleading
+    ``coherence_score`` that suggests success when in fact no work
+    happened (D4). The orchestrator advances directly to COMPLETE so
+    the run terminates and the operator can re-launch after fixing the
+    upstream failure (typically a GENERATE or EVAL_DESIGN crash).
     """
     if not self._state or not self._spec:
         return
@@ -43,6 +51,30 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     from harness.subagent import call_agent_simple
 
     workspace = self.config.workspace_dir
+
+    # D4: skip when no resources have a candidate version.
+    candidate_states = {"optimized", "needs_refinement", "generated"}
+    has_candidates = any(
+        r.status in candidate_states for r in self._state.resources.values()
+    )
+    if not has_candidates:
+        failed_count = sum(
+            1 for r in self._state.resources.values() if r.status == "failed"
+        )
+        logger.warning(
+            "VALIDATE: Skipping (no candidate resources to validate)",
+            total_resources=len(self._state.resources),
+            failed_count=failed_count,
+            note=(
+                "All resources stuck at baseline. Coherence score from "
+                "validating baselines alone would be misleading. Advancing "
+                "to COMPLETE; the run will be marked unsuccessful by the "
+                "orchestrator because no resources were optimized."
+            ),
+        )
+        self._emit_progress("VALIDATE", "all", "skipped - no candidates")
+        self._advance_phase(OptimizationPhase.COMPLETE)
+        return
 
     logger.info(
         "VALIDATE: Running cross-resource coherence check",

@@ -21,6 +21,7 @@ import structlog
 from harness.monitoring import harness_eval_phase_duration_seconds
 from harness.optimization._orchestrator_helpers import (
     AGENT_EVAL_ARCHITECT,
+    classify_sdk_error,
     eval_phase_span,
     new_eval_task_id,
 )
@@ -127,6 +128,20 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
         )
         # Don't raise — let EXECUTION_EVAL skip if no suite file exists.
         return
+    except Exception as exc:
+        category, friendly = classify_sdk_error(exc)
+        logger.error(
+            "EVAL_DESIGN: Architect call failed (retries exhausted)",
+            error_category=category,
+            error=friendly,
+            raw_error=str(exc)[:300],
+        )
+        self._emit_progress(
+            "EVAL_DESIGN", "all", f"failed - {category}"
+        )
+        # Don't raise — let EXECUTION_EVAL skip; orchestrator surfaces the
+        # missing eval-suite.yaml as the visible failure mode below.
+        response = ""
 
     # Parse signal
     signals = self._signal_parser.parse(response)

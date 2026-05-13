@@ -24,6 +24,12 @@ DEFAULT_QUALITY_THRESHOLD = 0.85
 DEFAULT_MAX_ITERATIONS = 5
 DEFAULT_MAX_REFINEMENT = 1  # Reduced from 3 to limit refinement loops
 
+# Resource-content-preservation gate (D11): warn if a generated candidate
+# is less than this fraction of the baseline size. The Phase A.5 EXECUTION_EVAL
+# graders will catch real quality regressions later, but a >50% size drop
+# is a cheap structural smoke for "model collapsed the resource."
+DEFAULT_MIN_CONTENT_SIZE_RATIO = 0.5
+
 # Phase A.5: simple-threshold eval gate.  Phase B replaces with bootstrap CI.
 DEFAULT_EVAL_PROMOTION_EPSILON = 0.0
 DEFAULT_MAX_FEEDBACK_ITERATIONS = 2
@@ -177,3 +183,83 @@ class _NoOpSpan:
 
     def record_exception(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         return None
+
+
+# ---------------------------------------------------------------------------
+# Error classification (D10)
+# ---------------------------------------------------------------------------
+#
+# When an orchestrator phase catches an exception from ``call_agent_simple``,
+# the raw text is often misleading ("Claude Code returned an error result:
+# success" really means a transient network failure).  ``classify_sdk_error``
+# turns that into a structured (category, friendly_message) so phase logs are
+# actionable and ``optimization-state.json`` records a useful ``error_type``
+# alongside the original error text.
+
+# Substrings that indicate a transient / retryable SDK failure (network drops,
+# CLI process crashes, etc.). Kept in sync with subagent.py's retry detector.
+_TRANSIENT_SUBSTRINGS: tuple[str, ...] = (
+    "FailedToOpenSocket",
+    "ConnectionRefused",
+    "Unable to connect to API",
+    "Connection reset",
+    "Connection aborted",
+    "returned an error result: success",
+    "returned an error result: error_during_execution",
+    "ClientConnectorError",
+    "ServerDisconnectedError",
+    "ProcessError",
+)
+
+_CONFIG_SUBSTRINGS: tuple[str, ...] = (
+    "Agent ",  # "Agent 'foo' not found. Available agents: ..."
+    "Path violation",
+    "PathViolationError",
+    "Workspace ",
+    "Plugin discovery",
+)
+
+
+def classify_sdk_error(exc: BaseException) -> tuple[str, str]:
+    """Categorize an SDK / orchestrator exception for actionable logging.
+
+    Returns ``(category, friendly_message)`` where category is one of:
+    - ``"transient"`` — network / transport blip; retry already happened
+      in ``call_agent_simple``, so seeing it here means retries also failed
+    - ``"timeout"`` — per-call asyncio timeout fired; the call is too slow
+    - ``"config"`` — bad agent name, path violation, workspace setup issue
+    - ``"unknown"`` — anything else; the raw message is preserved verbatim
+
+    Args:
+        exc: The caught exception.
+
+    Returns:
+        A tuple of (category, message). Message is human-readable and safe
+        to put in logs and ``state.error`` fields.
+    """
+    if isinstance(exc, TimeoutError):
+        return ("timeout", str(exc) or "per-call asyncio timeout fired")
+
+    raw = str(exc)
+    # Walk the cause chain for transient detection (same heuristic as
+    # subagent._is_transient_error)
+    chain_text = raw
+    cur: BaseException | None = exc.__cause__ or exc.__context__
+    seen: set[int] = set()
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        chain_text += "\n" + str(cur)
+        cur = cur.__cause__ or cur.__context__
+
+    if any(pat in chain_text for pat in _TRANSIENT_SUBSTRINGS):
+        return (
+            "transient",
+            (
+                "Transient SDK error (network/transport). "
+                "Retry exhausted. Underlying: "
+                + (raw[:300] or "<empty>")
+            ),
+        )
+    if any(pat in raw for pat in _CONFIG_SUBSTRINGS):
+        return ("config", raw[:500])
+    return ("unknown", raw[:500] or f"<{type(exc).__name__}> with no message")

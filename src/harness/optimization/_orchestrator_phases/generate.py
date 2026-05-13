@@ -24,6 +24,8 @@ import structlog
 
 from harness.optimization._orchestrator_helpers import (
     AGENT_GENERATE,
+    DEFAULT_MIN_CONTENT_SIZE_RATIO,
+    classify_sdk_error,
     validate_write_path,
 )
 from harness.optimization.protocols.signals import SignalType
@@ -34,6 +36,36 @@ if TYPE_CHECKING:
     )
 
 logger = structlog.get_logger(__name__)
+
+
+def _check_size_ratio(
+    workspace: Path,
+    resource_path: str,
+) -> tuple[float | None, int, int]:
+    """Compare generated vs v0 baseline size for content-collapse detection.
+
+    Returns ``(ratio, baseline_bytes, generated_bytes)``. ``ratio`` is
+    ``None`` when there's no v0 baseline (creation-mode resource) or the
+    generated file doesn't exist. ``baseline_bytes`` and ``generated_bytes``
+    are 0 in that case respectively.
+
+    The baseline lookup matches the ``-v0.md`` / ``-v0`` naming convention
+    used by ``_backup_original_resource``.
+    """
+    full_path = workspace / resource_path
+    if not full_path.exists():
+        return (None, 0, 0)
+    generated_bytes = full_path.stat().st_size
+
+    # v0 baseline path: same dir, stem + "-v0" + suffix.
+    # E.g. "skills/aws-cli/SKILL.md" → "skills/aws-cli/SKILL-v0.md"
+    baseline = full_path.with_name(f"{full_path.stem}-v0{full_path.suffix}")
+    if not baseline.exists():
+        return (None, 0, generated_bytes)
+    baseline_bytes = baseline.stat().st_size
+    if baseline_bytes == 0:
+        return (None, 0, generated_bytes)
+    return (generated_bytes / baseline_bytes, baseline_bytes, generated_bytes)
 
 
 async def delegate(self: MultiResourceOrchestrator) -> None:
@@ -140,6 +172,25 @@ output_path: {workspace / resource.path}
                     self._state.update_resource(
                         resource.path, status="generated", version=0
                     )
+                    # D11: warn if model collapsed content < 50% of baseline.
+                    ratio, baseline_bytes, gen_bytes = _check_size_ratio(
+                        workspace, resource.path
+                    )
+                    if ratio is not None and ratio < DEFAULT_MIN_CONTENT_SIZE_RATIO:
+                        logger.warning(
+                            "GENERATE: Candidate is much smaller than baseline",
+                            path=resource.path,
+                            baseline_bytes=baseline_bytes,
+                            generated_bytes=gen_bytes,
+                            size_ratio=f"{ratio:.2f}",
+                            threshold=DEFAULT_MIN_CONTENT_SIZE_RATIO,
+                            note=(
+                                "Possible content collapse. EXECUTION_EVAL "
+                                "should catch quality regressions, but "
+                                "consider tightening the context-engineer "
+                                "prompt if many resources trip this."
+                            ),
+                        )
                     logger.info("GENERATE: Resource created", path=resource.path)
                     self._emit_progress("GENERATE", resource.path, "complete")
                 else:
@@ -194,13 +245,16 @@ output_path: {workspace / resource.path}
                 f"timeout after {self.config.generate_timeout}s"
             )
         except Exception as e:
+            category, friendly = classify_sdk_error(e)
             logger.error(
                 "GENERATE: Resource failed",
                 path=resource.path,
-                error=str(e),
+                error_category=category,
+                error=friendly,
+                raw_error=str(e)[:300],
             )
             self._state.update_resource(
-                resource.path, status="failed", error=str(e)
+                resource.path, status="failed", error=friendly
             )
 
         # Retry once with simplified prompt if generation failed
@@ -360,8 +414,13 @@ def get_resource_instructions(
 - Description must include specific trigger terms for auto-activation
 - Include "Activate when user mentions:" section
 - Include "Use for:" and "Do NOT use for:" boundaries
-- Keep SKILL.md under 5000 tokens (core instructions only)
-- Use progressive disclosure: reference examples/ and templates/ directories
+- PRESERVE BASELINE DEPTH: if a baseline SKILL.md exists at this path,
+  match or exceed its information density. Only trim content that is
+  outdated, duplicated, or factually wrong. Do NOT compress for the sake
+  of brevity — coverage of edge cases, tool versions, and patterns is
+  the skill's main value.
+- Use progressive disclosure for verbose snippets (move long code/config
+  to examples/ and templates/ subdirectories; reference them from SKILL.md)
 - {trigger_text}
 
 Skill Directory Structure:
