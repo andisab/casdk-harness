@@ -11,7 +11,7 @@ description: >
   - "Research error handling for typescript-expert" → Competency decomposition
     with DOCS scope for TypeScript documentation
   </examples>
-tools: Bash, Glob, Write
+tools: Read, Write, Bash, Glob, Task, Skill, WebSearch
 model: sonnet
 max_turns: 100
 color: "#b16286"

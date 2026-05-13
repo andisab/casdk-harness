@@ -11,7 +11,7 @@ description: >
   - "Plan resources for plugin spec with proposed structure" → Validates
     proposals against research, accepts or overrides with justification
   </examples>
-tools: Read, Write, Glob, Grep
+tools: Read, Write, Glob, Grep, Skill, Bash(ls:*), Bash(tree:*), Bash(mkdir:*)
 model: opus
 max_turns: 50
 color: "#d65d0e"

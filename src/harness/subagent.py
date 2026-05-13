@@ -385,6 +385,20 @@ async def call_agent(
     import os
     effective_cwd = cwd if cwd else os.getcwd()
 
+    # SDK plugin discovery: expose marketplace + in-tree plugins so any
+    # Skill / Task / sub-agent invocation from inside the called agent can
+    # resolve. Without these, the SDK creates a sandbox view that lists
+    # the agent's allowed_tools but rejects every plugin-skill name. This
+    # is the standalone-call analog of agent.py's interactive wiring
+    # (see line ~615 there).
+    _load_plugin_agents()  # idempotent; ensures _plugin_manager is built
+    sdk_plugins: list[dict[str, str]] = []
+    if _plugin_manager is not None:
+        try:
+            sdk_plugins = _plugin_manager.get_plugin_paths()
+        except Exception:  # noqa: BLE001 — plugin layer must never break a call
+            sdk_plugins = []
+
     options_dict: dict[str, Any] = {
         "system_prompt": effective_prompt,
         "model": effective_model,
@@ -392,6 +406,12 @@ async def call_agent(
         "permission_mode": permission_mode,
         "cwd": effective_cwd,
         "max_turns": max_turns,
+        # Plugin / skill / setting wiring — match agent.py's interactive
+        # session so a standalone-invoked agent sees the same Skill, Task,
+        # and project-setting surface as an interactive one.
+        "plugins": sdk_plugins,
+        "skills": "all",
+        "setting_sources": ["project"],
     }
     options_dict.update(extra_options)
 

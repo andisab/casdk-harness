@@ -10,7 +10,7 @@ description: >
   - "Validate coherence for workspace/iac-team" → Cross-resource checks
   - "Check consistency across all generated resources" → Terminology validation
   </examples>
-tools: Read, Glob, Grep
+tools: Read, Write, Glob, Grep, Skill
 model: sonnet
 max_turns: 100
 color: "#458588"
