@@ -123,6 +123,163 @@ context-engineer prompt needs further tightening.
 
 ---
 
+## F4 — Parallelize per-resource phases (design sketch, 2026-05-13)
+
+### Problem
+
+Run #4 (after F2 fix landed) confirmed the per-resource phases work
+correctly but are **catastrophically slow** when run sequentially:
+
+| Phase | Cost per resource | 18 resources sequential |
+|---|---|---|
+| GENERATE | 6–10 min | **2–3 h** |
+| ITERATE  | 5–8 min (when refining) | 1.5–2.5 h |
+| EXECUTION_EVAL | 3–5 min per arm × 2 arms | 1.5–3 h |
+
+Total projected wall time for a full Phase A pipeline on iac-team:
+**4–8 hours**. Cost is fine (~$3–8) — wall time is the blocker.
+
+The per-resource loops are I/O-bound (waiting on Claude API), so
+parallelism is a natural fit.
+
+### Affected files
+
+| File | LoC | Current loop |
+|---|---|---|
+| `_orchestrator_phases/generate.py` | 520 | `for resource in pending:` |
+| `_orchestrator_phases/iterate.py` | 769 | `for resource in pending:` (with inner refinement while-loop) |
+| `_orchestrator_phases/execution_eval.py` | 517 | per-resource baseline + candidate runs |
+
+### Target architecture
+
+```python
+# Pseudo-code for generate.py
+sem = asyncio.Semaphore(CGF_GENERATE_CONCURRENCY)  # default 4
+
+async def _generate_one(resource: ResourceState) -> None:
+    async with sem:
+        try:
+            await _generate_single_resource(resource)
+        except Exception as exc:
+            # Isolate failure to this resource; don't block siblings
+            self._record_failure(resource, exc)
+
+# Replace sequential for-loop with gather
+results = await asyncio.gather(
+    *[_generate_one(r) for r in pending],
+    return_exceptions=False,  # already caught above
+)
+```
+
+### Design decisions
+
+**1. Concurrency cap, not unbounded.** `CGF_GENERATE_CONCURRENCY=4`
+(env var, default 4). 18-way parallelism risks Anthropic rate limits
+(429s) and saturates the host's Claude SDK subprocess pool. 4-way is
+empirically safe in prior multi-agent runs.
+
+**2. Per-resource isolation.** Each parallel coroutine catches its own
+exceptions and records failure via `_state.update_resource(... status="failed")`.
+A single resource failing must NOT poison the gather batch.
+
+**3. State writes need a lock.** `_state.update_resource()` + `_save_state()`
+mutate shared `task_list.json`. Wrap in an `asyncio.Lock` so two
+coroutines don't clobber each other:
+```python
+async with self._state_lock:
+    self._state.update_resource(...)
+    self._save_state()
+```
+
+**4. Metrics & tracer are already thread/coroutine-safe** (Prometheus
+client uses locks internally; OTel tracer is async-safe). No changes
+needed there.
+
+**5. Cost telemetry is per-process-aggregate**, not per-resource. Stays
+correct under parallelism — the OTel collector receives all events
+regardless of ordering.
+
+**6. Per-resource log lines may interleave.** Current logs use
+`structlog.get_logger()` which is async-safe; key ordering and JSON
+output preserve correctness even when lines arrive in mixed order.
+Each log line carries `resource=path` for filtering.
+
+**7. The 15-min per-call timeout STAYS PER-CALL** (not per-batch).
+With 4-way concurrency on 18 resources, the worst-case wall time is:
+- `ceil(18/4) * 10 min = 50 min` (vs 180 min sequential) — **~3.6x speedup**
+
+**8. Rate-limit retry already exists.** D9's `_is_transient_error()`
+already catches 429/rate-limit errors and retries with backoff. Under
+4-way parallelism, expect occasional retry storms — the existing
+exponential backoff handles them.
+
+**9. Phase ordering is unchanged.** GENERATE → EVAL_DESIGN → ITERATE
+→ EXECUTION_EVAL → VALIDATE sequence stays the same. Only the
+per-resource loops inside each phase parallelize.
+
+### Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| `asyncio.Lock` contention on state writes | Each write is sub-ms; 4 coroutines × ~30 writes per resource = negligible contention |
+| OTel span ordering looks weird in traces | Spans are intrinsically parented; ordering in viewer is fine. Add `resource_path` attribute for filtering |
+| One resource's slow LLM call holds a slot for 15 min while others finish fast | Acceptable — semaphore is bounded by concurrency, not by makespan |
+| Rate-limit storms (429) under 4-way | D9 retry handles it; if persistent, lower `CGF_GENERATE_CONCURRENCY` |
+| File-system write conflicts between resources | None — each resource writes to its own subdirectory (`skills/aws-cli/`, `skills/aws-eks/`, etc.) |
+| Workspace `.claude-plugin/plugin.json` is one shared file | Already generated AFTER the per-resource loop completes (in `_generate_plugin_json` called once at end). No race. |
+
+### Configuration knobs
+
+| Var | Default | Range |
+|---|---|---|
+| `CGF_GENERATE_CONCURRENCY` | 4 | 1–8 |
+| `CGF_ITERATE_CONCURRENCY` | 4 | 1–8 |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | 1–4 (eval is more expensive, smaller cap) |
+
+`=1` everywhere is a kill-switch back to sequential behavior; useful
+for debugging if a regression appears.
+
+### Implementation order
+
+1. **Extract `_generate_single_resource()`** as an async function from the
+   inner body of generate.py's for-loop. ~40 LoC reshuffle, no behavior
+   change. Verify with unit tests.
+2. **Add `_state_lock = asyncio.Lock()`** to orchestrator init.
+3. **Wrap state writes in the lock** across all 3 phase files. Find via
+   `git grep '_save_state'`. ~10-15 sites.
+4. **Convert generate.py outer loop to `asyncio.gather` with semaphore.** ~25 LoC.
+5. **Repeat for iterate.py and execution_eval.py.** Each has its own
+   per-resource semantics (iterate has inner while-loop on refinement;
+   execution_eval has baseline+candidate per resource). Each gets the
+   same gather-with-semaphore treatment but at the **resource** level
+   only — inner loops stay sequential within each coroutine.
+6. **Unit tests** for the new helpers (mock LLM, verify gather + lock).
+7. **Smoke run on iac-team** at `CGF_GENERATE_CONCURRENCY=4`.
+
+### Total estimated effort
+
+- Production: ~150–200 LoC across 3 files + helpers
+- Tests: ~80–120 LoC (mock-LLM concurrency tests)
+- Wall-time gain: ~3.6× speedup on 18-resource fixtures (50 min vs 180
+  min for GENERATE alone)
+- Risk: medium — concurrency is a well-trodden path with `asyncio`
+  primitives, but state-write races are easy to miss. Pair with
+  explicit asyncio lock unit tests.
+
+### When to ship
+
+Before run #5. F4 unblocks practical smoke-test iteration; without it
+each cycle is a half-day.
+
+### F3 (display counter)
+
+Smaller fix, same general area: `agent_progress.py:extract_tool_info()`
+counts only Task / Skill tool calls toward `tool_calls` but should
+include Read/Write/Edit/Bash for the progress display. ~10 LoC. Ship
+alongside F4 since both touch agent invocation observability.
+
+---
+
 ## ⏳ Phase 2 — prep complete (2026-05-12, awaiting paid run)
 
 The merge to `contextgrad-eval` shipped as `4b6cb88` (pushed). Phase 2
