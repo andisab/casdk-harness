@@ -73,6 +73,56 @@ questions below.
 
 ---
 
+## Phase 2 — run #2 post-mortem (2026-05-12, network-interrupted)
+
+Run #2 (after the post-merge rebuild) made it through RESEARCH → DESIGN
+→ QA → GENERATE → EVAL_DESIGN before terminating on transient SDK
+network errors coinciding with an operator disconnect. Outcome: 9 of
+18 resources generated, 9 failed with `FailedToOpenSocket` /
+`ConnectionRefused`. Net cost ~$0.04 visible before EVAL_DESIGN
+failures. All 18 v0 baselines preserved (hashes match fixture).
+
+**Eight defects surfaced; six addressed in commit `b5eed9b`:**
+
+| # | Defect | Status (commit `b5eed9b`) |
+|---|---|---|
+| D1 | Plugin discovery missed marketplace | ✅ resolved (run #1 → image rebuild) |
+| D2 | EVAL_DESIGN unreachable | ✅ resolved (was a D1 symptom; run #2 entered the phase) |
+| D3 | "Success!" with 0 candidates | ✅ resolved (run #2 reported "Multi-resource optimization failed") |
+| **D4** | **VALIDATE ran against baselines, misleading score** | ✅ fixed — `validate.py` early-returns to COMPLETE when no resource is in `{optimized, needs_refinement, generated}` |
+| **D5** | **`CGF_MAX_ITERATIONS` ignored** | ✅ fixed — `run_multi_resource_optimization` reads the env var when kwarg is None |
+| D6 | Smoke metrics not in Prometheus | ✅ resolved (rebuild — `Metrics HTTP server started port=9090`) |
+| D7 | SDK OTel metrics not in Prometheus | ✅ resolved (rebuild — `claude_code_*` flowing) |
+| **D8** | **Image missing helm/tfsec/trivy/kubeconform** | ✅ fixed — Dockerfile installs all four (arch-aware, pinned) |
+| **D9** | **No retry on transient SDK errors** | ✅ fixed — `call_agent_simple` retries with backoff on FailedToOpenSocket / ConnectionRefused / "returned an error result: success" / etc. Default 3 retries, 5/10/20s backoff. Configurable via `CGF_CALL_RETRIES` + `CGF_CALL_RETRY_BACKOFF` |
+| **D10** | **Misleading "error result: success" in logs and state** | ✅ fixed — `classify_sdk_error()` helper returns `(category, friendly)`; wired into `generate.py` + `eval_design.py` failure paths |
+| **D11** | **Generated SKILL.md 75% smaller than baseline** | ✅ fixed — (a) `_check_size_ratio()` warns when generated < 50% of v0; (b) skill-generation prompt now says "PRESERVE BASELINE DEPTH" (was "Keep SKILL.md under 5000 tokens" — the cause) |
+
+Test suite remains green: **1748 unit tests pass** (no regressions).
+
+### Pre-flight for run #3
+
+The image needs a rebuild to pick up D8 (Dockerfile changes). The
+Python fixes (D4, D5, D9, D10, D11) land via volume mount on
+restart.
+
+```bash
+make build                       # picks up Dockerfile CLIs
+docker compose up -d --force-recreate main-agent
+```
+
+R5 budget knobs already wired in `.env` (`CGF_MAX_ITERATIONS=2`,
+`CGF_DESIGN_MODEL=sonnet`, `CGF_JUDGE_MODEL=sonnet`,
+`CGF_EVAL_TOKEN_BUDGET=2000000`). With D9 retry on, expect to survive
+brief network blips up to ~1 min total backoff per call.
+
+Defer D11's size warnings to per-resource inspection after EXECUTION_EVAL
+runs. If many resources trip the < 50% gate, the eval-architect
+graders should still catch quality regressions; if not, the
+context-engineer prompt needs further tightening.
+
+---
+
 ## ⏳ Phase 2 — prep complete (2026-05-12, awaiting paid run)
 
 The merge to `contextgrad-eval` shipped as `4b6cb88` (pushed). Phase 2
