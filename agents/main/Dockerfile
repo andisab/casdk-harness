@@ -4,8 +4,8 @@ ARG PYTHON_VERSION=3.12
 # =============================================================================
 # Stage 1: Base - Common dependencies for all stages
 # =============================================================================
-# Pinned by digest for reproducibility. Resolved 2026-05-07; bump deliberately.
-FROM python:${PYTHON_VERSION}-slim@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da879e4590c18c2e3 AS base
+# Pinned by digest for reproducibility. Resolved 2026-05-13; bump deliberately.
+FROM python:${PYTHON_VERSION}-slim@sha256:401f6e1a67dad31a1bd78e9ad22d0ee0a3b52154e6bd30e90be696bb6a3d7461 AS base
 
 # Install system dependencies including Node.js for MCP servers.
 # Includes Playwright browser dependencies for Chromium.
@@ -88,26 +88,26 @@ RUN --mount=type=cache,target=/root/.cache/npm \
     npm install -g @anthropic-ai/claude-code
 
 # Install GitLab CLI (glab)
+ARG GLAB_VERSION=1.97.0
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then GLAB_ARCH="arm64"; else GLAB_ARCH="amd64"; fi && \
-    curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v1.46.1/downloads/glab_1.46.1_Linux_${GLAB_ARCH}.tar.gz" | tar -xz -C /tmp && \
+    curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${GLAB_ARCH}.tar.gz" | tar -xz -C /tmp && \
     mv /tmp/bin/glab /usr/local/bin/glab && \
     chmod +x /usr/local/bin/glab && \
-    rm -rf /tmp/bin
+    rm -rf /tmp/bin /tmp/LICENSE /tmp/README.md
 
 # IaC eval tooling (D8): used by Phase A graders for terraform validate,
-# helm lint, kubeconform schema checks, tfsec / trivy static analysis.
+# helm lint, kubeconform schema checks, trivy static analysis (incl. IaC
+# config scanning via `trivy config`).
 # All versions pinned for reproducibility; bump deliberately.
-# - helm v3.16.3 (Kubernetes package manager + linter)
-# - kubeconform v0.6.7 (K8s manifest schema validation)
-# - tfsec v1.28.11 (Terraform static security analysis; soon-deprecated in
-#   favor of trivy-config, but still the smallest single-binary option)
-# - trivy v0.70.0 (filesystem + container + IaC scanning). Installed via
-#   .deb because Aqua stopped publishing Linux-ARM64 tarballs around 0.55;
-#   .deb is uniform across amd64 + arm64 since trivy ships both architectures.
-ARG HELM_VERSION=3.16.3
-ARG KUBECONFORM_VERSION=0.6.7
-ARG TFSEC_VERSION=1.28.11
+# - helm v3.20.2 (Kubernetes package manager + linter; stay on 3.x — v4 is breaking)
+# - kubeconform v0.7.0 (K8s manifest schema validation)
+# - trivy v0.70.0 (filesystem + container + IaC scanning; subsumes tfsec).
+#   Installed via .deb because Aqua stopped publishing Linux-ARM64 tarballs
+#   around 0.55; .deb is uniform across amd64 + arm64 since trivy ships both
+#   architectures. `trivy config <path>` replaces deprecated tfsec.
+ARG HELM_VERSION=3.20.2
+ARG KUBECONFORM_VERSION=0.7.0
 ARG TRIVY_VERSION=0.70.0
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then \
@@ -124,10 +124,6 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${GO_ARCH}.tar.gz" \
         | tar -xz -C /tmp && \
     mv /tmp/kubeconform /usr/local/bin/kubeconform && \
-    # tfsec
-    curl -fsSL "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-${GO_ARCH}" \
-        -o /usr/local/bin/tfsec && \
-    chmod +x /usr/local/bin/tfsec && \
     # trivy via .deb (see note above on missing ARM64 tarball)
     curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.deb" \
         -o /tmp/trivy.deb && \
@@ -246,7 +242,7 @@ RUN python -m compileall src/
 # =============================================================================
 # Stage 5: Production - Minimal production image
 # =============================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da879e4590c18c2e3 AS production
+FROM python:${PYTHON_VERSION}-slim@sha256:401f6e1a67dad31a1bd78e9ad22d0ee0a3b52154e6bd30e90be696bb6a3d7461 AS production
 
 # Install only runtime dependencies (cached apt lists; no manual rm).
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \

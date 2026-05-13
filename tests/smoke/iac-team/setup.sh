@@ -9,11 +9,11 @@
 #
 # Default mode (no env vars set): no infrastructure is provisioned. The
 # eval graders that work without a cluster — `terraform validate`,
-# `helm lint --strict`, `kubeconform`, `tfsec`, `trivy fs`, `code_syntax`,
-# `llm_judge` — are all the architect needs for the first pass. If the
-# architect picks `kubectl --dry-run=server` or anything that hits a live
-# cluster, the run will surface that as a defect and the next iteration
-# can opt into kind via SMOKE_USE_KIND=1.
+# `helm lint --strict`, `kubeconform`, `trivy fs`, `trivy config`,
+# `code_syntax`, `llm_judge` — are all the architect needs for the first
+# pass. If the architect picks `kubectl --dry-run=server` or anything that
+# hits a live cluster, the run will surface that as a defect and the next
+# iteration can opt into kind via SMOKE_USE_KIND=1.
 #
 # Opt-in modes:
 #   SMOKE_USE_KIND=1       — provision a kind cluster (real K8s API)
@@ -35,7 +35,7 @@ echo "==> iac-team smoke: pre-run setup"
 # hard gate (some graders will work even if a subset is missing).
 
 missing_tools=()
-for tool in kubectl helm terraform tfsec trivy kubeconform; do
+for tool in kubectl helm terraform trivy kubeconform; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         missing_tools+=("$tool")
     fi
@@ -46,7 +46,7 @@ if [ "${#missing_tools[@]}" -gt 0 ]; then
     echo "          (eval graders that need them will fail; consider"
     echo "           rebuilding the harness image)"
 else
-    echo "    All required CLIs present (kubectl, helm, terraform, tfsec, trivy, kubeconform)"
+    echo "    All required CLIs present (kubectl, helm, terraform, trivy, kubeconform)"
 fi
 
 # ---------------------------------------------------------------------------
