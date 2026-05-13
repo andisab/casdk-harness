@@ -102,11 +102,13 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # - kubeconform v0.6.7 (K8s manifest schema validation)
 # - tfsec v1.28.11 (Terraform static security analysis; soon-deprecated in
 #   favor of trivy-config, but still the smallest single-binary option)
-# - trivy v0.58.1 (filesystem + container + IaC scanning)
+# - trivy v0.70.0 (filesystem + container + IaC scanning). Installed via
+#   .deb because Aqua stopped publishing Linux-ARM64 tarballs around 0.55;
+#   .deb is uniform across amd64 + arm64 since trivy ships both architectures.
 ARG HELM_VERSION=3.16.3
 ARG KUBECONFORM_VERSION=0.6.7
 ARG TFSEC_VERSION=1.28.11
-ARG TRIVY_VERSION=0.58.1
+ARG TRIVY_VERSION=0.70.0
 RUN ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "arm64" ]; then \
         GO_ARCH="arm64"; TRIVY_ARCH="ARM64"; \
@@ -126,10 +128,11 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://github.com/aquasecurity/tfsec/releases/download/v${TFSEC_VERSION}/tfsec-linux-${GO_ARCH}" \
         -o /usr/local/bin/tfsec && \
     chmod +x /usr/local/bin/tfsec && \
-    # trivy (uses "64bit" / "ARM64" suffix instead of go-style amd64/arm64)
-    curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
-        | tar -xz -C /tmp trivy && \
-    mv /tmp/trivy /usr/local/bin/trivy
+    # trivy via .deb (see note above on missing ARM64 tarball)
+    curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.deb" \
+        -o /tmp/trivy.deb && \
+    dpkg -i /tmp/trivy.deb && \
+    rm /tmp/trivy.deb
 
 # Install Chrome-for-Testing for the @playwright/mcp server.
 #
