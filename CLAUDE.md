@@ -12,7 +12,7 @@ Technical reference for developers working on this repository and for Claude's o
 ### Working Features
 - Interactive mode with Rich CLI (`interactive.py`)
 - Autonomous mode with Tech Lead + Main agent (`autonomous.py`)
-- Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager) — see [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability)
+- Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager + alertmanager-webhook) — see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) for architecture, dashboards (10), alert rules (13), gotchas, data persistence, and Stage-3 follow-ups
 - Checkpoint & recovery system with hourly auto-save
 - 4 MCP servers (3 in-process + 1 subprocess)
 - CLI tools: git, gh, glab
@@ -57,7 +57,7 @@ Technical reference for developers working on this repository and for Claude's o
   - Phase 3B (`f025870`) — Dropped 5 instruments + 4 methods from `monitoring.py` that the SDK now emits natively (`api_tokens_used_total`, `api_cost_dollars_total`, both cache-token counters, the cache-hit-ratio gauge, `record_tokens()` with its hardcoded pricing table). Renamed 11 surviving harness instruments with `harness_` prefix. Dropped 14 tests; 1534/0/0 passing.
   - Phase 3C (`e4494cc`) — Two pre-provisioned Grafana dashboards (`/d/casdk-overview`, `/d/casdk-cgf`) replacing the placeholder JSON. 26 panels total covering session health, tokens/cost (segmented by model + query_source), tool calls, latency p50/p95/p99, system resources, CGF tracer activity, and optimization quality.
   - Phase 3D (`34cfaba`) — AlertManager service (`prom/alertmanager:v0.27.0`) + a tiny stdlib-Python webhook-debug receiver. Discovered + fixed: Prometheus had `rule_files`/`alerting:` blocks nowhere in its config and `alerting.yml` wasn't even bind-mounted into the container — every rule on disk had been dead since the project started. 10 rules now active across 4 groups including pipeline self-monitoring (`OTelCollectorDown`, `AlertManagerDown`).
-  - Phase 3E — observability operator guide (architecture, dashboards, rule authoring, first-response actions, real-receiver wiring) authored as `docs/OBSERVABILITY.md`; README "Monitoring" section updated; this file's known-limitations + TODO entries removed. (Doc later consolidated into `docs/REFACTOR.md § Observability` 2026-05-07.)
+  - Phase 3E — observability operator guide (architecture, dashboards, rule authoring, first-response actions, real-receiver wiring) authored as `docs/OBSERVABILITY.md`; README "Monitoring" section updated; this file's known-limitations + TODO entries removed. (Doc was briefly consolidated into `docs/REFACTOR.md` 2026-05-07, then re-extracted to `docs/OBSERVABILITY.md` 2026-05-14 during the `grafana-refactor` branch as the canonical single-source-of-truth for the 10-dashboard + 13-alert architecture.)
   - **Net surface change:** harness now self-monitors its own observability pipeline (OTel collector, AlertManager) on top of monitoring application behavior; SDK telemetry adds `query_source` (main/auxiliary/subagent) segmentation that the previous harness counters never had; total stack: 7 services (was 4) — main-agent, prometheus, grafana, otel-collector, alertmanager, alertmanager-webhook, plus the multi-agent profile services.
 - **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
   - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
@@ -1068,6 +1068,7 @@ See [README.md#troubleshooting](./README.md#troubleshooting) for user-focused so
 #### Project Documentation
 - [README.md](./README.md) - User-facing documentation
 - [QUICKSTART.md](./QUICKSTART.md) - 5-minute setup
+- [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) - Architecture / metrics inventory / 10 dashboards / 13 alert rules / data persistence / gotchas. **Re-read before editing `config/monitoring/` or wiring new instruments.**
 - [docs/REFACTOR.md § Hardening](./docs/REFACTOR.md#3-hardening) - Production security priorities (P0-P3)
 
 #### Claude Agent SDK
