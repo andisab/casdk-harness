@@ -1,0 +1,737 @@
+{
+  "title": "Claude Agent Harness \u2014 SDK: Reliability & Errors",
+  "uid": "casdk-sdk-reliability",
+  "tags": [
+    "claude",
+    "harness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mode",
+        "label": "Mode",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_config_info, mode)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_config_info, mode)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "resource",
+        "label": "Resource",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "path",
+        "label": "Path",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_path_info == 1, path)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_path_info == 1, path)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(claude_code_cost_usage_USD_total, model)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(claude_code_cost_usage_USD_total, model)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "All Harness Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "claude",
+        "harness"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "00 \u2014 Overview",
+      "type": "link",
+      "url": "/d/casdk-overview",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "10 \u2014 SDK: Cost & Spend",
+      "type": "link",
+      "url": "/d/casdk-sdk-cost",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "20 \u2014 SDK: Productivity",
+      "type": "link",
+      "url": "/d/casdk-sdk-productivity",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "30 \u2014 SDK: Cache",
+      "type": "link",
+      "url": "/d/casdk-sdk-cache",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "40 \u2014 SDK: Tools",
+      "type": "link",
+      "url": "/d/casdk-sdk-tools",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "60 \u2014 Mode: Interactive",
+      "type": "link",
+      "url": "/d/casdk-mode-interactive",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "65 \u2014 Mode: Autonomous",
+      "type": "link",
+      "url": "/d/casdk-mode-autonomous",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "70 \u2014 Mode: CGF Optimization",
+      "type": "link",
+      "url": "/d/casdk-cgf",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "99 \u2014 Raw Events",
+      "type": "link",
+      "url": "/d/casdk-raw-events",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 50100,
+      "type": "stat",
+      "title": "Harness Error Rate",
+      "description": "Fraction of harness agent requests that errored. Prometheus-only proxy for SDK-side API reliability \u2014 actual `api_error` event data needs Loki (Stage 3). See METRICS-INVENTORY \u00a7 6 + GRAFANA-REFACTOR \u00a7 7.4 D50.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(harness_agent_requests_total{status=\"error\"}[5m])) / sum(rate(harness_agent_requests_total[5m]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50110,
+      "type": "stat",
+      "title": "Errors (selected range)",
+      "description": "Total harness-agent error count across the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(harness_agent_requests_total{status=\"error\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50120,
+      "type": "stat",
+      "title": "Timeouts (selected range)",
+      "description": "harness_agent_requests_total{status=\"timeout\"}.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(harness_agent_requests_total{status=\"timeout\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50130,
+      "type": "stat",
+      "title": "Successful (selected range)",
+      "description": "Successful agent requests across the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(harness_agent_requests_total{status=\"success\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50200,
+      "type": "timeseries",
+      "title": "Error Rate by Agent",
+      "description": "Per-agent error rate from harness_agent_requests_total.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(harness_agent_requests_total{status=\"error\"}[5m])) / sum by (agent) (rate(harness_agent_requests_total[5m]))",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50210,
+      "type": "timeseries",
+      "title": "Request Status by Agent",
+      "description": "success / error / timeout count rates.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (agent, status) (rate(harness_agent_requests_total[5m])) * 60",
+          "legendFormat": "{{agent}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50300,
+      "type": "timeseries",
+      "title": "Agent Duration \u2014 P50 / P95 / P99",
+      "description": "Histogram from harness_agent_duration_seconds_bucket. The harness duration is the full agent execution cycle, not per-LLM-call latency \u2014 for that, you need Loki/Tempo (Stage 3).",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, agent) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{agent}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, agent) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{agent}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, agent) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{agent}}",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50900,
+      "type": "row",
+      "title": "Stage 3 \u2014 Deferred (Loki + Traces required)",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "panels": [
+        {
+          "id": 50910,
+          "type": "text",
+          "title": "Stage 3 panel placeholders",
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 21
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "These panels are deferred to Stage 3 (Loki + Tempo) per `docs/GRAFANA-REFACTOR.md` \u00a7 8.\n\n**Requires Loki:**\n\n- API errors by `status_code` (429 vs 5xx vs 529 segmentation)\n- API errors by `model`\n- API request P50/P95/P99 latency by model\n- `api_retries_exhausted` rate (terminal-failure signal)\n- MCP server connection failures by `server_name`\n- Internal errors / auth failures / compaction failures\n\n**Requires Traces beta (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`):**\n\n- TTFT (time to first token) P50 / P95 by model \u2014 highest-value traces panel; add first when Tempo is deployed.\n- Average attempts per request (silent 2nd-attempt successes that `api_retries_exhausted` doesn't surface)."
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          }
+        }
+      ]
+    }
+  ]
+}

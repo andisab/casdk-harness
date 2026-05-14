@@ -1,0 +1,878 @@
+{
+  "title": "Claude Agent Harness \u2014 SDK: Session & Productivity",
+  "uid": "casdk-sdk-productivity",
+  "tags": [
+    "claude",
+    "harness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mode",
+        "label": "Mode",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_config_info, mode)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_config_info, mode)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "resource",
+        "label": "Resource",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "path",
+        "label": "Path",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_path_info == 1, path)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_path_info == 1, path)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(claude_code_cost_usage_USD_total, model)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(claude_code_cost_usage_USD_total, model)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "All Harness Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "claude",
+        "harness"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "00 \u2014 Overview",
+      "type": "link",
+      "url": "/d/casdk-overview",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "10 \u2014 SDK: Cost & Spend",
+      "type": "link",
+      "url": "/d/casdk-sdk-cost",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "30 \u2014 SDK: Cache",
+      "type": "link",
+      "url": "/d/casdk-sdk-cache",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "40 \u2014 SDK: Tools",
+      "type": "link",
+      "url": "/d/casdk-sdk-tools",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "50 \u2014 SDK: Reliability",
+      "type": "link",
+      "url": "/d/casdk-sdk-reliability",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "60 \u2014 Mode: Interactive",
+      "type": "link",
+      "url": "/d/casdk-mode-interactive",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "65 \u2014 Mode: Autonomous",
+      "type": "link",
+      "url": "/d/casdk-mode-autonomous",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "70 \u2014 Mode: CGF Optimization",
+      "type": "link",
+      "url": "/d/casdk-cgf",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "99 \u2014 Raw Events",
+      "type": "link",
+      "url": "/d/casdk-raw-events",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 20100,
+      "type": "stat",
+      "title": "Active Sessions",
+      "description": "Currently active sessions across all agents (harness-side gauge).",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(harness_agent_active_sessions)",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20110,
+      "type": "stat",
+      "title": "Sessions Started (selected range)",
+      "description": "Total session-start events in the dashboard time window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_session_count_total[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20120,
+      "type": "stat",
+      "title": "Net Lines of Code (selected range)",
+      "description": "Added \u2212 Removed lines via `sum_over_time` (NOT `increase` \u2014 these are delta-style counters; `increase` extrapolates them to nonsense values, per spec \u00a7 2 gotcha #3).",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[$__range])) - sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20130,
+      "type": "stat",
+      "title": "Productivity Multiplier (cli / user)",
+      "description": "CAVEAT: active_time{type=\"user\"} was never observed in 24h on harness workloads \u2014 likely interactive-only. This stat will show as Inf or '\u2014' until interactive sessions populate the denominator. See METRICS-INVENTORY \u00a7 6.4. Treat as directional, never a performance KPI \u2014 Mike Lane reports >10,000\u00d7 ratios with parallel agents.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_active_time_seconds_total{type=\"cli\"}[$__range])) / sum(rate(claude_code_active_time_seconds_total{type=\"user\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text-primary"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20200,
+      "type": "timeseries",
+      "title": "Sessions Started by start_type",
+      "description": "fresh / resume / continue. Time-series per session-start kind.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (start_type) (rate(claude_code_session_count_total[5m])) * 300",
+          "legendFormat": "{{start_type}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20210,
+      "type": "timeseries",
+      "title": "Lines of Code Added / Removed",
+      "description": "Using `sum_over_time` not `increase` \u2014 these are delta counters. Mike Lane's gist explicitly warns about the `increase()` extrapolation pitfall.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[5m]))",
+          "legendFormat": "added",
+          "refId": "A"
+        },
+        {
+          "expr": "-sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[5m]))",
+          "legendFormat": "removed",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20300,
+      "type": "timeseries",
+      "title": "Active Time \u2014 CLI vs User",
+      "description": "CAVEAT: type=\"user\" is interactive-only on current harness workloads; the line will sit at zero for non-interactive runs.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (type) (rate(claude_code_active_time_seconds_total[5m]))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20310,
+      "type": "timeseries",
+      "title": "Tool Calls (harness-side, by tool_name)",
+      "description": "From harness_tool_calls_total \u2014 populated by interactive.py. Autonomous + CGF runs don't currently emit harness-side tool metrics, so multi-mode coverage relies on the SDK-side code_edit_tool_decision (Dashboard 40).",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name) (rate(harness_tool_calls_total[5m])) * 60",
+          "legendFormat": "{{tool_name}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20400,
+      "type": "timeseries",
+      "title": "Harness Session Duration (P50 / P95)",
+      "description": "Histogram from harness_session_duration_seconds_bucket \u2014 interactive mode only.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20410,
+      "type": "barchart",
+      "title": "Sessions by terminal_type (selected range)",
+      "description": "Where sessions are being run from.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (terminal_type) (increase(claude_code_session_count_total[$__range]))",
+          "legendFormat": "{{terminal_type}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
