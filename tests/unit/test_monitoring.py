@@ -458,6 +458,85 @@ def test_record_run_start_sets_timestamp() -> None:
     assert value == 1_700_000_000.0
 
 
+def test_singleton_semantic_record_run_config() -> None:
+    """Subsequent record_run_config calls clear prior series.
+
+    Regression: Run Config table on D00/D70 used to accumulate one
+    row per (resource, config) ever recorded; the new singleton
+    semantic ensures only the current run's row is present.
+    """
+    from harness.monitoring import harness_run_config_info, record_run_config
+
+    record_run_config(
+        resource="first-resource", path="single", mode="optimize",
+        model="haiku", effort="default", eval_enabled=False,
+        token_budget=0, max_iterations=3,
+    )
+    record_run_config(
+        resource="second-resource", path="multi", mode="optimize",
+        model="sonnet", effort="default", eval_enabled=True,
+        token_budget=100, max_iterations=5,
+    )
+
+    # Only the second resource's series should remain.  Collect all
+    # active label combos from the underlying metric registry.
+    sample_resources = {
+        sample.labels["resource"]
+        for metric in harness_run_config_info.collect()
+        for sample in metric.samples
+        if sample.value == 1.0
+    }
+    assert sample_resources == {"second-resource"}
+
+
+def test_singleton_semantic_record_run_path() -> None:
+    """record_run_path clears prior series so only one resource is
+    marked active at a time."""
+    from harness.monitoring import harness_run_path_info, record_run_path
+
+    record_run_path("first-resource", "single")
+    record_run_path("second-resource", "multi")
+
+    active_resources = {
+        sample.labels["resource"]
+        for metric in harness_run_path_info.collect()
+        for sample in metric.samples
+        if sample.value == 1.0
+    }
+    assert active_resources == {"second-resource"}
+
+
+def test_singleton_semantic_init_run_phases() -> None:
+    """init_run_phases clears prior-resource phase + iteration series."""
+    from harness.monitoring import (
+        harness_run_iteration,
+        harness_run_phase_info,
+        init_run_phases,
+        record_iteration,
+        record_phase_entry,
+    )
+
+    init_run_phases("first-resource")
+    record_phase_entry("first-resource", "research")
+    record_iteration("first-resource", 7)
+
+    # Start a new run; prior resource's series should be wiped.
+    init_run_phases("second-resource")
+
+    active_phase_resources = {
+        sample.labels["resource"]
+        for metric in harness_run_phase_info.collect()
+        for sample in metric.samples
+    }
+    iteration_resources = {
+        sample.labels["resource"]
+        for metric in harness_run_iteration.collect()
+        for sample in metric.samples
+    }
+    assert active_phase_resources == {"second-resource"}
+    assert iteration_resources == set()  # no record_iteration call yet for the new run
+
+
 def test_record_run_start_defaults_to_now() -> None:
     """Default timestamp is non-zero and within a reasonable window of time.time()."""
     import time

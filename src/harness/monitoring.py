@@ -278,13 +278,19 @@ _RUN_PATHS = ("single", "multi")
 
 def record_run_path(resource: str, path: str) -> None:
     """Mark `path` (single | multi) as the active optimization path for
-    `resource`.  Clears the other path to 0 so the dashboard query
-    `harness_run_path_info == 1` returns exactly one path label.
+    `resource`.  Clears ALL prior series first so the gauge has
+    "current active run" semantics — re-runs against new resource
+    names don't leave orphan rows in the Grafana table until the 5-min
+    staleness window elapses.
     """
     if path not in _RUN_PATHS:
         logger.warning("record_run_path: unknown path", path=path)
         return
     try:
+        # Wipe prior (resource, path) series so the dashboard shows
+        # only the currently-active run, not the union of all runs in
+        # the staleness window.
+        harness_run_path_info.clear()
         for p in _RUN_PATHS:
             harness_run_path_info.labels(resource=resource, path=p).set(
                 1 if p == path else 0
@@ -319,9 +325,17 @@ KNOWN_RUN_PHASES: tuple[str, ...] = (
 
 
 def init_run_phases(resource: str) -> None:
-    """Seed phase gauge with 0 for every known phase so the Grafana bargauge
-    shows the full progression from the start of the run."""
+    """Seed phase gauge with 0 for every known phase so the Grafana
+    state-timeline shows the full progression from the start of the
+    run.  Also clears any prior-resource series for phase and
+    iteration so the panel shows only the currently-active run
+    (singleton semantic; matches `record_run_path`)."""
     try:
+        # Drop prior series for any other resource so the panel
+        # doesn't accumulate orphans across re-runs.
+        harness_run_phase_info.clear()
+        harness_run_iteration.clear()
+        _active_phases.clear()
         for phase in KNOWN_RUN_PHASES:
             harness_run_phase_info.labels(resource=resource, phase=phase).set(0)
     except Exception as e:  # pragma: no cover
@@ -411,9 +425,19 @@ def record_run_config(
     token_budget: int,
     max_iterations: int,
 ) -> None:
-    """Set the run config info-metric to 1 with all config dimensions as
-    labels.  Call once at run start.  Observability never raises."""
+    """Set the run config info-metric to 1 with all config dimensions
+    as labels.  Call once at run start.
+
+    Singleton semantic: clears all prior series first so the Grafana
+    Run Config table shows exactly one row — the currently-active
+    run.  Without this, re-running against a different resource name
+    leaves orphan rows in the table for the 5-min staleness window.
+
+    Observability never raises.
+    """
     try:
+        # Wipe prior series so only the current run appears.
+        harness_run_config_info.clear()
         harness_run_config_info.labels(
             resource=resource,
             path=path,
@@ -458,11 +482,17 @@ def clear_run_config(
 
 def record_run_start(resource: str, timestamp: float | None = None) -> None:
     """Record run start timestamp.  Defaults to ``time.time()`` if not
-    provided.  Observability never raises."""
+    provided.
+
+    Singleton semantic: clears prior series so the "Run Elapsed" panel
+    on D00 / D70 reflects the current run only.
+
+    Observability never raises."""
     import time
 
     try:
         ts = timestamp if timestamp is not None else time.time()
+        harness_run_start_timestamp.clear()
         harness_run_start_timestamp.labels(resource=resource).set(ts)
     except Exception as e:  # pragma: no cover
         logger.debug("record_run_start failed", error=str(e))
