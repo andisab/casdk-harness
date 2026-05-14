@@ -255,6 +255,199 @@
   ],
   "panels": [
     {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 2,
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "id": 10050,
+      "title": "Spend (last 24h)",
+      "description": "Total cost across the rolling 24-hour window ending now. Independent of dashboard time picker. \"Today\" approximated as 24h because Prometheus cannot trivially align to midnight in a user-local timezone.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total{model=~\"$model\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 10060,
+      "title": "Tokens In (last 24h)",
+      "description": "Sum of input + cache-read + cache-creation tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens in\" semantics.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 10070,
+      "title": "Tokens Out (last 24h)",
+      "description": "Output tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens out\".",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=\"output\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
       "id": 10100,
       "type": "stat",
       "title": "Spend Rate ($/hour)",
@@ -263,7 +456,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -338,7 +531,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 0
+        "y": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -368,7 +561,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -397,7 +590,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -427,7 +620,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -456,7 +649,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 0
+        "y": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -486,7 +679,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -515,7 +708,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 8
       },
       "datasource": {
         "type": "prometheus",
@@ -577,7 +770,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 8
       },
       "datasource": {
         "type": "prometheus",
@@ -639,7 +832,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 16
       },
       "datasource": {
         "type": "prometheus",
@@ -701,7 +894,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 16
       },
       "datasource": {
         "type": "prometheus",
@@ -735,7 +928,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "blue"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -770,7 +963,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 24
       },
       "datasource": {
         "type": "prometheus",
@@ -832,7 +1025,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 24
       },
       "datasource": {
         "type": "prometheus",

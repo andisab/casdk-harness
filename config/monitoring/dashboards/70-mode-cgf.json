@@ -146,12 +146,11 @@
       "gridPos": {"h": 5, "w": 14, "x": 0, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {
-          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|optimize|finalize|complete|failed\"}[2m]))",
-          "legendFormat": "{{phase}}",
-          "interval": "30s",
-          "refId": "A"
-        }
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"research\"}[2m]))", "legendFormat": "research", "interval": "30s", "refId": "A"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"optimize\"}[2m]))", "legendFormat": "optimize", "interval": "30s", "refId": "B"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"finalize\"}[2m]))", "legendFormat": "finalize", "interval": "30s", "refId": "C"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"complete\"}[2m]))", "legendFormat": "complete", "interval": "30s", "refId": "D"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"failed\"}[2m]))", "legendFormat": "failed", "interval": "30s", "refId": "E"}
       ],
       "options": {
         "mergeValues": true,
@@ -190,12 +189,16 @@
       "gridPos": {"h": 5, "w": 14, "x": 0, "y": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
-        {
-          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|design|qa|generate|eval_design|iterate|execution_eval|validate|complete|failed\"}[2m]))",
-          "legendFormat": "{{phase}}",
-          "interval": "30s",
-          "refId": "A"
-        }
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"research\"}[2m]))", "legendFormat": "research", "interval": "30s", "refId": "A"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"design\"}[2m]))", "legendFormat": "design", "interval": "30s", "refId": "B"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"qa\"}[2m]))", "legendFormat": "qa", "interval": "30s", "refId": "C"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"generate\"}[2m]))", "legendFormat": "generate", "interval": "30s", "refId": "D"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"eval_design\"}[2m]))", "legendFormat": "eval_design", "interval": "30s", "refId": "E"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"iterate\"}[2m]))", "legendFormat": "iterate", "interval": "30s", "refId": "F"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"execution_eval\"}[2m]))", "legendFormat": "execution_eval", "interval": "30s", "refId": "G"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"validate\"}[2m]))", "legendFormat": "validate", "interval": "30s", "refId": "H"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"complete\"}[2m]))", "legendFormat": "complete", "interval": "30s", "refId": "I"},
+        {"expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"failed\"}[2m]))", "legendFormat": "failed", "interval": "30s", "refId": "J"}
       ],
       "options": {
         "mergeValues": true,

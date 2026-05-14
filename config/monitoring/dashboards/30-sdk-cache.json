@@ -368,7 +368,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -427,7 +427,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {

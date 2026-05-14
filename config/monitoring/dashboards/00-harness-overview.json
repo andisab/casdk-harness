@@ -294,7 +294,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -475,7 +475,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -780,7 +780,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -891,7 +891,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 7
+        "y": 11
       },
       "datasource": {
         "type": "prometheus",
@@ -953,7 +953,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 7
+        "y": 11
       },
       "datasource": {
         "type": "prometheus",
@@ -1015,7 +1015,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 19
       },
       "panels": [
         {
@@ -1192,7 +1192,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "panels": [
         {
@@ -1234,7 +1234,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1300,7 +1300,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1366,7 +1366,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1425,7 +1425,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1456,7 +1456,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 21
       },
       "panels": [
         {
@@ -1498,7 +1498,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1564,7 +1564,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1694,7 +1694,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1725,7 +1725,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 22
       },
       "panels": [
         {
@@ -1767,7 +1767,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1826,7 +1826,7 @@
             "defaults": {
               "color": {
                 "mode": "fixed",
-                "fixedColor": "text-primary"
+                "fixedColor": "#A0A0A0"
               },
               "mappings": [
                 {
@@ -1920,6 +1920,206 @@
             },
             "overrides": []
           }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 2,
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open Cost & Spend dashboard",
+              "url": "/d/casdk-sdk-cost",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "id": 205,
+      "title": "Spend (last 24h)",
+      "description": "Rolling 24-hour cost. Click to open the Cost & Spend dashboard for the full breakdown.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total{model=~\"$model\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 206,
+      "title": "Tokens In (last 24h)",
+      "description": "Sum of input + cache-read + cache-creation tokens over the rolling 24h window.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 7
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 207,
+      "title": "Tokens Out (last 24h)",
+      "description": "Output tokens over the rolling 24h window.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=\"output\"}[24h]))",
+          "refId": "A",
+          "instant": false
         }
       ]
     }
