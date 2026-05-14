@@ -302,25 +302,42 @@ _active_phases: dict[str, str] = {}
 
 # Phase progression for Grafana — ordered set of every phase name either
 # pipeline (single-resource cgf_session.py and multi-resource orchestrator) can
-# emit. Pre-seeded with value 0 at run start so the dashboard bargauge shows
-# all phases up front, with one of them transitioning to 1 as the run
+# emit. Pre-seeded with value 0 at run start so the dashboard state-timeline
+# shows all phases up front, with one of them transitioning to 1 as the run
 # advances. Keep this synchronized with cgf_session.py phase transitions and
 # OptimizationPhase enum (lowercased).
-KNOWN_RUN_PHASES: tuple[str, ...] = (
+#
+# Single-resource path (cgf_session.py): research → optimize → finalize →
+#   complete, with `failed` as the contract-violation terminal state.
+# Multi-resource path (multi_resource_orchestrator.py): research → design
+#   → qa → generate → eval_design → iterate → execution_eval → validate →
+#   complete, with `failed` as terminal.
+#
+# Dashboard D70's Phase Progression splits into two State Timeline panels
+# — one per path — using the SINGLE_PATH_PHASES / MULTI_PATH_PHASES tuples
+# below as the hardcoded phase regex.  See docs/OBSERVABILITY.md § 4 D70.
+SINGLE_PATH_PHASES: tuple[str, ...] = (
+    "research",
+    "optimize",
+    "finalize",
+    "complete",
+    "failed",
+)
+MULTI_PATH_PHASES: tuple[str, ...] = (
     "research",
     "design",
     "qa",
-    "test_gen",
     "generate",
-    "optimize",
     "eval_design",
     "iterate",
     "execution_eval",
-    "evaluate",
     "validate",
-    "finalize",
     "complete",
-    "failed",  # contract-violation terminal state
+    "failed",
+)
+KNOWN_RUN_PHASES: tuple[str, ...] = tuple(
+    # Union, preserving insertion order: single path first, then multi-only.
+    dict.fromkeys(SINGLE_PATH_PHASES + MULTI_PATH_PHASES)
 )
 
 

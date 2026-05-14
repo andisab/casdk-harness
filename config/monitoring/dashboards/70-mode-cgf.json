@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 15,
+  "version": 16,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -140,13 +140,55 @@
     {
       "id": 70200,
       "type": "state-timeline",
-      "title": "Phase Progression",
-      "description": "State Timeline of optimization phases. Rows are phases; colored bars mark when each phase was active. Path filter is a hint — all 14 known phases are listed; only the active path's phases populate during a run. Single-path phases: research, design, test_gen, optimize, evaluate, finalize. Multi-path phases: research, design, qa, generate, eval_design, iterate, execution_eval, validate. Shared: complete, failed.",
-      "gridPos": {"h": 8, "w": 14, "x": 0, "y": 3},
+      "title": "Phase Progression — Single-resource path",
+      "description": "State Timeline of single-resource (cgf_session.py) phases: research → optimize → finalize → complete (with `failed` as terminal). Stays empty when the active run is on the multi-resource path; see the panel below for that.",
+      "gridPos": {"h": 5, "w": 14, "x": 0, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
-          "expr": "harness_run_phase_info{resource=~\"$resource\"}",
+          "expr": "harness_run_phase_info{resource=~\"$resource\",phase=~\"research|optimize|finalize|complete|failed\"}",
+          "legendFormat": "{{phase}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 0, "fillOpacity": 70},
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": " ", "color": "text-secondary", "index": 0}}},
+            {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"failed\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "failed", "color": "red", "index": 0}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"complete\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "complete", "color": "blue", "index": 0}}}]}]
+          }
+        ]
+      }
+    },
+    {
+      "id": 70205,
+      "type": "state-timeline",
+      "title": "Phase Progression — Multi-resource path",
+      "description": "State Timeline of multi-resource (multi_resource_orchestrator.py) phases: research → design → qa → generate → eval_design → iterate → execution_eval → validate → complete (with `failed` as terminal). Stays empty when the active run is on the single-resource path; see the panel above for that.",
+      "gridPos": {"h": 5, "w": 14, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "harness_run_phase_info{resource=~\"$resource\",phase=~\"research|design|qa|generate|eval_design|iterate|execution_eval|validate|complete|failed\"}",
           "legendFormat": "{{phase}}",
           "refId": "A"
         }
@@ -184,7 +226,7 @@
       "type": "stat",
       "title": "Iteration",
       "description": "Current iteration counter. Emitted on both single-resource (cgf_session.py) and multi-resource (_orchestrator_phases/iterate.py) paths.",
-      "gridPos": {"h": 8, "w": 5, "x": 14, "y": 3},
+      "gridPos": {"h": 10, "w": 5, "x": 14, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -224,7 +266,7 @@
       "type": "stat",
       "title": "Run Elapsed",
       "description": "Wall-clock seconds since run start, computed as time() - harness_run_start_timestamp.",
-      "gridPos": {"h": 8, "w": 5, "x": 19, "y": 3},
+      "gridPos": {"h": 10, "w": 5, "x": 19, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -255,7 +297,7 @@
       "type": "stat",
       "title": "Cost (5m windows)",
       "description": "Spend in 5-minute windows. Sparkline shows recent cost-per-5min. Reduction: lastNotNull — the headline number is the most recent 5-min bucket. Use the time range selector to widen the window.",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 11},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -295,7 +337,7 @@
       "type": "stat",
       "title": "Tokens (5m windows)",
       "description": "Token usage in 5-minute windows across all types (input/output/cacheRead/cacheCreation).",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 11},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -327,7 +369,7 @@
       "type": "stat",
       "title": "Cache Hit Rate",
       "description": "cacheRead / (cacheRead + cacheCreation + input). Healthy long Claude Code sessions sit at ≥90%; <60% means cache is busted every turn (timestamps in CLAUDE.md, mid-session model switch, MCP-tool additions, capitalization drift). See OBSERVABILITY.md § 6 item 4 for the metric-name correction; § 5 for the CacheHitRateDegraded alert that fires on this.",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 11},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -369,7 +411,7 @@
       "type": "barchart",
       "title": "Cost by Model (selected range)",
       "description": "Total spend per model across the selected time range. Horizontal bars to make the long tail legible — pies misrepresent unequal magnitudes.",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 11},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -412,7 +454,7 @@
       "type": "row",
       "title": "Eval Framework (Stage 3 Phase A)",
       "collapsed": true,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
       "panels": [
         {
           "id": 70410,
