@@ -183,7 +183,7 @@ async def _iterate_single_resource(
 
         # Surface per-resource iteration to Prometheus (Grafana D70 /
         # D00 iteration panels).  Multi-resource path historically
-        # didn't emit this — METRICS-INVENTORY § 3.3 GAP.
+        # didn't emit this — see OBSERVABILITY.md § 3.4 (resolved 2026-05-14).
         record_iteration(resource.path, iteration)
 
         # Phase A.5: include eval feedback when this resource was

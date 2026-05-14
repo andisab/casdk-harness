@@ -258,7 +258,7 @@
       "id": 110,
       "type": "stat",
       "title": "Active Mode",
-      "description": "Mode of the currently-running CGF or autonomous session, from harness_run_config_info{mode}. Shows '\u2014' when no instrumented run is active. INTERACTIVE mode currently does not emit harness_run_config_info \u2014 see METRICS-INVENTORY.md \u00a7 2.5; D60 covers interactive-mode panels directly.",
+      "description": "Mode of the currently-running CGF or autonomous session, from harness_run_config_info{mode}. Shows '\u2014' when no instrumented run is active. INTERACTIVE mode currently does not emit harness_run_config_info \u2014 see OBSERVABILITY.md \u00a7 3.4; D60 covers interactive-mode panels directly.",
       "gridPos": {
         "h": 3,
         "w": 4,
@@ -1659,7 +1659,7 @@
           "id": 954,
           "type": "stat",
           "title": "Commits (range)",
-          "description": "See METRICS-INVENTORY \u00a7 6.3 \u2014 typically empty for CGF workloads.",
+          "description": "See OBSERVABILITY.md \u00a7 6 item 7 \u2014 typically empty for CGF workloads.",
           "gridPos": {
             "h": 4,
             "w": 6,

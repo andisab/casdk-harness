@@ -183,7 +183,7 @@
       "id": 70210,
       "type": "stat",
       "title": "Iteration",
-      "description": "Current iteration counter. NOTE: only emitted on the single-resource path today. Multi-resource runs show '—' here — see docs/METRICS-INVENTORY.md § 3.3 (gap to be wired during G5a follow-up).",
+      "description": "Current iteration counter. Emitted on both single-resource (cgf_session.py) and multi-resource (_orchestrator_phases/iterate.py) paths.",
       "gridPos": {"h": 4, "w": 5, "x": 14, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
@@ -390,7 +390,7 @@
       "id": 70320,
       "type": "stat",
       "title": "Cache Hit Rate",
-      "description": "cacheRead / (cacheRead + cacheCreation + input). Healthy long Claude Code sessions sit at ≥90%; <60% means cache is busted every turn (timestamps in CLAUDE.md, mid-session model switch, MCP-tool additions, capitalization drift). See docs/GRAFANA-REFACTOR.md § 1.4 of the upstream spec.",
+      "description": "cacheRead / (cacheRead + cacheCreation + input). Healthy long Claude Code sessions sit at ≥90%; <60% means cache is busted every turn (timestamps in CLAUDE.md, mid-session model switch, MCP-tool additions, capitalization drift). See OBSERVABILITY.md § 6 item 4 for the metric-name correction; § 5 for the CacheHitRateDegraded alert that fires on this.",
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 11},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [

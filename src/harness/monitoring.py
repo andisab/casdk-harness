@@ -183,7 +183,7 @@ interactive_message_types_total = Counter(
 # (Five legacy cgf_* instruments — cgf_spans_collected_total,
 # cgf_spans_exported_total, cgf_adapter_transforms_total,
 # cgf_reward_composite, cgf_feedback_dimensions — were removed
-# 2026-05-14 after the G0 emission audit (docs/METRICS-INVENTORY.md)
+# 2026-05-14 after the G0 emission audit (docs/OBSERVABILITY.md § 3)
 # confirmed zero call sites for any of them.  They were holdovers
 # from an earlier optimization-store / reward-pipeline architecture
 # simplified during Block 4.  The harness_eval_* family below

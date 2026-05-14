@@ -259,7 +259,7 @@ class TestCGFPipelineIntegration:
     # record_span_exported, record_adapter_transform, record_reward,
     # set_feedback_dimension) and their backing cgf_* instruments were
     # deleted after the G0 emission audit confirmed zero production
-    # call sites.  See docs/METRICS-INVENTORY.md § 3.1.
+    # call sites.  See docs/OBSERVABILITY.md § 3.6.
 
     def test_store_exporter_buffering(self, memory_store):
         """Test StoreSpanExporter buffers spans before flush."""

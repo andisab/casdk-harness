@@ -546,7 +546,7 @@
       "id": 65200,
       "type": "timeseries",
       "title": "Commits Over Time",
-      "description": "Per-5min commit count via sum_over_time (NOT increase \u2014 spec \u00a7 2 gotcha #3). CAVEAT: claude_code_commit_count_total was empty in 24h on typical CGF-optimization workloads (see METRICS-INVENTORY \u00a7 6.3). Will populate when Claude commits in-session during autonomous mode.",
+      "description": "Per-5min commit count via sum_over_time (NOT increase \u2014 spec \u00a7 2 gotcha #3). CAVEAT: claude_code_commit_count_total was empty in 24h on typical CGF-optimization workloads (see OBSERVABILITY.md \u00a7 6 item 7). Will populate when Claude commits in-session during autonomous mode.",
       "gridPos": {
         "h": 8,
         "w": 12,

@@ -435,7 +435,7 @@
       "id": 20130,
       "type": "stat",
       "title": "Productivity Multiplier (cli / user)",
-      "description": "CAVEAT: active_time{type=\"user\"} was never observed in 24h on harness workloads \u2014 likely interactive-only. This stat will show as Inf or '\u2014' until interactive sessions populate the denominator. See METRICS-INVENTORY \u00a7 6.4. Treat as directional, never a performance KPI \u2014 Mike Lane reports >10,000\u00d7 ratios with parallel agents.",
+      "description": "CAVEAT: active_time{type=\"user\"} was never observed in 24h on harness workloads \u2014 likely interactive-only. This stat will show as Inf or '\u2014' until interactive sessions populate the denominator. See OBSERVABILITY.md \u00a7 6 item 8. Treat as directional, never a performance KPI \u2014 Mike Lane reports >10,000\u00d7 ratios with parallel agents.",
       "gridPos": {
         "h": 4,
         "w": 6,

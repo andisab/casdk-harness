@@ -258,7 +258,7 @@
       "id": 40100,
       "type": "stat",
       "title": "Edit Acceptance Rate (Overall)",
-      "description": "accept / (accept + reject) across all code-edit tools. NOTE: SDK metric name is claude_code_code_edit_tool_decision_total (NOT _count_total as upstream spec lists). See METRICS-INVENTORY \u00a7 6.1.",
+      "description": "accept / (accept + reject) across all code-edit tools. NOTE: SDK metric name is claude_code_code_edit_tool_decision_total (NOT _count_total as upstream spec lists). See OBSERVABILITY.md \u00a7 6 item 4.",
       "gridPos": {
         "h": 4,
         "w": 8,
@@ -575,7 +575,7 @@
       "id": 40300,
       "type": "timeseries",
       "title": "Rejection Rate by exported_source",
-      "description": "Where rejections come from: config / hook / user_permanent / user_temporary / user_abort / user_reject. NOTE: label is `exported_source`, NOT `source` \u2014 Prometheus renames the SDK's source attribute because the scrape job applies its own `source` label first. See METRICS-INVENTORY \u00a7 6.2.",
+      "description": "Where rejections come from: config / hook / user_permanent / user_temporary / user_abort / user_reject. NOTE: label is `exported_source`, NOT `source` \u2014 Prometheus renames the SDK's source attribute because the scrape job applies its own `source` label first. See OBSERVABILITY.md \u00a7 6 item 5.",
       "gridPos": {
         "h": 8,
         "w": 12,

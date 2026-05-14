@@ -258,7 +258,7 @@
       "id": 50100,
       "type": "stat",
       "title": "Harness Error Rate",
-      "description": "Fraction of harness agent requests that errored. Prometheus-only proxy for SDK-side API reliability \u2014 actual `api_error` event data needs Loki (Stage 3). See METRICS-INVENTORY \u00a7 6 + GRAFANA-REFACTOR \u00a7 7.4 D50.",
+      "description": "Fraction of harness agent requests that errored. Prometheus-only proxy for SDK-side API reliability \u2014 actual `api_error` event data needs Loki (Stage 3). See OBSERVABILITY.md \u00a7 6 + OBSERVABILITY.md \u00a7 5 (Stage 3 deferred) + \u00a7 8.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -724,7 +724,7 @@
           },
           "options": {
             "mode": "markdown",
-            "content": "These panels are deferred to Stage 3 (Loki + Tempo) per `docs/GRAFANA-REFACTOR.md` \u00a7 8.\n\n**Requires Loki:**\n\n- API errors by `status_code` (429 vs 5xx vs 529 segmentation)\n- API errors by `model`\n- API request P50/P95/P99 latency by model\n- `api_retries_exhausted` rate (terminal-failure signal)\n- MCP server connection failures by `server_name`\n- Internal errors / auth failures / compaction failures\n\n**Requires Traces beta (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`):**\n\n- TTFT (time to first token) P50 / P95 by model \u2014 highest-value traces panel; add first when Tempo is deployed.\n- Average attempts per request (silent 2nd-attempt successes that `api_retries_exhausted` doesn't surface)."
+            "content": "These panels are deferred to Stage 3 (Loki + Tempo) per `docs/OBSERVABILITY.md` \u00a7 8.\n\n**Requires Loki (\u00a7 8.1):**\n\n- API errors by `status_code` (429 vs 5xx vs 529 segmentation)\n- API errors by `model`\n- API request P50/P95/P99 latency by model\n- `api_retries_exhausted` rate (terminal-failure signal)\n- MCP server connection failures by `server_name`\n- Internal errors / auth failures / compaction failures\n\n**Requires Traces beta (\u00a7 8.2):**\n\n- TTFT (time to first token) P50 / P95 by model \u2014 highest-value traces panel; add first when Tempo is deployed.\n- Average attempts per request (silent 2nd-attempt successes that `api_retries_exhausted` doesn't surface)."
           },
           "fieldConfig": {
             "defaults": {},

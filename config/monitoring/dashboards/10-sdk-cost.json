@@ -765,7 +765,7 @@
       "id": 10300,
       "type": "timeseries",
       "title": "Cost per Commit",
-      "description": "CAVEAT: claude_code_commit_count_total is empty in 24h on typical CGF-optimization workloads \u2014 see METRICS-INVENTORY \u00a7 6.3. This panel will render empty until Claude commits in-session (typically only happens in autonomous mode).",
+      "description": "CAVEAT: claude_code_commit_count_total is empty in 24h on typical CGF-optimization workloads \u2014 see OBSERVABILITY.md \u00a7 6 item 7. This panel will render empty until Claude commits in-session (typically only happens in autonomous mode).",
       "gridPos": {
         "h": 6,
         "w": 12,
@@ -827,7 +827,7 @@
       "id": 10310,
       "type": "timeseries",
       "title": "Cost per PR",
-      "description": "CAVEAT: claude_code_pull_request_count_total only fires when Claude itself opens the PR in-session (via `gh pr create` or an MCP tool). Manual PRs do not register. See METRICS-INVENTORY \u00a7 6.3.",
+      "description": "CAVEAT: claude_code_pull_request_count_total only fires when Claude itself opens the PR in-session (via `gh pr create` or an MCP tool). Manual PRs do not register. See OBSERVABILITY.md \u00a7 6 item 7.",
       "gridPos": {
         "h": 6,
         "w": 12,
