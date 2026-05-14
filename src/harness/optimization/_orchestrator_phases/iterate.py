@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from harness.monitoring import record_iteration
 from harness.optimization._orchestrator_helpers import (
     AGENT_ITERATE,
     validate_write_path,
@@ -179,6 +180,11 @@ async def _iterate_single_resource(
 
     while iteration < self.config.max_iterations:
         iteration += 1
+
+        # Surface per-resource iteration to Prometheus (Grafana D70 /
+        # D00 iteration panels).  Multi-resource path historically
+        # didn't emit this — METRICS-INVENTORY § 3.3 GAP.
+        record_iteration(resource.path, iteration)
 
         # Phase A.5: include eval feedback when this resource was
         # flagged for refinement by EXECUTION_EVAL on a prior round.

@@ -41,8 +41,8 @@ Columns:
 | `harness_agent_requests_total` | Counter | `monitoring.py:113` | `agent.py:756, 776, 804` via `MetricsCollector.record_request` | spec D50 (API error proxy); overview.json (verify) | LIVE |
 | `harness_agent_duration_seconds` | Histogram | `monitoring.py:119` | `agent.py:777` via `record_duration` | spec D50 (P50/P95), D65 (Agent Execution heat map) | LIVE |
 | `harness_agent_active_sessions` | Gauge | `monitoring.py:125` | `agent.py:660, 1485` via `set_active_sessions` | spec D00 (`$mode` discriminator) | LIVE |
-| `harness_checkpoint_size_bytes` | Gauge | `monitoring.py:131` | `monitoring.py:621` (internal `collect_system_metrics` loop) | overview.json (verify); no spec panel | STRANDED — emitted but no spec panel; verify overview.json consumer |
-| `harness_workspace_files_total` | Gauge | `monitoring.py:136` | `monitoring.py:613` (internal `collect_system_metrics` loop) | overview.json (verify); no spec panel | STRANDED — same |
+| `harness_checkpoint_size_bytes` | Gauge | `monitoring.py:131` | `monitoring.py:621` (internal `collect_system_metrics` loop) | D00 "System Health" collapsed row (G6) | LIVE |
+| `harness_workspace_files_total` | Gauge | `monitoring.py:136` | `monitoring.py:613` (internal `collect_system_metrics` loop) | D00 "System Health" collapsed row (G6) | LIVE |
 | `harness_memory_usage_bytes` | Gauge | `monitoring.py:141` | `monitoring.py:collect_system_metrics` (reads `/proc/self/status` `VmRSS:` line every 60s) | overview.json (verify); D00 SDK economics row (optional) | LIVE — wired 2026-05-14, label `component="agent_rss"` |
 
 ### 2.2 Harness — interactive-mode session
@@ -76,7 +76,7 @@ _All five legacy `cgf_*` instruments were **deleted 2026-05-14** alongside their
 | Metric name | Type | Defined at | Emitted from | Consumed by | Status |
 |---|---|---|---|---|---|
 | `harness_run_phase_info` | Gauge | `monitoring.py:275` | `cgf_session.py` × 12 sites (`record_phase_entry`); `multi_resource_orchestrator.py:426, 523` | cgf.json "Phase Progression" bargauge; spec D70 State Timeline (P1) | LIVE |
-| `harness_run_iteration` | Gauge | `monitoring.py:284` | `cgf_session.py:1776, 2138` (single path) | cgf.json "Iteration" stat; spec D70 R1 panel 2 | **GAP** — multi-resource orchestrator never calls `record_iteration`; D70 Iteration panel will show "—" on multi runs |
+| `harness_run_iteration` | Gauge | `monitoring.py:284` | `cgf_session.py:1776, 2138` (single path); `_orchestrator_phases/iterate.py:185` (multi path, added 2026-05-14) | D70 "Iteration" + D00 "If optimize" row | LIVE — multi-path coverage added 2026-05-14 |
 | `harness_run_path_info` | Gauge | `monitoring.py:290` | `cgf_session.py:1773`; `multi_resource_orchestrator.py:424` | spec D70 `$path` variable | LIVE |
 | `harness_run_config_info` | Gauge | `monitoring.py:389` | `cgf_session.py:1778`; `multi_resource_orchestrator.py:436` (Phase 1) | spec D00 Row 0 Run Config table; spec D70 Row 0 | LIVE — runtime-verified 2026-05-14, all 8 labels (resource/path/mode/model/effort/eval_enabled/token_budget/max_iterations) propagate correctly |
 | `harness_run_start_timestamp` | Gauge | `monitoring.py:409` | `cgf_session.py:1777`; `multi_resource_orchestrator.py:427` (Phase 1) | spec D00 / D70 "Run Elapsed" stat | LIVE — runtime-verified 2026-05-14 |
@@ -116,18 +116,13 @@ Originally six dead instruments. All six remediated:
 | `cgf_reward_composite` | **Deleted.** |
 | `cgf_feedback_dimensions` | **Deleted.** |
 
-### 3.2 Stranded instruments
+### 3.2 Stranded instruments — RESOLVED 2026-05-14
 
-Two instruments emitted but referenced only in `overview.json` (which is being rewritten in G6):
+Both `harness_checkpoint_size_bytes` and `harness_workspace_files_total` now have consumers in the new D00 "System Health" collapsed row (G6). Kept rather than deleted — the instruments are cheap, useful for operational visibility, and now have a documented home.
 
-1. `harness_checkpoint_size_bytes`
-2. `harness_workspace_files_total`
+### 3.3 Gaps — RESOLVED 2026-05-14
 
-**Decision:** verify overview.json actually queries these (the new D00 spec doesn't). If yes, port the panel to D00; if no, delete the instrument and the corresponding `collect_system_metrics` block. Defer to G6.
-
-### 3.3 Gaps — emitted on one path only
-
-1. **`harness_run_iteration` only emits on the single-resource (`cgf_session.py`) path.** Multi-resource orchestrator never calls `record_iteration`, so D70's iteration stat panel shows "—" for `make optimize` against multi-resource fixtures (e.g., `tests/smoke/iac-team`). **Fix:** wire `record_iteration` into `multi_resource_orchestrator._advance_phase` or `_delegate_iteration` — needs to determine which iteration concept to surface (per-resource current iteration, vs. total iterations across all resources). Defer the fix to G5a where D70 lands; document the gap in the meantime.
+1. **`harness_run_iteration` multi-path coverage** — wired in `src/harness/optimization/_orchestrator_phases/iterate.py:185` (call site fires at the top of every per-resource iteration). Surfaces per-resource current iteration. D70 + D00 "If optimize" Iteration panels now populate on both paths.
 
 ### 3.4 Spec PromQL referencing missing series
 
@@ -150,13 +145,13 @@ Decisions logged here as they're made.
 
 ## 4. Action items (rolled up)
 
-Prerequisite to G4 (Tier 2 dashboards) and G5a (Dashboard 70):
+All prerequisite items resolved as of 2026-05-14:
 
-- [x] **Delete 5 dead `cgf_*` instruments** plus their wrapper methods + their integration-test reference. Cleans ~70 LoC from monitoring.py. Dangling refs in `cgf.json` panels will be removed as part of the G5a rewrite. Done 2026-05-14.
-- [x] **Wire `harness_memory_usage_bytes`** into `collect_system_metrics` via `/proc/self/status` (stdlib, no psutil dependency). Done 2026-05-14, verified live.
-- [x] **Runtime verification** (§5) for SDK-side metrics. Done 2026-05-14 — see § 6 findings; two spec corrections (metric-name and label-renaming) discovered.
-- [ ] **Wire `record_iteration` into multi-resource orchestrator.** Defer to G5a unless cheap; flag iteration panel as "single-path-only for now" in D70 spec.
-- [ ] **Verify `harness_checkpoint_size_bytes` and `harness_workspace_files_total` consumers.** Decide port-or-delete during G6.
+- [x] **Delete 5 dead `cgf_*` instruments** plus their wrapper methods + their integration-test reference. Cleans ~70 LoC from monitoring.py.
+- [x] **Wire `harness_memory_usage_bytes`** into `collect_system_metrics` via `/proc/self/status` (stdlib, no psutil dependency). Verified live.
+- [x] **Runtime verification** (§5) for SDK-side metrics. See § 6 findings; two spec corrections (metric-name and label-renaming) discovered.
+- [x] **Wire `record_iteration` into multi-resource orchestrator.** Done in `_orchestrator_phases/iterate.py:185`.
+- [x] **`harness_checkpoint_size_bytes` and `harness_workspace_files_total` consumers** — both surfaced in D00 "System Health" row. Kept rather than deleted.
 
 ---
 
