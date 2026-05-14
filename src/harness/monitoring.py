@@ -178,40 +178,16 @@ interactive_message_types_total = Counter(
     ["agent", "message_type"],
 )
 
-# CGF (ContextGrad Framework) Metrics
-cgf_spans_collected = Counter(
-    "cgf_spans_collected_total",
-    "Total spans collected by CGF tracer",
-    ["agent", "span_kind"],
-)
-
-cgf_spans_exported = Counter(
-    "cgf_spans_exported_total",
-    "Total spans exported to store",
-    ["agent", "exporter"],
-)
-
-cgf_adapter_transforms = Counter(
-    "cgf_adapter_transforms_total",
-    "Adapter span-to-feedback transformations",
-    ["resource_type", "status"],
-)
-
-cgf_reward_composite = Histogram(
-    "cgf_reward_composite",
-    "Distribution of composite reward scores",
-    ["resource_type"],
-    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-)
-
-cgf_feedback_dimensions = Gauge(
-    "cgf_feedback_dimensions",
-    "Current feedback dimension values",
-    ["resource_type", "dimension"],
-)
-
-
 # CGF Stage 3 — Eval Framework Metrics (Phase A.6)
+#
+# (Five legacy cgf_* instruments — cgf_spans_collected_total,
+# cgf_spans_exported_total, cgf_adapter_transforms_total,
+# cgf_reward_composite, cgf_feedback_dimensions — were removed
+# 2026-05-14 after the G0 emission audit (docs/METRICS-INVENTORY.md)
+# confirmed zero call sites for any of them.  They were holdovers
+# from an earlier optimization-store / reward-pipeline architecture
+# simplified during Block 4.  The harness_eval_* family below
+# functionally replaces them for Phase A onwards.)
 #
 # Cardinality notes:
 # - ``arm`` ∈ {baseline, candidate} (2 values)
@@ -620,6 +596,20 @@ class MetricsCollector:
                     )
                     checkpoint_size_bytes.set(total_size)
 
+                # Process memory (RSS). Linux container only — read /proc.
+                try:
+                    with open("/proc/self/status") as f:
+                        for line in f:
+                            if line.startswith("VmRSS:"):
+                                # Format: "VmRSS:    <kb> kB"
+                                kb = int(line.split()[1])
+                                memory_usage_bytes.labels(
+                                    component="agent_rss"
+                                ).set(kb * 1024)
+                                break
+                except (FileNotFoundError, ValueError, IndexError):
+                    pass  # Non-Linux or unparseable — skip silently.
+
                 await asyncio.sleep(60)  # Collect every minute
 
             except Exception as e:
@@ -733,65 +723,8 @@ class MetricsCollector:
             agent=agent, message_type=message_type
         ).inc()
 
-    # CGF (ContextGrad Framework) Metrics Methods
-
-    @staticmethod
-    def record_span_collected(agent: str, span_kind: str) -> None:
-        """
-        Record a span collected by the CGF tracer.
-
-        Args:
-            agent: Agent name that generated the span
-            span_kind: Kind of span (e.g., agent_execution, tool_call, llm_request)
-        """
-        cgf_spans_collected.labels(agent=agent, span_kind=span_kind).inc()
-
-    @staticmethod
-    def record_span_exported(agent: str, exporter: str) -> None:
-        """
-        Record a span exported to a store backend.
-
-        Args:
-            agent: Agent name that generated the span
-            exporter: Exporter type (e.g., store, file, redis)
-        """
-        cgf_spans_exported.labels(agent=agent, exporter=exporter).inc()
-
-    @staticmethod
-    def record_adapter_transform(resource_type: str, success: bool) -> None:
-        """
-        Record an adapter transformation from spans to feedback.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            success: Whether the transformation succeeded
-        """
-        status = "success" if success else "error"
-        cgf_adapter_transforms.labels(resource_type=resource_type, status=status).inc()
-
-    @staticmethod
-    def record_reward(resource_type: str, composite_score: float) -> None:
-        """
-        Record a composite reward score from the reward system.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            composite_score: The weighted composite reward score (0.0 - 1.0)
-        """
-        cgf_reward_composite.labels(resource_type=resource_type).observe(composite_score)
-
-    @staticmethod
-    def set_feedback_dimension(
-        resource_type: str, dimension: str, value: float
-    ) -> None:
-        """
-        Set a feedback dimension value for monitoring.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            dimension: Feedback dimension name (e.g., task_completion, efficiency)
-            value: Dimension value (0.0 - 1.0)
-        """
-        cgf_feedback_dimensions.labels(
-            resource_type=resource_type, dimension=dimension
-        ).set(value)
+    # (Five legacy CGF MetricsCollector methods — record_span_collected,
+    # record_span_exported, record_adapter_transform, record_reward,
+    # set_feedback_dimension — were removed 2026-05-14 alongside their
+    # backing instruments after the G0 emission audit. They had zero
+    # call sites. See the corresponding instrument-block comment above.)

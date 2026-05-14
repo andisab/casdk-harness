@@ -43,7 +43,7 @@ Columns:
 | `harness_agent_active_sessions` | Gauge | `monitoring.py:125` | `agent.py:660, 1485` via `set_active_sessions` | spec D00 (`$mode` discriminator) | LIVE |
 | `harness_checkpoint_size_bytes` | Gauge | `monitoring.py:131` | `monitoring.py:621` (internal `collect_system_metrics` loop) | overview.json (verify); no spec panel | STRANDED — emitted but no spec panel; verify overview.json consumer |
 | `harness_workspace_files_total` | Gauge | `monitoring.py:136` | `monitoring.py:613` (internal `collect_system_metrics` loop) | overview.json (verify); no spec panel | STRANDED — same |
-| `harness_memory_usage_bytes` | Gauge | `monitoring.py:141` | nowhere | nowhere | **DEAD** — no `set_memory_usage` call site outside `monitoring.py` |
+| `harness_memory_usage_bytes` | Gauge | `monitoring.py:141` | `monitoring.py:collect_system_metrics` (reads `/proc/self/status` `VmRSS:` line every 60s) | overview.json (verify); D00 SDK economics row (optional) | LIVE — wired 2026-05-14, label `component="agent_rss"` |
 
 ### 2.2 Harness — interactive-mode session
 
@@ -59,13 +59,7 @@ Columns:
 
 | Metric name | Type | Defined at | Emitted from | Consumed by | Status |
 |---|---|---|---|---|---|
-| `cgf_spans_collected_total` | Counter | `monitoring.py:182` | nowhere | cgf.json panel "Spans Collected" | **DEAD** — no `record_span_collected` call site; cgf.json panel renders empty |
-| `cgf_spans_exported_total` | Counter | `monitoring.py:188` | nowhere | cgf.json panel "Spans Exported" | **DEAD** |
-| `cgf_adapter_transforms_total` | Counter | `monitoring.py:194` | nowhere | cgf.json panel "Adapter Transform Success Rate" | **DEAD** |
-| `cgf_reward_composite` | Histogram | `monitoring.py:200` | nowhere | cgf.json panel "Mean Composite Reward" | **DEAD** |
-| `cgf_feedback_dimensions` | Gauge | `monitoring.py:207` | nowhere | cgf.json (referenced in P5 Row 3 of spec D70) | **DEAD** |
-
-**Note:** the wrapper methods `MetricsCollector.record_span_collected`, `record_span_exported`, `record_adapter_transform`, `record_reward`, `set_feedback_dimension` are all defined but have zero external callers. Tracer instrumentation in `src/harness/tracer/` does its own OTel span emission; it never crosses over into these prometheus_client counters. Likely disconnected during the Block 4 / Phase 3B refactor.
+_All five legacy `cgf_*` instruments were **deleted 2026-05-14** alongside their wrapper methods on `MetricsCollector` (`record_span_collected`, `record_span_exported`, `record_adapter_transform`, `record_reward`, `set_feedback_dimension`). They had been disconnected since the Block 4 / Phase 3B refactor — zero production call sites, zero recent Prometheus series. Dangling references in `cgf.json` panels will go away when `cgf.json` is replaced wholesale in G5a (Dashboard 70 rewrite); panels render empty in the meantime, which is harmless. The `harness_eval_*` family in §2.4 functionally replaces them for Phase A onwards._
 
 ### 2.4 Eval framework (Phase A telemetry)
 
@@ -109,29 +103,18 @@ Source: Claude Code CLI; we only verify arrival. Names below are the Prometheus 
 
 ## 3. Remediation lists
 
-### 3.1 Dead instruments
+### 3.1 Dead instruments — RESOLVED 2026-05-14
 
-Six instruments defined in `monitoring.py` with zero production call sites:
+Originally six dead instruments. All six remediated:
 
-1. `harness_memory_usage_bytes` — no `set_memory_usage` call site.
-2. `cgf_spans_collected_total` — no `record_span_collected` call site.
-3. `cgf_spans_exported_total` — no `record_span_exported` call site.
-4. `cgf_adapter_transforms_total` — no `record_adapter_transform` call site.
-5. `cgf_reward_composite` — no `record_reward` call site.
-6. `cgf_feedback_dimensions` — no `set_feedback_dimension` call site.
-
-**Decision per row (TBD by maintainer):**
-
-| Instrument | Option A: Wire up | Option B: Delete |
-|---|---|---|
-| `harness_memory_usage_bytes` | Add a call from `collect_system_metrics` loop using `psutil.Process().memory_info()` — useful + cheap. | If we don't actually want per-component memory tracking, delete. |
-| `cgf_spans_collected_total` | Bridge from `src/harness/tracer/` instrumentation — wire `record_span_collected` into the OTel `SpanProcessor.on_start` hook. | If the existing OTel span pipeline already exposes equivalent data via `otelcol_exporter_*` series, delete. |
-| `cgf_spans_exported_total` | Same as above, via `SpanProcessor.on_end`. | Same. |
-| `cgf_adapter_transforms_total` | Wire from the adapter pipeline (need to locate adapter call sites). | Delete if adapters are not central to current workflow. |
-| `cgf_reward_composite` | Wire from `quality_evaluator.py` when a composite score is computed. | Delete if composite reward is a Phase B concept that hasn't been operationalized. |
-| `cgf_feedback_dimensions` | Wire from `cgf_session.py` after the evaluator returns a recommendation. | Delete. |
-
-**Recommendation:** delete all five `cgf_*` instruments and their wrapper methods. They appear to be leftover from an earlier optimization-store-based architecture that was simplified during Block 4. The current Phase A telemetry (`harness_eval_*` family in §2.4) replaces them. The corresponding cgf.json panels are slated for replacement in G5a anyway — don't carry forward references to dead series. Keep `harness_memory_usage_bytes` and wire it up since psutil memory is genuinely useful and the diff is ~5 LoC.
+| Instrument | Resolution |
+|---|---|
+| `harness_memory_usage_bytes` | **Wired up.** `collect_system_metrics` now reads `/proc/self/status` `VmRSS:` line every 60s and emits with `component="agent_rss"`. No new dependency (stdlib `open()`). Verified live 2026-05-14: emits ~92 MB at idle. |
+| `cgf_spans_collected_total` | **Deleted** (instrument + wrapper + integration test reference). |
+| `cgf_spans_exported_total` | **Deleted.** |
+| `cgf_adapter_transforms_total` | **Deleted.** |
+| `cgf_reward_composite` | **Deleted.** |
+| `cgf_feedback_dimensions` | **Deleted.** |
 
 ### 3.2 Stranded instruments
 
@@ -169,11 +152,11 @@ Decisions logged here as they're made.
 
 Prerequisite to G4 (Tier 2 dashboards) and G5a (Dashboard 70):
 
-- [ ] **Delete 5 dead `cgf_*` instruments** plus their wrapper methods + their references in `cgf.json`. Cleans ~70 LoC from monitoring.py and ~5 dead panels from cgf.json (which is being replaced anyway, but the metrics shouldn't outlive their consumers).
-- [ ] **Wire `harness_memory_usage_bytes`** into `collect_system_metrics` via `psutil` (~5 LoC).
+- [x] **Delete 5 dead `cgf_*` instruments** plus their wrapper methods + their integration-test reference. Cleans ~70 LoC from monitoring.py. Dangling refs in `cgf.json` panels will be removed as part of the G5a rewrite. Done 2026-05-14.
+- [x] **Wire `harness_memory_usage_bytes`** into `collect_system_metrics` via `/proc/self/status` (stdlib, no psutil dependency). Done 2026-05-14, verified live.
+- [x] **Runtime verification** (§5) for SDK-side metrics. Done 2026-05-14 — see § 6 findings; two spec corrections (metric-name and label-renaming) discovered.
 - [ ] **Wire `record_iteration` into multi-resource orchestrator.** Defer to G5a unless cheap; flag iteration panel as "single-path-only for now" in D70 spec.
 - [ ] **Verify `harness_checkpoint_size_bytes` and `harness_workspace_files_total` consumers.** Decide port-or-delete during G6.
-- [ ] **Runtime verification** (§5) for SDK-side metrics. Must happen before G4 / G5a / G6 are claimed done.
 
 ---
 
