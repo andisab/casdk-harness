@@ -13,7 +13,8 @@ Public surface:
 - :func:`aggregate_arm`, :func:`compare_arms`, :func:`aggregate_subset` —
   reusable aggregation primitives, public for tests / orchestrator.
 
-See ``docs/CGF-EVAL-FRAMEWORK.md`` § 3.A.4 for the design.
+Design as-built: ``docs/CGF-EVAL-ROADMAP.md`` § 2 (Architecture) +
+``docs/PHASEA_SUMMARY.md`` § 2 (technical decisions).
 """
 
 from __future__ import annotations

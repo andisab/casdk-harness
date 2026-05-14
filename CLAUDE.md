@@ -28,7 +28,7 @@ Technical reference for developers working on this repository and for Claude's o
     - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
     - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
     - Smoke fixtures at `tests/smoke/` (replaced the prior single-fixture `docs/examples/cgf-eval-smoke/` 2026-05-11). Run with `make smoke FIXTURE=<name>`; current fixtures: `python-expert` (single-resource), `iac-team` (multi-resource, AWS+K8s).
-  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-FRAMEWORK.md`.
+  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-ROADMAP.md`.
   - Stage 4: Integration & hardening — not started, depends on Phase D completion.
 
 ### Completed Recently
@@ -70,7 +70,7 @@ Technical reference for developers working on this repository and for Claude's o
 - **Block 2 Part 2 Phase 2 minimal — Hook event SDK-canonical names (2026-05-04)** — Renamed `HookEvent.POST_SESSION_START` → `SESSION_START` (value "PostSessionStart" → "SessionStart"); dropped unused `PRE_SESSION_START`. Tests 1591/0/0. Phase 2 full (plugin_manager.py collapse) deferred — gated on Phase 3 experiment results.
 - **Block 2 Part 2 Phase 1 — Filesystem Agent Discovery (2026-05-04)** — moved 14 agent configs from `src/harness/agents/configs/*.md` to canonical `.claude/agents/*.md`; `definitions.py` and `ResourceRegistry.discover()` repointed to new path; `setting_sources` narrowed `["user","project"]` → `["project"]` for container hermeticity; Dockerfile copies `.claude/` in dev + production stages; YAML `model: opus 4.1` normalized to canonical `opus` (12 files). Unit tests 1591/0/0.
 - **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, subagent.py retirement).
-- **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
+- **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/CGF-EVAL-ROADMAP.md § 11.7](./docs/CGF-EVAL-ROADMAP.md#117-what-shipped--block-log) for the block log.
 - **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
   - [x] `mcp-tool-creation` and `mcp-server-creation` skills with references/
   - [x] Full Python and TypeScript MCP server scaffolds in templates/
@@ -593,7 +593,7 @@ When running inside the harness container:
 
 #### Prometheus Metrics
 
-Two metric sources reach Prometheus (see [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability) for the full picture):
+Two metric sources reach Prometheus (see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) for the full picture):
 
 **Harness instruments** (port 9090, `harness_*` and `cgf_*` namespaces, scraped from each agent container):
 - `harness_agent_requests_total{agent, status}` — Request counter
@@ -1069,7 +1069,7 @@ See [README.md#troubleshooting](./README.md#troubleshooting) for user-focused so
 - [README.md](./README.md) - User-facing documentation
 - [QUICKSTART.md](./QUICKSTART.md) - 5-minute setup
 - [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) - Architecture / metrics inventory / 10 dashboards / 13 alert rules / data persistence / gotchas. **Re-read before editing `config/monitoring/` or wiring new instruments.**
-- [docs/REFACTOR.md § Hardening](./docs/REFACTOR.md#3-hardening) - Production security priorities (P0-P3)
+- [docs/CGF-EVAL-ROADMAP.md § 10](./docs/CGF-EVAL-ROADMAP.md#10-hardening-backlog) - Production security priorities (P0-P3)
 
 #### Claude Agent SDK
 - [Agent SDK Overview](https://docs.claude.com/en/api/agent-sdk/overview)

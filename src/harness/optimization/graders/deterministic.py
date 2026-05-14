@@ -7,7 +7,8 @@ The ``code`` grader executes a user-supplied Python snippet against the
 transcript.  This is acceptable in Phase A because the eval harness runs
 in-process inside the harness container (same trust domain as the agent
 under test).  Phase C will move execution into ephemeral containers,
-which is where the real isolation lives — see CGF-EVAL-FRAMEWORK.md § 5.
+which is where the real isolation lives — see CGF-EVAL-ROADMAP.md § 5
+(Phase C — Ephemeral runtime).
 """
 
 from __future__ import annotations

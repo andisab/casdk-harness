@@ -6,7 +6,7 @@ This doc has three objectives:
 2. **Architecture & technical decisions** — what was built and *why*.
 3. **Open issues & future work** — what's queued, what needs investigation, what's deliberately deferred.
 
-For per-defect fix histories see `git log` on `phase-a-fixes` / `phase-a-perf`; for the canonical Stage-3 plan see [CGF-EVAL-FRAMEWORK.md](./CGF-EVAL-FRAMEWORK.md).
+This is the retrospective companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md), which carries forward-looking plans (Phase A polish → B/C/D, plus cross-cutting harness work). For per-defect fix histories see `git log` on `phase-a-fixes` / `phase-a-perf`. For day-to-day operational reference (env vars, how to run, resume from existing state) see [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
 
 ---
 
@@ -181,123 +181,13 @@ Several "tie at zero" or "saturate at 0.67" outcomes are scenario-design artifac
 
 ---
 
-## 4. Open issues & future work
-
-### Architectural
-
-- **Eval as a distinct agent with isolated context (probably Opus).** The eval pipeline currently runs as part of the same conversation/context as the orchestrator; the architect agent is bounded by the orchestrator's overall turn budget. A separate eval-only agent with its own context window, model selection (Opus for rubric authoring quality), and isolated tool access would (a) free up the orchestrator's context, (b) let the architect think harder about discriminating scenarios, and (c) make eval reproducibility easier (separate inputs, separate logs).
-- **Phase B — statistical promotion gate.** Bootstrap-CI on win rate, lower bound > 0.5 to promote. Token regression check. Trigger precision/recall over held-out set. Pairwise judge with position balancing.
-- **Phase C — ephemeral container runtime.** Layered Dockerfile (`harness-base` → `harness-eval-base` → `harness-eval-instance`). `docker compose run --rm`, tmpfs workspace, pinned model per run. SWE-bench-style determinism target.
-- **Phase D — judge calibration.** `make eval-calibrate` computes Cohen's kappa per `(resource_type × judge_model × rubric_version)`; gate refuses promotion when calibration is stale or < 0.8. Judge ensemble (haiku + sonnet + opus majority) when calibration is below threshold.
-
-### Eval-design quality (biggest signal-quality lever)
-
-- **Scenario discrimination.** Many scenarios pass on both arms or fail on both, producing flat outcomes. The architect prompt needs explicit guidance to author scenarios that *separate* baseline from candidate (e.g. scenarios that exercise documented improvements over the v0 file).
-- **Scenario difficulty distribution.** Today 1 easy + 1 medium + 1 hard per resource at `trials=1` is too coarse; at `trials=3` the signal would smooth but the cost triples. Multi-grader scenarios (F23) get more bits per model call without scaling trials.
-- **Two persistently broken resource types.** `commands/*` (F20 mitigates via natural-language prompt rewrite; long-term fix is to register workspace commands as plugin commands in the eval runtime). `agents/iac-generator` (scenarios unwinnable for both arms — needs rubric redesign or scenario simplification).
-
-### Queued F-series defects
-
-- **F25 — GENERATE timeout under 8-way concurrency.** Run #6: `skills/aws-eks/SKILL.md` GENERATE timed out at 905 s (5 s over `CGF_GENERATE_TIMEOUT=900`). The `context-engineer` subagent ran 27 turns with **0 tool_calls** — a planning loop without writing. Pre-fix run #5 finished this resource in 611 s at concurrency=4. Three working theories: (a) rate-limit tail-latency under 8-way fan-out pushes some resources past the cap; (b) the architect prompt for aws-eks induces a planning loop under contention; (c) random SDK hang. Next steps: instrument context-engineer to log when it spends > 60 s without a tool call; consider raising the GENERATE timeout to 1200 s OR lowering `CGF_GENERATE_CONCURRENCY` to 6 as a middle ground; investigate aws-eks prompt for ambiguity.
-- **F23 — Multi-grader scenarios.** Schema + runner + architect changes so one model call can be scored by N graders. Targets 4× signal-per-dollar for content-evaluation skills.
-- **F24 — Shared-generation graph.** Bipartite scenarios↔grader-pools for cross-scenario grader reuse. Discussion item; design after F23 validates the multi-grader model.
-- **F1 (cosmetic, deferred).** `setup.sh` host-side tooling probe false-positives.
-- **F5 (mitigated, deferred).** Hard-abort path on EVAL_DESIGN architect timeout; currently bandaided by raised budget.
-
-### Validation gaps
-
-- **~~VALIDATE has never run under load.~~** Cleared in run #6 (coherence_score = 0.93 in 3 m 01 s).
-- **~~F17–F22 are code-complete but not smoke-validated.~~** Cleared in run #6 (85 m 06 s end-to-end, all six fixes observed working).
-- **Full 54-scenario suite at `trials=3`.** Smoke uses `trials=1` for speed; production cadence is `trials=3`. Not yet run end-to-end — would 3× per-trial cost but smooth the pass-rate distribution.
-- **F25 (aws-eks GENERATE timeout) reproducibility.** Single observation in run #6; need a follow-up run to determine if it's deterministic or rate-limit roulette.
-- **VALIDATE refinement loop never exercised.** Coherence passed cleanly in run #6; the VALIDATE → ITERATE retry path (gated by `max_validate_refinements = 2`) has not yet fired under load.
-
 ---
 
-## 5. Configuration reference
+## 4. Forward work
 
-### Env vars
+Where the next steps live now:
 
-| Var | Default | Purpose |
-|---|---|---|
-| `CGF_MAX_ITERATIONS` | 3 | Max iter↔eval cycles per resource |
-| `CGF_DESIGN_MODEL` | sonnet | Eval-architect model |
-| `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
-| `CGF_EVAL_TOKEN_BUDGET` | 1 000 000 | Token ceiling per eval round |
-| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Simple-threshold gate margin |
-| `CGF_EVAL_HELD_OUT_FRACTION` | 0.25 | Architect target for held-out share |
-| `CGF_GENERATE_CONCURRENCY` | 8 | Parallel resource generation |
-| `CGF_ITERATE_CONCURRENCY` | 4 | Parallel resource iteration |
-| `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | Parallel per-resource eval |
-| `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Parallel scenarios inside one resource's eval |
-| `CGF_EVAL_TRIAL_TIMEOUT` | 180 | Per-trial cap (unit / e2e) |
-| `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` | 300 | Per-trial cap (trajectory) |
-| `CGF_ITERATE_TIMEOUT` | 1200 | Per-iteration wall-time cap |
-
-### Phase-level timeouts
-
-| Phase | Default | Env var |
-|---|---|---|
-| RESEARCH | 1800 s | `CGF_RESEARCH_TIMEOUT` |
-| GENERATE | 900 s | `CGF_GENERATE_TIMEOUT` |
-| ITERATE | 1200 s | `CGF_ITERATE_TIMEOUT` |
-| VALIDATE | 300 s | `CGF_VALIDATE_TIMEOUT` |
-| DESIGN | 900 s | (config-only) |
-| EVAL_DESIGN | 1200 s | (config-only) |
-| EXECUTION_EVAL | 1800 s | (config-only) |
-
-### Pipeline caps
-
-| Knob | Default | Source |
-|---|---|---|
-| `max_iterations` (per resource) | 5 | `CGF_MAX_ITERATIONS` |
-| `max_refinements` (per resource, validate-loop) | 1 | `DEFAULT_MAX_REFINEMENT` |
-| `max_validate_refinements` (pipeline) | 2 | `DEFAULT_MAX_VALIDATE_REFINEMENTS` |
-| `max_feedback_iterations` (execution-eval loop-back) | 2 | `DEFAULT_MAX_FEEDBACK_ITERATIONS` |
-
----
-
-## 6. How to run
-
-```bash
-make build                                          # only if Dockerfile changed
-docker compose up -d --force-recreate main-agent    # to pick up src/ edits
-make smoke FIXTURE=iac-team                         # full multi-resource pipeline
-make smoke FIXTURE=python-expert                    # single-resource sanity
-```
-
-Inspect after:
-
-- `workspace/<fixture>/sessions/optimization-state.json` — state machine
-- `workspace/<fixture>/eval/` — eval artifacts
-- `workspace/<fixture>/CHANGELOG.md` — narrative
-- Grafana CGF dashboard at <http://localhost:3000/d/casdk-cgf>
-
-### Resuming from existing state (skip workspace wipe)
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T main-agent python -c "
-from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization
-import asyncio
-result = asyncio.run(run_multi_resource_optimization('/workspace/iac-team', verbose=True))
-print('Success!' if result.success else f'Failed: {result.error}')
-"
-```
-
-### Reset state to a specific phase
-
-```python
-import json
-state = json.load(open('workspace/iac-team/sessions/optimization-state.json'))
-state['current_phase'] = 'EVAL_DESIGN'
-state['phases_completed'] = ['RESEARCH', 'DESIGN', 'QA', 'GENERATE']
-state['eval_suite_path'] = ''
-state['eval_results_path'] = ''
-state['feedback_history'] = []
-state['validate_refinement_count'] = 0
-for r in state['resources'].values():
-    r['status'] = 'optimized'
-    r['version'] = 1
-    r['last_evaluated_version'] = 0  # F17: force re-eval
-json.dump(state, open('workspace/iac-team/sessions/optimization-state.json', 'w'), indent=2)
-```
+- **Phase A polish** (eval-as-isolated-Opus-agent, scenario discrimination, F23/F24/F25, validation gaps) → [CGF-EVAL-ROADMAP.md § 3](./CGF-EVAL-ROADMAP.md#3-near-term--phase-a-polish-in-flight).
+- **Phase B / C / D** (statistical gate, ephemeral runtime, calibration & CI) → [CGF-EVAL-ROADMAP.md §§ 4–6](./CGF-EVAL-ROADMAP.md#4-phase-b--statistical-promotion-gating).
+- **Stage 4** (E2E test, resume, review gates, perf, edge cases, error recovery, docs, memory, CREATE-mode) → [CGF-EVAL-ROADMAP.md § 7](./CGF-EVAL-ROADMAP.md#7-stage-4--integration--hardening).
+- **Operational reference** (env vars, how to run, resume from existing state) → [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).

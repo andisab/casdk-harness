@@ -617,10 +617,10 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         )
 
         # Plugin sub-agents are exposed to the Task tool by the SDK directly
-        # via ``plugins=`` (verified 2026-05-05; see docs/REFACTOR.md
-        # "SDK upstream investigation"). Harness sub-agents are auto-discovered
-        # from ``.claude/agents/`` through ``setting_sources=["project"]``.
-        # No ``agents=`` workaround needed.
+        # via ``plugins=`` (verified 2026-05-05; see CLAUDE.md
+        # § "Verified SDK Loading Behavior"). Harness sub-agents are
+        # auto-discovered from ``.claude/agents/`` through
+        # ``setting_sources=["project"]``. No ``agents=`` workaround needed.
         return ClaudeAgentOptions(
             allowed_tools=allowed_tools,
             permission_mode=permission_mode,

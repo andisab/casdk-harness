@@ -29,7 +29,7 @@ CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert \
   GOAL="better error handling"
 ```
 
-> **Note**: For detailed examples and walkthroughs, see [CGF-EXAMPLES.md](./CGF-EXAMPLES.md).
+> **Note**: For runnable end-to-end fixtures, see `tests/smoke/python-expert/` (single-resource) and `tests/smoke/iac-team/` (multi-resource) — these are the canonical Phase A reference invocations.
 
 ### What Happens
 
@@ -354,11 +354,95 @@ make optimize WORKSPACE=workspace/resource
 # Required
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Optimization settings
+# Optimization settings (legacy single-resource path)
 CGF_ITERATIONS=10                  # Max iterations per section
 CGF_ITERATION_REVIEW=false         # Pause after each iteration
 CGF_EVAL_MODEL=sonnet              # sonnet (default), haiku, opus
 CGF_VERBOSE=true                   # Show progress output
+```
+
+#### Multi-resource eval pipeline (Phase A and later)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `CGF_MAX_ITERATIONS` | 3 | Max iter↔eval cycles per resource |
+| `CGF_DESIGN_MODEL` | sonnet | Eval-architect model |
+| `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
+| `CGF_EVAL_TOKEN_BUDGET` | 1 000 000 | Token ceiling per eval round |
+| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Simple-threshold gate margin |
+| `CGF_EVAL_HELD_OUT_FRACTION` | 0.25 | Architect target for held-out share |
+| `CGF_GENERATE_CONCURRENCY` | 8 | Parallel resource generation |
+| `CGF_ITERATE_CONCURRENCY` | 4 | Parallel resource iteration |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | Parallel per-resource eval |
+| `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Parallel scenarios inside one resource's eval |
+| `CGF_EVAL_TRIAL_TIMEOUT` | 180 | Per-trial cap (unit / e2e) |
+| `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` | 300 | Per-trial cap (trajectory) |
+| `CGF_ITERATE_TIMEOUT` | 1200 | Per-iteration wall-time cap |
+
+#### Phase-level timeouts
+
+| Phase | Default | Env var |
+|---|---|---|
+| RESEARCH | 1800 s | `CGF_RESEARCH_TIMEOUT` |
+| GENERATE | 900 s | `CGF_GENERATE_TIMEOUT` |
+| ITERATE | 1200 s | `CGF_ITERATE_TIMEOUT` |
+| VALIDATE | 300 s | `CGF_VALIDATE_TIMEOUT` |
+| DESIGN | 900 s | (config-only) |
+| EVAL_DESIGN | 1200 s | (config-only) |
+| EXECUTION_EVAL | 1800 s | (config-only) |
+
+#### Pipeline caps
+
+| Knob | Default | Source |
+|---|---|---|
+| `max_iterations` (per resource) | 5 | `CGF_MAX_ITERATIONS` |
+| `max_refinements` (per resource, validate-loop) | 1 | `DEFAULT_MAX_REFINEMENT` |
+| `max_validate_refinements` (pipeline) | 2 | `DEFAULT_MAX_VALIDATE_REFINEMENTS` |
+| `max_feedback_iterations` (execution-eval loop-back) | 2 | `DEFAULT_MAX_FEEDBACK_ITERATIONS` |
+
+### How to run the multi-resource pipeline
+
+```bash
+make build                                          # only if Dockerfile changed
+docker compose up -d --force-recreate main-agent    # to pick up src/ edits
+make smoke FIXTURE=iac-team                         # full multi-resource pipeline
+make smoke FIXTURE=python-expert                    # single-resource sanity
+```
+
+Inspect after:
+
+- `workspace/<fixture>/sessions/optimization-state.json` — state machine
+- `workspace/<fixture>/eval/` — eval artifacts
+- `workspace/<fixture>/CHANGELOG.md` — narrative
+- Grafana CGF dashboard at <http://localhost:3000/d/casdk-cgf>
+
+#### Resuming from existing state (skip workspace wipe)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T main-agent python -c "
+from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization
+import asyncio
+result = asyncio.run(run_multi_resource_optimization('/workspace/iac-team', verbose=True))
+print('Success!' if result.success else f'Failed: {result.error}')
+"
+```
+
+#### Reset state to a specific phase
+
+```python
+import json
+state = json.load(open('workspace/iac-team/sessions/optimization-state.json'))
+state['current_phase'] = 'EVAL_DESIGN'
+state['phases_completed'] = ['RESEARCH', 'DESIGN', 'QA', 'GENERATE']
+state['eval_suite_path'] = ''
+state['eval_results_path'] = ''
+state['feedback_history'] = []
+state['validate_refinement_count'] = 0
+for r in state['resources'].values():
+    r['status'] = 'optimized'
+    r['version'] = 1
+    r['last_evaluated_version'] = 0  # F17: force re-eval
+json.dump(state, open('workspace/iac-team/sessions/optimization-state.json', 'w'), indent=2)
 ```
 
 ### SPEC.md
@@ -485,6 +569,9 @@ Final: Automatic mode with specific goal
 
 ## See Also
 
-- [CGF-EXAMPLES.md](./CGF-EXAMPLES.md) - Practical examples and walkthroughs
-- [CGF-API-REFERENCE.md](./CGF-API-REFERENCE.md) - API reference documentation
-- [README.md](../../README.md) - Quick start and overview
+- `tests/smoke/python-expert/`, `tests/smoke/iac-team/` — runnable Phase A reference fixtures
+- [CGF-API-REFERENCE.md](./CGF-API-REFERENCE.md) - API reference documentation (Stages 1+2 era; Phase A refresh pending)
+- [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md) - Forward-looking plan for Phase A polish + Phases B/C/D + Stage 4
+- [PHASEA_SUMMARY.md](./PHASEA_SUMMARY.md) - Phase A retrospective: what shipped, cost characteristics, lessons learned
+- [OBSERVABILITY.md](./OBSERVABILITY.md) - Operator guide for the metrics/dashboards/alerts stack
+- [README.md](../README.md) - Quick start and overview

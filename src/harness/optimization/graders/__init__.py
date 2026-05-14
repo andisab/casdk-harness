@@ -1,9 +1,9 @@
 """CGF eval-suite graders (Stage 3 Phase A.3).
 
 Public API is finalized at the bottom of this file once all submodules
-are imported.  See ``docs/CGF-EVAL-FRAMEWORK.md`` § 3.A.3 for the design
-rationale and ``schemas/eval_suite.schema.json`` for the wire format
-that ``build_grader`` consumes.
+are imported.  See ``docs/CGF-EVAL-ROADMAP.md`` § 2.2 (grader hierarchy)
+for the design rationale and ``schemas/eval_suite.schema.json`` for
+the wire format that ``build_grader`` consumes.
 """
 
 from __future__ import annotations
