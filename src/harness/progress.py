@@ -16,6 +16,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Literal
 
+from harness.monitoring import record_task_progress
+
 
 class WorkspaceState(Enum):
     """Detected workspace states for autonomous mode.
@@ -409,6 +411,19 @@ class ProgressManager:
         """
         with open(self.task_list_path, "w") as f:
             json.dump(task_list.to_dict(), f, indent=2)
+
+        # Surface live task counts to Prometheus for the Grafana D65
+        # (Mode: Autonomous) task-progress panels.  Maps TaskItem.status
+        # PASS → completed, FAIL → failed, None → pending.
+        counts = {"completed": 0, "failed": 0, "pending": 0}
+        for item in task_list.tasks:
+            if item.status == "PASS":
+                counts["completed"] += 1
+            elif item.status == "FAIL":
+                counts["failed"] += 1
+            else:
+                counts["pending"] += 1
+        record_task_progress(counts)
 
     # --- Session Operations ---
 

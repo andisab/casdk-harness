@@ -377,6 +377,138 @@ def record_iteration(resource: str, iteration: int) -> None:
         logger.debug("record_iteration failed", error=str(e))
 
 
+# Run config info-metric — exposed as a single-row table on the Grafana
+# overview dashboards via "Labels to fields" transform. Set to 1 at run
+# start with every config dimension as a label; cleared to 0 at run end so
+# stale rows don't accumulate.
+#
+# Cardinality caveat: token_budget and max_iterations are stringified
+# numbers. For a single-developer harness this is fine. Do not point this
+# series at a long-lived multi-tenant Prometheus without first moving the
+# numeric dimensions to a separate event log.
+harness_run_config_info = Gauge(
+    "harness_run_config_info",
+    "Active run configuration (info-metric, 1 = active run, 0 = cleared). "
+    "Labels: resource, path (single|multi), mode (optimize|interactive|"
+    "autonomous), model, effort, eval_enabled, token_budget, max_iterations.",
+    [
+        "resource",
+        "path",
+        "mode",
+        "model",
+        "effort",
+        "eval_enabled",
+        "token_budget",
+        "max_iterations",
+    ],
+)
+
+# Run start timestamp — used by the Grafana "Run Elapsed" stat panel as
+# ``time() - harness_run_start_timestamp{resource="..."}``. Set at the same
+# call site as ``init_run_phases`` and ``record_run_path``.
+harness_run_start_timestamp = Gauge(
+    "harness_run_start_timestamp",
+    "Unix epoch seconds at which the active run started. "
+    "Used by Grafana to compute run elapsed time as time() - this gauge.",
+    ["resource"],
+)
+
+# Task progress — populated by autonomous mode whenever task_list.json is
+# rewritten. Powers the Grafana D65 (Mode: Autonomous) "Task Progress"
+# header panels.  Status maps to TaskItem.status:
+#   completed = "PASS", failed = "FAIL", pending = None.
+harness_task_progress = Gauge(
+    "harness_task_progress",
+    "Autonomous-mode task counts by status. "
+    "Status is one of: completed, failed, pending.",
+    ["status"],
+)
+
+
+def record_run_config(
+    resource: str,
+    path: str,
+    mode: str,
+    model: str,
+    effort: str,
+    eval_enabled: bool,
+    token_budget: int,
+    max_iterations: int,
+) -> None:
+    """Set the run config info-metric to 1 with all config dimensions as
+    labels.  Call once at run start.  Observability never raises."""
+    try:
+        harness_run_config_info.labels(
+            resource=resource,
+            path=path,
+            mode=mode,
+            model=model,
+            effort=effort,
+            eval_enabled=str(eval_enabled).lower(),
+            token_budget=str(token_budget),
+            max_iterations=str(max_iterations),
+        ).set(1)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_run_config failed", error=str(e))
+
+
+def clear_run_config(
+    resource: str,
+    path: str,
+    mode: str,
+    model: str,
+    effort: str,
+    eval_enabled: bool,
+    token_budget: int,
+    max_iterations: int,
+) -> None:
+    """Clear the run config info-metric (set to 0) for the same label set
+    used at run start.  Call at run end so stale config rows don't linger
+    in Grafana."""
+    try:
+        harness_run_config_info.labels(
+            resource=resource,
+            path=path,
+            mode=mode,
+            model=model,
+            effort=effort,
+            eval_enabled=str(eval_enabled).lower(),
+            token_budget=str(token_budget),
+            max_iterations=str(max_iterations),
+        ).set(0)
+    except Exception as e:  # pragma: no cover
+        logger.debug("clear_run_config failed", error=str(e))
+
+
+def record_run_start(resource: str, timestamp: float | None = None) -> None:
+    """Record run start timestamp.  Defaults to ``time.time()`` if not
+    provided.  Observability never raises."""
+    import time
+
+    try:
+        ts = timestamp if timestamp is not None else time.time()
+        harness_run_start_timestamp.labels(resource=resource).set(ts)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_run_start failed", error=str(e))
+
+
+_TASK_STATUSES = ("completed", "failed", "pending")
+
+
+def record_task_progress(counts: dict[str, int]) -> None:
+    """Record autonomous-mode task counts.  ``counts`` maps status →
+    count for status in {completed, failed, pending}; missing
+    statuses default to 0 so the gauge reflects the full snapshot.
+    Observability never raises."""
+    try:
+        for status in _TASK_STATUSES:
+            harness_task_progress.labels(status=status).set(
+                counts.get(status, 0)
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_task_progress failed", error=str(e))
+
+
 class MetricsCollector:
     """Collects and exports metrics for monitoring.
 

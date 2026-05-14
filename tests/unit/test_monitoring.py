@@ -373,3 +373,157 @@ def test_initialization_custom_dirs(tmp_path: Path) -> None:
     assert collector.port == 19100
     assert collector.workspace_dir == workspace
     assert collector.checkpoint_dir == checkpoint
+
+
+# =============================================================================
+# Phase 1.3 — Run-level instrument helpers (grafana-refactor branch)
+# =============================================================================
+
+
+def test_record_run_config_sets_info_gauge_to_one() -> None:
+    """record_run_config sets the labelled series to 1."""
+    from harness.monitoring import harness_run_config_info, record_run_config
+
+    record_run_config(
+        resource="test-resource",
+        path="multi",
+        mode="optimize",
+        model="sonnet",
+        effort="default",
+        eval_enabled=True,
+        token_budget=1_000_000,
+        max_iterations=3,
+    )
+    value = harness_run_config_info.labels(
+        resource="test-resource",
+        path="multi",
+        mode="optimize",
+        model="sonnet",
+        effort="default",
+        eval_enabled="true",
+        token_budget="1000000",
+        max_iterations="3",
+    )._value.get()
+    assert value == 1.0
+
+
+def test_clear_run_config_sets_info_gauge_to_zero() -> None:
+    """clear_run_config zeroes the same label set used at start."""
+    from harness.monitoring import (
+        clear_run_config,
+        harness_run_config_info,
+        record_run_config,
+    )
+
+    record_run_config(
+        resource="clear-test",
+        path="single",
+        mode="optimize",
+        model="haiku",
+        effort="default",
+        eval_enabled=False,
+        token_budget=0,
+        max_iterations=5,
+    )
+    clear_run_config(
+        resource="clear-test",
+        path="single",
+        mode="optimize",
+        model="haiku",
+        effort="default",
+        eval_enabled=False,
+        token_budget=0,
+        max_iterations=5,
+    )
+
+    value = harness_run_config_info.labels(
+        resource="clear-test",
+        path="single",
+        mode="optimize",
+        model="haiku",
+        effort="default",
+        eval_enabled="false",
+        token_budget="0",
+        max_iterations="5",
+    )._value.get()
+    assert value == 0.0
+
+
+def test_record_run_start_sets_timestamp() -> None:
+    """record_run_start populates the timestamp gauge."""
+    from harness.monitoring import harness_run_start_timestamp, record_run_start
+
+    record_run_start("start-test", timestamp=1_700_000_000.0)
+    value = harness_run_start_timestamp.labels(resource="start-test")._value.get()
+    assert value == 1_700_000_000.0
+
+
+def test_record_run_start_defaults_to_now() -> None:
+    """Default timestamp is non-zero and within a reasonable window of time.time()."""
+    import time
+
+    from harness.monitoring import harness_run_start_timestamp, record_run_start
+
+    before = time.time()
+    record_run_start("now-test")
+    after = time.time()
+    value = harness_run_start_timestamp.labels(resource="now-test")._value.get()
+    assert before <= value <= after
+
+
+def test_record_task_progress_emits_all_three_statuses() -> None:
+    """All three statuses are written even when input is partial."""
+    from harness.monitoring import harness_task_progress, record_task_progress
+
+    record_task_progress({"completed": 4, "pending": 2})
+
+    assert harness_task_progress.labels(status="completed")._value.get() == 4.0
+    assert harness_task_progress.labels(status="pending")._value.get() == 2.0
+    # `failed` missing from input → defaults to 0
+    assert harness_task_progress.labels(status="failed")._value.get() == 0.0
+
+
+def test_record_task_progress_handles_failed_bucket() -> None:
+    """The failed bucket is emitted alongside completed and pending."""
+    from harness.monitoring import harness_task_progress, record_task_progress
+
+    record_task_progress({"completed": 1, "failed": 2, "pending": 3})
+
+    assert harness_task_progress.labels(status="completed")._value.get() == 1.0
+    assert harness_task_progress.labels(status="failed")._value.get() == 2.0
+    assert harness_task_progress.labels(status="pending")._value.get() == 3.0
+
+
+def test_observability_helpers_never_raise() -> None:
+    """Even with bogus inputs, helpers must swallow exceptions —
+    observability never breaks the pipeline."""
+    from harness.monitoring import (
+        clear_run_config,
+        record_run_config,
+        record_run_start,
+        record_task_progress,
+    )
+
+    # These would normally raise if not wrapped in try/except.
+    record_run_config(
+        resource=None,  # type: ignore[arg-type]
+        path="multi",
+        mode="optimize",
+        model="sonnet",
+        effort="default",
+        eval_enabled=True,
+        token_budget=0,
+        max_iterations=3,
+    )
+    clear_run_config(
+        resource=None,  # type: ignore[arg-type]
+        path="multi",
+        mode="optimize",
+        model="sonnet",
+        effort="default",
+        eval_enabled=True,
+        token_budget=0,
+        max_iterations=3,
+    )
+    record_run_start(None)  # type: ignore[arg-type]
+    record_task_progress({"bogus_status": 99})  # bogus key silently ignored
