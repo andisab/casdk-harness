@@ -70,7 +70,7 @@ Seven services compose the observability stack. The dashed boxes are deferred (S
                                        │  Replace for real alerting.       │
                                        └───────────────────────────────────┘
 
-   ┌─ DEFERRED (Stage 3, see § 8) ─────────────────────────────────────────┐
+   ┌─ DEFERRED (Stage 3, see § 9) ─────────────────────────────────────────┐
    │  Loki        OTLP logs pipeline (collector currently → debug exporter)│
    │  Tempo       Traces beta (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1)      │
    └───────────────────────────────────────────────────────────────────────┘
@@ -248,7 +248,43 @@ These are the gotchas that have surfaced during the refactor. Re-read before deb
 
 ---
 
-## 7. Maintenance
+## 7. Data persistence and historical runs
+
+Three retention layers shape what dashboards can show.
+
+| Layer | Retention | Effect |
+|---|---|---|
+| **OTel Collector** `metric_expiration` | 5 min | If a metric stops being scraped (e.g., agent shuts down), the collector drops it from its `/metrics` exposition after 5 min.  Has no effect on what's already in Prometheus. |
+| **Prometheus TSDB** | `PROMETHEUS_RETENTION` (default 30d) | Every scraped sample is durably stored with its timestamp.  Trend panels read from this. |
+| **Singleton helpers** | n/a | `record_run_config` / `record_run_path` / `init_run_phases` / `record_run_start` all call `.clear()` before setting the new value.  Each gauge has "current active run" semantic; only the most recent emit is exposed.  This affects what *new* scrapes see — historical samples already in the TSDB are unchanged. |
+
+### How dashboards behave for past runs
+
+- **Trend panels** (time-series like Spend by Model, Cache Hit Rate Over Time, Phase Progression State Timeline, Task Progress Over Time, etc.) — display every sample within the dashboard time range.  Set the time picker to "Last 7 days" and the panel renders the last week.
+- **Stat panels with `lastNotNull`** (Spend, Cache Hit, Edit Accept Rate, etc.) — evaluate at the *end* of the dashboard time range and reduce to the most recent non-null sample.  Set the range to a past hour and the stat reflects what was happening then.
+- **Instant `== 1` panels** (D00/D70 Run Config table, D00 Active Mode) — Grafana evaluates these at the end of the dashboard time range.  Set the range to "yesterday 14:00 → 15:00" and the Run Config table shows whatever run was active at 15:00 yesterday.  Genuinely useful for historical drill-down.
+
+So **yes, data from just-finished runs appears in the dashboards** — within retention.  Trend panels show it automatically; current-state panels (Run Config, Phase Progression rightmost segment) require shifting the time picker back to encompass the run.
+
+### What is not currently set up
+
+- **No run-history listing UI.** The State Timeline on D70 is the closest thing — colored bars show when each phase was active over the dashboard window, which implicitly lists past runs as colored segments separated by gaps.  But there's no "list all runs in the last week" Grafana panel.
+- **No durable per-run summary store.** Prometheus is the only persistence layer for metrics.  On-disk artifacts (`CHANGELOG.md`, `summary.json`, `task_list.json` per the run's workspace directory) exist but are not surfaced in Grafana.  To inspect a past run's full state, walk the workspace tree on disk.
+- **No fine-grained event drill-down.** That requires Loki (see § 9.1) — `prompt.id` and `session.id` would let you reconstruct an individual session from its event stream.
+
+### Practical recipes
+
+| Task | How |
+|---|---|
+| See what ran yesterday | Open D70 → time picker → "yesterday".  Phase Progression shows the run as a sequence of colored segments; Run Config row reflects the config at end of range. |
+| Compare two runs | Open two browser tabs with D00 / D70 at different time ranges. |
+| Find the cost of a specific past run | D10, set time range to the run's window.  "Spend (selected range)" stat shows total. |
+| Investigate a cache regression | D30, "Last 24 hours" or wider.  Cache Hit Rate Over Time visualizes the drop; switch to per-model variant to identify which model lost cache health. |
+| Audit alert firings | D-pipeline rules in Prometheus (`/api/v1/rules`); past firings: `ALERTS{alertname="..."}` over a wide time range. |
+
+---
+
+## 8. Maintenance
 
 ### Re-audit cadence
 
@@ -314,7 +350,7 @@ If you add an 11th dashboard, match the existing 10:
 
 ---
 
-## 8. Possible Observability Follow-ups
+## 9. Possible Observability Follow-ups
 
 Both deferred indefinitely per the v2 dashboard spec — turn on when there's a clear ROI signal that aggregate Prometheus metrics can't explain.
 

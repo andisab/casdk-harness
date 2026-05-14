@@ -184,7 +184,7 @@
       "type": "stat",
       "title": "Iteration",
       "description": "Current iteration counter. Emitted on both single-resource (cgf_session.py) and multi-resource (_orchestrator_phases/iterate.py) paths.",
-      "gridPos": {"h": 4, "w": 5, "x": 14, "y": 3},
+      "gridPos": {"h": 8, "w": 5, "x": 14, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -224,7 +224,7 @@
       "type": "stat",
       "title": "Run Elapsed",
       "description": "Wall-clock seconds since run start, computed as time() - harness_run_start_timestamp.",
-      "gridPos": {"h": 4, "w": 5, "x": 19, "y": 3},
+      "gridPos": {"h": 8, "w": 5, "x": 19, "y": 3},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
@@ -246,70 +246,6 @@
             {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
           ],
           "unit": "s"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 70230,
-      "type": "stat",
-      "title": "Active Resource",
-      "description": "Resource currently being optimized (from harness_run_path_info label).",
-      "gridPos": {"h": 4, "w": 5, "x": 14, "y": 7},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [
-        {
-          "expr": "harness_run_path_info{resource=~\"$resource\"} == 1",
-          "legendFormat": "{{resource}}",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": "/^Value/"},
-        "graphMode": "none",
-        "colorMode": "none",
-        "textMode": "name",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "fixed", "fixedColor": "text-primary"},
-          "mappings": [
-            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
-          ]
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 70240,
-      "type": "stat",
-      "title": "Active Path",
-      "description": "Optimization path (single | multi), from harness_run_path_info.",
-      "gridPos": {"h": 4, "w": 5, "x": 19, "y": 7},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [
-        {
-          "expr": "harness_run_path_info{resource=~\"$resource\"} == 1",
-          "legendFormat": "{{path}}",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": "/^Value/"},
-        "graphMode": "none",
-        "colorMode": "none",
-        "textMode": "name",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {"mode": "fixed", "fixedColor": "text-primary"},
-          "mappings": [
-            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
-          ]
         },
         "overrides": []
       }

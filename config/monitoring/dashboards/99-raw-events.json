@@ -128,14 +128,14 @@
       "type": "text",
       "title": "Stage 3 \u2014 Raw Events (requires Loki)",
       "gridPos": {
-        "h": 12,
+        "h": 18,
         "w": 24,
         "x": 0,
         "y": 0
       },
       "options": {
         "mode": "markdown",
-        "content": "# Stage 3 \u2014 Raw Events explorer\n\nThis dashboard is a **placeholder**. The full panel will be a single Logs panel templated by `prompt.id` and `session.id`, enabling forensic drill-down into the OTLP event stream that Claude Code emits alongside metrics.\n\n## Prerequisite\n\nAdds Loki to the Docker Compose stack and wires the OTel Collector's logs pipeline to it. See `docs/OBSERVABILITY.md` \u00a7 8.1.\n\n## What gets unlocked\n\n- Per-request cost attribution (\"which API call cost $1.40?\")\n- Tool execution P50/P95/P99 latency by tool name (LogQL `quantile_over_time`)\n- Session reconstruction via `prompt.id` join across events\n- Status-code segmentation on `api_error` (429 vs 5xx vs 529)\n- Compaction event correlation with metric dips\n- The deferred D40 and D50 panels marked \"Loki-dependent\"\n\n## Status\n\nDeferred indefinitely. Turn on when there's a clear ROI signal (e.g., debugging a specific incident that Prometheus aggregate metrics can't explain). Cost: one additional container (~200 MB RAM) and a small change to `config/monitoring/otel-collector.yml`."
+        "content": "# Stage 3 \u2014 Raw Events explorer\n\nThis dashboard is a **placeholder**. The full panel will be a single Logs panel templated by `prompt.id` and `session.id`, enabling forensic drill-down into the OTLP event stream that Claude Code emits alongside metrics.\n\n## Prerequisite\n\nAdds Loki to the Docker Compose stack and wires the OTel Collector's logs pipeline to it. See `docs/OBSERVABILITY.md` \u00a7 9.1.\n\n## What gets unlocked\n\n- Per-request cost attribution (\"which API call cost $1.40?\")\n- Tool execution P50/P95/P99 latency by tool name (LogQL `quantile_over_time`)\n- Session reconstruction via `prompt.id` join across events\n- Status-code segmentation on `api_error` (429 vs 5xx vs 529)\n- Compaction event correlation with metric dips\n- The deferred D40 and D50 panels marked \"Loki-dependent\"\n\n## Status\n\nDeferred indefinitely. Turn on when there's a clear ROI signal (e.g., debugging a specific incident that Prometheus aggregate metrics can't explain). Cost: one additional container (~200 MB RAM) and a small change to `config/monitoring/otel-collector.yml`."
       },
       "fieldConfig": {
         "defaults": {},
