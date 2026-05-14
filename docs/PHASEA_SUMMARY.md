@@ -18,20 +18,19 @@ For per-defect fix histories see `git log` on `phase-a-fixes` / `phase-a-perf`; 
 |---|---|---|
 | `contextgrad-eval` | Stages 1+2 + Phase A.1–A.7 (eval framework end-to-end) | Merged |
 | `phase-a-fixes` | F3–F16 (14 defects: parallelism, architect prompt, gate logic, scenario attribution) | Merged into `contextgrad-eval` |
-| `phase-a-perf` | F17–F22 (skip-unchanged, concurrency bumps, per-level timeouts, command-prompt fix, unwinnable detector, subagent audit) | Code-complete; not yet smoke-validated |
+| `phase-a-perf` | F17–F22 (skip-unchanged, concurrency bumps, per-level timeouts, command-prompt fix, unwinnable detector, subagent audit) | **Smoke-validated end-to-end** (run #6, 85m 06s wall time, exit 0) |
 
 **Unit suite:** 1863 passing, 0 failing on `phase-a-perf` (1856 baseline + 7 new). Pre-existing path-issue errors in `test_eval_telemetry.py::TestEnvVarsExposed` are unrelated.
 
-### What works end-to-end (validated under real load, run #5i)
+### What works end-to-end (validated under real load, run #6 — first full pipeline to COMPLETE)
 
-- All 9 pipeline phases exercise across two EXECUTION_EVAL rounds with state-machine resume.
-- Per-resource scenario attribution is correct (only 3 of 54 scenarios run per resource).
-- Self-contained scenarios run (agents invoke their resource and produce transcripts).
-- Optimizer adds real value: 3 of 18 resources had genuine candidate wins ≥ +0.33 pass-rate.
-- Feedback loop recovers regressions: 3 of 3 round-1 regressions promoted on round 2 after feedback injection.
-- Token signal is real (~620k tokens captured per run; previously read as 0).
-- Parallelism delivers ~12× speedup over the projected sequential baseline.
-- Promotion gate fails closed when every resource errored (no spurious "all promoted").
+- **All 9 pipeline phases reached COMPLETE** in a single run for the first time (run #6, 85m 06s). VALIDATE produced `coherence_score=0.93`. Previous runs were killed before reaching VALIDATE.
+- **F17 skip-unchanged works perfectly.** EXECUTION_EVAL round 2 evaluated exactly 1 resource (pulumi-cdk, the only regression), saving ~14 redundant evals.
+- **F21 unwinnable detector caught its first real case.** `agents/iac-analyzer` scored 0/0 across all 3 scenarios (1 trial timed out at 180s, 2 produced output but failed graders); F21 marked it `unwinnable` and excluded it from round 2.
+- **F20 commands prompt fix delivered real signal.** `commands/iac` scored 0.33/0.33 with non-zero turns/tokens (vs vacuous 0/0 in run #5i where the literal `/iac` slash strings silently no-op'd).
+- **Feedback loop recovers regressions.** pulumi-cdk regressed in round 1 (1.00 → 0.67 — candidate hit F19's 180s timeout on one scenario); ITERATE r2 produced a v2 that completed cleanly; round 2 promoted at 1.00/1.00.
+- **Per-resource scenario attribution remains correct** (F13/F16).
+- **Promotion gate fails closed** when every resource errors (F8).
 
 ### Where the code lives
 
@@ -122,44 +121,59 @@ Phase A.4 chose in-process for speed of iteration. Phase C will swap to `docker 
 | Metric | Value |
 |---|---|
 | Per-resource eval | 30 s – 5 min wall time, 7 k – 72 k tokens |
-| Per-resource generation | 4 – 11 min |
-| EVAL_DESIGN (architect) | ~10 min for 54 scenarios |
-| Full pipeline (pre-F17–F22) | ~107 min |
-| Full pipeline (post-F17–F22, projected) | ~73 min |
-| Tokens per full run | ~620 k |
-| Cost per full run | ~$3–5 at sonnet rates |
+| Per-resource generation | 4 – 11 min (avg ~5 min at 8-way) |
+| EVAL_DESIGN (architect) | 6 – 10 min for 54 scenarios |
+| Full pipeline (pre-F17–F22) | ~107 min (projected) |
+| **Full pipeline (post-F17–F22, observed)** | **85 m 06 s** (run #6) |
+| Tokens per full run (post-F17) | **451 k** (was ~620 k pre-F17; -27 %) |
+| Cost per full run | ~$3 at sonnet rates |
 
-The user-facing target is 10–15 min for simple single-resource (e.g. python-expert) and 60–120 min for complex multi-resource (e.g. iac-team). Both are achievable post-F17–F22.
+The user-facing target is 10–15 min for simple single-resource (e.g. python-expert) and 60–120 min for complex multi-resource (e.g. iac-team). iac-team is now well inside the upper bound; python-expert path was not exercised in run #6.
 
-### Per-phase wall-time baseline (iac-team, run #5 + #5i)
+### Per-phase wall-time (iac-team, observed in runs #5 + #5i vs run #6)
 
-Sourced from run #5 (RESEARCH → GENERATE, full pipeline start at `21:38:00`) and run #5i (EVAL_DESIGN onward, resume run). The next post-F17–F22 smoke should be compared against this baseline.
+Run #6 is the first full pipeline to reach COMPLETE.
 
-| Phase | Observed (pre-F17–F22) | Projected (post-F17–F22) | Source of change |
+| Phase | Pre-F17–F22 | **Post-F17–F22 (run #6)** | Δ |
 |---|---|---|---|
-| RESEARCH | 5 m 47 s | unchanged | — |
-| DESIGN | 1 m 24 s | unchanged | — |
-| QA | < 1 s (no-op) | unchanged | — |
-| GENERATE | 31 m 43 s (concurrency = 4) | ~18 min | F18 (4 → 8) |
-| EVAL_DESIGN | 9 m 38 s (architect, 54 scenarios) | unchanged | — |
-| ITERATE round 1 | < 1 s (no-op; all resources at v=1) | unchanged | — |
-| EXECUTION_EVAL r1 | 25 m 36 s (concurrency = 2) | ~14 min | F18 (2 → 4) |
-| ITERATE round 2 (feedback) | 15 m 49 s (3 resources) | unchanged | — |
-| EXECUTION_EVAL r2 | 12 m 53 s (13 of 18 resources re-evaluated; 10 redundantly) | ~3 – 5 min | F17 (skip unchanged) |
-| VALIDATE | never reached | ~5 min | — |
-| **Full pipeline** | **~107 min** (interpolating VALIDATE) | **~73 min** | — |
+| RESEARCH | 5 m 47 s | **4 m 56 s** | −15 % |
+| DESIGN | 1 m 24 s | **1 m 33 s** | +11 % |
+| QA | < 1 s (no-op) | < 1 s | — |
+| **GENERATE** (concurrency 4 → 8) | 31 m 43 s | **17 m 10 s** | **−46 %** |
+| EVAL_DESIGN | 9 m 38 s | **6 m 27 s** | **−33 %** |
+| ITERATE round 1 | not measured (run #5i resumed past it) | **33 m 09 s** | new baseline |
+| **EXECUTION_EVAL r1** (concurrency 2 → 4) | 25 m 36 s | **10 m 43 s** | **−58 %** |
+| ITERATE round 2 (feedback) | 15 m 49 s (3 resources) | **7 m 01 s** (1 resource) | — |
+| **EXECUTION_EVAL r2** (F17 skip-unchanged) | 12 m 53 s partial (13 of 18, 10 redundantly) | **1 m 07 s** (1 of 17) | **−91 %** |
+| **VALIDATE** | never reached | **3 m 01 s** | first-ever validation |
+| **Full pipeline** | ~107 min (projected) | **85 m 06 s** | **−21 %** vs projection |
 
-GENERATE dominates the pre-F17–F22 budget at ~30 % of wall time — 8-way concurrency is the largest single win. EXECUTION_EVAL r2 redundancy (re-evaluating identical files for 10 of 13 resources) was the second largest, fixed by F17's `last_evaluated_version` filter.
+GENERATE remains the biggest single phase (now ~20 % of wall time, was ~30 %). EXECUTION_EVAL r2 went from second-biggest cost to negligible (1 m 07 s for 1 resource) — F17's `last_evaluated_version` filter eliminates redundant work entirely.
+
+### Eval signal characteristics (run #6, trials = 1)
+
+| Metric | Run #5i | **Run #6** | Notes |
+|---|---|---|---|
+| Resources evaluated | 18 round 1 + 11 round 2 = 21 unique | **17 round 1 + 1 round 2 = 17 unique** | F17 + F21 elimination |
+| Real wins (Δ > 0) round 1 | 1 (container-analysis) | **1 (iac-generator: 0.00 → 0.33)** | first time iac-generator got real signal |
+| Pure ties (b == c, both ≥ 0) round 1 | 13 of 18 | 13 of 17 | simple-threshold gate symptom |
+| Round-1 regressions | 3 | **1 (pulumi-cdk)** | F19 trial timeout caught a slow candidate |
+| Regressions recovered via feedback | 3 / 3 | **1 / 1** | feedback contract holds |
+| Unwinnable (F21) | n/a (didn't exist) | **1 (iac-analyzer)** | 0/0 on all 3 scenarios; correctly skipped in round 2 |
+| Total tokens (eval only) | 619 908 | **451 552** | −27 % via F17 + better scenario hits |
+| Candidate pass-rate distribution (round 1) | mostly 0.67 / 0.67 | **8 × 1.00, 5 × 0.67, 3 × 0.33, 1 × 0.00** | scenarios now more discriminating |
+
+The pass-rate distribution shifted up materially (8 resources at 1.00 in round 1 vs zero at 1.00 in run #5i). Two explanations: scenario quality is better (architect prompt evolved across runs), and the F18 concurrency raise gave each resource genuine API headroom.
 
 ### Signal-quality issues that remain
 
 | Problem | Detail | Mitigation |
 |---|---|---|
-| Pass-rate ties dominate | At `trials=1` and 3 scenarios per resource, both arms commonly saturate at 0.67 (2-of-3) and the gate promotes a flat tie as "promoted". | Multi-grader scenarios (F23) — same model call, N graders → richer signal. |
+| Pass-rate ties dominate | 13 of 17 round-1 outcomes in run #6 were ties (e.g. 1.00 / 1.00); the simple-threshold gate calls these "promoted" despite zero improvement signal. | Multi-grader scenarios (F23) — same model call, N graders → richer signal. |
 | Simple-threshold gate | `candidate ≥ baseline + 0` treats a flat tie as success. | Phase B bootstrap-CI gate on win rate, lower CI bound > 0.5. |
-| 0/0 unwinnable resources | `iac-generator` (71 k tokens, 0/0) and `commands/iac` (0 turns, 0 tokens, vacuous tie) failed for resource-type-specific reasons. | F20 fixes the command case (architect prompt now forbids literal `/cmd` strings); F21 catches the rest after round 1 instead of looping. |
+| 180 s timeout occasionally penalizes legitimate candidates | Run #6: `pulumi-cdk medium-component-01` (e2e level) candidate hit F19's 180 s cap with `turns=0 tokens=0`, regressed; ITERATE r2 produced a faster v2 that passed. Also `iac-analyzer hard-iac-assessment-01` (unit level) timed out on both arms, contributing to F21's unwinnable verdict. | Operator escape hatch via `CGF_EVAL_TRIAL_TIMEOUT` / `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT`. Phase B should also surface scenario-level timeout patterns so the architect can mark a scenario as needing more time. |
 | Trajectory scenarios penalize content-only skills | A skill that's documentation rather than tool orchestration scores 0 on `tool_called: Glob` assertions. | Phase B can route trajectory scenarios by `resource_type`; trim trajectory share for content-skills. |
-| VALIDATE phase has never run under load | Run #5i auto-killed before round-2 completion; no cross-resource coherence pass has executed in anger. | Next full smoke (with F17-F22) should reach VALIDATE; if it doesn't, raise the auto-shutdown deadline. |
+| Unwinnable resources still consume tokens before being skipped | F21 only fires *after* round 1. `iac-analyzer` burned 13 k tokens in round 1 before being marked unwinnable; subsequent rounds skip it (F17 + F21 work together). | Acceptable for now — round-1 cost bounded; round-2+ cost zero. A pre-flight architect heuristic could pre-flag obviously-mismatched resource/scenario pairs. |
 
 ### Where the eval design itself is the bottleneck
 
@@ -184,6 +198,7 @@ Several "tie at zero" or "saturate at 0.67" outcomes are scenario-design artifac
 
 ### Queued F-series defects
 
+- **F25 — GENERATE timeout under 8-way concurrency.** Run #6: `skills/aws-eks/SKILL.md` GENERATE timed out at 905 s (5 s over `CGF_GENERATE_TIMEOUT=900`). The `context-engineer` subagent ran 27 turns with **0 tool_calls** — a planning loop without writing. Pre-fix run #5 finished this resource in 611 s at concurrency=4. Three working theories: (a) rate-limit tail-latency under 8-way fan-out pushes some resources past the cap; (b) the architect prompt for aws-eks induces a planning loop under contention; (c) random SDK hang. Next steps: instrument context-engineer to log when it spends > 60 s without a tool call; consider raising the GENERATE timeout to 1200 s OR lowering `CGF_GENERATE_CONCURRENCY` to 6 as a middle ground; investigate aws-eks prompt for ambiguity.
 - **F23 — Multi-grader scenarios.** Schema + runner + architect changes so one model call can be scored by N graders. Targets 4× signal-per-dollar for content-evaluation skills.
 - **F24 — Shared-generation graph.** Bipartite scenarios↔grader-pools for cross-scenario grader reuse. Discussion item; design after F23 validates the multi-grader model.
 - **F1 (cosmetic, deferred).** `setup.sh` host-side tooling probe false-positives.
@@ -191,9 +206,11 @@ Several "tie at zero" or "saturate at 0.67" outcomes are scenario-design artifac
 
 ### Validation gaps
 
-- **VALIDATE has never run under load.** The cross-resource coherence pass (terminology drift, manifest correctness) exists but every full run so far auto-killed before reaching it.
-- **F17–F22 are code-complete but not smoke-validated.** The expected post-fix wall-time drop (~107 → ~73 min) and per-cycle savings (~$1, ~300 k tokens) need a real run to confirm.
-- **Full 54-scenario suite at `trials=3`.** Smoke uses `trials=1` for speed; production cadence is `trials=3`. Have not yet run the latter end-to-end.
+- **~~VALIDATE has never run under load.~~** Cleared in run #6 (coherence_score = 0.93 in 3 m 01 s).
+- **~~F17–F22 are code-complete but not smoke-validated.~~** Cleared in run #6 (85 m 06 s end-to-end, all six fixes observed working).
+- **Full 54-scenario suite at `trials=3`.** Smoke uses `trials=1` for speed; production cadence is `trials=3`. Not yet run end-to-end — would 3× per-trial cost but smooth the pass-rate distribution.
+- **F25 (aws-eks GENERATE timeout) reproducibility.** Single observation in run #6; need a follow-up run to determine if it's deterministic or rate-limit roulette.
+- **VALIDATE refinement loop never exercised.** Coherence passed cleanly in run #6; the VALIDATE → ITERATE retry path (gated by `max_validate_refinements = 2`) has not yet fired under load.
 
 ---
 
