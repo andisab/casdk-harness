@@ -105,10 +105,10 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(harness_run_path_info == 1, path)",
+        "definition": "label_values(harness_run_path_info, path)",
         "query": {
           "qryType": 1,
-          "query": "label_values(harness_run_path_info == 1, path)",
+          "query": "label_values(harness_run_path_info, path)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

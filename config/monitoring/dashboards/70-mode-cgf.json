@@ -57,8 +57,8 @@
         "label": "Path",
         "type": "query",
         "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "definition": "label_values(harness_run_path_info == 1, path)",
-        "query": {"qryType": 1, "query": "label_values(harness_run_path_info == 1, path)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "definition": "label_values(harness_run_path_info, path)",
+        "query": {"qryType": 1, "query": "label_values(harness_run_path_info, path)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
         "refresh": 2, "multi": false, "includeAll": true, "allValue": ".*",
         "current": {"selected": false, "text": "All", "value": "$__all"},
         "options": [], "hide": 0, "regex": "", "skipUrlSync": false, "sort": 1
