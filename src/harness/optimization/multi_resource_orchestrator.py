@@ -127,6 +127,62 @@ logger = structlog.get_logger(__name__)
 
 _versioned_path = versioned_path  # noqa: F841 — public alias (used by tests)
 
+
+# ---------------------------------------------------------------------------
+# F22 — Subagent hang audit
+# ---------------------------------------------------------------------------
+
+
+def _audit_child_processes() -> set[int]:
+    """Return PIDs of ``claude`` descendants of the current process.
+
+    Pure observability — never raises.  When ``psutil`` is unavailable
+    or the snapshot fails (permissions, race), returns an empty set so
+    the caller's diff degrades to "no orphans detected" rather than
+    breaking the phase.
+    """
+    try:
+        import psutil  # imported here so missing dep doesn't break import
+    except Exception:  # noqa: BLE001 — degrade silently
+        return set()
+
+    try:
+        me = psutil.Process(os.getpid())
+        return {
+            p.pid
+            for p in me.children(recursive=True)
+            if "claude" in (p.name() or "").lower()
+        }
+    except Exception:  # noqa: BLE001 — psutil races / permission errors
+        return set()
+
+
+def _log_orphan_children(phase_name: str, before: set[int]) -> None:
+    """Compare post-phase child PIDs to the pre-phase snapshot.
+
+    A non-empty diff means the phase exited while ``claude`` subprocesses
+    were still alive — likely a cancellation that didn't propagate into
+    the underlying CLI.  Log a warning with the PIDs; do NOT kill (a
+    soft-kill follow-up is gated behind a week of observability data).
+    """
+    try:
+        after = _audit_child_processes()
+        leaked = after - before
+        if leaked:
+            logger.warning(
+                "Phase left subprocess descendants alive",
+                phase=phase_name,
+                leaked_pids=sorted(leaked),
+                count=len(leaked),
+                hint=(
+                    "SDK cancellation may not have terminated the "
+                    "underlying claude CLI subprocess; investigate "
+                    "whether ITERATE/EVAL timeouts fired during this phase."
+                ),
+            )
+    except Exception:  # noqa: BLE001 — observability must not break phases
+        pass
+
 __all__ = [
     "AGENT_DESIGN",
     "AGENT_EVAL_ARCHITECT",
@@ -456,6 +512,12 @@ class MultiResourceOrchestrator:
         while phase != OptimizationPhase.COMPLETE:
             logger.info("Running phase", phase=phase.name)
 
+            # F22: snapshot child PIDs before the phase runs.  Compared
+            # against the post-phase snapshot to detect orphaned ``claude``
+            # subprocesses left behind by SDK timeouts that didn't clean
+            # up.  Pure observability — never blocks phase progress.
+            children_before = _audit_child_processes()
+
             if phase == OptimizationPhase.RESEARCH:
                 if self.config.skip_research:
                     logger.info("Skipping RESEARCH phase (configured)")
@@ -503,6 +565,15 @@ class MultiResourceOrchestrator:
                 # If transitioning to COMPLETE, finalize resources
                 if self._state.current_phase == OptimizationPhase.COMPLETE:
                     self._finalize_resources()
+
+            # F22: compare post-phase child PIDs against the pre-phase
+            # snapshot.  A non-empty diff means the phase exited while
+            # leaving SDK subprocesses alive — likely a cancellation
+            # that didn't propagate into the underlying ``claude`` CLI.
+            # Observability only; do not kill (yet).
+            _log_orphan_children(
+                phase_name=phase.name, before=children_before,
+            )
 
             phase = self._state.current_phase
 

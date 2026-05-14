@@ -60,7 +60,24 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_EXECUTION_EVAL_CONCURRENCY = 2
+DEFAULT_EXECUTION_EVAL_CONCURRENCY = 4  # F18: bumped from 2; eval is I/O-bound on judge API
+
+
+def _is_unwinnable(results: EvalResults) -> bool:
+    """F21: detect resources where both arms score 0 on every scenario.
+
+    When baseline.pass_rate AND candidate.pass_rate are both 0 across all
+    scenarios, feedback iteration cannot help — either the scenarios are
+    unwinnable for this resource type, or the rubric is mis-calibrated.
+    Mark the resource ``unwinnable`` and skip feedback rounds; the
+    operator can edit the resource scenarios / rubric and reset state.
+    """
+    if not results.scenarios:
+        return False
+    return all(
+        sc.baseline.pass_rate == 0 and sc.candidate.pass_rate == 0
+        for sc in results.scenarios
+    )
 
 
 def _resolve_concurrency(env_var: str, default: int) -> int:
@@ -199,6 +216,12 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     per_resource_results: list[tuple[ResourceStatus, EvalResults]] = []
     regressions: list[tuple[ResourceStatus, EvalResults]] = []
     promotions: list[ResourceStatus] = []
+    # F21: unwinnable resources (both arms scored 0 across all scenarios)
+    # are tracked separately — they're neither promotions (no signal of
+    # improvement) nor regressions (feedback iteration can't help).  The
+    # gate treats them as non-blocking so a partial-unwinnable run can
+    # still advance to VALIDATE on the strength of real promotions.
+    unwinnable: list[ResourceStatus] = []
     # F8: track harness errors separately so the gate can't fail-OPEN
     # when every resource errored.  Previously, errors returned None or
     # were caught here without joining `regressions`, so `not regressions`
@@ -244,7 +267,13 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             continue
         res, results = outcome
         per_resource_results.append((res, results))
-        if _should_promote(results, epsilon):
+        # F21: bucket unwinnable separately.  Reading the post-helper state
+        # is the authoritative source of truth — the helper already set
+        # status="unwinnable" if applicable.
+        post_state = self._state.resources.get(resource.path)
+        if post_state is not None and post_state.status == "unwinnable":
+            unwinnable.append(res)
+        elif _should_promote(results, epsilon):
             promotions.append(res)
         else:
             regressions.append((res, results))
@@ -265,12 +294,14 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     # F8: the gate must NEVER advance to VALIDATE with zero successful
     # promotions when something went wrong.  The forward branch now
     # requires both: (1) zero regressions AND (2) zero harness errors
-    # AND (3) at least one actual promotion.  Otherwise we either loop
-    # back or escalate, depending on feedback budget.
-    if not regressions and not harness_errors and promotions:
+    # AND (3) at least one resource ended in a non-blocking state
+    # (promotion or F21-unwinnable; both mean "no actionable feedback
+    # left for this resource").
+    if not regressions and not harness_errors and (promotions or unwinnable):
         logger.info(
-            "EXECUTION_EVAL: All resources promoted; advancing to VALIDATE",
+            "EXECUTION_EVAL: No regressions; advancing to VALIDATE",
             promoted=len(promotions),
+            unwinnable=len(unwinnable),
         )
         self._emit_progress("EXECUTION_EVAL", "all", "complete")
         self._advance_phase(OptimizationPhase.VALIDATE)
@@ -281,6 +312,7 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             "EXECUTION_EVAL: No resources promoted",
             regressions=len(regressions),
             harness_errors=len(harness_errors),
+            unwinnable=len(unwinnable),
             promotions=0,
         )
 
@@ -439,9 +471,44 @@ async def _eval_single_resource(
         )
         resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
 
-        if _should_promote(results, epsilon):
+        # F21: detect resources where feedback iteration cannot help.
+        # Both arms scoring 0 across every scenario means either the
+        # scenarios are unwinnable for this resource type, or the rubric
+        # is mis-calibrated.  Either way, looping back to ITERATE will
+        # produce another generation that scores the same 0/0 — burning
+        # ~70k more tokens for guaranteed null result.  Mark and skip.
+        if _is_unwinnable(results):
             async with self._state_lock:
-                self._state.update_resource(resource.path, status="optimized")
+                self._state.update_resource(
+                    resource.path,
+                    status="unwinnable",
+                    last_evaluated_version=resource.version,
+                    error=(
+                        "all scenarios scored 0 on both arms; needs "
+                        "human review of scenarios or rubric"
+                    ),
+                )
+            resource_span.set_attribute("harness.eval.outcome", "unwinnable")
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, "unwinnable",
+                results.candidate_pass_rate,
+            )
+            logger.warning(
+                "EXECUTION_EVAL: marking unwinnable",
+                path=resource.path,
+                scenarios=len(results.scenarios),
+                hint=(
+                    "baseline+candidate both scored 0 on every scenario; "
+                    "scenarios or rubric need redesign"
+                ),
+            )
+        elif _should_promote(results, epsilon):
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="optimized",
+                    last_evaluated_version=resource.version,
+                )
                 self._finalize_single_resource(resource.path)
             # Tokens-to-goal: at promotion, observe the cumulative tokens
             # for this resource.  Phase A approximation: per-run total only;
@@ -466,6 +533,7 @@ async def _eval_single_resource(
                 self._state.update_resource(
                     resource.path,
                     status="needs_refinement",
+                    last_evaluated_version=resource.version,
                     refinement_count=resource.refinement_count + 1,
                 )
             resource_span.set_attribute("harness.eval.outcome", "regressed")
@@ -489,19 +557,38 @@ def _resources_to_evaluate(
 ) -> list[ResourceStatus]:
     """Pick the resources whose latest version should be evaluated.
 
-    A resource is in scope if it has at least one optimization iteration
-    (``version >= 1``) and has a candidate file on disk.  Resources that
-    failed generation outright (``status == "failed"`` and ``version == 0``)
-    are skipped.
+    A resource is in scope if:
+
+    - It has at least one optimization iteration (``version >= 1``)
+    - Its ``version`` is greater than ``last_evaluated_version`` (F17:
+      avoid re-evaluating an identical (baseline, candidate) pair across
+      feedback rounds — that wasted ~12 min + ~300k tokens per cycle in
+      run #5i)
+    - Its status is not ``failed`` (generation aborted) or ``unwinnable``
+      (F21: both arms scored 0 across all scenarios; feedback can't help)
+
+    Resources skipped for the version-unchanged reason are logged at
+    ``info`` level so operators can see what was elided.
     """
     if not self._state:
         return []
 
-    return [
-        r
-        for r in self._state.resources.values()
-        if r.version >= 1 and r.status not in {"failed"}
-    ]
+    eligible: list[ResourceStatus] = []
+    for r in self._state.resources.values():
+        if r.version < 1:
+            continue
+        if r.status in {"failed", "unwinnable"}:
+            continue
+        if r.version <= r.last_evaluated_version:
+            logger.info(
+                "EXECUTION_EVAL: skipped (no version change since last eval)",
+                path=r.path,
+                version=r.version,
+                last_evaluated_version=r.last_evaluated_version,
+            )
+            continue
+        eligible.append(r)
+    return eligible
 
 
 def _resolve_baseline_path(workspace: Path, resource: ResourceStatus) -> Path:

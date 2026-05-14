@@ -58,6 +58,7 @@ dependencies = [
 
     # Utilities
     "python-dateutil>=2.8.2",
+    "psutil>=5.9.0",  # F22: phase-boundary subprocess audit (orphan-claude detection)
 
     # Docker (for Docker MCP server)
     "docker>=7.0.0",

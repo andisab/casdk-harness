@@ -617,3 +617,258 @@ class TestFeedbackBlockBuilder:
         assert "s07" in block
         assert "s08" not in block
         assert "plus 7 more" in block
+
+
+# =============================================================================
+# F17 — EXECUTION_EVAL skip unchanged resources
+# =============================================================================
+
+
+class TestExecutionEvalSkipUnchanged:
+    """F17: ``_resources_to_evaluate`` must skip resources whose
+    ``version`` has not advanced past ``last_evaluated_version`` since
+    the last successful eval, and must bump ``last_evaluated_version``
+    after each successful eval write."""
+
+    def test_resources_to_evaluate_skips_when_version_unchanged_since_last_eval(
+        self, tmp_path: Path
+    ) -> None:
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _resources_to_evaluate,
+        )
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[
+                # Already evaluated at v1 — should be skipped.
+                {"path": "agents/a.md", "version": 1},
+                # Not yet evaluated (last_evaluated_version=0, version=1).
+                {"path": "agents/b.md", "version": 1},
+                # New refinement (v2) since last eval at v1.
+                {"path": "agents/c.md", "version": 2},
+                # Unwinnable — always skipped regardless of versions.
+                {"path": "agents/d.md", "version": 1},
+                # Failed generation — always skipped.
+                {"path": "agents/e.md", "version": 0},
+            ],
+        )
+        # Pre-set last_evaluated_version + statuses where relevant.
+        orch._state.resources["agents/a.md"].last_evaluated_version = 1
+        orch._state.resources["agents/c.md"].last_evaluated_version = 1
+        orch._state.resources["agents/d.md"].status = "unwinnable"
+        orch._state.resources["agents/d.md"].last_evaluated_version = 1
+        orch._state.resources["agents/e.md"].status = "failed"
+
+        eligible = _resources_to_evaluate(orch)
+        eligible_paths = sorted(r.path for r in eligible)
+        assert eligible_paths == ["agents/b.md", "agents/c.md"]
+
+    @pytest.mark.asyncio
+    async def test_last_evaluated_version_updates_after_successful_write_only(
+        self, tmp_path: Path
+    ) -> None:
+        """After a successful eval (promote OR regress), ``last_evaluated_version``
+        equals ``version``.  Harness exceptions must NOT bump it."""
+        # Case 1: promotion bumps last_evaluated_version.
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        good = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5, win_rate=0.8,
+        )
+        mock_h = MagicMock()
+        mock_h.run = AsyncMock(return_value=good)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_h,
+        ):
+            await orch._run_execution_eval()
+        r = orch._state.resources["agents/iac.md"]
+        assert r.status == "optimized"
+        assert r.last_evaluated_version == 1
+
+        # Case 2: regression also bumps last_evaluated_version (eval ran;
+        # only the verdict was negative).
+        orch2 = _make_orchestrator(
+            tmp_path / "case2",
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        bad = _make_eval_results(
+            candidate_pass_rate=0.3, baseline_pass_rate=0.6,
+            failing_scenarios=[
+                {"scenario_id": "u-01", "outcome": "baseline_win"},
+            ],
+        )
+        mock_h2 = MagicMock()
+        mock_h2.run = AsyncMock(return_value=bad)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_h2,
+        ):
+            await orch2._run_execution_eval()
+        r2 = orch2._state.resources["agents/iac.md"]
+        assert r2.status == "needs_refinement"
+        assert r2.last_evaluated_version == 1
+
+        # Case 3: harness raised — last_evaluated_version stays at 0 so
+        # the resource remains eligible for re-eval next round.  With
+        # only 1 resource and it erroring, F8's hard-abort fires (all
+        # resources errored); catch the RuntimeError but inspect state
+        # before/at-failure to confirm last_evaluated_version is unchanged.
+        orch3 = _make_orchestrator(
+            tmp_path / "case3",
+            resources=[
+                {"path": "agents/iac.md", "version": 1},
+                # Second resource that succeeds so F8's "all errored"
+                # abort doesn't fire — we only want to verify that the
+                # erroring one keeps last_evaluated_version=0.
+                {"path": "agents/other.md", "version": 1},
+            ],
+        )
+        good_for_other = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5, win_rate=0.8,
+        )
+        mock_h3 = MagicMock()
+        # First call (iac.md) raises; second (other.md) returns good.
+        mock_h3.run = AsyncMock(
+            side_effect=[RuntimeError("boom"), good_for_other]
+        )
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_h3,
+        ):
+            await orch3._run_execution_eval()
+        r3 = orch3._state.resources["agents/iac.md"]
+        # Eval raised → last_evaluated_version must NOT have advanced.
+        assert r3.last_evaluated_version == 0
+        # The successful sibling did advance.
+        r3_other = orch3._state.resources["agents/other.md"]
+        assert r3_other.last_evaluated_version == 1
+
+
+# =============================================================================
+# F21 — Unwinnable-resource detector
+# =============================================================================
+
+
+class TestExecutionEvalUnwinnable:
+    """F21: when both arms score 0 across every scenario, mark the
+    resource ``unwinnable`` and exclude from feedback rounds."""
+
+    @pytest.mark.asyncio
+    async def test_unwinnable_detected_when_all_scenarios_zero_both_arms(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "commands/iac.md", "version": 1}],
+        )
+        # Two scenarios, both arms score 0 on every one.
+        zero_results = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+            failing_scenarios=[
+                {
+                    "scenario_id": "easy-cmd-01",
+                    "outcome": "tie",
+                    "baseline_pass_rate": 0.0,
+                    "candidate_pass_rate": 0.0,
+                },
+                {
+                    "scenario_id": "hard-cmd-01",
+                    "outcome": "tie",
+                    "baseline_pass_rate": 0.0,
+                    "candidate_pass_rate": 0.0,
+                },
+            ],
+        )
+        mock_h = MagicMock()
+        mock_h.run = AsyncMock(return_value=zero_results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_h,
+        ):
+            await orch._run_execution_eval()
+
+        r = orch._state.resources["commands/iac.md"]
+        assert r.status == "unwinnable"
+        # last_evaluated_version is bumped — F17 filter will skip this
+        # resource on the next round.
+        assert r.last_evaluated_version == 1
+        # No feedback iteration triggered — no regressions, no errors.
+        orch._state.advance_phase.assert_called_once_with(
+            OptimizationPhase.VALIDATE
+        )
+        assert orch._state.feedback_history == []
+
+    def test_unwinnable_resource_excluded_from_feedback_round_2(
+        self, tmp_path: Path
+    ) -> None:
+        """An unwinnable resource is filtered out of the eligible set on
+        the next call to ``_resources_to_evaluate``, even after its
+        version would naively re-qualify it."""
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _resources_to_evaluate,
+        )
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[
+                {"path": "agents/regressed.md", "version": 2},
+                {"path": "commands/dead.md", "version": 1},
+            ],
+        )
+        # Simulate post-round-1 state: regressed needs another pass;
+        # dead was marked unwinnable.
+        orch._state.resources["agents/regressed.md"].status = "needs_refinement"
+        orch._state.resources["agents/regressed.md"].last_evaluated_version = 1
+        orch._state.resources["commands/dead.md"].status = "unwinnable"
+        orch._state.resources["commands/dead.md"].last_evaluated_version = 1
+
+        eligible = _resources_to_evaluate(orch)
+        eligible_paths = sorted(r.path for r in eligible)
+        assert eligible_paths == ["agents/regressed.md"]
+
+    def test_is_unwinnable_helper_returns_false_for_partial_zero(
+        self,
+    ) -> None:
+        """``_is_unwinnable`` requires zero on EVERY scenario — one
+        non-zero clears the flag."""
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _is_unwinnable,
+        )
+
+        results = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+            failing_scenarios=[
+                {
+                    "scenario_id": "easy-01",
+                    "outcome": "tie",
+                    "baseline_pass_rate": 0.0,
+                    "candidate_pass_rate": 0.0,
+                },
+                {
+                    "scenario_id": "easy-02",
+                    "outcome": "candidate_win",
+                    "baseline_pass_rate": 0.0,
+                    "candidate_pass_rate": 0.5,
+                },
+            ],
+        )
+        assert _is_unwinnable(results) is False
+
+    def test_is_unwinnable_helper_returns_false_for_empty_scenarios(
+        self,
+    ) -> None:
+        """No scenarios at all is not unwinnable — likely a config issue."""
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _is_unwinnable,
+        )
+
+        results = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+        )
+        assert _is_unwinnable(results) is False

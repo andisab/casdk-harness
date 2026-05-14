@@ -324,10 +324,12 @@ A successful run produces:
 | `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
 | `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Token ceiling per eval round |
 | `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Simple-threshold gate margin (Phase B replaces) |
-| `CGF_GENERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource generation |
+| `CGF_GENERATE_CONCURRENCY` | 8 | *(F4 + F18)* Parallel resource generation (raised from 4) |
 | `CGF_ITERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource iteration |
-| `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | *(F4)* Parallel per-resource eval |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | *(F4 + F18)* Parallel per-resource eval (raised from 2) |
 | `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | *(F12)* Parallel scenarios inside EvalHarness.run |
+| `CGF_EVAL_TRIAL_TIMEOUT` | 180 | *(F19)* Per-trial wall-time cap (unit / e2e) |
+| `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` | 300 | *(F19)* Per-trial wall-time cap (trajectory) |
 | `CGF_ITERATE_TIMEOUT` | 1200 | *(F6)* Per-iteration timeout (raised from 600) |
 
 ### Phase-timeout defaults (also env-overridable)
@@ -450,6 +452,9 @@ Inspect after:
 
 - **F1** (host-side tooling probe false-positives) — cosmetic
 - **F5** hard-abort path on EVAL_DESIGN timeout (currently mitigated by raising budget)
+- **F17–F22 (perf + robustness)** — EXECUTION_EVAL skip-unchanged, concurrency bumps, per-level trial timeouts, command-eval architect-prompt fix, unwinnable detector, subagent audit. Full plan in [PHASEA_PERF_PLAN.md](./PHASEA_PERF_PLAN.md). Targets iac-team full pipeline ~115 min → ~75 min and ~$1 / ~300k tokens saved per feedback cycle.
+- **F23** multi-grader scenarios (one generation scored by N graders → 4× signal-per-dollar for content-evaluation skills). Schema + runner + architect changes; deferred until F17–F22 ship and produce post-fix baseline numbers.
+- **F24** shared-generation graph (bipartite scenarios↔grader-pools for cross-scenario grader reuse). Discussion item; design after F23 validates the multi-grader model.
 - **Phase B** statistical promotion gate (bootstrap-CI on win rate)
 - **Phase C** ephemeral runtime (`docker compose run --rm` per eval)
 - **Phase D** judge calibration + multi-judge ensemble

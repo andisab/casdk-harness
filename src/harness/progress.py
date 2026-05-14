@@ -648,8 +648,15 @@ class ResourceStatus:
     Attributes:
         path: Relative path to resource (e.g., "agents/iac-analyzer.md")
         resource_type: Type of resource (agent, skill, command)
-        status: Current status (pending, in_progress, generated, optimized, needs_refinement, failed)
+        status: Current status (pending, in_progress, generated, optimized,
+            needs_refinement, failed, unwinnable). ``unwinnable`` (F21)
+            means baseline+candidate both scored 0 on every scenario in
+            round 1; the orchestrator skips feedback rounds for these.
         version: Current version number (0 = original, 1+ = optimized)
+        last_evaluated_version: Last version of this resource that was
+            scored by EXECUTION_EVAL (F17). EXECUTION_EVAL skips
+            resources whose ``version`` has not advanced past this number,
+            avoiding redundant re-evals during feedback rounds.
         quality: Quality scores (None if not yet evaluated)
         iterations: Number of optimization iterations completed
         refinement_count: Number of targeted refinement loops
@@ -661,9 +668,16 @@ class ResourceStatus:
     path: str
     resource_type: str
     status: Literal[
-        "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+        "pending",
+        "in_progress",
+        "generated",
+        "optimized",
+        "needs_refinement",
+        "failed",
+        "unwinnable",
     ] = "pending"
     version: int = 0
+    last_evaluated_version: int = 0
     quality: ResourceQuality | None = None
     iterations: int = 0
     refinement_count: int = 0
@@ -678,6 +692,7 @@ class ResourceStatus:
             "resource_type": self.resource_type,
             "status": self.status,
             "version": self.version,
+            "last_evaluated_version": self.last_evaluated_version,
             "quality": self.quality.to_dict() if self.quality else None,
             "iterations": self.iterations,
             "refinement_count": self.refinement_count,
@@ -698,6 +713,7 @@ class ResourceStatus:
             resource_type=data["resource_type"],
             status=data.get("status", "pending"),
             version=data.get("version", 0),
+            last_evaluated_version=data.get("last_evaluated_version", 0),
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),
@@ -847,10 +863,17 @@ class MultiResourceState:
         self,
         path: str,
         status: Literal[
-            "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+            "pending",
+            "in_progress",
+            "generated",
+            "optimized",
+            "needs_refinement",
+            "failed",
+            "unwinnable",
         ]
         | None = None,
         version: int | None = None,
+        last_evaluated_version: int | None = None,
         quality: ResourceQuality | None = None,
         iterations: int | None = None,
         refinement_count: int | None = None,
@@ -864,6 +887,7 @@ class MultiResourceState:
             path: Resource path.
             status: New status.
             version: New version number.
+            last_evaluated_version: Last EXECUTION_EVAL'd version (F17).
             quality: New quality scores.
             iterations: Number of iterations.
             refinement_count: Number of refinement loops.
@@ -885,6 +909,8 @@ class MultiResourceState:
                 resource.error = ""
         if version is not None:
             resource.version = version
+        if last_evaluated_version is not None:
+            resource.last_evaluated_version = last_evaluated_version
         if quality is not None:
             resource.quality = quality
         if iterations is not None:

@@ -742,3 +742,85 @@ class TestEvalHarnessRunner:
     def test_unsupported_runtime_raises(self) -> None:
         with pytest.raises(NotImplementedError):
             EvalHarness(runtime="ephemeral_container")  # type: ignore[arg-type]
+
+
+# =============================================================================
+# F19 — Per-level trial timeout
+# =============================================================================
+
+
+class TestPerLevelTrialTimeout:
+    """F19: ``_resolve_trial_timeout`` returns 180s for unit / e2e and
+    300s for trajectory by default, with env-var overrides per level."""
+
+    def test_trial_timeout_default_180_for_unit_and_e2e(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from harness.optimization.eval_harness.runner import (
+            _resolve_trial_timeout,
+        )
+
+        # Make sure no env vars are set.
+        monkeypatch.delenv("CGF_EVAL_TRIAL_TIMEOUT", raising=False)
+        monkeypatch.delenv("CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT", raising=False)
+
+        # suite_default=300 (a typical pre-F19 value); the F19 default of
+        # 180 is tighter and should win for unit / e2e.
+        assert _resolve_trial_timeout("unit", suite_default=300) == 180
+        assert _resolve_trial_timeout("e2e", suite_default=300) == 180
+
+    def test_trial_timeout_300_for_trajectory_level(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from harness.optimization.eval_harness.runner import (
+            _resolve_trial_timeout,
+        )
+
+        monkeypatch.delenv("CGF_EVAL_TRIAL_TIMEOUT", raising=False)
+        monkeypatch.delenv("CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT", raising=False)
+
+        # Trajectory needs more wall time than unit/e2e.
+        assert _resolve_trial_timeout("trajectory", suite_default=300) == 300
+
+    def test_env_vars_override_per_level_defaults(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from harness.optimization.eval_harness.runner import (
+            _resolve_trial_timeout,
+        )
+
+        monkeypatch.setenv("CGF_EVAL_TRIAL_TIMEOUT", "90")
+        monkeypatch.setenv("CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT", "600")
+
+        assert _resolve_trial_timeout("unit", suite_default=300) == 90
+        assert _resolve_trial_timeout("e2e", suite_default=300) == 90
+        assert _resolve_trial_timeout("trajectory", suite_default=300) == 600
+
+    def test_invalid_env_var_falls_back_to_module_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from harness.optimization.eval_harness.runner import (
+            _resolve_trial_timeout,
+        )
+
+        monkeypatch.setenv("CGF_EVAL_TRIAL_TIMEOUT", "not-a-number")
+        monkeypatch.setenv("CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT", "-5")
+
+        # Bad values silently ignored — both fall back to the F19 default.
+        assert _resolve_trial_timeout("unit", suite_default=300) == 180
+        assert _resolve_trial_timeout("trajectory", suite_default=300) == 300
+
+    def test_tighter_suite_default_wins_over_module_builtin(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A suite that explicitly sets a tighter timeout than the F19
+        default should be respected — operator intent is preserved."""
+        from harness.optimization.eval_harness.runner import (
+            _resolve_trial_timeout,
+        )
+
+        monkeypatch.delenv("CGF_EVAL_TRIAL_TIMEOUT", raising=False)
+        monkeypatch.delenv("CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT", raising=False)
+
+        # Suite explicitly wants 60s — that's tighter than F19's 180s.
+        assert _resolve_trial_timeout("unit", suite_default=60) == 60

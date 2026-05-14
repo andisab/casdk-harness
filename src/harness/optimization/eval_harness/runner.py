@@ -77,6 +77,57 @@ _VALID_MODELS = {"sonnet", "opus", "haiku"}
 
 DEFAULT_EVAL_SCENARIO_CONCURRENCY = 6
 
+# F19: per-level trial-timeout defaults.  Unit + e2e get the tighter
+# 180s; trajectory gets 300s because it needs to elicit multi-step tool
+# sequences.  Both fall back to the suite's ``config.timeout_seconds``
+# when the matching env var is unset.
+DEFAULT_EVAL_TRIAL_TIMEOUT_SECONDS = 180
+DEFAULT_EVAL_TRAJECTORY_TRIAL_TIMEOUT_SECONDS = 300
+
+
+def _resolve_trial_timeout(level: str, suite_default: int) -> int:
+    """F19: pick per-trial timeout based on scenario level.
+
+    Trajectory scenarios get a separate, more generous default because
+    they typically need to coordinate multiple tool calls.  Both kinds
+    fall back to ``suite.config.timeout_seconds`` when the matching env
+    var is unset (preserves pre-F19 behavior for existing suites).
+
+    Resolution order:
+
+    1. Env var matching the level (``CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT``
+       for trajectory, ``CGF_EVAL_TRIAL_TIMEOUT`` for unit / e2e).
+    2. Module-level default (180 or 300).
+    3. Suite config (``timeout_seconds``) — only used when both the
+       env var and module default are deemed unset by the caller; in
+       practice we always return one of the first two.
+
+    Invalid env values fall through to the module default.
+    """
+    if level == "trajectory":
+        env_var = "CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT"
+        builtin = DEFAULT_EVAL_TRAJECTORY_TRIAL_TIMEOUT_SECONDS
+    else:
+        env_var = "CGF_EVAL_TRIAL_TIMEOUT"
+        builtin = DEFAULT_EVAL_TRIAL_TIMEOUT_SECONDS
+
+    raw = os.environ.get(env_var)
+    if raw is not None:
+        try:
+            value = int(raw)
+            if value > 0:
+                return value
+        except ValueError:
+            pass
+
+    # Suite default takes precedence over the module builtin only when
+    # the suite specifies something less permissive (suites authored
+    # before F19 expected the global to apply); otherwise use the
+    # tighter F19 default.
+    if suite_default > 0 and suite_default < builtin:
+        return suite_default
+    return builtin
+
 
 def _resolve_scenario_concurrency() -> int:
     """Read ``CGF_EVAL_SCENARIO_CONCURRENCY`` from the environment.
@@ -472,12 +523,18 @@ class EvalHarness:
             except ValueError as exc:
                 return self._error_trial(arm, trial_index, str(exc))
 
+            # F19: per-level timeout — trajectory scenarios elicit
+            # multi-step tool sequences and need more wall time than
+            # unit / e2e graders.
+            trial_timeout = _resolve_trial_timeout(
+                scenario.level, suite.config.timeout_seconds
+            )
             transcript = await self._collect_transcript(
                 resource=resource,
                 prompt=scenario.prompt,
                 cwd=workspace,
                 env=env_overrides,
-                timeout=suite.config.timeout_seconds,
+                timeout=trial_timeout,
             )
 
         # Grading happens after the temp dir is torn down — graders work

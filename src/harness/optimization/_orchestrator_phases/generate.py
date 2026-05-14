@@ -44,7 +44,7 @@ if TYPE_CHECKING:
         MultiResourceOrchestrator,
     )
 
-DEFAULT_GENERATE_CONCURRENCY = 4
+DEFAULT_GENERATE_CONCURRENCY = 8  # F18: bumped from 4. Per-resource generate is I/O-bound on the SDK API.
 
 
 def _resolve_concurrency(env_var: str, default: int) -> int:

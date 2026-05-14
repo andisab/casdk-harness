@@ -284,15 +284,17 @@ class TestSemaphoreCap:
 
 
 class TestDefaults:
-    """Pin the documented defaults: generate=4, iterate=4, eval=2."""
+    """Pin the documented defaults (F18: generate=8, iterate=4, eval=4)."""
 
-    def test_generate_default_is_four(self) -> None:
-        assert _gen.DEFAULT_GENERATE_CONCURRENCY == 4
+    def test_generate_default_is_eight(self) -> None:
+        """F18: raised from 4 to 8 — per-resource generate is I/O-bound
+        on the SDK API; 4-way left half the slots idle in run #5."""
+        assert _gen.DEFAULT_GENERATE_CONCURRENCY == 8
 
     def test_iterate_default_is_four(self) -> None:
         assert _iter.DEFAULT_ITERATE_CONCURRENCY == 4
 
-    def test_execution_eval_default_is_two(self) -> None:
-        """Eval is the most expensive phase (judge calls, multiple
-        scenarios per arm), so the documented default is lower."""
-        assert _ee.DEFAULT_EXECUTION_EVAL_CONCURRENCY == 2
+    def test_execution_eval_default_is_four(self) -> None:
+        """F18: raised from 2 to 4 — eval is I/O-bound on the judge
+        API, and 2-way left ~6 scenario slots idle in run #5i."""
+        assert _ee.DEFAULT_EXECUTION_EVAL_CONCURRENCY == 4

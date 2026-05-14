@@ -275,11 +275,88 @@ The harness writes `package.json`, `Dockerfile`, `src/index.js` into the eval sa
 
 If a trajectory scenario asserts `tool_called: Glob` or `tool_called: Read`, you MUST provide files via `setup.files` for the agent to glob/read.  Otherwise the agent has no work to do and the assertion fails for trivial reasons unrelated to the resource's quality.
 
+### Command resource scenarios (F20 anti-pattern)
+
+The eval runtime sends `scenario.prompt` to the SDK as a literal user message.  The SDK silently no-ops on unknown slash commands — there's no error, no log line, just `turns=0 tokens=0` in the trial result and the gate promotes a "tie at zero" on pure noise (verified in run #5i `commands/iac.md` results).
+
+**NEVER** author a `commands/*` scenario as a literal `/cmd …` invocation:
+
+```yaml
+# WRONG — produces 0 turns, 0 tokens, vacuous tie
+- id: easy-iac-cmd-analyze-01
+  target_resource: "commands/iac.md"
+  prompt: "/iac analyze --repo ."
+  graders:
+    - { type: contains, needle: "analyz" }
+```
+
+**INSTEAD**, write the scenario prompt as the natural-language request that the command would normally translate to — the same request a user would type if the slash command didn't exist:
+
+```yaml
+# RIGHT — invokes the command's underlying workflow
+- id: easy-iac-cmd-analyze-01
+  target_resource: "commands/iac.md"
+  prompt: |
+    Analyze the repository at the current working directory and produce
+    the same structured IaC analysis that the /iac analyze command
+    documents in commands/iac.md. Identify the language, runtime,
+    services, and any existing infrastructure code.
+  graders:
+    - { type: contains, needle: "analyz", case_insensitive: true }
+```
+
+Similarly for `/iac generate`:
+
+```yaml
+# RIGHT
+- id: medium-iac-cmd-generate-01
+  target_resource: "commands/iac.md"
+  prompt: |
+    Generate the Kubernetes manifests that the /iac generate
+    --target kubernetes workflow would produce for the sample
+    application defined in setup.files. Output a Deployment and
+    Service at minimum.
+  setup:
+    files:
+      - path: package.json
+        content: '{"name": "api", "dependencies": {"express": "^4"}}'
+  graders:
+    - { type: contains, needle: "Deployment", case_insensitive: false }
+    - { type: contains, needle: "Service", case_insensitive: false }
+```
+
+And for `/iac deploy` (or any orchestration command):
+
+```yaml
+# RIGHT
+- id: hard-iac-cmd-deploy-pipeline-01
+  target_resource: "commands/iac.md"
+  prompt: |
+    Walk through the full analyze → generate → validate → deploy
+    sequence that /iac deploy --gitops argocd documents in
+    commands/iac.md, applied to the sample application in
+    setup.files. Output the ArgoCD Application manifest plus a
+    deploy plan.
+  setup:
+    files:
+      - path: package.json
+        content: '{"name": "api"}'
+  graders:
+    - type: composite
+      operator: and
+      graders:
+        - { type: contains, needle: "argocd", case_insensitive: true }
+        - { type: contains, needle: "deploy", case_insensitive: true }
+```
+
+**Rule of thumb:** if you find yourself typing `prompt: "/"`, stop and rewrite as natural language.  The slash-form is never correct here.
+
 ## Anti-Patterns
 
 **Do NOT:**
 - **Use a flat `type: tool_called` (or `type: no_tool` / `type: ordering` / `type: constraint`) grader.** There is no such grader type. Trajectory checks ALWAYS nest under `type: trajectory` with assertions[]. The schema will reject the flat form and EXECUTION_EVAL will error out.
 - **Reference absolute paths in prompts when the sandbox lacks them.** See F14 self-contained-scenarios section above.
+- **Author command scenarios as literal `/cmd` invocations.** See F20 "Command resource scenarios" section above — slash strings silently no-op in the SDK, producing 0-turn / 0-token vacuous ties.
 - Read individual `agents/*.md` or `skills/*/SKILL.md` files. They are unnecessary; resource-plan.yaml has the metadata.
 - Glob for files beyond the 3 named inputs.
 - Spend turns "planning" or "analyzing." Read → Write → Signal.

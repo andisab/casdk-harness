@@ -204,14 +204,19 @@ class TestExecutionEvalGateLogic:
         )
 
         source = inspect.getsource(ee._run_phase_body)
-        # The forward branch must check harness_errors AND promotions.
-        # Previously it was `if not regressions:` which fails-open.
+        # The forward branch must check harness_errors AND require at
+        # least one non-blocking terminal state (promotion or — F21 —
+        # unwinnable).  Previously it was `if not regressions:` which
+        # fails-open when every resource errored.
         assert "harness_errors" in source, (
             "F8 regression: gate must track harness_errors"
         )
-        assert "and promotions" in source, (
-            "F8 regression: gate must require at least one promotion "
-            "before advancing to VALIDATE"
+        # F8+F21: the gate-advance condition references both `promotions`
+        # and `unwinnable` since either signals "no actionable feedback".
+        assert "promotions or unwinnable" in source, (
+            "F8/F21 regression: gate forward branch must require at "
+            "least one promotion or unwinnable resource before "
+            "advancing to VALIDATE"
         )
 
     def test_abort_on_all_errored(self) -> None:
