@@ -10,9 +10,7 @@ stranded / gap rows. Re-run after any monitoring-touching PR.
 **Last source audit:** 2026-05-14 (commits up to `ef8684a` on
 `grafana-refactor` plus Phase 1 working-tree changes).
 
-**Live runtime verification:** **NOT YET PERFORMED.** Source-only audit
-below. Runtime verification command at the bottom of this doc; run it
-before claiming a dashboard panel is wired correctly.
+**Live runtime verification:** **PERFORMED 2026-05-14 against `grafana-refactor` @ 7985288.** See § 5 for the captured baseline and § 6 for findings updated from runtime data. Re-run after any SDK bump or monitoring-touching PR.
 
 ---
 
@@ -86,24 +84,26 @@ Columns:
 | `harness_run_phase_info` | Gauge | `monitoring.py:275` | `cgf_session.py` × 12 sites (`record_phase_entry`); `multi_resource_orchestrator.py:426, 523` | cgf.json "Phase Progression" bargauge; spec D70 State Timeline (P1) | LIVE |
 | `harness_run_iteration` | Gauge | `monitoring.py:284` | `cgf_session.py:1776, 2138` (single path) | cgf.json "Iteration" stat; spec D70 R1 panel 2 | **GAP** — multi-resource orchestrator never calls `record_iteration`; D70 Iteration panel will show "—" on multi runs |
 | `harness_run_path_info` | Gauge | `monitoring.py:290` | `cgf_session.py:1773`; `multi_resource_orchestrator.py:424` | spec D70 `$path` variable | LIVE |
-| `harness_run_config_info` | Gauge | `monitoring.py:389` | `cgf_session.py:1778`; `multi_resource_orchestrator.py:436` (Phase 1) | spec D00 Row 0 Run Config table; spec D70 Row 0 | PENDING (Phase 1 — code lands here but not yet runtime-verified) |
-| `harness_run_start_timestamp` | Gauge | `monitoring.py:409` | `cgf_session.py:1777`; `multi_resource_orchestrator.py:427` (Phase 1) | spec D00 / D70 "Run Elapsed" stat | PENDING |
-| `harness_task_progress` | Gauge | `monitoring.py:420` | `progress.py:426` via `record_task_progress` (Phase 1) | spec D65 Task Progress Header | PENDING |
+| `harness_run_config_info` | Gauge | `monitoring.py:389` | `cgf_session.py:1778`; `multi_resource_orchestrator.py:436` (Phase 1) | spec D00 Row 0 Run Config table; spec D70 Row 0 | LIVE — runtime-verified 2026-05-14, all 8 labels (resource/path/mode/model/effort/eval_enabled/token_budget/max_iterations) propagate correctly |
+| `harness_run_start_timestamp` | Gauge | `monitoring.py:409` | `cgf_session.py:1777`; `multi_resource_orchestrator.py:427` (Phase 1) | spec D00 / D70 "Run Elapsed" stat | LIVE — runtime-verified 2026-05-14 |
+| `harness_task_progress` | Gauge | `monitoring.py:420` | `progress.py:426` via `record_task_progress` (Phase 1) | spec D65 Task Progress Header | LIVE — runtime-verified 2026-05-14, all 3 statuses (completed/failed/pending) propagate correctly |
 
 ### 2.6 SDK-native (claude_code_*)
 
-Source: Claude Code CLI; we only verify arrival. Names below are the Prometheus form after collector promotion (dot → underscore) — verify in the runtime capture.
+Source: Claude Code CLI; we only verify arrival. Names below are the Prometheus form after collector promotion (dot → underscore).
+
+**Runtime verification 2026-05-14:** 7 of 8 SDK metrics present in live Prometheus (caveats inline). **Two metric-name + label corrections to the upstream spec discovered during verification — see § 6.**
 
 | Metric name | Type | Pipeline | Consumed by | Status |
 |---|---|---|---|---|
-| `claude_code_session_count_total` | Counter | SDK→OTLP→collector | spec D20 sessions panel; D00 mode summary | NEEDS RUNTIME VERIFY |
-| `claude_code_lines_of_code_count_total` | Counter | SDK→OTLP→collector | spec D20, D65 (LoC sparkline) | NEEDS RUNTIME VERIFY |
-| `claude_code_pull_request_count_total` | Counter | SDK→OTLP→collector | spec D10 (Cost per PR) | NEEDS RUNTIME VERIFY (caveat: only fires when Claude opens the PR in-session) |
-| `claude_code_commit_count_total` | Counter | SDK→OTLP→collector | spec D10 (Cost per commit), D65 | NEEDS RUNTIME VERIFY |
-| `claude_code_cost_usage_USD_total` | Counter | SDK→OTLP→collector | spec D00, D10 (all spend panels), D70 (Economics row) | NEEDS RUNTIME VERIFY |
-| `claude_code_token_usage_tokens_total` | Counter | SDK→OTLP→collector | spec D00 (cache hit), D30 (all panels), D70 | NEEDS RUNTIME VERIFY |
-| `claude_code_code_edit_tool_decision_count_total` | Counter | SDK→OTLP→collector | spec D00 (accept rate), D40 (all panels) | NEEDS RUNTIME VERIFY |
-| `claude_code_active_time_seconds_total` | Counter | SDK→OTLP→collector | spec D20 (CLI vs user time, productivity multiplier) | NEEDS RUNTIME VERIFY |
+| `claude_code_session_count_total` | Counter | SDK→OTLP→collector | spec D20 sessions panel; D00 mode summary | LIVE — `start_type` label confirmed |
+| `claude_code_lines_of_code_count_total` | Counter | SDK→OTLP→collector | spec D20, D65 (LoC sparkline) | LIVE — `type=added` and `type=removed` both observed in 24h |
+| `claude_code_pull_request_count_total` | Counter | SDK→OTLP→collector | spec D10 (Cost per PR) | EXPECTED ABSENT — no Claude-opened PRs in 24h; only fires when Claude calls `gh` in-session |
+| `claude_code_commit_count_total` | Counter | SDK→OTLP→collector | spec D10 (Cost per commit), D65 | EXPECTED ABSENT — no commit by Claude in 24h. Likely fires only on interactive sessions; CGF optimization runs don't commit. Panel will render empty until that workflow is exercised. |
+| `claude_code_cost_usage_USD_total` | Counter | SDK→OTLP→collector | spec D00, D10 (all spend panels), D70 (Economics row) | LIVE — labels confirmed: `model`, `query_source` (subagent), `effort` (high/xhigh), `agent_name` (Explore/custom), `plugin_name`, `terminal_type` |
+| `claude_code_token_usage_tokens_total` | Counter | SDK→OTLP→collector | spec D00 (cache hit), D30 (all panels), D70 | LIVE — **all 4 `type` values confirmed** (input/output/cacheRead/cacheCreation). Cache hit formula will work. |
+| **`claude_code_code_edit_tool_decision_total`** | Counter | SDK→OTLP→collector | spec D00 (accept rate), D40 (all panels) | LIVE — **NAME CORRECTION:** SDK emits `_total` not `_count_total`. Labels: `tool_name` (Edit/Write), `decision` (accept), `language` (Bash), **`exported_source`** (NOT `source` — see § 6). |
+| `claude_code_active_time_seconds_total` | Counter | SDK→OTLP→collector | spec D20 (CLI vs user time, productivity multiplier) | PARTIAL — `type=cli` confirmed, **`type=user` never observed in 24h**. Productivity-multiplier panel will divide by zero. Likely requires interactive sessions to emit user-type. |
 
 ---
 
@@ -242,7 +242,57 @@ we didn't know existed — investigate and add a row.
 
 ---
 
-## 6. Maintenance
+## 6. Runtime-verification findings (2026-05-14)
+
+### 6.1 SDK metric name correction
+
+Upstream spec ([GRAFANA-REFACTOR.md § 1 source]) lists the edit-decision counter as `claude_code_code_edit_tool_decision_count_total`. **Reality: SDK emits it as `claude_code_code_edit_tool_decision_total`** (no `_count` infix).
+
+**Impact:** every D40 PromQL panel and D00 "Accepted edits / total edit decisions" stat panel that uses the spec's name verbatim will return no data. Fix at panel-authoring time: drop the `_count` infix.
+
+### 6.2 SDK `source` attribute renamed to `exported_source`
+
+The Prometheus scrape job applies a `source="claude-sdk-harness"` label (see `config/monitoring/prometheus.yml` job `otel-collector-sdk`). The SDK separately emits its own `source` attribute on `code_edit_tool_decision` (with values `config`/`hook`/`user_permanent`/`user_temporary`/`user_abort`/`user_reject`).
+
+Prometheus resolves the collision by renaming the SDK's attribute → **`exported_source`**.
+
+**Impact:** D40 "Rejection rate by `source`" panel must query `exported_source` not `source`. Note this in the dashboard JSON comment alongside the query. Same collision applies to `job` (SDK `service.name` lands as `exported_job`).
+
+### 6.3 `claude_code_commit_count_total` and `pull_request_count_total` likely empty for harness-typical workloads
+
+Both counters were emitted at some point in the past (metric names appear in `__name__/values`) but **zero series within a 24h window**. Plausible causes:
+
+- **Commit counter:** SDK fires this when the agent invokes `git commit` in-session. CGF optimization runs don't commit; autonomous mode does commit but may go via a hook/wrapper that the SDK doesn't intercept. Verify by running `make autonomous` once and re-checking.
+- **PR counter:** Documented in spec as Claude-opened-PRs-only. Requires a session where Claude actually runs `gh pr create` (or the equivalent MCP tool).
+
+**Impact:** D10 "Cost per commit" and "Cost per PR" panels will render empty for the typical CGF-optimization workload. Either:
+
+- (a) Add a panel description noting "requires commits/PRs to be opened from inside a Claude session",
+- (b) Defer those panels to a future iteration, or
+- (c) Augment the harness with a custom commit counter via a hook.
+
+Recommend (a) for now — they're aspirational panels, not load-bearing.
+
+### 6.4 `claude_code_active_time_seconds_total{type="user"}` likely empty for non-interactive workloads
+
+`type=cli` is consistently emitted on all sessions. `type=user` (human-keyboard idle / typing time) was not observed in 24h. Plausible cause: SDK only emits `user` on interactive `make interactive` sessions, not on autonomous or CGF runs.
+
+**Impact:** D20 "Productivity multiplier (cli/user)" panel will divide by zero. Defer the panel or compute as `cli / max(cli, 1)` with a description noting the caveat.
+
+### 6.5 SDK label dimensions worth noting for D10/D30/D70 panel authoring
+
+The live capture confirms the SDK emits these cardinality-bearing labels (so the spec's small-multiples / `Repeat by variable` patterns will work):
+
+- `claude_code_cost_usage_USD_total`: `{model, query_source, effort, agent_name, plugin_name, terminal_type}` — all 6 segmentation dimensions land. The spec's per-`effort` and per-`agent_name` panels are buildable.
+- `claude_code_token_usage_tokens_total`: `{type, model, query_source, effort, agent_name}` — `type` has all 4 values (input/output/cacheRead/cacheCreation), so the cache-hit formula is sound.
+
+### 6.6 Stale `session_id` labels from older SDK versions
+
+Older series (e.g., `service_version: 2.1.128`) carry a `session_id` label despite our `OTEL_METRICS_INCLUDE_SESSION_ID=false` env var. New series from the current SDK version (`2.1.139`) do not. The stale series will age out at `metric_expiration: 5m` (collector) plus Prometheus retention. Not actionable.
+
+---
+
+## 7. Maintenance
 
 This document is auto-staleable but not auto-generated. After any PR that
 touches `src/harness/monitoring.py`, `src/harness/optimization/_orchestrator_phases/`,
