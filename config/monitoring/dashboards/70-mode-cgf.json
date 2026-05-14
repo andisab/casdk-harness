@@ -140,6 +140,7 @@
     {
       "id": 70200,
       "type": "state-timeline",
+      "transparent": true,
       "title": "Phase Progression — Single-resource path",
       "description": "State Timeline of single-resource (cgf_session.py) phases: research → optimize → finalize → complete (with `failed` as terminal). Aggregates across resources via `max by (phase)` so widening the time range doesn't produce one row per historical resource. Stays empty when the active run is on the multi-resource path; see the panel below for that.",
       "gridPos": {"h": 5, "w": 14, "x": 0, "y": 3},
@@ -163,7 +164,7 @@
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
-            {"type": "value", "options": {"0": {"text": " ", "color": "black", "index": 0}}},
+            {"type": "value", "options": {"0": {"text": " ", "color": "transparent", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
           ],
           "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
@@ -183,6 +184,7 @@
     {
       "id": 70205,
       "type": "state-timeline",
+      "transparent": true,
       "title": "Phase Progression — Multi-resource path",
       "description": "State Timeline of multi-resource (multi_resource_orchestrator.py) phases: research → design → qa → generate → eval_design → iterate → execution_eval → validate → complete (with `failed` as terminal). Aggregates across resources via `max by (phase)` so widening the time range doesn't produce one row per historical resource. Stays empty when the active run is on the single-resource path; see the panel above for that.",
       "gridPos": {"h": 5, "w": 14, "x": 0, "y": 8},
@@ -206,7 +208,7 @@
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
-            {"type": "value", "options": {"0": {"text": " ", "color": "black", "index": 0}}},
+            {"type": "value", "options": {"0": {"text": " ", "color": "transparent", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
           ],
           "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
