@@ -41,6 +41,7 @@ Example usage:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from collections.abc import Callable
@@ -51,6 +52,7 @@ from typing import Any
 
 import structlog
 
+from harness.monitoring import init_run_phases, record_phase_entry, record_run_path
 from harness.optimization._orchestrator_helpers import (
     AGENT_DESIGN,
     AGENT_EVAL_ARCHITECT,
@@ -63,6 +65,7 @@ from harness.optimization._orchestrator_helpers import (
     DEFAULT_MAX_FEEDBACK_ITERATIONS,
     DEFAULT_MAX_ITERATIONS,
     DEFAULT_MAX_REFINEMENT,
+    DEFAULT_MAX_VALIDATE_REFINEMENTS,
     DEFAULT_QUALITY_THRESHOLD,
     PathViolationError,
     validate_write_path,
@@ -92,7 +95,6 @@ from harness.optimization._orchestrator_phases import (
 from harness.optimization._orchestrator_phases import (
     validate as _validate_phase,
 )
-from harness.monitoring import init_run_phases, record_phase_entry, record_run_path
 from harness.progress import (
     MultiResourceState,
     OptimizationPhase,
@@ -185,14 +187,19 @@ class MultiResourceConfig:
     # Phase-specific timeouts (seconds)
     research_timeout: int = 1800  # 30 minutes
     generate_timeout: int = 900   # 15 minutes per resource
-    iterate_timeout: int = 600    # 10 minutes per iteration
+    iterate_timeout: int = 1200   # 20 minutes per iteration (large SKILLs need it; F6)
     validate_timeout: int = 300   # 5 minutes
     design_timeout: int = 900     # 15 minutes for resource architecture
-    eval_design_timeout: int = 600  # 10 minutes for eval-suite design
+    eval_design_timeout: int = 1200  # 20 minutes — safety net; slim prompt should finish in &lt;3 min
     execution_eval_timeout: int = 1800  # 30 minutes for full eval run
     # Phase A.5 eval gate
     eval_promotion_epsilon: float | None = None  # None → use env / default
     max_feedback_iterations: int | None = None   # None → use env / default
+    # F9: cap on VALIDATE → ITERATE loop-backs.  Distinct from
+    # max_refinements (per-resource) — this is a pipeline-level safety
+    # net.  When the validator keeps flagging the same files round after
+    # round, we hit this cap and force COMPLETE with the issues recorded.
+    max_validate_refinements: int = DEFAULT_MAX_VALIDATE_REFINEMENTS
     # Progress display settings
     show_progress: bool = True
     follow_logs: bool = True
@@ -271,6 +278,12 @@ class MultiResourceOrchestrator:
         self._progress: ProgressManager | None = None
         self._evaluator: QualityEvaluator | None = None
         self._signal_parser = SignalParser()
+        # F4: serialize state-file writes across concurrent per-resource
+        # coroutines.  Constructed eagerly so phase modules can reference
+        # ``self._state_lock`` without checking for None.  asyncio.Lock()
+        # is constructable outside an event loop in Python 3.10+; first
+        # acquire bind it to the running loop.
+        self._state_lock: asyncio.Lock = asyncio.Lock()
 
     # ----- public API -----
 
@@ -751,7 +764,7 @@ async def run_multi_resource_optimization(
     Timeouts are loaded from environment variables if not specified:
     - CGF_RESEARCH_TIMEOUT (default: 1800s / 30 min)
     - CGF_GENERATE_TIMEOUT (default: 900s / 15 min)
-    - CGF_ITERATE_TIMEOUT (default: 600s / 10 min)
+    - CGF_ITERATE_TIMEOUT (default: 1200s / 20 min)
     - CGF_VALIDATE_TIMEOUT (default: 300s / 5 min)
 
     ``max_iterations`` defaults to ``CGF_MAX_ITERATIONS`` env var (matching
@@ -802,7 +815,7 @@ async def run_multi_resource_optimization(
         verbose=verbose,
         research_timeout=get_timeout("CGF_RESEARCH_TIMEOUT", research_timeout, 1800),
         generate_timeout=get_timeout("CGF_GENERATE_TIMEOUT", generate_timeout, 900),
-        iterate_timeout=get_timeout("CGF_ITERATE_TIMEOUT", iterate_timeout, 600),
+        iterate_timeout=get_timeout("CGF_ITERATE_TIMEOUT", iterate_timeout, 1200),
         validate_timeout=get_timeout("CGF_VALIDATE_TIMEOUT", validate_timeout, 300),
         show_progress=os.environ.get("CGF_SHOW_PROGRESS", "true").lower() == "true",
         follow_logs=os.environ.get("CGF_FOLLOW_LOGS", "true").lower() == "true",

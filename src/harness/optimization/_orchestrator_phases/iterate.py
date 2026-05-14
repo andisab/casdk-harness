@@ -6,6 +6,13 @@ loops until quality crosses the configured threshold or
 ``max_iterations`` is reached.  Maintains a multi-resource CHANGELOG of
 quality deltas.
 
+Phase F4: per-resource iteration runs in parallel under an
+``asyncio.Semaphore`` bounded by ``CGF_ITERATE_CONCURRENCY`` (default
+4).  The inner iteration while-loop (1..N rounds for a single resource)
+stays sequential within each coroutine — only the outer fan-out across
+resources is parallel.  State and CHANGELOG writes use
+``self._state_lock``.
+
 Functions mounted onto :class:`MultiResourceOrchestrator` as:
 
 - ``_delegate_iteration`` ← :func:`delegate`
@@ -21,6 +28,8 @@ Functions mounted onto :class:`MultiResourceOrchestrator` as:
 
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,13 +52,99 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
+DEFAULT_ITERATE_CONCURRENCY = 4
+
+
+def _resolve_concurrency(env_var: str, default: int) -> int:
+    """Read an integer concurrency knob from the environment.
+
+    Mirrors :func:`generate._resolve_concurrency` to avoid a cross-phase
+    import (these modules are otherwise independent).
+    """
+    raw = os.environ.get(env_var)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
+
 
 async def delegate(self: MultiResourceOrchestrator) -> None:
     """Delegate resource iteration to cgf-prompt-optimizer agent.
 
-    For each generated resource, spawns the optimizer agent.
-    Parses [ITERATE_COMPLETE:{path}] signals and quality scores.
-    Loops until quality >= threshold or max iterations reached.
+    Phase F4: dispatches per-resource iteration coroutines in parallel
+    under a semaphore.  Each coroutine runs its own iteration while-loop
+    sequentially (state of iter N depends on iter N-1).  Per-resource
+    exceptions stay confined to their own coroutine.
+    """
+    if not self._state or not self._spec:
+        return
+
+    # Get resources that need optimization
+    resources_to_optimize = (
+        self._state.get_generated_resources()
+        + self._state.get_needs_refinement_resources()
+    )
+
+    concurrency = _resolve_concurrency(
+        "CGF_ITERATE_CONCURRENCY", DEFAULT_ITERATE_CONCURRENCY
+    )
+
+    logger.info(
+        "ITERATE: Starting optimization",
+        total=len(resources_to_optimize),
+        threshold=self.config.quality_threshold,
+        concurrency=concurrency,
+    )
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _bounded(resource: ResourceStatus) -> None:
+        async with semaphore:
+            try:
+                await _iterate_single_resource(self, resource)
+            except Exception as exc:  # noqa: BLE001 — isolate per-resource
+                logger.error(
+                    "ITERATE: Unhandled exception in resource coroutine",
+                    path=resource.path,
+                    error=str(exc)[:300],
+                )
+                try:
+                    async with self._state_lock:
+                        self._state.update_resource(
+                            resource.path,
+                            status="failed",
+                            error=f"Unhandled exception: {exc}",
+                        )
+                        self._save_state()
+                except Exception:  # noqa: BLE001 — defensive
+                    pass
+
+    if resources_to_optimize:
+        await asyncio.gather(
+            *[_bounded(r) for r in resources_to_optimize]
+        )
+
+    logger.info(
+        "ITERATE: Complete",
+        optimized=len(self._state.get_optimized_resources()),
+        needs_refinement=len(self._state.get_needs_refinement_resources()),
+        failed=len(self._state.get_failed_resources()),
+    )
+
+
+async def _iterate_single_resource(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+) -> None:
+    """Run the inner iteration loop for one resource.
+
+    Extracted from :func:`delegate` so the outer dispatch can fan out
+    across resources.  All state and CHANGELOG writes go through
+    ``self._state_lock``; the inner loop itself stays sequential because
+    iteration N consumes the output of iteration N-1.
     """
     if not self._state or not self._spec:
         return
@@ -58,52 +153,41 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
 
     workspace = self.config.workspace_dir
 
-    # Get resources that need optimization
-    resources_to_optimize = (
-        self._state.get_generated_resources()
-        + self._state.get_needs_refinement_resources()
-    )
-
-    logger.info(
-        "ITERATE: Starting optimization",
-        total=len(resources_to_optimize),
-        threshold=self.config.quality_threshold,
-    )
-
-    for resource in resources_to_optimize:
-        # Guard: skip resources with no file (e.g. failed generation)
-        if resource.version == 0:
-            resource_file = workspace / resource.path
-            if not resource_file.exists():
-                logger.warning(
-                    "ITERATE: Skipping - no file exists",
-                    path=resource.path,
-                )
+    # Guard: skip resources with no file (e.g. failed generation)
+    if resource.version == 0:
+        resource_file = workspace / resource.path
+        if not resource_file.exists():
+            logger.warning(
+                "ITERATE: Skipping - no file exists",
+                path=resource.path,
+            )
+            async with self._state_lock:
                 self._state.update_resource(
                     resource.path,
                     status="failed",
                     error="No file available for optimization",
                 )
                 self._save_state()
-                continue
+            return
 
+    async with self._state_lock:
         self._state.update_resource(resource.path, status="in_progress")
         self._save_state()
 
-        iteration = 0
-        current_quality = 0.0
+    iteration = 0
+    current_quality = 0.0
 
-        while iteration < self.config.max_iterations:
-            iteration += 1
+    while iteration < self.config.max_iterations:
+        iteration += 1
 
-            # Phase A.5: include eval feedback when this resource was
-            # flagged for refinement by EXECUTION_EVAL on a prior round.
-            feedback_block = _build_feedback_block(
-                self._state.feedback_history, resource.path
-            )
+        # Phase A.5: include eval feedback when this resource was
+        # flagged for refinement by EXECUTION_EVAL on a prior round.
+        feedback_block = _build_feedback_block(
+            self._state.feedback_history, resource.path
+        )
 
-            # Build prompt for optimizer
-            prompt = f"""Optimize resource for multi-resource plugin.
+        # Build prompt for optimizer
+        prompt = f"""Optimize resource for multi-resource plugin.
 
 Workspace: {workspace}
 Resource: {workspace / resource.path}
@@ -135,65 +219,65 @@ word_count: {{count}}
 [/SUMMARY]
 """
 
-            logger.info(
-                "ITERATE: Running iteration",
-                path=resource.path,
-                iteration=iteration,
-                timeout=self.config.iterate_timeout,
-            )
-            self._emit_progress(
-                "ITERATE", resource.path, f"iteration {iteration}"
+        logger.info(
+            "ITERATE: Running iteration",
+            path=resource.path,
+            iteration=iteration,
+            timeout=self.config.iterate_timeout,
+        )
+        self._emit_progress(
+            "ITERATE", resource.path, f"iteration {iteration}"
+        )
+
+        try:
+            # Pass timeout directly to agent
+            response = await call_agent_simple(
+                AGENT_ITERATE,
+                prompt,
+                verbose=self.config.verbose or self.config.follow_logs,
+                timeout=float(self.config.iterate_timeout),
             )
 
-            try:
-                # Pass timeout directly to agent
-                response = await call_agent_simple(
-                    AGENT_ITERATE,
-                    prompt,
-                    verbose=self.config.verbose or self.config.follow_logs,
-                    timeout=float(self.config.iterate_timeout),
+            # Parse signal and quality
+            iter_signals = self._signal_parser.parse(response)
+            iter_complete = [
+                s for s in iter_signals
+                if s.type == SignalType.ITERATE_COMPLETE
+                and s.resource_path == resource.path
+            ]
+            if iter_complete:
+                # Parse iteration result
+                result = self._parse_iteration_result(response)
+
+                # Get quality score with all dimensions
+                quality_full = None
+                if result["quality_overall"] is not None:
+                    current_quality = result["quality_overall"]
+                else:
+                    # Fallback: use evaluator for full quality
+                    quality_full = await self._evaluate_resource_quality_full(
+                        resource
+                    )
+                    current_quality = (
+                        quality_full.overall if quality_full else 0.0
+                    )
+
+                # Get word counts for CHANGELOG
+                original_path = workspace / resource.path
+                word_count_before = self._get_word_count(original_path)
+                word_count_after = (
+                    result["word_count"]
+                    if result["word_count"]
+                    else word_count_before
                 )
 
-                # Parse signal and quality
-                iter_signals = self._signal_parser.parse(response)
-                iter_complete = [
-                    s for s in iter_signals
-                    if s.type == SignalType.ITERATE_COMPLETE
-                    and s.resource_path == resource.path
-                ]
-                if iter_complete:
-                    # Parse iteration result
-                    result = self._parse_iteration_result(response)
+                # Get quality before this iteration
+                quality_before = (
+                    resource.quality.overall if resource.quality else 0.0
+                )
 
-                    # Get quality score with all dimensions
-                    quality_full = None
-                    if result["quality_overall"] is not None:
-                        current_quality = result["quality_overall"]
-                    else:
-                        # Fallback: use evaluator for full quality
-                        quality_full = await self._evaluate_resource_quality_full(
-                            resource
-                        )
-                        current_quality = (
-                            quality_full.overall if quality_full else 0.0
-                        )
-
-                    # Get word counts for CHANGELOG
-                    workspace = self.config.workspace_dir
-                    original_path = workspace / resource.path
-                    word_count_before = self._get_word_count(original_path)
-                    word_count_after = (
-                        result["word_count"]
-                        if result["word_count"]
-                        else word_count_before
-                    )
-
-                    # Get quality before this iteration
-                    quality_before = (
-                        resource.quality.overall if resource.quality else 0.0
-                    )
-
-                    # Update CHANGELOG
+                # CHANGELOG writes touch shared on-disk state — serialize.
+                async with self._state_lock:
                     self._update_changelog(
                         resource=resource,
                         iteration=iteration,
@@ -204,18 +288,19 @@ word_count: {{count}}
                         summary=result["summary"] or "",
                     )
 
-                    # Update state with full quality dimensions
-                    if quality_full:
-                        quality = quality_full
-                    else:
-                        quality = ResourceQuality(
-                            overall=current_quality,
-                            completeness=result.get(
-                                "quality_completeness", 0.0
-                            ),
-                            accuracy=result.get("quality_accuracy", 0.0),
-                            clarity=result.get("quality_clarity", 0.0),
-                        )
+                # Update state with full quality dimensions
+                if quality_full:
+                    quality = quality_full
+                else:
+                    quality = ResourceQuality(
+                        overall=current_quality,
+                        completeness=result.get(
+                            "quality_completeness", 0.0
+                        ),
+                        accuracy=result.get("quality_accuracy", 0.0),
+                        clarity=result.get("quality_clarity", 0.0),
+                    )
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
                         version=resource.version + 1,
@@ -224,53 +309,55 @@ word_count: {{count}}
                     )
                     self._save_state()
 
-                    logger.info(
-                        "ITERATE: Iteration complete",
-                        path=resource.path,
-                        iteration=iteration,
-                        quality=f"{current_quality:.2f}",
-                    )
+                logger.info(
+                    "ITERATE: Iteration complete",
+                    path=resource.path,
+                    iteration=iteration,
+                    quality=f"{current_quality:.2f}",
+                )
 
-                    # Check threshold
-                    if current_quality >= self.config.quality_threshold:
+                # Check threshold
+                if current_quality >= self.config.quality_threshold:
+                    async with self._state_lock:
                         self._state.update_resource(
                             resource.path, status="optimized"
                         )
                         # Immediately finalize this resource
                         self._finalize_single_resource(resource.path)
-                        logger.info(
-                            "ITERATE: Resource meets threshold",
-                            path=resource.path,
-                            quality=f"{current_quality:.2f}",
-                        )
-                        self._emit_progress(
-                            "ITERATE",
-                            resource.path,
-                            "complete",
-                            current_quality,
-                        )
-                        break
-
-                else:
-                    # Fallback: check if versioned file was created
-                    versioned_file = workspace / versioned_path(
-                        resource.path, resource.version + 1
+                    logger.info(
+                        "ITERATE: Resource meets threshold",
+                        path=resource.path,
+                        quality=f"{current_quality:.2f}",
                     )
-                    if versioned_file.exists():
-                        # File exists - use evaluator for full quality
-                        fallback_quality = (
-                            await self._evaluate_resource_quality_full(resource)
-                        )
-                        current_quality = (
-                            fallback_quality.overall if fallback_quality else 0.0
-                        )
+                    self._emit_progress(
+                        "ITERATE",
+                        resource.path,
+                        "complete",
+                        current_quality,
+                    )
+                    break
 
-                        if current_quality > 0:
-                            quality = (
-                                fallback_quality
-                                if fallback_quality
-                                else ResourceQuality(overall=current_quality)
-                            )
+            else:
+                # Fallback: check if versioned file was created
+                versioned_file = workspace / versioned_path(
+                    resource.path, resource.version + 1
+                )
+                if versioned_file.exists():
+                    # File exists - use evaluator for full quality
+                    fallback_quality = (
+                        await self._evaluate_resource_quality_full(resource)
+                    )
+                    current_quality = (
+                        fallback_quality.overall if fallback_quality else 0.0
+                    )
+
+                    if current_quality > 0:
+                        quality = (
+                            fallback_quality
+                            if fallback_quality
+                            else ResourceQuality(overall=current_quality)
+                        )
+                        async with self._state_lock:
                             self._state.update_resource(
                                 resource.path,
                                 version=resource.version + 1,
@@ -279,48 +366,50 @@ word_count: {{count}}
                             )
                             self._save_state()
 
-                            logger.info(
-                                "ITERATE: File created (no signal)",
-                                path=resource.path,
-                                quality=f"{current_quality:.2f}",
-                            )
+                        logger.info(
+                            "ITERATE: File created (no signal)",
+                            path=resource.path,
+                            quality=f"{current_quality:.2f}",
+                        )
 
-                            if current_quality >= self.config.quality_threshold:
+                        if current_quality >= self.config.quality_threshold:
+                            async with self._state_lock:
                                 self._state.update_resource(
                                     resource.path, status="optimized"
                                 )
                                 # Immediately finalize this resource
                                 self._finalize_single_resource(resource.path)
-                                break
-                    else:
-                        logger.warning(
-                            "ITERATE: No completion signal or file",
-                            path=resource.path,
-                            iteration=iteration,
-                        )
+                            break
+                else:
+                    logger.warning(
+                        "ITERATE: No completion signal or file",
+                        path=resource.path,
+                        iteration=iteration,
+                    )
 
-            except TimeoutError:
-                logger.error(
-                    "ITERATE: Iteration timed out",
-                    path=resource.path,
-                    iteration=iteration,
-                    timeout=self.config.iterate_timeout,
-                )
-                self._emit_progress(
-                    "ITERATE", resource.path,
-                    f"iteration {iteration} timeout"
-                )
-                break
-            except Exception as e:
-                logger.error(
-                    "ITERATE: Iteration failed",
-                    path=resource.path,
-                    iteration=iteration,
-                    error=str(e),
-                )
-                break
+        except TimeoutError:
+            logger.error(
+                "ITERATE: Iteration timed out",
+                path=resource.path,
+                iteration=iteration,
+                timeout=self.config.iterate_timeout,
+            )
+            self._emit_progress(
+                "ITERATE", resource.path,
+                f"iteration {iteration} timeout"
+            )
+            break
+        except Exception as e:
+            logger.error(
+                "ITERATE: Iteration failed",
+                path=resource.path,
+                iteration=iteration,
+                error=str(e),
+            )
+            break
 
-        # Final status if not already optimized
+    # Final status if not already optimized
+    async with self._state_lock:
         if self._state.resources[resource.path].status != "optimized":
             if current_quality > 0:
                 self._state.update_resource(
@@ -334,13 +423,6 @@ word_count: {{count}}
                 )
 
         self._save_state()
-
-    logger.info(
-        "ITERATE: Complete",
-        optimized=len(self._state.get_optimized_resources()),
-        needs_refinement=len(self._state.get_needs_refinement_resources()),
-        failed=len(self._state.get_failed_resources()),
-    )
 
 
 async def evaluate_resource_quality(

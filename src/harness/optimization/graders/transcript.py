@@ -113,7 +113,29 @@ class TranscriptBuilder:
         if cls_name == "ResultMessage":
             self._total_turns = getattr(message, "num_turns", self._total_turns)
             usage = getattr(message, "usage", None)
-            if usage is not None:
+            # F15: ``usage`` is ``dict[str, Any] | None`` on the SDK side
+            # (see claude_agent_sdk.types.ResultMessage).  The previous
+            # ``getattr(usage, "input_tokens", 0)`` always returned 0
+            # because dicts have no attribute access — every transcript
+            # reported ``total_tokens=0`` despite real usage data
+            # arriving from the SDK.
+            if isinstance(usage, dict):
+                input_tokens = (
+                    usage.get("input_tokens")
+                    or usage.get("prompt_tokens")
+                    or usage.get("input_token_count")
+                    or 0
+                )
+                output_tokens = (
+                    usage.get("output_tokens")
+                    or usage.get("completion_tokens")
+                    or usage.get("output_token_count")
+                    or 0
+                )
+                self._total_tokens = int(input_tokens) + int(output_tokens)
+            elif usage is not None:
+                # Fallback for forward-compat: if a future SDK version
+                # returns a typed object instead of a dict, still try.
                 self._total_tokens = (
                     int(getattr(usage, "input_tokens", 0) or 0)
                     + int(getattr(usage, "output_tokens", 0) or 0)

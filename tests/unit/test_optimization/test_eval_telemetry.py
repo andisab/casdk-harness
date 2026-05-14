@@ -395,11 +395,12 @@ class TestEvalDesignEmitsPhaseDuration:
         orch._progress = progress
         state = MagicMock()
         state.eval_suite_path = ""
-        state.get_generated_resources = MagicMock(
-            return_value=[
-                MagicMock(spec=ResourceStatus, path="agents/x.md", resource_type="agent")
-            ]
-        )
+        r = MagicMock(spec=ResourceStatus, path="agents/x.md", resource_type="agent")
+        r.status = "generated"
+        state.get_generated_resources = MagicMock(return_value=[r])
+        # F11: phase iterates state.resources.values() to find non-failed
+        # resources; fixture must populate this dict explicitly.
+        state.resources = {"agents/x.md": r}
         orch._state = state
 
         # Architect succeeds + writes the file.

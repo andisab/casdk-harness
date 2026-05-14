@@ -450,6 +450,10 @@ class TestExecutionEvalErrorHandling:
     async def test_harness_exception_marks_for_refinement(
         self, tmp_path: Path
     ) -> None:
+        """F8: when EVERY resource errors, the run aborts with RuntimeError
+        rather than silently advancing.  Before F8, this test passed by
+        relying on the silent-advance fail-OPEN bug; now we expect the
+        abort and verify the state was still updated before it fired."""
         orch = _make_orchestrator(
             tmp_path,
             resources=[{"path": "agents/iac.md", "version": 1}],
@@ -460,11 +464,16 @@ class TestExecutionEvalErrorHandling:
             "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
             return_value=mock_harness,
         ):
-            await orch._run_execution_eval()
+            with pytest.raises(
+                RuntimeError, match=r"all \d+ resources errored"
+            ):
+                await orch._run_execution_eval()
 
-        # Treated as regression → flagged for refinement, loops back.
+        # F8: state is updated to needs_refinement BEFORE the abort,
+        # so the resource record reflects the error.
         r = orch._state.resources["agents/iac.md"]
         assert r.status == "needs_refinement"
+        assert "kaboom" in r.error
 
     @pytest.mark.asyncio
     async def test_missing_candidate_file_skipped(self, tmp_path: Path) -> None:

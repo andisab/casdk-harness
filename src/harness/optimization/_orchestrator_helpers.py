@@ -34,6 +34,12 @@ DEFAULT_MIN_CONTENT_SIZE_RATIO = 0.5
 DEFAULT_EVAL_PROMOTION_EPSILON = 0.0
 DEFAULT_MAX_FEEDBACK_ITERATIONS = 2
 
+# F9: cap on VALIDATE → ITERATE loop-backs.  Prevents an infinite loop
+# when the coherence validator keeps flagging the same files across
+# refinement rounds.  Distinct from per-resource refinement_count, which
+# tracks attempts on individual resources; this is a global pipeline cap.
+DEFAULT_MAX_VALIDATE_REFINEMENTS = 2
+
 
 # ---------------------------------------------------------------------------
 # Agent names for delegation
@@ -158,18 +164,29 @@ async def eval_phase_span(
         yield _NoOpSpan()
         return
 
+    # Build the inner span context manager. Tracer-setup errors degrade
+    # to NoOp; this try/except MUST NOT wrap the eventual `yield span`
+    # below — otherwise it would silently swallow user exceptions raised
+    # from inside `async with eval_phase_span(...)` and re-yield a NoOp,
+    # tripping "generator didn't stop after athrow()" on the consumer.
     try:
         tracer = get_tracer()
         async_span = getattr(tracer, "async_span", None)
         if async_span is None:
             yield _NoOpSpan()
             return
-        async with async_span(
+        span_ctx = async_span(
             name, kind=SpanKind.AGENT_EXECUTION, attributes=attributes
-        ) as span:
-            yield span
+        )
     except Exception:  # noqa: BLE001 — tracing must never break grading
         yield _NoOpSpan()
+        return
+
+    # Yield the real span OUTSIDE the try/except so user exceptions
+    # raised from inside the `async with eval_phase_span(...)` body
+    # propagate cleanly to the caller.
+    async with span_ctx as span:
+        yield span
 
 
 class _NoOpSpan:

@@ -52,6 +52,7 @@ def _make_orchestrator(
     state = MagicMock()
     state.eval_suite_path = ""
     generated = []
+    resources_dict: dict[str, Any] = {}
     if generated_resources:
         for entry in generated_resources:
             r = MagicMock(spec=ResourceStatus)
@@ -60,7 +61,11 @@ def _make_orchestrator(
             r.status = entry.get("status", "generated")
             r.version = entry.get("version", 0)
             generated.append(r)
+            resources_dict[r.path] = r
     state.get_generated_resources = MagicMock(return_value=generated)
+    # F11: eval_design now iterates state.resources.values() directly to
+    # find any non-failed resource — the fixture must populate that dict.
+    state.resources = resources_dict
     orch._state = state
 
     return orch

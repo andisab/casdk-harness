@@ -42,7 +42,8 @@ from harness.agent_progress import (
     AgentProgress,
     Colors,
     extract_text_preview,
-    extract_tool_info,
+    extract_tool_calls,
+    extract_tool_info,  # noqa: F401 — kept for backwards-compat callers
 )
 
 # Environment variable for verbose mode inheritance
@@ -432,19 +433,32 @@ async def call_agent(
             async for message in query(prompt=prompt, options=options):
                 # Track progress
                 if progress:
-                    # Check for tool use
-                    tool_info = extract_tool_info(message)
-                    if tool_info:
-                        tool_name, args_summary = tool_info
-                        progress.tool_calls += 1
-
-                        # Track subagent spawns
-                        if tool_name == "Task" and "subagent_type=" in args_summary:
-                            subagent = args_summary.replace("subagent_type=", "")
-                            progress.subagents_spawned.append(subagent)
-                            progress.print_status(progress.format_subagent(subagent))
-                        else:
-                            progress.print_status(progress.format_tool_call(tool_name, args_summary))
+                    # F3: count EVERY tool_use block, not just the first.
+                    # A single AssistantMessage may carry multiple
+                    # tool_use blocks (parallel Read+Write+Bash); the
+                    # old extract_tool_info returned only block[0],
+                    # so the displayed counter undercounted.
+                    tool_calls = extract_tool_calls(message)
+                    if tool_calls:
+                        progress.tool_calls += len(tool_calls)
+                        for tool_name, args_summary in tool_calls:
+                            if (
+                                tool_name == "Task"
+                                and "subagent_type=" in args_summary
+                            ):
+                                subagent = args_summary.replace(
+                                    "subagent_type=", ""
+                                )
+                                progress.subagents_spawned.append(subagent)
+                                progress.print_status(
+                                    progress.format_subagent(subagent)
+                                )
+                            else:
+                                progress.print_status(
+                                    progress.format_tool_call(
+                                        tool_name, args_summary
+                                    )
+                                )
 
                     elif isinstance(message, AssistantMessage):
                         progress.turn_count += 1

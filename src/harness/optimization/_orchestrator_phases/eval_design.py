@@ -42,8 +42,13 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     ``{workspace}/eval/eval-suite.yaml``.  Parses ``[EVAL_DESIGN_COMPLETE]``
     signal and validates the suite file exists before continuing.
 
-    Skips if no resources were generated (e.g., GENERATE phase failed for
-    everything).  In that case the EXECUTION_EVAL phase will also skip.
+    F11: skip only when NO resources exist (e.g., DESIGN failed entirely).
+    Resources at any non-empty status (generated / optimized /
+    needs_refinement) are eligible inputs to the eval-architect, which
+    reads SPEC.md + resource-plan.yaml regardless.  The prior version
+    skipped silently when resources were `optimized` (legitimate state
+    on resume), causing every downstream EXECUTION_EVAL to silently
+    skip too.
     """
     if not self._spec or not self._state:
         return
@@ -54,11 +59,21 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     from harness.subagent import call_agent_simple
 
     workspace = self.config.workspace_dir
-    generated = self._state.get_generated_resources()
 
-    if not generated:
+    # F11: any resource the orchestrator is tracking is fair input
+    # for the eval-architect.  The architect builds scenarios from
+    # SPEC + resource-plan, not from per-resource state.  Failed
+    # resources are excluded only so we don't ask for eval scenarios
+    # on a file that never got generated.
+    eligible = [
+        r
+        for r in self._state.resources.values()
+        if r.status != "failed"
+    ]
+
+    if not eligible:
         logger.warning(
-            "EVAL_DESIGN: No generated resources; skipping eval-suite design",
+            "EVAL_DESIGN: No eligible resources; skipping eval-suite design",
         )
         async with eval_phase_span(
             "eval.design",
@@ -79,7 +94,7 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     resource_plan_path = workspace / "resource-plan.yaml"
 
     resource_list = "\n".join(
-        f"  - {r.path} (type: {r.resource_type})" for r in generated
+        f"  - {r.path} (type: {r.resource_type})" for r in eligible
     )
 
     prompt = f"""Design the evaluation suite for this multi-resource plugin.
@@ -105,7 +120,7 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
     logger.info(
         "EVAL_DESIGN: Delegating to cgf-eval-architect",
         workspace=str(workspace),
-        resources=len(generated),
+        resources=len(eligible),
         timeout=self.config.eval_design_timeout,
     )
     self._emit_progress("EVAL_DESIGN", "all", "in_progress")
@@ -203,7 +218,7 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
             phase="EVAL_DESIGN",
             extra={
                 "harness.eval.outcome": "no_suite_written",
-                "harness.eval.resource_count": len(generated),
+                "harness.eval.resource_count": len(eligible),
             },
         ):
             pass
@@ -220,7 +235,7 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
         phase="EVAL_DESIGN",
         extra={
             "harness.eval.outcome": "success",
-            "harness.eval.resource_count": len(generated),
+            "harness.eval.resource_count": len(eligible),
         },
     ):
         pass

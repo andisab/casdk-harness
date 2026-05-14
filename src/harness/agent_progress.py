@@ -125,44 +125,65 @@ class AgentProgress:
 
 
 def extract_tool_info(message: Any) -> tuple[str, str] | None:
-    """Extract tool name and args summary from a message with tool use.
+    """Extract the first tool_use block's (name, args_summary).
 
-    Returns:
-        (tool_name, args_summary) tuple, or None if no tool use found.
+    Kept for backwards compatibility — callers that only care about
+    "did this message do a tool call?" can use it.  For accurate counting
+    (one tool_use block = one tool call), use :func:`extract_tool_calls`
+    instead, since a single AssistantMessage can carry multiple tool_use
+    blocks (e.g. parallel Read + Write).
+    """
+    calls = extract_tool_calls(message)
+    if not calls:
+        return None
+    return calls[0]
+
+
+def extract_tool_calls(message: Any) -> list[tuple[str, str]]:
+    """Extract ALL tool_use blocks from a message.
+
+    Returns a list of ``(tool_name, args_summary)`` pairs in declaration
+    order.  Empty list when the message has no tool_use blocks (text-only
+    AssistantMessage, ResultMessage, SystemMessage).
+
+    F3 fix: the prior :func:`extract_tool_info` returned the first
+    tool_use block only, so the progress counter undercounted parallel
+    tool calls (Read+Write+Bash in one assistant turn = 1 displayed
+    instead of 3).
     """
     if not hasattr(message, "content"):
-        return None
+        return []
 
     content = message.content
     if isinstance(content, str):
-        return None
+        return []
 
     if not isinstance(content, list):
-        return None
+        return []
 
+    out: list[tuple[str, str]] = []
     for block in content:
-        # Check for tool_use block
-        if hasattr(block, "type") and block.type == "tool_use":
-            tool_name = getattr(block, "name", "unknown")
-            tool_input = getattr(block, "input", {})
+        if not hasattr(block, "type") or block.type != "tool_use":
+            continue
 
-            # Create args summary
-            args_summary = ""
-            if isinstance(tool_input, dict):
-                # For Task tool, show subagent type
-                if tool_name == "Task" and "subagent_type" in tool_input:
-                    args_summary = f"subagent_type={tool_input['subagent_type']}"
-                # For other tools, show first key-value
-                elif tool_input:
-                    first_key = next(iter(tool_input))
-                    first_val = str(tool_input[first_key])[:120]
-                    if len(str(tool_input[first_key])) > 120:
-                        first_val += "..."
-                    args_summary = f"{first_key}={first_val}"
+        tool_name = getattr(block, "name", "unknown")
+        tool_input = getattr(block, "input", {})
 
-            return tool_name, args_summary
+        args_summary = ""
+        if isinstance(tool_input, dict):
+            # For Task tool, show subagent type
+            if tool_name == "Task" and "subagent_type" in tool_input:
+                args_summary = f"subagent_type={tool_input['subagent_type']}"
+            elif tool_input:
+                first_key = next(iter(tool_input))
+                first_val = str(tool_input[first_key])[:120]
+                if len(str(tool_input[first_key])) > 120:
+                    first_val += "..."
+                args_summary = f"{first_key}={first_val}"
 
-    return None
+        out.append((tool_name, args_summary))
+
+    return out
 
 
 def extract_text_preview(message: Any, max_len: int = 150) -> str:

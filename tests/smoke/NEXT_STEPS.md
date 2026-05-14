@@ -5,11 +5,73 @@
 | Phase | Status | Next |
 |---|---|---|
 | Phase 1 — `python-expert` single-resource | ✅ **PASSED** (run #7, commit `12633e9`) | Done |
-| Phase 2 — `iac-team` multi-resource | 🟡 In progress (4 runs, last stopped early) | Implement F4 + F3 → run #5 |
+| Phase 2 — `iac-team` multi-resource | 🟢 **Run #5i in flight** — F3/F4/F5/F6/F7/F8/F9/F10/F11/F12/F13/F14/F15/F16 all shipped | Wait for #5i COMPLETE → close-out |
 
-**Immediate next action:** implement F4 (parallelize per-resource phases) + F3 (display counter fix), then launch run #5. F4 design sketch is below; estimated ~150–200 LoC production + 80–120 LoC tests; expected ~3.6× wall-time speedup.
+**Immediate next action:** monitor run #5i (task `bra22wyod`, log `/tmp/smoke-run5i.log`). EVAL_DESIGN completed at 9m 38s (54 scenarios, F14 self-contained), ITERATE no-op (F11 working), EXECUTION_EVAL just started with `target_key=skills/aws-cli/SKILL.md scenarios=3 scenarios_in_suite=54` — confirming **F13 filter + F16 workspace-root resolution both working under real load**. First end-to-end run with correctly attributed per-resource scenarios.
 
-**Branch state:** `phase-a-fixes` is N commits ahead of `contextgrad-eval` (run `git log contextgrad-eval..phase-a-fixes --oneline` to see). After F4/F3 + a passing run #5, merge to `contextgrad-eval` and push.
+**Branch state:** `phase-a-fixes` ~15 commits ahead of `contextgrad-eval`. **1856 unit tests passing** (118 new across F3/F4/F6/F7/F8/F9/F10/F11/F12/F13/F14/F15/F16). On run #5i pass: docs pass → squash commit → merge to `contextgrad-eval` → push.
+
+---
+
+## Session-accomplished summary (phase-a-fixes branch)
+
+Started session at "F4 + F3 ready to ship, smoke run #5 next." Through runs #5 → #5i, surfaced and fixed **14 distinct defects** spanning the pipeline from prompt-engineering to harness internals to architectural parallelism. End state: first pipeline run with correctly-attributed per-resource eval underway.
+
+### Defects shipped this session
+
+| ID | Severity | Root cause | Fix |
+|---|---|---|---|
+| F3 | P2 cosmetic | `extract_tool_info()` returned only first tool_use block per AssistantMessage | New `extract_tool_calls()` returns full list; subagent loop iterates |
+| F4 | P0 perf | Per-resource phases ran strictly sequential | `asyncio.gather` + semaphore in generate/iterate/execution_eval; `_state_lock` for state writes |
+| F5 | P1 latent | EVAL_DESIGN silently advanced on architect timeout | Raised timeout 600→1200s; hard-abort still TODO |
+| F6 | P1 perf | ITERATE 600s too tight for ~2000-line SKILLs (15 timeouts in run #5b) | Default raised to 1200s |
+| F7 | P0 correctness | Eval-architect produced schema-invalid flat `tool_called` graders | Rewrote prompt with nested-trajectory shape + field-name precision section (`text:` not `rule:`) |
+| F8 | P0 correctness | Promotion gate failed-OPEN: `regressions=[] → "all promoted" → advance`, even when every resource errored | Added `harness_errors` list parallel to regressions; require `promotions > 0`; raise on all-errored; fixed `eval_phase_span` over-catch |
+| F9 | P1 robustness | VALIDATE → ITERATE loop ran 3 rounds in run #5b — versioned-path lookup bypassed per-resource refinement cap | Strip `-v{N}` before lookup + new pipeline-level `max_validate_refinements=2` cap |
+| F10 | P0 correctness | `_invoke_from_resource` raised `'NoneType' object is not iterable` for every scenario (SDK couldn't iterate `allowed_tools=None`) | Pass `tools or []`; mirror subagent F2 wiring — `plugins=[]`, `skills="all"`, `setting_sources=["project"]` |
+| F11 | P1 resumability | EVAL_DESIGN silently skipped when resources at `status=optimized` (resume scenario) | Filter widened: any non-failed resource is eligible |
+| F12 | P0 perf | `EvalHarness.run` iterated scenarios serially within each resource — 54 × 30s = 27 min per arm | `asyncio.gather` + `CGF_EVAL_SCENARIO_CONCURRENCY=6` semaphore over scenarios; arms parallel inside `run_scenario` |
+| F13 | P0 correctness | Every resource ran all 54 scenarios (architect designed 3-per-resource but harness ignored `target_resource`) — 0.40-vs-0.40 cross-resource ties everywhere | `_filter_scenarios_for_resource()` + `_resource_target_key()` with `-v{N}` strip |
+| F14 | P0 correctness | Architect designed scenarios referencing `/sample-app` that doesn't exist in eval sandbox; agents reasonably refused; trajectory graders saw 0 tool calls → unwinnable | Prompt rewrite: every scenario must be self-contained via inline content OR `setup.files` (sandbox-relative paths) |
+| F15 | P1 telemetry | `TranscriptBuilder` used `getattr(usage, "input_tokens", 0)` on a dict-shaped `usage` field → `total_tokens=0` always | Dict access with `usage.get(...)` + fallback aliases (`prompt_tokens`, etc.); typed-object branch retained for forward-compat |
+| F16 | P0 correctness | `_resource_target_key` workspace-root detection picked per-resource `sessions/` dirs as root → `target_key="SKILL.md"` (bare filename) → F13 filter matched nothing → 0 scenarios per resource | Switched marker from `sessions/`/`eval/` to `SPEC.md` / `.claude-plugin/` / `resource-plan.yaml` |
+
+### Test coverage added
+
+- **F3** — 12 tests for `extract_tool_calls` (multi-block, text mix, truncation)
+- **F4** — 23 tests for env-var concurrency, semaphore caps, lock serialization, exception isolation
+- **F6** — 1 default-value test
+- **F7** — runtime smoke only (prompt change)
+- **F8** — 4 tests (2 source-inspection, 2 updated integration)
+- **F9** — 13 tests (versioned-path strip, state field roundtrip, cap-config)
+- **F10** — 5 tests (allowed_tools=[] not None, plugins/skills/setting_sources wiring)
+- **F11** — 3 tests (optimized resources eligible, all-failed skip, no resources skip)
+- **F12** — 11 tests (env resolver, semaphore caps, arm parallelism, source contract)
+- **F13** — 11 tests (filter contract, suite-default inheritance, source wiring) — updated for F16
+- **F15** — 7 tests (dict/typed-object/aliases/empty/None)
+- **F16** — folded into F13 test class with regression case (nested sessions/ dirs)
+
+**Total: ~90 new unit tests on top of baseline ~1740; full suite 1856 passing, 0 failing, 10 pre-existing unrelated errors.**
+
+### Run history
+
+| Run | Branch state | Outcome |
+|---|---|---|
+| #5 (`blrm3pgy6`) | F4+F3 only | EVAL_DESIGN timeout (F5) + ITERATE timeouts (F6) — killed after 2h |
+| #5b (`b39dqzhai`) | + F5/F6 mitigations + slim architect prompt | EXECUTION_EVAL hit F7 schema bug for all 54 scenarios; F8 silently advanced with promoted=0; VALIDATE looped 3 rounds via F9 — killed after 2h 3m |
+| #5c (`brb9z3ydh`) | + F7/F8/F9 (eval-suite patched in-place rule→text) | Confirmed F4 parallelism end-to-end (32 min GENERATE for 18 resources, 3.4× speedup). Hit F10 (NoneType in every scenario) — all 0-vs-0 ties; killed after 4h |
+| #5d (`brt99tgm2`) | + F10 | Pipeline blasted through EVAL_DESIGN+ITERATE+EXECUTION_EVAL in 0 seconds (silent skip per F11) — killed |
+| #5e (`by1ihn3d2`) | + F11 (eval-architect ran), no parallelism yet | EVAL_DESIGN 6m, EXECUTION_EVAL ran sequentially — 30s per single SDK call, projecting 8h total; killed for F12 |
+| #5f (`bg5c4nu7z`) | trials=1 (no F12 yet) | Still serial inside resource; killed for F12 + suite-trim |
+| #5g (`b0fnqfziw`) | + F12 (scenario parallel) + trimmed 5-scenario suite | First real non-zero pass rates! 13 promoted + 3 regression in ~7 min. But **all results were noise** — F13 surfaced (every resource ran all 5 scenarios regardless of target). Killed at 16/18 |
+| #5h (`bnfb5myze`) | + F13/F14/F15 | F13 filter found 0 applicable scenarios for EVERY resource (target_key=`SKILL.md` bare) — F16 surfaced. Killed |
+| **#5i (`bra22wyod`)** | + F16 | **In flight** — EVAL_DESIGN 9m 38s, F13/F16 confirmed working (`target_key=skills/aws-cli/SKILL.md scenarios=3 scenarios_in_suite=54`). EXECUTION_EVAL just started. |
+
+### Cost so far (approximate)
+
+Across runs #5 through #5i: estimated $30–50 of LLM spend. Most was burned on runs #5/#5b/#5c which ran for 2-4 hours each before defects surfaced. Runs #5d through #5i were short (5-15 min each) as defects were caught earlier.
+
+---
 
 ---
 
@@ -145,9 +207,33 @@ A successful run produces:
 | `CGF_DESIGN_MODEL` | sonnet | Eval-architect model |
 | `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
 | `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Token ceiling per eval round |
+| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Simple-threshold gate margin (Phase B replaces) |
 | `CGF_GENERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource generation |
 | `CGF_ITERATE_CONCURRENCY` | 4 | *(F4)* Parallel resource iteration |
 | `CGF_EXECUTION_EVAL_CONCURRENCY` | 2 | *(F4)* Parallel per-resource eval |
+| `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | *(F12)* Parallel scenarios inside EvalHarness.run |
+| `CGF_ITERATE_TIMEOUT` | 1200 | *(F6)* Per-iteration timeout (raised from 600) |
+
+### Phase-timeout defaults (also env-overridable)
+
+| Phase | Default timeout | Env var |
+|---|---|---|
+| RESEARCH | 1800s (30 min) | `CGF_RESEARCH_TIMEOUT` |
+| GENERATE | 900s (15 min) | `CGF_GENERATE_TIMEOUT` |
+| ITERATE | 1200s (20 min) — F6 | `CGF_ITERATE_TIMEOUT` |
+| VALIDATE | 300s (5 min) | `CGF_VALIDATE_TIMEOUT` |
+| DESIGN | 900s (15 min) | (config-only) |
+| EVAL_DESIGN | 1200s (20 min) — F5 mitigation | (config-only) |
+| EXECUTION_EVAL | 1800s (30 min) | (config-only) |
+
+### Pipeline-level caps
+
+| Knob | Default | Source |
+|---|---|---|
+| `max_iterations` (per resource) | 5 | `CGF_MAX_ITERATIONS` env |
+| `max_refinements` (per resource, validate-loop) | 1 | `DEFAULT_MAX_REFINEMENT` |
+| `max_validate_refinements` (pipeline, F9) | 2 | `DEFAULT_MAX_VALIDATE_REFINEMENTS` |
+| `max_feedback_iterations` (execution-eval loop-back) | 2 | `DEFAULT_MAX_FEEDBACK_ITERATIONS` |
 
 ---
 
@@ -175,8 +261,25 @@ A successful run produces:
 |---|---|---|
 | F1 | `setup.sh` host-side tooling probe false-positives | 🟡 Open (cosmetic) |
 | F2 | `context-engineer` 31 turns / 0 tool calls / 15 min timeout — Skill/Task tools not granted; SDK plugins/skills not wired into standalone calls | ✅ `800f20f` (harness) + swe-marketplace `2376404` — 6 agent tool-grants + `subagent.py` SDK wiring |
-| F3 | Progress display shows "0 tool calls" even when tools called | 🟡 Open — bundled with F4 |
-| F4 | Per-resource phases sequential → 4-8h wall-time | 🟡 **Open — next to ship** (this doc, top section) |
+| F3 | Progress display shows "0 tool calls" even when tools called | ✅ `agent_progress.py:extract_tool_calls()` returns ALL tool_use blocks (was first-only) + `subagent.py` iterates the list. 12 unit tests. |
+| F4 | Per-resource phases sequential → 4-8h wall-time | ✅ generate.py / iterate.py / execution_eval.py parallelized via `asyncio.gather` + `Semaphore`; `MultiResourceOrchestrator._state_lock` serializes state writes; 23 unit tests. |
+
+### Runs #5 → #5i — eval-pipeline defects (F5–F16)
+
+| # | Defect | Status |
+|---|---|---|
+| F5 | EVAL_DESIGN silently advances on architect timeout | 🟡 Mitigated (timeout 600→1200) — hard-abort path still TODO for future Phase B work |
+| F6 | ITERATE 600s timeout too tight for ~2000-line SKILLs (15 timeouts in run #5b) | ✅ Default `iterate_timeout` raised 600→1200 in `MultiResourceConfig`; 1 default-value test |
+| F7 | Eval-architect produced flat `type: tool_called` graders, schema-invalid for all 54 scenarios | ✅ Rewrote architect prompt with nested-trajectory shape + field-name precision section (`text:` not `rule:`, `before:`/`after:` not `first:`/`second:`) |
+| F8 | Promotion gate failed-OPEN: `regressions=[]` from all-errored run was treated as "all promoted, advance to VALIDATE" | ✅ Added `harness_errors` list parallel to regressions; gate requires `not regressions AND not harness_errors AND promotions > 0`; new abort path on all-errored; fixed `eval_phase_span` over-catch that was wrapping user exceptions. 4 tests. |
+| F9 | VALIDATE → ITERATE looped 3 rounds in run #5b — versioned-path lookup bypassed per-resource refinement cap | ✅ Strip `-v{N}` suffix before state lookup + new pipeline-level `max_validate_refinements=2` cap. 13 tests + state-field roundtrip. |
+| F10 | `_invoke_from_resource` raised `'NoneType' object is not iterable` for every scenario (SDK couldn't iterate `allowed_tools=None` for skills with no `tools:` frontmatter) | ✅ Pass `tools or []`; add F2 wiring: `plugins=[]`, `skills="all"`, `setting_sources=["project"]`. 5 tests. |
+| F11 | EVAL_DESIGN silently skipped when resources at `status=optimized` (resume scenario produced no eval-suite) | ✅ Filter widened from `get_generated_resources()` to "any non-failed resource". 3 tests. |
+| F12 | `EvalHarness.run` iterated scenarios serially within each resource — 54 × 30s = 27 min per arm → 8h projected | ✅ `asyncio.gather` + `CGF_EVAL_SCENARIO_CONCURRENCY=6` semaphore over scenarios; baseline + candidate arms parallel inside `run_scenario`. 11 tests. |
+| F13 | Every resource ran ALL 54 scenarios (architect designed 3-per-resource but harness ignored `target_resource`) — 0.40-vs-0.40 cross-resource ties everywhere | ✅ `_filter_scenarios_for_resource()` matches scenario's effective `target_resource` (per-scenario override OR suite default) against candidate's normalized path. 11 tests. |
+| F14 | Architect designed trajectory scenarios referencing `/sample-app` that doesn't exist in eval sandbox; agents reasonably refused; trajectory graders penalized 0 tool_calls | ✅ Prompt rewrite with dedicated "Self-contained scenarios" section: every scenario MUST be self-contained via inline content OR `setup.files` (sandbox-relative paths, no `..` or absolute). Anti-pattern section explicitly forbids absolute paths in prompts. |
+| F15 | `TranscriptBuilder` used `getattr(usage, "input_tokens", 0)` on a dict-shaped `usage` field → `total_tokens=0` in every trial | ✅ `isinstance(usage, dict)` branch with `usage.get(...)` and fallback aliases (`prompt_tokens`/`completion_tokens`/`input_token_count`). Typed-object branch retained for forward-compat. 7 tests. |
+| F16 | `_resource_target_key` workspace-root detection picked per-resource `sessions/` dirs as root → `target_key="SKILL.md"` (bare filename) → F13 filter matched nothing → 0 scenarios per resource | ✅ Switched marker hierarchy to `SPEC.md` → `.claude-plugin/` → `resource-plan.yaml`. Pre-F16 markers (`sessions/`, `eval/`) appear nested inside resource dirs and falsely matched. Added regression test for nested-sessions/ scenario. |
 
 ### Phase 1 hardening (P0–P1, all shipped in `12633e9`)
 
@@ -205,22 +308,82 @@ Inspect after:
 
 `phase-a-fixes` lands on `contextgrad-eval` once each milestone has at least one real-LLM validation. All Phase 2 work stays on `contextgrad-eval` — no mirror to `main` planned.
 
-After run #5 PASS:
-```bash
-git checkout contextgrad-eval
-git merge phase-a-fixes
-git push origin contextgrad-eval
-```
+### Close-out sequence (when run #5i passes)
+
+1. **Quick python-expert smoke** — regression check that the single-resource path still works after all 14 fixes:
+   ```bash
+   make smoke FIXTURE=python-expert
+   ```
+2. **Documentation updates** — confirm `CLAUDE.md` "Completed Recently" section + `memory/MEMORY.md` reflect F3-F16.
+3. **Single squash commit** to `phase-a-fixes`:
+   ```bash
+   git checkout phase-a-fixes
+   # Stage all session changes
+   git add -A
+   git commit -m "fix(cgf): Phase-A end-to-end fixes (F3-F16, 14 defects)"
+   ```
+4. **Merge to `contextgrad-eval`**:
+   ```bash
+   git checkout contextgrad-eval
+   git merge phase-a-fixes
+   git push origin contextgrad-eval
+   ```
+5. Leave `phase-a-fixes` as-is for reference.
+
+### Still deferred (next branch)
+
+- **F1** (host-side tooling probe false-positives) — cosmetic
+- **F5** hard-abort path on EVAL_DESIGN timeout (currently mitigated by raising budget)
+- **Phase B** statistical promotion gate (bootstrap-CI on win rate)
+- **Phase C** ephemeral runtime (`docker compose run --rm` per eval)
+- **Phase D** judge calibration + multi-judge ensemble
+- Full 54-scenario suite at trials=3 (currently trials=1 for smoke speed)
 
 ---
 
 ## Between-session resumption
 
-If context clears:
+If context clears mid-session:
 
-1. Read this file top-to-bottom.
+1. Read this file top-to-bottom (status table at top tells you where we are).
 2. `git log --oneline contextgrad-eval..phase-a-fixes` — see what's unmerged.
-3. If F4 + F3 not yet shipped: follow F4's "Implementation order" section above.
-4. Run `make smoke FIXTURE=iac-team` (run #5 validation).
-5. If pass: assess against the Phase 2 pass criteria, then merge `phase-a-fixes` → `contextgrad-eval` + push.
-6. If fail: new defect → file in the F-series ledger above, fix on `phase-a-fixes`, re-run.
+3. Active run? `tail /tmp/smoke-run5*.log` (latest letter suffix).
+4. Defect ledger above shows what's shipped; **assume the current run is in flight at the latest letter** unless logs show otherwise.
+5. If run #5i is still pre-COMPLETE: monitor + close out per "Close-out sequence" above when it lands.
+6. If run #5i failed with a new defect: file it in the F-series ledger, fix on `phase-a-fixes`, re-run.
+
+### Smoke fixture sanity
+
+```bash
+make smoke FIXTURE=iac-team          # full multi-resource pipeline
+make smoke FIXTURE=python-expert     # single-resource sanity check
+```
+
+### Direct orchestrator invocation (for resume scenarios)
+
+When `make smoke` would re-wipe the workspace and you want to resume from existing state:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T main-agent python -c "
+from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization
+import asyncio
+result = asyncio.run(run_multi_resource_optimization('/workspace/iac-team', verbose=True))
+print('Success!' if result.success else f'Failed: {result.error}')
+"
+```
+
+To reset state to a specific phase (e.g., re-run EVAL_DESIGN with existing v1 files):
+```python
+import json
+state = json.load(open('workspace/iac-team/sessions/optimization-state.json'))
+state['current_phase'] = 'EVAL_DESIGN'  # or EXECUTION_EVAL, etc.
+state['phases_completed'] = ['RESEARCH', 'DESIGN', 'QA', 'GENERATE']
+state['eval_suite_path'] = ''
+state['eval_results_path'] = ''
+state['feedback_history'] = []
+state['validate_refinement_count'] = 0
+for r in state['resources'].values():
+    r['status'] = 'optimized'  # F11 accepts; ITERATE no-ops
+    r['version'] = 1
+json.dump(state, open('workspace/iac-team/sessions/optimization-state.json', 'w'), indent=2)
+```
