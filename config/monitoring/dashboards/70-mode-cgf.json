@@ -163,7 +163,7 @@
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
-            {"type": "value", "options": {"0": {"text": " ", "color": "text-secondary", "index": 0}}},
+            {"type": "value", "options": {"0": {"text": " ", "color": "black", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
           ],
           "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
@@ -206,7 +206,7 @@
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
-            {"type": "value", "options": {"0": {"text": " ", "color": "text-secondary", "index": 0}}},
+            {"type": "value", "options": {"0": {"text": " ", "color": "black", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
           ],
           "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
