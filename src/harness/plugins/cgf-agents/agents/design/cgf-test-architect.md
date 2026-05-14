@@ -9,7 +9,7 @@ description: >
   - "Generate test suite from workspace/python-expert/research/eval_criteria.yaml"
   - "Create tests for typescript-expert from eval_criteria.yaml"
   </examples>
-tools: Read, Write, Glob
+tools: Read, Write, Glob, Task, Skill
 model: sonnet
 max_turns: 100
 color: "#689d6a"

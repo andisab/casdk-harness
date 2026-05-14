@@ -6,6 +6,12 @@ that the file actually got written before marking the resource as
 generated.  Retries once with a simplified prompt when the first attempt
 produces no file.
 
+Phase F4: per-resource generation runs in parallel under an
+``asyncio.Semaphore`` bounded by ``CGF_GENERATE_CONCURRENCY`` (default
+4).  Each resource is an independent coroutine; one failure cannot
+poison the batch.  State writes use ``self._state_lock`` to serialize
+disk persistence.
+
 Functions mounted onto :class:`MultiResourceOrchestrator` as:
 
 - ``_delegate_generation`` ← :func:`delegate`
@@ -17,6 +23,8 @@ Functions mounted onto :class:`MultiResourceOrchestrator` as:
 
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,23 +32,154 @@ import structlog
 
 from harness.optimization._orchestrator_helpers import (
     AGENT_GENERATE,
+    DEFAULT_MIN_CONTENT_SIZE_RATIO,
+    classify_sdk_error,
     validate_write_path,
 )
 from harness.optimization.protocols.signals import SignalType
+from harness.progress import ResourceStatus
 
 if TYPE_CHECKING:
     from harness.optimization.multi_resource_orchestrator import (
         MultiResourceOrchestrator,
     )
 
+DEFAULT_GENERATE_CONCURRENCY = 4
+
+
+def _resolve_concurrency(env_var: str, default: int) -> int:
+    """Read an integer concurrency knob from the environment.
+
+    Invalid or non-positive values fall back to ``default``.  This keeps
+    the dispatch code simple at call sites and prevents a stray
+    ``CGF_GENERATE_CONCURRENCY=foo`` from crashing the run.
+    """
+    raw = os.environ.get(env_var)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
+
 logger = structlog.get_logger(__name__)
+
+
+def _check_size_ratio(
+    workspace: Path,
+    resource_path: str,
+) -> tuple[float | None, int, int]:
+    """Compare generated vs v0 baseline size for content-collapse detection.
+
+    Returns ``(ratio, baseline_bytes, generated_bytes)``. ``ratio`` is
+    ``None`` when there's no v0 baseline (creation-mode resource) or the
+    generated file doesn't exist. ``baseline_bytes`` and ``generated_bytes``
+    are 0 in that case respectively.
+
+    The baseline lookup matches the ``-v0.md`` / ``-v0`` naming convention
+    used by ``_backup_original_resource``.
+    """
+    full_path = workspace / resource_path
+    if not full_path.exists():
+        return (None, 0, 0)
+    generated_bytes = full_path.stat().st_size
+
+    # v0 baseline path: same dir, stem + "-v0" + suffix.
+    # E.g. "skills/aws-cli/SKILL.md" → "skills/aws-cli/SKILL-v0.md"
+    baseline = full_path.with_name(f"{full_path.stem}-v0{full_path.suffix}")
+    if not baseline.exists():
+        return (None, 0, generated_bytes)
+    baseline_bytes = baseline.stat().st_size
+    if baseline_bytes == 0:
+        return (None, 0, generated_bytes)
+    return (generated_bytes / baseline_bytes, baseline_bytes, generated_bytes)
 
 
 async def delegate(self: MultiResourceOrchestrator) -> None:
     """Delegate resource generation to context-engineer agent.
 
-    Spawns context-engineer for each pending resource.
-    Parses [GENERATE_COMPLETE:{path}] signals.
+    Phase F4: pending resources are dispatched in parallel under a
+    semaphore.  Per-resource exceptions are isolated to their own
+    coroutine — one failure cannot poison the gather batch.  The
+    sequential outer loop (one resource at a time) is gone; if the user
+    needs the old behavior set ``CGF_GENERATE_CONCURRENCY=1``.
+    """
+    if not self._spec or not self._state:
+        return
+
+    workspace = self.config.workspace_dir
+    pending = self._state.get_pending_resources()
+
+    concurrency = _resolve_concurrency(
+        "CGF_GENERATE_CONCURRENCY", DEFAULT_GENERATE_CONCURRENCY
+    )
+
+    logger.info(
+        "GENERATE: Creating resources",
+        total=len(pending),
+        concurrency=concurrency,
+    )
+
+    self._setup_workspace_dirs(workspace)
+
+    # Load research findings for context (shared across all resources).
+    eval_criteria_path = workspace / "research" / "eval_criteria.yaml"
+    research_context = ""
+    if eval_criteria_path.exists():
+        research_context = f"\nEval criteria: {eval_criteria_path}"
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _bounded(resource: ResourceStatus) -> None:
+        async with semaphore:
+            try:
+                await _generate_single_resource(
+                    self, resource, research_context
+                )
+            except Exception as exc:  # noqa: BLE001 — isolate per-resource
+                # The single-resource path already classifies + records
+                # most failures.  This is the last-line catch: never let
+                # one coroutine abort the gather batch.
+                logger.error(
+                    "GENERATE: Unhandled exception in resource coroutine",
+                    path=resource.path,
+                    error=str(exc)[:300],
+                )
+                try:
+                    async with self._state_lock:
+                        self._state.update_resource(
+                            resource.path,
+                            status="failed",
+                            error=f"Unhandled exception: {exc}",
+                        )
+                        self._save_state()
+                except Exception:  # noqa: BLE001 — defensive
+                    pass
+
+    if pending:
+        await asyncio.gather(*[_bounded(r) for r in pending])
+
+    # plugin.json is written once, after all resources settle.  No race.
+    await self._generate_plugin_json()
+
+    logger.info(
+        "GENERATE: Complete",
+        generated=len(self._state.get_generated_resources()),
+        failed=len(self._state.get_failed_resources()),
+    )
+
+
+async def _generate_single_resource(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+    research_context: str,
+) -> None:
+    """Generate a single resource via context-engineer.
+
+    Extracted from :func:`delegate` to allow parallel dispatch under a
+    semaphore.  All state writes go through ``self._state_lock`` so
+    concurrent coroutines never collide on the on-disk state file.
     """
     if not self._spec or not self._state:
         return
@@ -48,41 +187,27 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     from harness.subagent import call_agent_simple
 
     workspace = self.config.workspace_dir
-    pending = self._state.get_pending_resources()
 
-    logger.info(
-        "GENERATE: Creating resources",
-        total=len(pending),
-    )
+    # Backup original if it exists (for v0 preservation)
+    self._backup_original_resource(resource.path)
 
-    self._setup_workspace_dirs(workspace)
-
-    # Load research findings for context
-    eval_criteria_path = workspace / "research" / "eval_criteria.yaml"
-    research_context = ""
-    if eval_criteria_path.exists():
-        research_context = f"\nEval criteria: {eval_criteria_path}"
-
-    for resource in pending:
-        # Backup original if it exists (for v0 preservation)
-        self._backup_original_resource(resource.path)
-
+    async with self._state_lock:
         self._state.update_resource(resource.path, status="in_progress")
         self._save_state()
 
-        # Find resource info from spec
-        name = Path(resource.path).stem
-        if resource.resource_type == "skill":
-            name = Path(resource.path).parent.name
+    # Find resource info from spec
+    name = Path(resource.path).stem
+    if resource.resource_type == "skill":
+        name = Path(resource.path).parent.name
 
-        purpose = self._get_resource_purpose(name, resource.resource_type)
+    purpose = self._get_resource_purpose(name, resource.resource_type)
 
-        # Build resource-specific instructions
-        resource_instructions = self._get_resource_instructions(
-            name, resource.resource_type, purpose
-        )
+    # Build resource-specific instructions
+    resource_instructions = self._get_resource_instructions(
+        name, resource.resource_type, purpose
+    )
 
-        prompt = f"""Generate a {resource.resource_type} for multi-resource plugin.
+    prompt = f"""Generate a {resource.resource_type} for multi-resource plugin.
 
 Workspace: {workspace}
 Plugin: {self._spec.name}
@@ -109,165 +234,186 @@ word_count: {{count}}
 output_path: {workspace / resource.path}
 """
 
-        logger.info(
-            "GENERATE: Creating resource",
-            path=resource.path,
-            type=resource.resource_type,
-            timeout=self.config.generate_timeout,
+    logger.info(
+        "GENERATE: Creating resource",
+        path=resource.path,
+        type=resource.resource_type,
+        timeout=self.config.generate_timeout,
+    )
+    self._emit_progress("GENERATE", resource.path, "in_progress")
+
+    try:
+        # Pass timeout directly to agent
+        response = await call_agent_simple(
+            AGENT_GENERATE,
+            prompt,
+            verbose=self.config.verbose or self.config.follow_logs,
+            timeout=float(self.config.generate_timeout),
         )
-        self._emit_progress("GENERATE", resource.path, "in_progress")
 
-        try:
-            # Pass timeout directly to agent
-            response = await call_agent_simple(
-                AGENT_GENERATE,
-                prompt,
-                verbose=self.config.verbose or self.config.follow_logs,
-                timeout=float(self.config.generate_timeout),
-            )
-
-            # Parse signal
-            gen_signals = self._signal_parser.parse(response)
-            gen_complete = [
-                s for s in gen_signals
-                if s.type == SignalType.GENERATE_COMPLETE
-                and s.resource_path == resource.path
-            ]
-            if gen_complete:
-                # Validate file actually exists before marking as generated
-                full_path = workspace / resource.path
-                if full_path.exists():
+        # Parse signal
+        gen_signals = self._signal_parser.parse(response)
+        gen_complete = [
+            s for s in gen_signals
+            if s.type == SignalType.GENERATE_COMPLETE
+            and s.resource_path == resource.path
+        ]
+        if gen_complete:
+            # Validate file actually exists before marking as generated
+            full_path = workspace / resource.path
+            if full_path.exists():
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path, status="generated", version=0
                     )
-                    logger.info("GENERATE: Resource created", path=resource.path)
-                    self._emit_progress("GENERATE", resource.path, "complete")
-                else:
-                    logger.error(
-                        "GENERATE: Signal received but file not found",
-                        signal_path=resource.path,
-                        expected_path=str(full_path),
+                # D11: warn if model collapsed content < 50% of baseline.
+                ratio, baseline_bytes, gen_bytes = _check_size_ratio(
+                    workspace, resource.path
+                )
+                if ratio is not None and ratio < DEFAULT_MIN_CONTENT_SIZE_RATIO:
+                    logger.warning(
+                        "GENERATE: Candidate is much smaller than baseline",
+                        path=resource.path,
+                        baseline_bytes=baseline_bytes,
+                        generated_bytes=gen_bytes,
+                        size_ratio=f"{ratio:.2f}",
+                        threshold=DEFAULT_MIN_CONTENT_SIZE_RATIO,
+                        note=(
+                            "Possible content collapse. EXECUTION_EVAL "
+                            "should catch quality regressions, but "
+                            "consider tightening the context-engineer "
+                            "prompt if many resources trip this."
+                        ),
                     )
+                logger.info("GENERATE: Resource created", path=resource.path)
+                self._emit_progress("GENERATE", resource.path, "complete")
+            else:
+                logger.error(
+                    "GENERATE: Signal received but file not found",
+                    signal_path=resource.path,
+                    expected_path=str(full_path),
+                )
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
                         status="failed",
                         error=f"Signal received but file not created at {full_path}",
                     )
-                    self._emit_progress(
-                        "GENERATE", resource.path, "failed - file not found"
-                    )
-            else:
-                # Check if file was created anyway
-                full_path = workspace / resource.path
-                if full_path.exists():
+                self._emit_progress(
+                    "GENERATE", resource.path, "failed - file not found"
+                )
+        else:
+            # Check if file was created anyway
+            full_path = workspace / resource.path
+            if full_path.exists():
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path, status="generated", version=0
                     )
-                    logger.info(
-                        "GENERATE: Resource created (no signal)",
-                        path=resource.path,
-                    )
-                else:
+                logger.info(
+                    "GENERATE: Resource created (no signal)",
+                    path=resource.path,
+                )
+            else:
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
                         status="failed",
                         error="Generation failed - file not created",
                     )
-                    logger.warning(
-                        "GENERATE: Resource not created",
-                        path=resource.path,
-                    )
+                logger.warning(
+                    "GENERATE: Resource not created",
+                    path=resource.path,
+                )
 
-        except TimeoutError:
-            logger.error(
-                "GENERATE: Resource timed out",
-                path=resource.path,
-                timeout=self.config.generate_timeout,
-            )
+    except TimeoutError:
+        logger.error(
+            "GENERATE: Resource timed out",
+            path=resource.path,
+            timeout=self.config.generate_timeout,
+        )
+        async with self._state_lock:
             self._state.update_resource(
                 resource.path,
                 status="failed",
                 error=f"Generation timed out after {self.config.generate_timeout}s",
             )
-            self._emit_progress(
-                "GENERATE", resource.path,
-                f"timeout after {self.config.generate_timeout}s"
-            )
-        except Exception as e:
-            logger.error(
-                "GENERATE: Resource failed",
-                path=resource.path,
-                error=str(e),
-            )
+        self._emit_progress(
+            "GENERATE", resource.path,
+            f"timeout after {self.config.generate_timeout}s"
+        )
+    except Exception as e:
+        category, friendly = classify_sdk_error(e)
+        logger.error(
+            "GENERATE: Resource failed",
+            path=resource.path,
+            error_category=category,
+            error=friendly,
+            raw_error=str(e)[:300],
+        )
+        async with self._state_lock:
             self._state.update_resource(
-                resource.path, status="failed", error=str(e)
+                resource.path, status="failed", error=friendly
             )
 
-        # Retry once with simplified prompt if generation failed
-        full_path = workspace / resource.path
-        if (
-            self._state.resources[resource.path].status == "failed"
-            and not full_path.exists()
-        ):
-            logger.info(
-                "GENERATE: Retrying with simplified prompt",
-                path=resource.path,
+    # Retry once with simplified prompt if generation failed
+    full_path = workspace / resource.path
+    if (
+        self._state.resources[resource.path].status == "failed"
+        and not full_path.exists()
+    ):
+        logger.info(
+            "GENERATE: Retrying with simplified prompt",
+            path=resource.path,
+        )
+        self._emit_progress(
+            "GENERATE", resource.path, "retrying"
+        )
+        retry_prompt = (
+            f"Create {resource.resource_type} file.\n"
+            f"Write to: {full_path}\n"
+            f"Name: {name}\n"
+            f"Purpose: {purpose}\n"
+            f"Keep it focused and concise.\n"
+            f"When done, emit: "
+            f"[GENERATE_COMPLETE:{resource.path}]"
+        )
+        try:
+            await call_agent_simple(
+                AGENT_GENERATE,
+                retry_prompt,
+                verbose=self.config.verbose
+                or self.config.follow_logs,
+                timeout=float(self.config.generate_timeout),
             )
-            self._emit_progress(
-                "GENERATE", resource.path, "retrying"
-            )
-            retry_prompt = (
-                f"Create {resource.resource_type} file.\n"
-                f"Write to: {full_path}\n"
-                f"Name: {name}\n"
-                f"Purpose: {purpose}\n"
-                f"Keep it focused and concise.\n"
-                f"When done, emit: "
-                f"[GENERATE_COMPLETE:{resource.path}]"
-            )
-            try:
-                await call_agent_simple(
-                    AGENT_GENERATE,
-                    retry_prompt,
-                    verbose=self.config.verbose
-                    or self.config.follow_logs,
-                    timeout=float(self.config.generate_timeout),
-                )
-                if full_path.exists():
+            if full_path.exists():
+                async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
                         status="generated",
                         version=0,
                     )
-                    logger.info(
-                        "GENERATE: Resource created on retry",
-                        path=resource.path,
-                    )
-                    self._emit_progress(
-                        "GENERATE", resource.path, "complete"
-                    )
-                else:
-                    logger.warning(
-                        "GENERATE: Retry also failed",
-                        path=resource.path,
-                    )
-            except Exception as retry_err:
-                logger.error(
-                    "GENERATE: Retry failed",
+                logger.info(
+                    "GENERATE: Resource created on retry",
                     path=resource.path,
-                    error=str(retry_err),
                 )
+                self._emit_progress(
+                    "GENERATE", resource.path, "complete"
+                )
+            else:
+                logger.warning(
+                    "GENERATE: Retry also failed",
+                    path=resource.path,
+                )
+        except Exception as retry_err:
+            logger.error(
+                "GENERATE: Retry failed",
+                path=resource.path,
+                error=str(retry_err),
+            )
 
+    async with self._state_lock:
         self._save_state()
-
-    # Generate plugin.json
-    await self._generate_plugin_json()
-
-    logger.info(
-        "GENERATE: Complete",
-        generated=len(self._state.get_generated_resources()),
-        failed=len(self._state.get_failed_resources()),
-    )
 
 
 def setup_workspace_dirs(
@@ -360,8 +506,13 @@ def get_resource_instructions(
 - Description must include specific trigger terms for auto-activation
 - Include "Activate when user mentions:" section
 - Include "Use for:" and "Do NOT use for:" boundaries
-- Keep SKILL.md under 5000 tokens (core instructions only)
-- Use progressive disclosure: reference examples/ and templates/ directories
+- PRESERVE BASELINE DEPTH: if a baseline SKILL.md exists at this path,
+  match or exceed its information density. Only trim content that is
+  outdated, duplicated, or factually wrong. Do NOT compress for the sake
+  of brevity — coverage of edge cases, tool versions, and patterns is
+  the skill's main value.
+- Use progressive disclosure for verbose snippets (move long code/config
+  to examples/ and templates/ subdirectories; reference them from SKILL.md)
 - {trigger_text}
 
 Skill Directory Structure:

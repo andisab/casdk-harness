@@ -13,7 +13,10 @@ import structlog
 
 from harness.agents.definitions import AGENT_DEFINITIONS
 from harness.subagent import (
+    _get_call_retries,
     _get_plugin_base_path,
+    _get_retry_backoff,
+    _is_transient_error,
     _load_plugin_agents,
     call_agent,
     call_agent_simple,
@@ -412,3 +415,178 @@ class TestAgentIntegration:
             harness_agents=harness_count,
             plugin_agents=plugin_count,
         )
+
+
+# ---------------------------------------------------------------------------
+# D9: transient-error retry tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsTransientError:
+    """Tests for _is_transient_error pattern matcher."""
+
+    def test_failed_to_open_socket_is_transient(self) -> None:
+        exc = RuntimeError("API Error: Unable to connect to API (FailedToOpenSocket)")
+        assert _is_transient_error(exc) is True
+
+    def test_connection_refused_is_transient(self) -> None:
+        exc = ConnectionError("API Error: Unable to connect to API (ConnectionRefused)")
+        assert _is_transient_error(exc) is True
+
+    def test_sdk_returned_error_result_success_is_transient(self) -> None:
+        exc = RuntimeError("Claude Code returned an error result: success")
+        assert _is_transient_error(exc) is True
+
+    def test_chained_cause_is_transient(self) -> None:
+        inner = RuntimeError("FailedToOpenSocket")
+        try:
+            try:
+                raise inner
+            except RuntimeError as e:
+                raise ValueError("orchestrator wrap") from e
+        except ValueError as wrap:
+            assert _is_transient_error(wrap) is True
+
+    def test_value_error_not_transient(self) -> None:
+        exc = ValueError("Agent 'foo' not found")
+        assert _is_transient_error(exc) is False
+
+    def test_empty_message_not_transient(self) -> None:
+        exc = RuntimeError("")
+        assert _is_transient_error(exc) is False
+
+    def test_circular_cause_does_not_loop(self) -> None:
+        # Construct a cycle: a.__cause__ → b, b.__cause__ → a
+        a = RuntimeError("a")
+        b = RuntimeError("b")
+        a.__cause__ = b
+        b.__cause__ = a
+        # Should terminate (no exception, no infinite loop)
+        assert _is_transient_error(a) is False
+
+
+class TestRetryConfig:
+    """Tests for env-var-driven retry config helpers."""
+
+    def test_default_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CGF_CALL_RETRIES", raising=False)
+        assert _get_call_retries() == 3
+
+    def test_retries_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CGF_CALL_RETRIES", "7")
+        assert _get_call_retries() == 7
+
+    def test_retries_negative_clamps_to_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CGF_CALL_RETRIES", "-5")
+        assert _get_call_retries() == 0
+
+    def test_retries_garbage_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CGF_CALL_RETRIES", "not-a-number")
+        assert _get_call_retries() == 3
+
+    def test_default_backoff(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CGF_CALL_RETRY_BACKOFF", raising=False)
+        assert _get_retry_backoff() == 5.0
+
+    def test_backoff_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CGF_CALL_RETRY_BACKOFF", "2.5")
+        assert _get_retry_backoff() == 2.5
+
+
+class TestCallAgentSimpleRetry:
+    """Tests for transient-error retry inside call_agent_simple."""
+
+    @pytest.mark.asyncio
+    async def test_succeeds_on_second_attempt_after_transient(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Transient error on attempt 1 → retry → success on attempt 2."""
+        monkeypatch.setenv("CGF_CALL_RETRY_BACKOFF", "0")  # no real sleep
+        call_count = {"n": 0}
+
+        async def fake_call_agent(*_args: Any, **_kwargs: Any):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError(
+                    "Claude Code returned an error result: success"
+                )
+            # Yield an AssistantMessage with a text content block
+            from claude_agent_sdk.types import AssistantMessage  # type: ignore
+
+            class _TextBlock:
+                def __init__(self, text: str) -> None:
+                    self.text = text
+
+            yield AssistantMessage(content=[_TextBlock("OK retry won")], model="sonnet")
+
+        with patch("harness.subagent.call_agent", fake_call_agent):
+            result = await call_agent_simple(
+                "python-expert", "test prompt", max_retries=3
+            )
+
+        assert call_count["n"] == 2
+        assert "OK retry won" in result
+
+    @pytest.mark.asyncio
+    async def test_no_retry_for_non_transient(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-transient errors should propagate immediately, no retry."""
+        monkeypatch.setenv("CGF_CALL_RETRY_BACKOFF", "0")
+        call_count = {"n": 0}
+
+        async def fake_call_agent(*_args: Any, **_kwargs: Any):
+            call_count["n"] += 1
+            raise ValueError("Agent 'no-such-agent' not found")
+            yield  # unreachable; makes this an async generator
+
+        with patch("harness.subagent.call_agent", fake_call_agent):
+            with pytest.raises(ValueError, match="not found"):
+                await call_agent_simple(
+                    "python-expert", "test prompt", max_retries=3
+                )
+
+        assert call_count["n"] == 1  # Only one attempt
+
+    @pytest.mark.asyncio
+    async def test_no_retry_for_timeout(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TimeoutError must propagate without retry; per-call timeout is hard."""
+        monkeypatch.setenv("CGF_CALL_RETRY_BACKOFF", "0")
+        call_count = {"n": 0}
+
+        async def fake_call_agent(*_args: Any, **_kwargs: Any):
+            call_count["n"] += 1
+            raise TimeoutError("query timed out")
+            yield
+
+        with patch("harness.subagent.call_agent", fake_call_agent):
+            with pytest.raises(TimeoutError):
+                await call_agent_simple(
+                    "python-expert", "test prompt", max_retries=3
+                )
+
+        assert call_count["n"] == 1
+
+    @pytest.mark.asyncio
+    async def test_max_retries_exhausted_reraises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After max_retries+1 transient failures, the last error propagates."""
+        monkeypatch.setenv("CGF_CALL_RETRY_BACKOFF", "0")
+        call_count = {"n": 0}
+
+        async def fake_call_agent(*_args: Any, **_kwargs: Any):
+            call_count["n"] += 1
+            raise RuntimeError("FailedToOpenSocket attempt " + str(call_count["n"]))
+            yield
+
+        with patch("harness.subagent.call_agent", fake_call_agent):
+            with pytest.raises(RuntimeError, match="FailedToOpenSocket"):
+                await call_agent_simple(
+                    "python-expert", "test prompt", max_retries=2
+                )
+
+        # max_retries=2 means 1 initial + 2 retries = 3 attempts total
+        assert call_count["n"] == 3

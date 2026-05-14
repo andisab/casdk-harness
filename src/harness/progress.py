@@ -734,6 +734,11 @@ class MultiResourceState:
     feedback_history: list[dict[str, Any]] = field(default_factory=list)
     quality_threshold: float = 0.85
     max_iterations: int = 5
+    # F9: count of VALIDATE → ITERATE loop-backs.  Capped by
+    # config.max_validate_refinements so a flaky coherence-validator
+    # (or an upstream defect that VALIDATE keeps flagging) can't spin
+    # the pipeline indefinitely.
+    validate_refinement_count: int = 0
     started_at: str = ""
     updated_at: str = ""
 
@@ -762,6 +767,7 @@ class MultiResourceState:
             "feedback_history": self.feedback_history,
             "quality_threshold": self.quality_threshold,
             "max_iterations": self.max_iterations,
+            "validate_refinement_count": self.validate_refinement_count,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
         }
@@ -787,6 +793,7 @@ class MultiResourceState:
             feedback_history=data.get("feedback_history", []),
             quality_threshold=data.get("quality_threshold", 0.85),
             max_iterations=data.get("max_iterations", 5),
+            validate_refinement_count=data.get("validate_refinement_count", 0),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
         )

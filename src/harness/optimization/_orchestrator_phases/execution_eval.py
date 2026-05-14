@@ -13,6 +13,13 @@ where ε is :data:`harness.optimization._orchestrator_helpers.DEFAULT_EVAL_PROMO
 (default 0.0), overridable per-config and via ``CGF_EVAL_PROMOTION_EPSILON``
 env var.  Phase B replaces with bootstrap CI on win rate.
 
+Phase F4: per-resource eval runs in parallel under an
+``asyncio.Semaphore`` bounded by ``CGF_EXECUTION_EVAL_CONCURRENCY``
+(default 2 — eval is more expensive than generate/iterate, so we cap
+lower).  The promotion / regression / feedback-loop decision runs AFTER
+the gather batch completes — it inspects the full aggregate, not
+streaming partials.
+
 This is NOT an agent delegation — :class:`EvalHarness` is invoked
 directly.  Method name uses ``run_phase`` rather than ``delegate`` to
 make that distinction visible at the call site.
@@ -20,7 +27,9 @@ make that distinction visible at the call site.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,6 +59,25 @@ if TYPE_CHECKING:
     )
 
 logger = structlog.get_logger(__name__)
+
+DEFAULT_EXECUTION_EVAL_CONCURRENCY = 2
+
+
+def _resolve_concurrency(env_var: str, default: int) -> int:
+    """Read an integer concurrency knob from the environment.
+
+    Eval is more expensive than generate/iterate (two arms per resource,
+    multiple scenarios per arm, judge calls), so the default cap is
+    lower.  Invalid / non-positive values fall back to ``default``.
+    """
+    raw = os.environ.get(env_var)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(1, value)
 
 
 async def run_phase(self: MultiResourceOrchestrator) -> None:
@@ -128,6 +156,9 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     epsilon = _resolve_epsilon(self)
     max_feedback = _resolve_max_feedback(self)
     feedback_count = len(self._state.feedback_history)
+    concurrency = _resolve_concurrency(
+        "CGF_EXECUTION_EVAL_CONCURRENCY", DEFAULT_EXECUTION_EVAL_CONCURRENCY
+    )
 
     logger.info(
         "EXECUTION_EVAL: Starting per-resource eval",
@@ -136,127 +167,87 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         epsilon=epsilon,
         feedback_iteration=feedback_count + 1,
         max_feedback=max_feedback,
+        concurrency=concurrency,
     )
     self._emit_progress("EXECUTION_EVAL", "all", "in_progress")
 
     # --- per-resource evaluation ---
+    # Each coroutine appends a tuple to its own slot; gather collects all.
+    # The promotion/regression decision happens AFTER the gather so the
+    # ordering is deterministic regardless of completion order.
+    harness = EvalHarness()  # in-process; Phase C adds ephemeral_container
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _eval_one(
+        resource: ResourceStatus,
+    ) -> tuple[ResourceStatus, EvalResults] | None:
+        async with semaphore:
+            return await _eval_single_resource(
+                self,
+                resource=resource,
+                workspace=workspace,
+                suite_path=suite_path,
+                harness=harness,
+                epsilon=epsilon,
+            )
+
+    raw_outcomes = await asyncio.gather(
+        *[_eval_one(r) for r in iterated_resources],
+        return_exceptions=True,
+    )
+
     per_resource_results: list[tuple[ResourceStatus, EvalResults]] = []
     regressions: list[tuple[ResourceStatus, EvalResults]] = []
     promotions: list[ResourceStatus] = []
+    # F8: track harness errors separately so the gate can't fail-OPEN
+    # when every resource errored.  Previously, errors returned None or
+    # were caught here without joining `regressions`, so `not regressions`
+    # was True and the orchestrator logged "All resources promoted" with
+    # promoted=0 and advanced silently.  Errors now block promotion.
+    harness_errors: list[tuple[ResourceStatus, str]] = []
 
-    harness = EvalHarness()  # in-process; Phase C adds ephemeral_container
-
-    for resource in iterated_resources:
-        baseline_path = _resolve_baseline_path(workspace, resource)
-        candidate_path = workspace / versioned_path(
-            resource.path, resource.version
-        )
-
-        if not candidate_path.exists():
-            logger.warning(
-                "EXECUTION_EVAL: Candidate file missing; skipping",
+    for resource, outcome in zip(iterated_resources, raw_outcomes, strict=True):
+        if isinstance(outcome, Exception):
+            logger.error(
+                "EXECUTION_EVAL: Unhandled exception in resource coroutine",
                 path=resource.path,
-                expected=str(candidate_path),
+                error=str(outcome)[:300],
             )
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    error=f"Unhandled exception: {outcome}",
+                )
+            harness_errors.append((resource, f"unhandled: {outcome}"))
             continue
-
-        results_dir = workspace / "eval" / "results" / f"{resource.path}-v{resource.version}"
-
-        # Per-resource sub-span (Phase A.7).  Captures the eval task_id
-        # from the parent span via self._eval_task_id, plus per-resource
-        # attributes that show up in OTel trace explorers.
-        per_resource_task_id = getattr(self, "_eval_task_id", "unknown")
-        async with eval_phase_span(
-            "eval.execution.resource",
-            task_id=per_resource_task_id,
-            phase="EXECUTION_EVAL",
-            extra={
-                "harness.eval.resource_path": resource.path,
-                "harness.eval.resource_type": resource.resource_type,
-                "harness.eval.resource_version": resource.version,
-            },
-        ) as resource_span:
-            try:
-                results = await harness.run(
-                    eval_suite_path=suite_path,
-                    baseline_resource=baseline_path,
-                    candidate_resource=candidate_path,
-                    results_dir=results_dir,
-                )
-            except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
-                logger.error(
-                    "EXECUTION_EVAL: Harness raised; treating as regression",
-                    path=resource.path,
-                    error=str(exc),
-                )
-                resource_span.set_attribute("harness.eval.outcome", "error")
-                resource_span.set_attribute("harness.eval.error", str(exc)[:200])
-                self._emit_progress(
-                    "EXECUTION_EVAL", resource.path, f"harness error: {exc}",
-                )
-                # Mark for refinement so the loop has a chance to recover.
-                self._state.update_resource(
-                    resource.path,
-                    status="needs_refinement",
-                    error=f"Eval harness error: {exc}",
-                )
-                continue
-
-            per_resource_results.append((resource, results))
-
-            # Per-scenario / per-arm telemetry (Phase A.6).
-            _emit_scenario_metrics(results)
-
-            # Span outcome attributes set after we know the verdict.
-            resource_span.set_attribute(
-                "harness.eval.candidate_pass_rate", results.candidate_pass_rate
+        if outcome is None:
+            # _eval_single_resource returned None.  Two cases:
+            #   (a) candidate file missing → skipped (very rare; state
+            #       was not modified, resource stays as-is)
+            #   (b) harness raised → status already set to
+            #       needs_refinement inside the helper
+            # We treat both as harness_errors for gate purposes so the
+            # missing-result can never be misread as "all promoted."
+            res_state = self._state.resources.get(resource.path)
+            err_reason = (
+                res_state.error
+                if res_state and res_state.error
+                else "no evaluation result"
             )
-            resource_span.set_attribute(
-                "harness.eval.baseline_pass_rate", results.baseline_pass_rate
+            logger.warning(
+                "EXECUTION_EVAL: No result returned; counting as error",
+                path=resource.path,
+                reason=err_reason[:200],
             )
-            resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
-
-            if _should_promote(results, epsilon):
-                promotions.append(resource)
-                self._state.update_resource(resource.path, status="optimized")
-                self._finalize_single_resource(resource.path)
-                # Tokens-to-goal: at promotion, observe the cumulative tokens
-                # for this resource.  Phase A approximation: per-run total only;
-                # cumulative across feedback iterations is a Phase B refinement.
-                harness_eval_tokens_to_goal.labels(
-                    resource_type=resource.resource_type
-                ).observe(results.total_tokens)
-                resource_span.set_attribute("harness.eval.outcome", "promoted")
-                self._emit_progress(
-                    "EXECUTION_EVAL", resource.path, "promoted",
-                    results.candidate_pass_rate,
-                )
-                logger.info(
-                    "EXECUTION_EVAL: Promoted",
-                    path=resource.path,
-                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                    win_rate=f"{results.win_rate:.2f}",
-                )
-            else:
-                regressions.append((resource, results))
-                self._state.update_resource(
-                    resource.path,
-                    status="needs_refinement",
-                    refinement_count=resource.refinement_count + 1,
-                )
-                resource_span.set_attribute("harness.eval.outcome", "regressed")
-                self._emit_progress(
-                    "EXECUTION_EVAL", resource.path, "regression",
-                    results.candidate_pass_rate,
-                )
-                logger.warning(
-                    "EXECUTION_EVAL: Regression",
-                    path=resource.path,
-                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                    win_rate=f"{results.win_rate:.2f}",
-                )
+            harness_errors.append((resource, err_reason))
+            continue
+        res, results = outcome
+        per_resource_results.append((res, results))
+        if _should_promote(results, epsilon):
+            promotions.append(res)
+        else:
+            regressions.append((res, results))
 
     # --- aggregate write ---
     aggregate_path = _write_aggregate_results(
@@ -271,7 +262,12 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         )
 
     # --- decision: forward, loop, or escalate ---
-    if not regressions:
+    # F8: the gate must NEVER advance to VALIDATE with zero successful
+    # promotions when something went wrong.  The forward branch now
+    # requires both: (1) zero regressions AND (2) zero harness errors
+    # AND (3) at least one actual promotion.  Otherwise we either loop
+    # back or escalate, depending on feedback budget.
+    if not regressions and not harness_errors and promotions:
         logger.info(
             "EXECUTION_EVAL: All resources promoted; advancing to VALIDATE",
             promoted=len(promotions),
@@ -279,6 +275,47 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         self._emit_progress("EXECUTION_EVAL", "all", "complete")
         self._advance_phase(OptimizationPhase.VALIDATE)
         return
+
+    if not promotions and (regressions or harness_errors):
+        logger.error(
+            "EXECUTION_EVAL: No resources promoted",
+            regressions=len(regressions),
+            harness_errors=len(harness_errors),
+            promotions=0,
+        )
+
+    # F8: hard-abort when EVERY resource errored.  This usually means
+    # eval-suite.yaml itself is broken (schema-invalid, missing fields)
+    # or the harness has a config issue — looping back to ITERATE would
+    # produce a new v{N+1} but hit the exact same suite-level error.
+    # Better to fail loudly than burn another 30 minutes of LLM time.
+    if (
+        len(harness_errors) == len(iterated_resources)
+        and not regressions
+        and not promotions
+    ):
+        # Pick a representative error to surface.
+        sample_error = (
+            harness_errors[0][1] if harness_errors else "unknown"
+        )
+        logger.error(
+            "EXECUTION_EVAL: ALL resources errored — aborting run",
+            harness_errors=len(harness_errors),
+            sample_error=sample_error[:300],
+            hint=(
+                "Inspect eval/eval-suite.yaml for schema violations. "
+                "Looping back would not help — every retry will hit "
+                "the same suite-level error."
+            ),
+        )
+        self._emit_progress(
+            "EXECUTION_EVAL", "all",
+            f"aborted: all {len(harness_errors)} resources errored",
+        )
+        raise RuntimeError(
+            f"EXECUTION_EVAL failed: all {len(harness_errors)} "
+            f"resources errored (sample: {sample_error[:200]})"
+        )
 
     if feedback_count >= max_feedback:
         logger.warning(
@@ -316,6 +353,135 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
 # ---------------------------------------------------------------------------
 # Helpers (module-level, not mounted on the orchestrator class)
 # ---------------------------------------------------------------------------
+
+
+async def _eval_single_resource(
+    self: MultiResourceOrchestrator,
+    *,
+    resource: ResourceStatus,
+    workspace: Path,
+    suite_path: Path,
+    harness: EvalHarness,
+    epsilon: float,
+) -> tuple[ResourceStatus, EvalResults] | None:
+    """Run EvalHarness for one resource and apply the promotion decision.
+
+    Returns ``(resource, results)`` so the caller can build aggregate
+    output, or ``None`` when the resource was skipped (candidate file
+    missing).  State updates (``status``, promotion finalization,
+    refinement count) happen inside ``self._state_lock``.
+    """
+    baseline_path = _resolve_baseline_path(workspace, resource)
+    candidate_path = workspace / versioned_path(
+        resource.path, resource.version
+    )
+
+    if not candidate_path.exists():
+        logger.warning(
+            "EXECUTION_EVAL: Candidate file missing; skipping",
+            path=resource.path,
+            expected=str(candidate_path),
+        )
+        return None
+
+    results_dir = workspace / "eval" / "results" / f"{resource.path}-v{resource.version}"
+
+    # Per-resource sub-span (Phase A.7).  Captures the eval task_id
+    # from the parent span via self._eval_task_id, plus per-resource
+    # attributes that show up in OTel trace explorers.
+    per_resource_task_id = getattr(self, "_eval_task_id", "unknown")
+    async with eval_phase_span(
+        "eval.execution.resource",
+        task_id=per_resource_task_id,
+        phase="EXECUTION_EVAL",
+        extra={
+            "harness.eval.resource_path": resource.path,
+            "harness.eval.resource_type": resource.resource_type,
+            "harness.eval.resource_version": resource.version,
+        },
+    ) as resource_span:
+        try:
+            results = await harness.run(
+                eval_suite_path=suite_path,
+                baseline_resource=baseline_path,
+                candidate_resource=candidate_path,
+                results_dir=results_dir,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
+            logger.error(
+                "EXECUTION_EVAL: Harness raised; treating as regression",
+                path=resource.path,
+                error=str(exc),
+            )
+            resource_span.set_attribute("harness.eval.outcome", "error")
+            resource_span.set_attribute("harness.eval.error", str(exc)[:200])
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, f"harness error: {exc}",
+            )
+            # Mark for refinement so the loop has a chance to recover.
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    error=f"Eval harness error: {exc}",
+                )
+            return None
+
+        # Per-scenario / per-arm telemetry (Phase A.6).
+        _emit_scenario_metrics(results)
+
+        # Span outcome attributes set after we know the verdict.
+        resource_span.set_attribute(
+            "harness.eval.candidate_pass_rate", results.candidate_pass_rate
+        )
+        resource_span.set_attribute(
+            "harness.eval.baseline_pass_rate", results.baseline_pass_rate
+        )
+        resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
+
+        if _should_promote(results, epsilon):
+            async with self._state_lock:
+                self._state.update_resource(resource.path, status="optimized")
+                self._finalize_single_resource(resource.path)
+            # Tokens-to-goal: at promotion, observe the cumulative tokens
+            # for this resource.  Phase A approximation: per-run total only;
+            # cumulative across feedback iterations is a Phase B refinement.
+            harness_eval_tokens_to_goal.labels(
+                resource_type=resource.resource_type
+            ).observe(results.total_tokens)
+            resource_span.set_attribute("harness.eval.outcome", "promoted")
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, "promoted",
+                results.candidate_pass_rate,
+            )
+            logger.info(
+                "EXECUTION_EVAL: Promoted",
+                path=resource.path,
+                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                win_rate=f"{results.win_rate:.2f}",
+            )
+        else:
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    refinement_count=resource.refinement_count + 1,
+                )
+            resource_span.set_attribute("harness.eval.outcome", "regressed")
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, "regression",
+                results.candidate_pass_rate,
+            )
+            logger.warning(
+                "EXECUTION_EVAL: Regression",
+                path=resource.path,
+                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                win_rate=f"{results.win_rate:.2f}",
+            )
+
+    return (resource, results)
 
 
 def _resources_to_evaluate(

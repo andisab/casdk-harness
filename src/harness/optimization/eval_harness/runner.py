@@ -14,6 +14,13 @@ Aggregation lives in :mod:`harness.optimization.eval_harness.aggregate`.
 Phase A ships ``runtime="in_process"`` only — Phase C will add an
 ``"ephemeral_container"`` runtime that wraps each trial in
 ``docker compose run --rm`` for SWE-bench-style determinism.
+
+F12: Scenarios within a single ``run()`` execute in parallel under an
+``asyncio.Semaphore`` bounded by ``CGF_EVAL_SCENARIO_CONCURRENCY``
+(default 6).  The two arms of a scenario also run concurrently — they
+are independent SDK calls and gain a free 2x on top of the
+inter-scenario fan-out.  Set the concurrency env var to ``1`` to
+restore sequential behavior (useful for rate-limit debugging).
 """
 
 from __future__ import annotations
@@ -66,6 +73,122 @@ Runtime = Literal["in_process", "ephemeral_container"]
 
 
 _VALID_MODELS = {"sonnet", "opus", "haiku"}
+
+
+DEFAULT_EVAL_SCENARIO_CONCURRENCY = 6
+
+
+def _resolve_scenario_concurrency() -> int:
+    """Read ``CGF_EVAL_SCENARIO_CONCURRENCY`` from the environment.
+
+    F12: bounds the per-resource fan-out across scenarios.  Default
+    6 gives ~12 in-flight SDK calls per resource (6 scenarios × 2
+    arms parallel).  Combined with ``CGF_EXECUTION_EVAL_CONCURRENCY=2``
+    that's up to 24 concurrent calls — well below typical SDK
+    rate limits but enough to amortize the per-call overhead.
+
+    Invalid or non-positive values fall back to the default.  Set
+    to 1 to restore the strict-sequential pre-F12 behavior.
+    """
+    raw = os.environ.get("CGF_EVAL_SCENARIO_CONCURRENCY")
+    if not raw:
+        return DEFAULT_EVAL_SCENARIO_CONCURRENCY
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_EVAL_SCENARIO_CONCURRENCY
+    return max(1, value)
+
+
+def _resource_target_key(candidate_path: Path) -> str:
+    """Reduce a candidate file path to the canonical key used by
+    scenario.target_resource.
+
+    Scenarios target the BASE resource path (e.g.
+    ``skills/aws-cli/SKILL.md``), but the candidate file on disk has
+    a version suffix (e.g. ``skills/aws-cli/SKILL-v1.md``).  Strip
+    ``-v{N}`` from the stem before matching, and return a path
+    relative to the workspace root.
+
+    F16: workspace-root detection MUST use a marker only the true
+    workspace root has — ``SPEC.md``.  Previous logic walked up
+    looking for ``sessions/`` or ``eval/``, but per-resource
+    ``sessions/`` directories (created by ProgressManager during
+    optimization rounds) exist nested *inside* resource dirs (e.g.
+    ``skills/aws-cli/sessions/``).  Detection picked the resource dir
+    itself as root, dropping the type prefix from the returned key
+    (``SKILL.md`` instead of ``skills/aws-cli/SKILL.md``).  The result
+    was: every resource produced ``target_key`` equal to just the
+    filename, no scenarios matched the filter, and every resource
+    reported 0-vs-0 ties.  See run #5h log for the failure mode.
+
+    Examples::
+
+        /workspace/iac-team/skills/aws-cli/SKILL-v1.md
+            → skills/aws-cli/SKILL.md
+        /workspace/iac-team/agents/iac-analyzer-v3.md
+            → agents/iac-analyzer.md
+    """
+    import re
+
+    name = candidate_path.name
+    # Strip "-v{N}" from the stem while keeping the suffix.
+    stripped = re.sub(r"-v\d+(\.[^/]+)$", r"\1", name)
+    base = candidate_path.with_name(stripped)
+
+    # F16: ``SPEC.md`` is the workspace-root marker because (a) it's
+    # required at the workspace root for the orchestrator to find the
+    # spec and (b) no per-resource subdirectory carries one.  ``.claude-plugin/``
+    # is the secondary marker for plugin-style layouts where SPEC.md
+    # has been renamed.  Fall back to ``resource-plan.yaml`` last
+    # since it appears mid-pipeline.
+    workspace_root: Path | None = None
+    for parent in base.parents:
+        if (parent / "SPEC.md").exists():
+            workspace_root = parent
+            break
+        if (parent / ".claude-plugin").is_dir():
+            workspace_root = parent
+            break
+        if (parent / "resource-plan.yaml").exists():
+            workspace_root = parent
+            break
+
+    if workspace_root is not None:
+        try:
+            return str(base.relative_to(workspace_root))
+        except ValueError:
+            pass
+
+    # Fallback: return the last 2-3 components.  Keeps unit tests
+    # happy when run against ephemeral tmp_path layouts that don't
+    # have SPEC.md.
+    parts = base.parts
+    if len(parts) >= 3 and parts[-3] == "skills":
+        return str(Path(*parts[-3:]))
+    if len(parts) >= 2:
+        return str(Path(*parts[-2:]))
+    return base.name
+
+
+def _filter_scenarios_for_resource(
+    suite: EvalSuite,
+    target_key: str,
+) -> list[ScenarioWithGraders]:
+    """Return scenarios whose effective target_resource matches ``target_key``.
+
+    "Effective" means: per-scenario override if set, otherwise the
+    suite-level default.  Matching is exact-string against the
+    workspace-relative path.  Scenarios that resolve to neither match
+    nor the suite default are dropped — they were authored for a
+    different resource and have no place running against this one.
+    """
+    out: list[ScenarioWithGraders] = []
+    for swg in suite.scenarios:
+        effective = swg.scenario.target_resource or suite.target_resource
+        if effective == target_key:
+            out.append(swg)
+    return out
 
 
 def _parse_resource_file(resource_path: Path) -> dict[str, Any]:
@@ -190,28 +313,67 @@ class EvalHarness:
         When ``results_dir`` is provided, the harness writes
         ``eval-results.json`` to that directory.  When omitted, the
         results are returned in-memory only — useful for tests.
+
+        F12: scenarios run in parallel under a semaphore bounded by
+        ``CGF_EVAL_SCENARIO_CONCURRENCY`` (default 6).
+
+        F13: scenarios are filtered by ``target_resource`` — only
+        scenarios whose ``target_resource`` matches the candidate file
+        (after stripping any ``-v{N}`` suffix) actually execute.
+        Pre-F13 every resource ran every scenario in the suite, so
+        the same 5-out-of-54 scenarios fired for every resource pair
+        and the pass-rate signal was meaningless cross-resource
+        accidents.  Scenarios with no explicit ``target_resource``
+        fall back to the suite-level default.
         """
         suite_path = Path(eval_suite_path)
         baseline_path = Path(baseline_resource)
         candidate_path = Path(candidate_resource)
 
         suite = load_eval_suite(suite_path)
+        concurrency = _resolve_scenario_concurrency()
+
+        # F13: filter to scenarios targeting THIS resource.
+        target_key = _resource_target_key(candidate_path)
+        applicable = _filter_scenarios_for_resource(
+            suite, target_key
+        )
+        if not applicable:
+            logger.warning(
+                "eval_harness.run no applicable scenarios; returning empty",
+                candidate=str(candidate_path),
+                target_key=target_key,
+                suite_default=suite.target_resource,
+                total_in_suite=len(suite.scenarios),
+            )
+
         logger.info(
             "eval_harness.run start",
             suite=str(suite_path),
             baseline=str(baseline_path),
             candidate=str(candidate_path),
-            scenarios=len(suite.scenarios),
+            scenarios=len(applicable),
+            scenarios_in_suite=len(suite.scenarios),
+            target_key=target_key,
             trials_per_scenario=suite.config.trials_per_scenario,
+            scenario_concurrency=concurrency,
         )
 
-        scenarios: list[ScenarioResult] = []
-        for scenario_with_graders in suite.scenarios:
-            scenarios.append(
-                await self.run_scenario(
-                    scenario_with_graders, baseline_path, candidate_path, suite
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _one(swg: ScenarioWithGraders) -> ScenarioResult:
+            async with semaphore:
+                return await self.run_scenario(
+                    swg, baseline_path, candidate_path, suite
                 )
-            )
+
+        # asyncio.gather preserves input order, so `scenarios` ends up
+        # in the same order as the filtered list regardless of which
+        # coroutine finishes first.  Downstream aggregation relies on
+        # this for deterministic by_level / by_tag reports.
+        scenarios: list[ScenarioResult] = list(
+            await asyncio.gather(*[_one(swg) for swg in applicable])
+        )
 
         results = self._assemble_results(
             scenarios, suite_path, baseline_path, candidate_path
@@ -236,12 +398,22 @@ class EvalHarness:
         candidate_resource: Path,
         suite: EvalSuite,
     ) -> ScenarioResult:
-        """Run K trials of each arm against one scenario."""
-        baseline_trials = await self._run_arm(
-            scenario_with_graders, baseline_resource, "baseline", suite
-        )
-        candidate_trials = await self._run_arm(
-            scenario_with_graders, candidate_resource, "candidate", suite
+        """Run K trials of each arm against one scenario.
+
+        F12: baseline and candidate arms are independent SDK calls —
+        no shared state, no causal dependency — so we run them
+        concurrently to halve scenario wall time.  Trials within an
+        arm remain sequential (their results are aggregated by
+        :func:`aggregate_arm`; sequential is the safer default for
+        rate-limit friendliness).
+        """
+        baseline_trials, candidate_trials = await asyncio.gather(
+            self._run_arm(
+                scenario_with_graders, baseline_resource, "baseline", suite
+            ),
+            self._run_arm(
+                scenario_with_graders, candidate_resource, "candidate", suite
+            ),
         )
 
         baseline_results = aggregate_arm("baseline", baseline_trials)
@@ -402,12 +574,37 @@ class EvalHarness:
         ``max_turns``, uses the body as the system prompt, and calls the
         SDK's ``query()`` directly (not through ``harness.subagent``).
         Tests override this method to return canned message streams.
+
+        F10 fix: mirrors the F2 wiring from ``harness.subagent`` — passes
+        ``plugins=`` so plugin agents/skills are surfaced, ``skills="all"``
+        so the Skill tool accepts plugin skills, and ``setting_sources=
+        ["project"]`` so ``.claude/agents/`` is discoverable.  Without
+        this, ``allowed_tools=None`` (skills typically have no ``tools:``
+        frontmatter) propagated into the SDK and a downstream consumer
+        attempted to iterate it, raising ``'NoneType' object is not
+        iterable`` for every scenario — making every grader score 0.
         """
         # Imported here so the module loads cleanly in test environments
         # that mock the SDK or run without it on PYTHONPATH.
         from claude_agent_sdk import ClaudeAgentOptions, query
 
         spec = _parse_resource_file(resource)
+
+        # Build SDK plugin paths so the invoked resource can resolve
+        # Skill, Task, and sub-agent references.  Reuse the discovery
+        # logic from ``harness.subagent`` (which already handles
+        # marketplace-vs-in-tree precedence + enabled_plugins config).
+        # Failing to load the plugin manager must not break grading —
+        # fall back to no plugins.
+        sdk_plugins: list[dict[str, str]] = []
+        try:
+            from harness import subagent as _sa
+
+            _sa._load_plugin_agents()  # idempotent; builds _plugin_manager
+            if _sa._plugin_manager is not None:
+                sdk_plugins = _sa._plugin_manager.get_plugin_paths()
+        except Exception:  # noqa: BLE001 — plugin layer must never break a call
+            sdk_plugins = []
 
         # Apply env overrides scoped to the SDK call.  We restore on exit
         # to avoid bleeding into other concurrent harness work.
@@ -416,13 +613,20 @@ class EvalHarness:
         for k, v in env.items():
             os.environ[k] = v
         try:
+            # F10: allowed_tools must be a list (possibly empty) — never
+            # None.  The SDK appears to iterate over allowed_tools in at
+            # least one code path; passing None tripped TypeError.
+            allowed_tools = spec["tools"] if spec["tools"] else []
             options = ClaudeAgentOptions(
                 system_prompt=spec["prompt"],
                 model=spec["model"],
-                allowed_tools=spec["tools"],
+                allowed_tools=allowed_tools,
                 permission_mode="acceptEdits",
                 cwd=str(cwd),
                 max_turns=spec["max_turns"],
+                plugins=sdk_plugins,
+                skills="all",
+                setting_sources=["project"],
             )
             async for message in query(prompt=prompt, options=options):
                 yield message

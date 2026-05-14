@@ -401,7 +401,10 @@ class TestExecutionEvalSpanAttributes:
             "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
             return_value=mock_harness,
         ):
-            await orch._run_execution_eval()
+            # F8: when ALL resources error, the run aborts.  The span
+            # is still captured before the abort fires.
+            with pytest.raises(RuntimeError, match=r"all \d+ resources errored"):
+                await orch._run_execution_eval()
 
         rs = next(s for s in recorded_spans if s.name == "eval.execution.resource")
         assert rs.attributes["harness.eval.outcome"] == "error"
@@ -451,15 +454,15 @@ class TestEvalDesignSpanAttributes:
         orch._progress = progress
         state = MagicMock()
         state.eval_suite_path = ""
-        state.get_generated_resources = MagicMock(
-            return_value=[
-                MagicMock(
-                    spec=ResourceStatus,
-                    path="agents/x.md",
-                    resource_type="agent",
-                )
-            ]
+        r = MagicMock(
+            spec=ResourceStatus,
+            path="agents/x.md",
+            resource_type="agent",
         )
+        r.status = "generated"
+        state.get_generated_resources = MagicMock(return_value=[r])
+        # F11: phase iterates state.resources.values(); populate explicitly.
+        state.resources = {"agents/x.md": r}
         orch._state = state
 
         # Architect "writes" the suite to disk.

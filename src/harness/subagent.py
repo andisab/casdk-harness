@@ -42,7 +42,8 @@ from harness.agent_progress import (
     AgentProgress,
     Colors,
     extract_text_preview,
-    extract_tool_info,
+    extract_tool_calls,
+    extract_tool_info,  # noqa: F401 — kept for backwards-compat callers
 )
 
 # Environment variable for verbose mode inheritance
@@ -54,6 +55,67 @@ DEFAULT_QUERY_TIMEOUT = 600  # 10 minutes default
 
 # Heartbeat warning interval (seconds without messages before warning)
 HEARTBEAT_WARNING_INTERVAL = 60
+
+# --- Transient-error retry (D9) -------------------------------------------
+# Empirical patterns from running Phase A smoke against brief network drops
+# on 2026-05-12. SDK surfaces network failures as ProcessError chained
+# under "Claude Code returned an error result: success" — that misleading
+# success-named subtype is the SDK's wrapper, not a real success.
+RETRY_ENV_VAR_ATTEMPTS = "CGF_CALL_RETRIES"
+RETRY_ENV_VAR_BACKOFF = "CGF_CALL_RETRY_BACKOFF"
+DEFAULT_CALL_RETRIES = 3
+DEFAULT_RETRY_BACKOFF_SECONDS = 5.0
+
+_TRANSIENT_ERROR_SUBSTRINGS: tuple[str, ...] = (
+    "FailedToOpenSocket",
+    "ConnectionRefused",
+    "Unable to connect to API",
+    "Connection reset",
+    "Connection aborted",
+    "returned an error result: success",
+    "returned an error result: error_during_execution",
+    "ProcessError",
+    "ClientConnectorError",
+    "ServerDisconnectedError",
+)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """True if ``exc`` (or any chained cause) looks like a network/transport blip.
+
+    Walks the ``__cause__`` and ``__context__`` chain so wrapped exceptions
+    still trigger retry. Guards against cycles via an id-set.
+    """
+    cur: BaseException | None = exc
+    seen: set[int] = set()
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        msg = str(cur)
+        if any(pat in msg for pat in _TRANSIENT_ERROR_SUBSTRINGS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
+def _get_call_retries() -> int:
+    env_val = os.environ.get(RETRY_ENV_VAR_ATTEMPTS, "")
+    if env_val:
+        try:
+            n = int(env_val)
+            return max(0, n)
+        except ValueError:
+            pass
+    return DEFAULT_CALL_RETRIES
+
+
+def _get_retry_backoff() -> float:
+    env_val = os.environ.get(RETRY_ENV_VAR_BACKOFF, "")
+    if env_val:
+        try:
+            return max(0.0, float(env_val))
+        except ValueError:
+            pass
+    return DEFAULT_RETRY_BACKOFF_SECONDS
 
 
 def _get_query_timeout() -> float:
@@ -324,6 +386,20 @@ async def call_agent(
     import os
     effective_cwd = cwd if cwd else os.getcwd()
 
+    # SDK plugin discovery: expose marketplace + in-tree plugins so any
+    # Skill / Task / sub-agent invocation from inside the called agent can
+    # resolve. Without these, the SDK creates a sandbox view that lists
+    # the agent's allowed_tools but rejects every plugin-skill name. This
+    # is the standalone-call analog of agent.py's interactive wiring
+    # (see line ~615 there).
+    _load_plugin_agents()  # idempotent; ensures _plugin_manager is built
+    sdk_plugins: list[dict[str, str]] = []
+    if _plugin_manager is not None:
+        try:
+            sdk_plugins = _plugin_manager.get_plugin_paths()
+        except Exception:  # noqa: BLE001 — plugin layer must never break a call
+            sdk_plugins = []
+
     options_dict: dict[str, Any] = {
         "system_prompt": effective_prompt,
         "model": effective_model,
@@ -331,6 +407,12 @@ async def call_agent(
         "permission_mode": permission_mode,
         "cwd": effective_cwd,
         "max_turns": max_turns,
+        # Plugin / skill / setting wiring — match agent.py's interactive
+        # session so a standalone-invoked agent sees the same Skill, Task,
+        # and project-setting surface as an interactive one.
+        "plugins": sdk_plugins,
+        "skills": "all",
+        "setting_sources": ["project"],
     }
     options_dict.update(extra_options)
 
@@ -351,19 +433,32 @@ async def call_agent(
             async for message in query(prompt=prompt, options=options):
                 # Track progress
                 if progress:
-                    # Check for tool use
-                    tool_info = extract_tool_info(message)
-                    if tool_info:
-                        tool_name, args_summary = tool_info
-                        progress.tool_calls += 1
-
-                        # Track subagent spawns
-                        if tool_name == "Task" and "subagent_type=" in args_summary:
-                            subagent = args_summary.replace("subagent_type=", "")
-                            progress.subagents_spawned.append(subagent)
-                            progress.print_status(progress.format_subagent(subagent))
-                        else:
-                            progress.print_status(progress.format_tool_call(tool_name, args_summary))
+                    # F3: count EVERY tool_use block, not just the first.
+                    # A single AssistantMessage may carry multiple
+                    # tool_use blocks (parallel Read+Write+Bash); the
+                    # old extract_tool_info returned only block[0],
+                    # so the displayed counter undercounted.
+                    tool_calls = extract_tool_calls(message)
+                    if tool_calls:
+                        progress.tool_calls += len(tool_calls)
+                        for tool_name, args_summary in tool_calls:
+                            if (
+                                tool_name == "Task"
+                                and "subagent_type=" in args_summary
+                            ):
+                                subagent = args_summary.replace(
+                                    "subagent_type=", ""
+                                )
+                                progress.subagents_spawned.append(subagent)
+                                progress.print_status(
+                                    progress.format_subagent(subagent)
+                                )
+                            else:
+                                progress.print_status(
+                                    progress.format_tool_call(
+                                        tool_name, args_summary
+                                    )
+                                )
 
                     elif isinstance(message, AssistantMessage):
                         progress.turn_count += 1
@@ -419,12 +514,20 @@ async def call_agent_simple(
     system_prompt_override: str | None = None,
     model_override: str | None = None,
     timeout: float | None = None,
+    max_retries: int | None = None,
+    retry_backoff_seconds: float | None = None,
     **kwargs: Any,
 ) -> str:
     """Call an agent and return just the text response.
 
-    This is a simplified version that collects all text blocks from
-    AssistantMessage responses and returns them as a single string.
+    Collects text blocks from AssistantMessage responses and returns them
+    as a single string.
+
+    Retries on transient SDK errors (network drops, ConnectionRefused,
+    FailedToOpenSocket, SDK "returned an error result: success" wrapper).
+    A real ``TimeoutError`` from the per-call asyncio timeout is NOT retried
+    — that's a hard ceiling. Non-transient exceptions also propagate
+    immediately.
 
     Args:
         agent_name: Name of the agent to invoke
@@ -434,50 +537,67 @@ async def call_agent_simple(
         model_override: Override the agent's model (sonnet/haiku for faster eval).
         timeout: Query timeout in seconds. If None, uses CLAUDE_QUERY_TIMEOUT
                 env var or default (600s).
+        max_retries: Additional attempts after the first on transient errors.
+                Default reads ``CGF_CALL_RETRIES`` env var (default 3).
+        retry_backoff_seconds: Base for exponential backoff between attempts.
+                Default reads ``CGF_CALL_RETRY_BACKOFF`` env var (default 5.0s).
         **kwargs: Additional options passed to call_agent()
 
     Returns:
         The text response from the agent.
-
-    Example:
-        >>> response = await call_agent_simple("python-expert", "Explain list comprehensions")
-        >>> print(response)
-
-        >>> # With verbose progress
-        >>> response = await call_agent_simple(
-        ...     "research-team:research-specialist",
-        ...     "Research quantum computing hardware in 2026",
-        ...     verbose=True
-        ... )
-
-        >>> # With custom system prompt for optimization
-        >>> response = await call_agent_simple(
-        ...     "python-expert",
-        ...     "Write a sort function",
-        ...     system_prompt_override="You are a Python expert. Always use type hints."
-        ... )
     """
-    responses: list[str] = []
+    attempts = (
+        max_retries if max_retries is not None else _get_call_retries()
+    )
+    backoff_base = (
+        retry_backoff_seconds
+        if retry_backoff_seconds is not None
+        else _get_retry_backoff()
+    )
 
-    async for message in call_agent(
-        agent_name,
-        prompt,
-        verbose=verbose,
-        system_prompt_override=system_prompt_override,
-        model_override=model_override,
-        timeout=timeout,
-        **kwargs,
-    ):
-        if isinstance(message, AssistantMessage) and hasattr(message, "content"):
-            content = message.content
-            if isinstance(content, str):
-                responses.append(content)
-            elif isinstance(content, list):
-                for block in content:
-                    if hasattr(block, "text"):
-                        responses.append(block.text)
+    attempt = 0
+    while True:
+        try:
+            responses: list[str] = []
+            async for message in call_agent(
+                agent_name,
+                prompt,
+                verbose=verbose,
+                system_prompt_override=system_prompt_override,
+                model_override=model_override,
+                timeout=timeout,
+                **kwargs,
+            ):
+                if isinstance(message, AssistantMessage) and hasattr(
+                    message, "content"
+                ):
+                    content = message.content
+                    if isinstance(content, str):
+                        responses.append(content)
+                    elif isinstance(content, list):
+                        for block in content:
+                            if hasattr(block, "text"):
+                                responses.append(block.text)
+            return "\n".join(responses)
 
-    return "\n".join(responses)
+        except TimeoutError:
+            # Hard timeout — never retry; the per-call timeout is already
+            # generous (default 10 min). The caller decides next steps.
+            raise
+        except BaseException as exc:
+            if attempt >= attempts or not _is_transient_error(exc):
+                raise
+            backoff = backoff_base * (2 ** attempt)
+            logger.warning(
+                "call_agent_simple: transient SDK error, retrying",
+                agent=agent_name,
+                attempt=attempt + 1,
+                max_attempts=attempts + 1,
+                backoff_seconds=backoff,
+                error=str(exc)[:300],
+            )
+            await asyncio.sleep(backoff)
+            attempt += 1
 
 
 # CLI interface for standalone usage

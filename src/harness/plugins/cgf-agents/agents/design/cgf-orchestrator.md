@@ -16,7 +16,7 @@ description: >
   - "/cgf-create Python async expert that helps with asyncio patterns"
   </examples>
 
-tools: Read, Write, Bash, Task, Glob, Grep
+tools: Read, Write, Bash, Task, Glob, Grep, Skill
 model: sonnet
 max_turns: 100
 color: "#b16286"

@@ -64,9 +64,25 @@ def _write_yaml(tmp_path: Path, doc: dict[str, Any]) -> Path:
 
 
 def _write_resource(tmp_path: Path, name: str, body: str = "Be helpful.") -> Path:
-    p = tmp_path / f"{name}.md"
+    """Write a resource file under ``agents/example-v{N}.md`` so that
+    F13's target_resource filter (suite default ``agents/example.md``)
+    matches.  ``baseline`` → ``-v0``, ``candidate`` → ``-v1`` —
+    distinct files on disk that share the same canonical target_key.
+
+    F16: workspace-root marker is ``SPEC.md`` (not ``sessions/``).
+    Per-resource sessions/ dirs are legal and must not be mistaken for
+    workspace roots.
+    """
+    suffix = {"baseline": "-v0", "candidate": "-v1"}.get(name, "")
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    # F16: SPEC.md is the canonical workspace marker.
+    spec = tmp_path / "SPEC.md"
+    if not spec.exists():
+        spec.write_text("# test spec")
+    p = agents_dir / f"example{suffix}.md"
     p.write_text(
-        f"---\nname: {name}\nmodel: sonnet\ntools: Read, Write\n---\n{body}\n",
+        f"---\nname: example\nmodel: sonnet\ntools: Read, Write\n---\n{body}\n",
         encoding="utf-8",
     )
     return p
@@ -549,17 +565,19 @@ class TestEvalHarnessRunner:
         candidate = _write_resource(tmp_path, "candidate")
 
         harness = _StubHarness(
-            responses={"baseline.md": "goodbye", "candidate.md": "hello world"}
+            responses={"example-v0.md": "goodbye", "example-v1.md": "hello world"}
         )
         results = await harness.run(suite_path, baseline, candidate)
 
         assert results.win_rate == 1.0
         assert len(results.scenarios) == 1
         assert results.scenarios[0].outcome == "candidate_win"
-        assert harness.invocations == [
-            ("baseline.md", "Say hello."),
-            ("candidate.md", "Say hello."),
-        ]
+        # Both arms ran (F12: arms execute concurrently — order is
+        # not guaranteed).  F13: filenames are the canonical -v0 / -v1.
+        assert set(harness.invocations) == {
+            ("example-v0.md", "Say hello."),
+            ("example-v1.md", "Say hello."),
+        }
 
     @pytest.mark.asyncio
     async def test_baseline_wins_when_candidate_regresses(
@@ -569,7 +587,7 @@ class TestEvalHarnessRunner:
         baseline = _write_resource(tmp_path, "baseline")
         candidate = _write_resource(tmp_path, "candidate")
         harness = _StubHarness(
-            responses={"baseline.md": "hello yes", "candidate.md": "no greeting"}
+            responses={"example-v0.md": "hello yes", "example-v1.md": "no greeting"}
         )
         results = await harness.run(suite_path, baseline, candidate)
         assert results.scenarios[0].outcome == "baseline_win"
@@ -583,7 +601,7 @@ class TestEvalHarnessRunner:
         baseline = _write_resource(tmp_path, "baseline")
         candidate = _write_resource(tmp_path, "candidate")
         harness = _StubHarness(
-            responses={"baseline.md": "hello", "candidate.md": "hello"}
+            responses={"example-v0.md": "hello", "example-v1.md": "hello"}
         )
         results = await harness.run(suite_path, baseline, candidate)
         assert results.scenarios[0].outcome == "tie"
@@ -647,7 +665,7 @@ class TestEvalHarnessRunner:
         candidate = _write_resource(tmp_path, "candidate")
         results_dir = tmp_path / "results"
         harness = _StubHarness(
-            responses={"baseline.md": "x", "candidate.md": "hello"}
+            responses={"example-v0.md": "x", "example-v1.md": "hello"}
         )
         await harness.run(suite_path, baseline, candidate, results_dir=results_dir)
         out = results_dir / "eval-results.json"
@@ -681,7 +699,7 @@ class TestEvalHarnessRunner:
         baseline = _write_resource(tmp_path, "baseline")
         candidate = _write_resource(tmp_path, "candidate")
         harness = _StubHarness(
-            responses={"baseline.md": "no", "candidate.md": "hello"}
+            responses={"example-v0.md": "no", "example-v1.md": "hello"}
         )
         results = await harness.run(suite_path, baseline, candidate)
         # Both scenarios should show candidate_win.
@@ -713,7 +731,7 @@ class TestEvalHarnessRunner:
         baseline = _write_resource(tmp_path, "baseline")
         candidate = _write_resource(tmp_path, "candidate")
         harness = _StubHarness(
-            responses={"baseline.md": "no", "candidate.md": "hello"}
+            responses={"example-v0.md": "no", "example-v1.md": "hello"}
         )
         results = await harness.run(suite_path, baseline, candidate)
         assert "unit" in results.by_level
