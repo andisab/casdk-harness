@@ -12,7 +12,7 @@
   "version": 16,
   "refresh": "30s",
   "time": {
-    "from": "now-6h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
@@ -146,8 +146,9 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
-          "expr": "max by (phase) (harness_run_phase_info{resource=~\"$resource\",phase=~\"research|optimize|finalize|complete|failed\"})",
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|optimize|finalize|complete|failed\"}[2m]))",
           "legendFormat": "{{phase}}",
+          "interval": "30s",
           "refId": "A"
         }
       ],
@@ -155,12 +156,12 @@
         "mergeValues": true,
         "showValue": "never",
         "alignValue": "left",
-        "rowHeight": 0.9,
+        "rowHeight": 0.95,
         "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {"lineWidth": 0, "fillOpacity": 70},
+          "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
             {"type": "value", "options": {"0": {"text": " ", "color": "text-secondary", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
@@ -188,8 +189,9 @@
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [
         {
-          "expr": "max by (phase) (harness_run_phase_info{resource=~\"$resource\",phase=~\"research|design|qa|generate|eval_design|iterate|execution_eval|validate|complete|failed\"})",
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|design|qa|generate|eval_design|iterate|execution_eval|validate|complete|failed\"}[2m]))",
           "legendFormat": "{{phase}}",
+          "interval": "30s",
           "refId": "A"
         }
       ],
@@ -197,12 +199,12 @@
         "mergeValues": true,
         "showValue": "never",
         "alignValue": "left",
-        "rowHeight": 0.9,
+        "rowHeight": 0.95,
         "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {"lineWidth": 0, "fillOpacity": 70},
+          "custom": {"lineWidth": 0, "fillOpacity": 100},
           "mappings": [
             {"type": "value", "options": {"0": {"text": " ", "color": "text-secondary", "index": 0}}},
             {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
