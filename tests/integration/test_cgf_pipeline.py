@@ -15,7 +15,6 @@ from unittest.mock import patch
 
 import pytest
 
-from harness.monitoring import MetricsCollector
 from harness.optimization.adapters import (
     AdapterRegistry,
     AgentAdapter,
@@ -255,35 +254,12 @@ class TestCGFPipelineIntegration:
         assert isinstance(registry.get_prompt_adapter(), PromptAdapter)
         assert isinstance(registry.get_command_adapter(), CommandAdapter)
 
-    def test_metrics_recorded_during_pipeline(
-        self, memory_store, store_exporter, sample_agent_spans
-    ):
-        """Test that CGF metrics are recorded during pipeline execution."""
-        # Record metrics as we would in real execution
-        MetricsCollector.record_span_collected("python-expert", "agent_execution")
-        MetricsCollector.record_span_collected("python-expert", "tool_call")
-        MetricsCollector.record_span_exported("python-expert", "store")
-
-        # Export spans
-        store_exporter.export_batch(sample_agent_spans)
-
-        # Transform with adapter
-        adapter = AgentAdapter()
-        feedback = adapter.adapt(sample_agent_spans)
-        reward = feedback.to_reward()
-
-        # Record transformation metrics
-        MetricsCollector.record_adapter_transform("agent", success=True)
-
-        # Calculate composite score for reward metric
-        composite = sum(reward.values()) / len(reward)
-        MetricsCollector.record_reward("agent", composite)
-
-        # Record feedback dimensions (reward is a dict)
-        MetricsCollector.set_feedback_dimension("agent", "task_completion", reward["task_completion"])
-        MetricsCollector.set_feedback_dimension("agent", "efficiency", reward["efficiency"])
-
-        # No assertion - if no exception, metrics recording works
+    # test_metrics_recorded_during_pipeline removed 2026-05-14 — the
+    # five MetricsCollector helpers (record_span_collected,
+    # record_span_exported, record_adapter_transform, record_reward,
+    # set_feedback_dimension) and their backing cgf_* instruments were
+    # deleted after the G0 emission audit confirmed zero production
+    # call sites.  See docs/OBSERVABILITY.md § 3.6.
 
     def test_store_exporter_buffering(self, memory_store):
         """Test StoreSpanExporter buffers spans before flush."""

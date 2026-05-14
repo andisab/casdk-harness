@@ -1,8 +1,20 @@
 apiVersion: 1
 
+# Drop any prior Prometheus datasource so the new UID-pinned definition
+# below can be re-provisioned cleanly.  Grafana refuses to update an
+# existing datasource's UID in place — without this delete block the
+# provisioner fails with "data source not found".
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
     type: prometheus
+    # Pin a stable UID so dashboard templating variables and panels can
+    # reference `${datasource}` / `prometheus` and remain consistent
+    # across Grafana reprovisions.
+    uid: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true

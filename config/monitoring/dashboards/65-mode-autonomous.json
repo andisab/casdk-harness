@@ -1,0 +1,1007 @@
+{
+  "title": "Claude Agent Harness \u2014 Mode: Autonomous",
+  "uid": "casdk-mode-autonomous",
+  "tags": [
+    "claude",
+    "harness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mode",
+        "label": "Mode",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_config_info, mode)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_config_info, mode)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "resource",
+        "label": "Resource",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "path",
+        "label": "Path",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_path_info, path)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_path_info, path)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(claude_code_cost_usage_USD_total, model)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(claude_code_cost_usage_USD_total, model)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "All Harness Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "claude",
+        "harness"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "00 \u2014 Overview",
+      "type": "link",
+      "url": "/d/casdk-overview",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "10 \u2014 SDK: Cost & Spend",
+      "type": "link",
+      "url": "/d/casdk-sdk-cost",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "20 \u2014 SDK: Productivity",
+      "type": "link",
+      "url": "/d/casdk-sdk-productivity",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "30 \u2014 SDK: Cache",
+      "type": "link",
+      "url": "/d/casdk-sdk-cache",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "40 \u2014 SDK: Tools",
+      "type": "link",
+      "url": "/d/casdk-sdk-tools",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "50 \u2014 SDK: Reliability",
+      "type": "link",
+      "url": "/d/casdk-sdk-reliability",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "60 \u2014 Mode: Interactive",
+      "type": "link",
+      "url": "/d/casdk-mode-interactive",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "70 \u2014 Mode: CGF Optimization",
+      "type": "link",
+      "url": "/d/casdk-cgf",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "99 \u2014 Raw Events",
+      "type": "link",
+      "url": "/d/casdk-raw-events",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 65100,
+      "type": "stat",
+      "title": "Tasks Completed",
+      "description": "Count of tasks with status=PASS in the current task_list.json. Populated by harness_task_progress (Phase 1 instrument, emitted on every save_task_list call from autonomous mode).",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(harness_task_progress{status=\"completed\"})",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65110,
+      "type": "stat",
+      "title": "Tasks Pending",
+      "description": "Tasks with status=None (not yet attempted).",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(harness_task_progress{status=\"pending\"})",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text-secondary",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65120,
+      "type": "stat",
+      "title": "Tasks Failed",
+      "description": "Tasks with status=FAIL (agent gave up). Non-zero is a signal that the workspace state needs human review.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(harness_task_progress{status=\"failed\"})",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65130,
+      "type": "stat",
+      "title": "Completion %",
+      "description": "Completed / total. Denominator includes pending + failed. Reaches 100% when every task is either PASS or FAIL.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(harness_task_progress{status=\"completed\"}) / clamp_min(sum(harness_task_progress), 1)",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65200,
+      "type": "timeseries",
+      "title": "Commits Over Time",
+      "description": "Per-5min commit count via sum_over_time (NOT increase \u2014 spec \u00a7 2 gotcha #3). CAVEAT: claude_code_commit_count_total was empty in 24h on typical CGF-optimization workloads (see OBSERVABILITY.md \u00a7 6 item 7). Will populate when Claude commits in-session during autonomous mode.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(claude_code_commit_count_total[5m]))",
+          "legendFormat": "commits / 5min",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65210,
+      "type": "timeseries",
+      "title": "Lines of Code (added vs removed, 5m windows)",
+      "description": "Per-5min LoC delta. Uses sum_over_time per the delta-counter gotcha. Removed shown as negative for visual stacking.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[5m]))",
+          "legendFormat": "added",
+          "refId": "A"
+        },
+        {
+          "expr": "-sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[5m]))",
+          "legendFormat": "removed",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65300,
+      "type": "timeseries",
+      "title": "Agent Duration P50 / P95 by Agent",
+      "description": "Per-cycle agent execution duration from harness_agent_duration_seconds_bucket. Autonomous mode runs the main agent in a loop; this surfaces cycle-by-cycle latency.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (agent, le) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{agent}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (agent, le) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{agent}}",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65400,
+      "type": "timeseries",
+      "title": "Task Progress Over Time",
+      "description": "Task counts by status as time series. Watch the curves: completed should climb, pending should fall, failed should stay flat at zero.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "harness_task_progress",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "\u2014",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 65900,
+      "type": "row",
+      "title": "SDK Economics \u2014 see Dashboards 10 (Cost) and 30 (Cache)",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": [
+        {
+          "id": 65910,
+          "type": "stat",
+          "title": "Cost (selected range)",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 0,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text-primary"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "\u2014",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "currencyUSD",
+              "decimals": 2
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 65920,
+          "type": "stat",
+          "title": "Tokens (selected range)",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 8,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(claude_code_token_usage_tokens_total[$__range]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text-primary"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "\u2014",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 65930,
+          "type": "stat",
+          "title": "Cache Hit Rate",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 16,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "\u2014",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 0.6
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    }
+  ]
+}

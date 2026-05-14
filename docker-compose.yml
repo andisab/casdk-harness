@@ -70,6 +70,13 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-main
+      # Pin temporality to cumulative — defensive against future SDK default
+      # changes. VictoriaMetrics, Mimir, and Grafana Cloud silently drop delta
+      # metrics; we use Prometheus here but the pin costs nothing.
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      # Project taxonomy for cross-repo filtering. Single-user harness skips
+      # team= and cost_center= from the spec.
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude-plugin:/app/.claude-plugin:ro
@@ -158,6 +165,8 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-agent-two
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -239,6 +248,8 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-agent-three
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:

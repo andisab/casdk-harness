@@ -52,7 +52,13 @@ from typing import Any
 
 import structlog
 
-from harness.monitoring import init_run_phases, record_phase_entry, record_run_path
+from harness.monitoring import (
+    init_run_phases,
+    record_phase_entry,
+    record_run_config,
+    record_run_path,
+    record_run_start,
+)
 from harness.optimization._orchestrator_helpers import (
     AGENT_DESIGN,
     AGENT_EVAL_ARCHITECT,
@@ -418,6 +424,25 @@ class MultiResourceOrchestrator:
         record_run_path(resource_label, "multi")
         init_run_phases(resource_label)
         record_phase_entry(resource_label, state.current_phase.name.lower())
+        record_run_start(resource_label)
+        # Token budget is read at EvalHarness construction time from
+        # CGF_EVAL_TOKEN_BUDGET; surface the same value here so the Grafana
+        # run-config row matches what the eval pipeline will actually use.
+        # `effort` is a placeholder until per-prompt effort tracking is wired.
+        try:
+            token_budget = int(os.environ.get("CGF_EVAL_TOKEN_BUDGET", "0"))
+        except ValueError:
+            token_budget = 0
+        record_run_config(
+            resource=resource_label,
+            path="multi",
+            mode="optimize",
+            model=self.config.eval_model or "default",
+            effort="default",
+            eval_enabled=True,
+            token_budget=token_budget,
+            max_iterations=self.config.max_iterations,
+        )
 
         return state
 

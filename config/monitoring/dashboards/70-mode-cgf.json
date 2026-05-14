@@ -1,0 +1,533 @@
+{
+  "title": "Claude Agent Harness — CGF Optimization",
+  "uid": "casdk-cgf",
+  "tags": [
+    "claude",
+    "harness",
+    "cgf",
+    "optimization"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 16,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "1h"]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": false, "text": "Prometheus", "value": "prometheus"},
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mode",
+        "label": "Mode",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(harness_run_config_info, mode)",
+        "query": {"qryType": 1, "query": "label_values(harness_run_config_info, mode)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 2, "multi": false, "includeAll": true, "allValue": ".*",
+        "current": {"selected": false, "text": "All", "value": "$__all"},
+        "options": [], "hide": 0, "regex": "", "skipUrlSync": false, "sort": 1
+      },
+      {
+        "name": "resource",
+        "label": "Resource",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+        "query": {"qryType": 1, "query": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 2, "multi": true, "includeAll": true, "allValue": ".*",
+        "current": {"selected": false, "text": "All", "value": "$__all"},
+        "options": [], "hide": 0, "regex": "", "skipUrlSync": false, "sort": 1
+      },
+      {
+        "name": "path",
+        "label": "Path",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(harness_run_path_info, path)",
+        "query": {"qryType": 1, "query": "label_values(harness_run_path_info, path)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 2, "multi": false, "includeAll": true, "allValue": ".*",
+        "current": {"selected": false, "text": "All", "value": "$__all"},
+        "options": [], "hide": 0, "regex": "", "skipUrlSync": false, "sort": 1
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "definition": "label_values(claude_code_cost_usage_USD_total, model)",
+        "query": {"qryType": 1, "query": "label_values(claude_code_cost_usage_USD_total, model)", "refId": "PrometheusVariableQueryEditor-VariableQuery"},
+        "refresh": 2, "multi": true, "includeAll": true, "allValue": ".*",
+        "current": {"selected": false, "text": "All", "value": "$__all"},
+        "options": [], "hide": 0, "regex": "", "skipUrlSync": false, "sort": 1
+      }
+    ]
+  },
+  "links": [
+    {"title": "All Harness Dashboards", "type": "dashboards", "tags": ["claude", "harness"], "asDropdown": true, "includeVars": true, "keepTime": true, "targetBlank": false, "icon": "external link"},
+    {"title": "00 — Overview", "type": "link", "url": "/d/casdk-overview", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "10 — SDK: Cost & Spend", "type": "link", "url": "/d/casdk-sdk-cost", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "20 — SDK: Productivity", "type": "link", "url": "/d/casdk-sdk-productivity", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "30 — SDK: Cache", "type": "link", "url": "/d/casdk-sdk-cache", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "40 — SDK: Tools", "type": "link", "url": "/d/casdk-sdk-tools", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "50 — SDK: Reliability", "type": "link", "url": "/d/casdk-sdk-reliability", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "60 — Mode: Interactive", "type": "link", "url": "/d/casdk-mode-interactive", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "65 — Mode: Autonomous", "type": "link", "url": "/d/casdk-mode-autonomous", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false},
+    {"title": "99 — Raw Events", "type": "link", "url": "/d/casdk-raw-events", "icon": "dashboard", "includeVars": true, "keepTime": true, "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "id": 70100,
+      "type": "table",
+      "title": "Run Config",
+      "description": "Current run's configuration dimensions, sourced from harness_run_config_info (info-metric; emitted at run start in cgf_session.py / multi_resource_orchestrator.py). Empty when no run is active.",
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "harness_run_config_info{resource=~\"$resource\"} == 1",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "names": ["resource", "path", "mode", "model", "effort", "eval_enabled", "token_budget", "max_iterations"]
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "resource": 0, "path": 1, "mode": 2, "model": 3, "effort": 4,
+              "eval_enabled": 5, "token_budget": 6, "max_iterations": 7
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left", "cellOptions": {"type": "auto"}},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70200,
+      "type": "state-timeline",
+      "transparent": true,
+      "title": "Phase Progression — Single-resource path",
+      "description": "State Timeline of single-resource (cgf_session.py) phases: research → optimize → finalize → complete (with `failed` as terminal). Aggregates across resources via `max by (phase)` so widening the time range doesn't produce one row per historical resource. Stays empty when the active run is on the multi-resource path; see the panel below for that.",
+      "gridPos": {"h": 5, "w": 14, "x": 0, "y": 3},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|optimize|finalize|complete|failed\"}[2m]))",
+          "legendFormat": "{{phase}}",
+          "interval": "30s",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.95,
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 0, "fillOpacity": 100},
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": " ", "color": "transparent", "index": 0}}},
+            {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"failed\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "failed", "color": "red", "index": 0}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"complete\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "complete", "color": "blue", "index": 0}}}]}]
+          }
+        ]
+      }
+    },
+    {
+      "id": 70205,
+      "type": "state-timeline",
+      "transparent": true,
+      "title": "Phase Progression — Multi-resource path",
+      "description": "State Timeline of multi-resource (multi_resource_orchestrator.py) phases: research → design → qa → generate → eval_design → iterate → execution_eval → validate → complete (with `failed` as terminal). Aggregates across resources via `max by (phase)` so widening the time range doesn't produce one row per historical resource. Stays empty when the active run is on the single-resource path; see the panel above for that.",
+      "gridPos": {"h": 5, "w": 14, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=~\"research|design|qa|generate|eval_design|iterate|execution_eval|validate|complete|failed\"}[2m]))",
+          "legendFormat": "{{phase}}",
+          "interval": "30s",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.95,
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"lineWidth": 0, "fillOpacity": 100},
+          "mappings": [
+            {"type": "value", "options": {"0": {"text": " ", "color": "transparent", "index": 0}}},
+            {"type": "value", "options": {"1": {"text": "active", "color": "green", "index": 1}}}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "text-secondary", "value": null}]}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"failed\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "failed", "color": "red", "index": 0}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "{phase=\"complete\"}"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"1": {"text": "complete", "color": "blue", "index": 0}}}]}]
+          }
+        ]
+      }
+    },
+    {
+      "id": 70210,
+      "type": "stat",
+      "title": "Iteration",
+      "description": "Current iteration counter. Emitted on both single-resource (cgf_session.py) and multi-resource (_orchestrator_phases/iterate.py) paths.",
+      "gridPos": {"h": 10, "w": 5, "x": 14, "y": 3},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "max(harness_run_iteration{resource=~\"$resource\"})",
+          "legendFormat": "iteration",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 3},
+              {"color": "red", "value": 8}
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70220,
+      "type": "stat",
+      "title": "Run Elapsed",
+      "description": "Wall-clock seconds since run start, computed as time() - harness_run_start_timestamp.",
+      "gridPos": {"h": 10, "w": 5, "x": 19, "y": 3},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "time() - max(harness_run_start_timestamp{resource=~\"$resource\"})",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "text-primary"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70300,
+      "type": "stat",
+      "title": "Cost (5m windows)",
+      "description": "Spend in 5-minute windows. Sparkline shows recent cost-per-5min. Reduction: lastNotNull — the headline number is the most recent 5-min bucket. Use the time range selector to widen the window.",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          },
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70310,
+      "type": "stat",
+      "title": "Tokens (5m windows)",
+      "description": "Token usage in 5-minute windows across all types (input/output/cacheRead/cacheCreation).",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total[5m]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "text-primary"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70320,
+      "type": "stat",
+      "title": "Cache Hit Rate",
+      "description": "cacheRead / (cacheRead + cacheCreation + input). Healthy long Claude Code sessions sit at ≥90%; <60% means cache is busted every turn (timestamps in CLAUDE.md, mid-session model switch, MCP-tool additions, capitalization drift). See OBSERVABILITY.md § 6 item 4 for the metric-name correction; § 5 for the CacheHitRateDegraded alert that fires on this.",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""},
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.6},
+              {"color": "green", "value": 0.9}
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 1,
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70330,
+      "type": "barchart",
+      "title": "Cost by Model (selected range)",
+      "description": "Total spend per model across the selected time range. Horizontal bars to make the long tail legible — pies misrepresent unequal magnitudes.",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 13},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (model) (increase(claude_code_cost_usage_USD_total[$__range]))",
+          "legendFormat": "{{model}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {"showLegend": false, "displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "blue"},
+          "mappings": [
+            {"type": "special", "options": {"match": "null+nan", "result": {"text": "—", "color": "text-secondary"}}}
+          ],
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 70400,
+      "type": "row",
+      "title": "Eval Framework (Stage 3 Phase A)",
+      "collapsed": true,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17},
+      "panels": [
+        {
+          "id": 70410,
+          "type": "timeseries",
+          "title": "Eval Phase Duration (p50, p95)",
+          "description": "From harness_eval_phase_duration_seconds histogram (Phase A.6 telemetry).",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum(rate(harness_eval_phase_duration_seconds_bucket[5m])) by (phase, le))", "legendFormat": "p50 {{phase}}", "refId": "A"},
+            {"expr": "histogram_quantile(0.95, sum(rate(harness_eval_phase_duration_seconds_bucket[5m])) by (phase, le))", "legendFormat": "p95 {{phase}}", "refId": "B"}
+          ],
+          "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 5, "lineWidth": 1}}, "overrides": []}
+        },
+        {
+          "id": 70420,
+          "type": "timeseries",
+          "title": "Tokens to Goal (per resource type)",
+          "description": "From harness_eval_tokens_to_goal histogram.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum(rate(harness_eval_tokens_to_goal_bucket[15m])) by (resource_type, le))", "legendFormat": "p50 {{resource_type}}", "refId": "A"},
+            {"expr": "histogram_quantile(0.95, sum(rate(harness_eval_tokens_to_goal_bucket[15m])) by (resource_type, le))", "legendFormat": "p95 {{resource_type}}", "refId": "B"}
+          ],
+          "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 5, "lineWidth": 1}}, "overrides": []}
+        },
+        {
+          "id": 70430,
+          "type": "timeseries",
+          "title": "Scenarios by Outcome (rate)",
+          "description": "Rate of harness_eval_scenarios_total broken down by status × arm.",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(rate(harness_eval_scenarios_total[5m])) by (status, arm)", "legendFormat": "{{arm}} / {{status}}", "refId": "A"}
+          ],
+          "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 5, "lineWidth": 1, "stacking": {"mode": "normal", "group": "A"}}}, "overrides": []}
+        },
+        {
+          "id": 70440,
+          "type": "bargauge",
+          "title": "Per-Arm Pass Rate Distribution (last 1h)",
+          "description": "Distribution of per-arm score over the last hour, from harness_eval_arm_score histogram.",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "histogram_quantile(0.50, sum(rate(harness_eval_arm_score_bucket[1h])) by (arm, level, le))", "legendFormat": "{{arm}} / {{level}}", "refId": "A"}
+          ],
+          "options": {"orientation": "horizontal", "displayMode": "gradient", "showUnfilled": true, "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}},
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 1}, "overrides": []}
+        },
+        {
+          "id": 70450,
+          "type": "timeseries",
+          "title": "LLM-Judge No-Decision Events",
+          "description": "Rate of harness_eval_judge_no_decision_total by judge model. Non-zero = judge parse failures or transport errors after retry.",
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"expr": "sum(rate(harness_eval_judge_no_decision_total[15m])) by (model)", "legendFormat": "{{model}}", "refId": "A"}
+          ],
+          "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "fieldConfig": {"defaults": {"unit": "ops", "custom": {"fillOpacity": 5, "lineWidth": 1}}, "overrides": []}
+        }
+      ]
+    }
+  ]
+}

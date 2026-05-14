@@ -514,7 +514,10 @@ class TestGrafanaDashboard:
     def dashboard(self) -> dict[str, Any]:
         import json
 
-        with (REPO_ROOT / "config/monitoring/dashboards/cgf.json").open() as f:
+        # Path renamed in G3 (grafana-refactor branch) — cgf.json →
+        # 70-mode-cgf.json under the numeric tier scheme; UID
+        # (casdk-cgf) is unchanged.
+        with (REPO_ROOT / "config/monitoring/dashboards/70-mode-cgf.json").open() as f:
             return json.load(f)
 
     def test_no_placeholder_panels(self, dashboard: dict[str, Any]) -> None:

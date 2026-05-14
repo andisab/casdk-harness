@@ -66,7 +66,9 @@ from harness.monitoring import (
     init_run_phases,
     record_iteration,
     record_phase_entry,
+    record_run_config,
     record_run_path,
+    record_run_start,
 )
 
 # Load prompts from files
@@ -1764,12 +1766,25 @@ Begin optimization now.
             )
             task_list.save(self.workspace_dir)
 
-        # Initialize run-status gauges (label value used in Grafana panels)
+        # Initialize run-status gauges (label values surfaced in Grafana panels).
+        # `effort` is a placeholder until per-prompt effort tracking is wired
+        # through the SDK options; single-resource path has no eval pipeline.
         resource_label = self.resource_name or "unknown"
         record_run_path(resource_label, "single")
         init_run_phases(resource_label)
         record_phase_entry(resource_label, task_list.current_phase)
         record_iteration(resource_label, task_list.iteration)
+        record_run_start(resource_label)
+        record_run_config(
+            resource=resource_label,
+            path="single",
+            mode="optimize",
+            model=spec.eval_model,
+            effort="default",
+            eval_enabled=False,
+            token_budget=0,
+            max_iterations=spec.max_iterations,
+        )
 
         # Display header
         is_resuming = task_list.iteration > 0 or task_list.current_phase != "research"
