@@ -772,6 +772,12 @@ class MultiResourceState:
     validate_refinement_count: int = 0
     started_at: str = ""
     updated_at: str = ""
+    # Per-phase wall-clock timings keyed by phase name (RESEARCH, DESIGN,
+    # ...).  Drives RUN_REPORT.md's Mermaid gantt + per-phase table.
+    # Backward-compatible: missing field on disk → empty dict on load.
+    # Multi-round phases (ITERATE, EXECUTION_EVAL) overwrite each round;
+    # cross-round detail is reconstructed from feedback_history.
+    phase_timings: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Set timestamps if not provided."""
@@ -780,6 +786,16 @@ class MultiResourceState:
             self.started_at = now
         if not self.updated_at:
             self.updated_at = now
+        # Seed phase_timings for the initial phase so the run-report
+        # renderer has a started_at to show even before the first
+        # advance_phase() call.
+        phase_name = self.current_phase.name
+        if phase_name not in self.phase_timings:
+            self.phase_timings[phase_name] = {
+                "started_at": now,
+                "completed_at": None,
+                "duration_s": None,
+            }
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -801,6 +817,7 @@ class MultiResourceState:
             "validate_refinement_count": self.validate_refinement_count,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
+            "phase_timings": self.phase_timings,
         }
 
     @classmethod
@@ -827,6 +844,7 @@ class MultiResourceState:
             validate_refinement_count=data.get("validate_refinement_count", 0),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
+            phase_timings=data.get("phase_timings", {}),
         )
 
     def advance_phase(self, next_phase: OptimizationPhase) -> None:
@@ -835,10 +853,44 @@ class MultiResourceState:
         Args:
             next_phase: Phase to advance to.
         """
+        now_iso = datetime.now(UTC).isoformat()
+        now_dt = datetime.now(UTC)
+
+        # Close out the current phase's timing entry.
+        current_name = self.current_phase.name
+        current_entry = self.phase_timings.get(current_name)
+        if current_entry and current_entry.get("started_at"):
+            current_entry["completed_at"] = now_iso
+            try:
+                started = datetime.fromisoformat(current_entry["started_at"])
+                current_entry["duration_s"] = (now_dt - started).total_seconds()
+            except (TypeError, ValueError):
+                current_entry["duration_s"] = None
+        else:
+            # Phase entry never opened (e.g. resumed state w/o seed) —
+            # record a zero-duration placeholder so the renderer still
+            # has something to show.
+            self.phase_timings[current_name] = {
+                "started_at": now_iso,
+                "completed_at": now_iso,
+                "duration_s": 0.0,
+            }
+
         if self.current_phase not in self.phases_completed:
             self.phases_completed.append(self.current_phase)
         self.current_phase = next_phase
-        self.updated_at = datetime.now(UTC).isoformat()
+        self.updated_at = now_iso
+
+        # Open a timing entry for the new phase.  Backward transitions
+        # (EXECUTION_EVAL → ITERATE, VALIDATE → ITERATE) overwrite the
+        # previous round's timing for that phase; the renderer
+        # reconstructs round-1 vs round-2 history from feedback_history
+        # rather than from this dict.
+        self.phase_timings[next_phase.name] = {
+            "started_at": now_iso,
+            "completed_at": None,
+            "duration_s": None,
+        }
 
     def add_resource(
         self,

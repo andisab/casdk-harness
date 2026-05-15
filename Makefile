@@ -74,6 +74,7 @@ help: ## Show available targets
 	@echo "  optimize-dryrun      Validate optimization setup"
 	@echo "  cgf-status           Show optimization run status"
 	@echo "  cgf-clean            Remove session state files"
+	@echo "  report               Regenerate sessions/RUN_REPORT.md (SPEC=path optional)"
 	@echo ""
 	@echo "$(YELLOW)Testing:$(NC)"
 	@echo "  test                 Run full test suite"
@@ -574,6 +575,20 @@ optimize-dryrun: ## Validate optimization setup
 	@echo ""
 	@echo "$(GREEN)Ready to optimize. Run:$(NC)"
 	@echo "  make optimize"
+
+.PHONY: report
+report: ## Regenerate sessions/RUN_REPORT.md (usage: make report [SPEC=workspace/...])
+	@if [ -n "$(SPEC)" ]; then \
+		WORKSPACE_DIR="$(SPEC)"; \
+		if [ -f "$(SPEC)" ]; then WORKSPACE_DIR=$$(dirname "$(SPEC)"); fi; \
+		echo "$(GREEN)Rendering run report for $$WORKSPACE_DIR$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent \
+			python -m harness.optimization.cli.run_report --workspace "/$$WORKSPACE_DIR"; \
+	else \
+		echo "$(GREEN)Auto-discovering SPEC.md in workspace/...$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent \
+			python -m harness.optimization.cli.run_report; \
+	fi
 
 # =============================================================================
 # Smoke tests (real-LLM end-to-end optimization runs)
