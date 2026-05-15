@@ -330,7 +330,38 @@ Smoke after each: rerun the iac-team fixture and verify run #7 still hits COMPLE
 - **Operational reference** (env vars, how to run, resume from existing state) → [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
 - **Queued F-series defects** (F23 multi-grader, F24 shared-generation, F25 GENERATE timeout) → [CGF-EVAL-ROADMAP.md § 3.3](./CGF-EVAL-ROADMAP.md#33-queued-f-series-defects).
 
-### 4.8 Canonical references used in this plan
+### 4.8 What landed on `cgf-eval-ab`
+
+The four refinements were shipped in four sequential commits on branch `cgf-eval-ab`, each ending with the full unit suite green. Per-step engineering details in [PHASEA_REFINEMENT_PLAN.md](./PHASEA_REFINEMENT_PLAN.md).
+
+| Step | Refinement | Commit | Tests added | Unit suite total | Status |
+|---|---|---|---|---|---|
+| 1 | 4.1 Eval-agent isolation + cost capture | `de3a21e` | +17 | 1918 | ✅ |
+| 2 | 4.2 Dual baseline (floor + incumbent) | `bb48f32` | +29 / +14 | 1947 | ✅ |
+| 3 | 4.3 Cost-per-success two-gate | `c02db21` | +22 | 1969 | ✅ |
+| 4 | 4.4 Pipeline tightening (3 sub-fixes) | `fe85e96` | +17 | 1986 | ✅ |
+
+**Surface changes:**
+
+- **New modules.** `src/harness/optimization/gating.py` (3-stage gate: floor + incumbent + cost). `src/harness/optimization/_orchestrator_phases/_baseline_floor.py` (synthetic bare-model resource).
+- **New state fields.** `ResourceStatus.last_promoted_version` (gates one-shot floor arm). `MultiResourceState.eval_suite_hash` (mid-loop mutation guard).
+- **New eval surface.** `EvalResults` gains `judge_model_id`, `judge_prompt_hash`, `total_cost_usd`, `floor`, `floor_pass_rate`, `baseline_cost_per_success`, `candidate_cost_per_success`. `AgentTranscript.total_cost_usd` captured from `ResultMessage.total_cost_usd` (no separate pricing system).
+- **New env knobs.** `CGF_TOKEN_REGRESSION_TOLERANCE=0.10`, `CGF_MIN_GAIN_PER_ROUND=0.02`.
+- **New schema field.** `eval-suite.yaml` `scenarios[].cost_gate_exempt: bool` (per-scenario only; no resource-type fallback).
+- **New Prom instruments.** `harness_eval_cost_per_success_usd{resource_type, arm}` histogram. `harness_eval_cost_gate_total{outcome}` counter.
+- **New sidecar file.** `eval/held-out-usage.json` tracks `{scenario_id: {uses, first_used_at}}` for Phase D rotation.
+- **Verdict shape.** `Gate.Verdict = "promote" | "refine" | "reject_floor" | "reject_cost"`. `reject_floor` and `reject_cost` both transition to `needs_refinement` (same downstream feedback-loop semantics).
+
+**Decisions locked for this branch:**
+
+- Floor arm runs **once per resource at first promotion**, then never again. Model is the experimental control; do not change mid-branch.
+- Judge model defaults to `opus`; emits WARN when it matches `CGF_DESIGN_MODEL` (self-preference risk).
+- Cost gate auto-passes when either side has `None` cost_per_success (no signal to regress against).
+- Held-out usage is written to a sidecar, not back into `eval-suite.yaml` — preserves the 4.4.a hash invariant.
+
+**Not yet verified under real load.** The next smoke run on `iac-team` (run #7) is the first end-to-end test. Expect cost +15-20% vs run #6 on first-promotion rounds; near-zero floor cost thereafter.
+
+### 4.9 Canonical references used in this plan
 
 - [Three-Agent Harness for Long-Running Apps — Anthropic](https://www.anthropic.com/engineering/harness-design-long-running-apps) — separation-of-concerns rationale (4.1)
 - [Building Effective Agents — Anthropic](https://www.anthropic.com/engineering/building-effective-agents) — evaluator-optimizer pattern (4.4)
