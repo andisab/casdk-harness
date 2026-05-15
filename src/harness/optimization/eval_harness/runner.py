@@ -41,6 +41,7 @@ from harness.optimization.eval_harness.aggregate import (
     aggregate_arm,
     aggregate_subset,
     compare_arms,
+    cost_per_success,
     group_by_level,
     group_by_tag,
 )
@@ -785,6 +786,19 @@ class EvalHarness:
             for t in arm.trials
         )
 
+        # Phase A refinement 4.3: cost-per-success per arm.  Exempt
+        # scenarios (cost_gate_exempt: true) are excluded from BOTH
+        # cost and successes — they neither subsidise nor blame the
+        # arm's per-success cost.  Held-out scenarios stay in (cost
+        # gate sees the full quality surface, same as the quality
+        # gate).
+        exempt_ids = {
+            swg.scenario.id for swg in suite.scenarios
+            if swg.scenario.cost_gate_exempt
+        }
+        baseline_cps = cost_per_success(scenarios, "baseline", exempt_ids)
+        candidate_cps = cost_per_success(scenarios, "candidate", exempt_ids)
+
         # Phase A refinement 4.2: floor arm aggregate.  We compute a
         # SubsetStats *equivalent* shape but the win-rate axis isn't
         # meaningful for floor (no baseline-vs-floor compare); we
@@ -874,6 +888,8 @@ class EvalHarness:
             judge_prompt_hash=judge_prompt_hash,
             floor=floor_stats,
             floor_pass_rate=floor_pass_rate,
+            baseline_cost_per_success=baseline_cps,
+            candidate_cost_per_success=candidate_cps,
         )
 
     @staticmethod

@@ -230,6 +230,14 @@ class EvalResults:
     # ``floor=None`` (i.e. the field below is also None).
     floor: SubsetStats | None = None
     floor_pass_rate: float | None = None
+    # Phase A refinement 4.3: cost-per-success gate inputs.  ``None``
+    # means the arm had zero successful completions, in which case the
+    # cost gate auto-passes (no signal to regress against).  Cost is in
+    # USD, summed from SDK ResultMessage.total_cost_usd across all
+    # decisive trials.  Exempt scenarios (cost_gate_exempt: true) are
+    # excluded from both cost and successes.
+    baseline_cost_per_success: float | None = None
+    candidate_cost_per_success: float | None = None
     # Phase A refinement 4.3: cost gate input.  Sum of every trial's
     # ``transcript.total_cost_usd`` across both arms — same value family
     # the SDK feeds to ``claude_code_cost_usage_USD_total`` in Prom, so
@@ -262,4 +270,6 @@ class EvalResults:
             "scenarios": [s.to_dict() for s in self.scenarios],
             "floor": self.floor.to_dict() if self.floor is not None else None,
             "floor_pass_rate": self.floor_pass_rate,
+            "baseline_cost_per_success": self.baseline_cost_per_success,
+            "candidate_cost_per_success": self.candidate_cost_per_success,
         }

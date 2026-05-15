@@ -39,6 +39,8 @@ import structlog
 
 from harness.monitoring import (
     harness_eval_arm_score,
+    harness_eval_cost_gate_total,
+    harness_eval_cost_per_success_usd,
     harness_eval_phase_duration_seconds,
     harness_eval_scenarios_total,
     harness_eval_tokens_to_goal,
@@ -528,11 +530,10 @@ async def _eval_single_resource(
                 ),
             )
         else:
-            # Phase A refinement 4.2: dual-baseline gate via gating.decide.
-            # Verdict is one of {"promote", "refine", "reject_floor"};
-            # the prior boolean _should_promote helper still exists for
-            # backwards-compat call sites but we drive the orchestrator
-            # off the richer verdict.
+            # Phase A refinement 4.2 + 4.3: dual-baseline quality gate
+            # plus cost-per-success gate.  Verdict is one of
+            # {"promote", "refine", "reject_floor", "reject_cost"}.
+            tau = _resolve_cost_tolerance()
             verdict = gate_decide(
                 GateInputs(
                     candidate_pass_rate=results.candidate_pass_rate,
@@ -542,12 +543,37 @@ async def _eval_single_resource(
                         resource.last_promoted_version
                     ),
                     epsilon=epsilon,
+                    candidate_cost_per_success=results.candidate_cost_per_success,
+                    incumbent_cost_per_success=results.baseline_cost_per_success,
+                    tau=tau,
                 )
             )
             resource_span.set_attribute(
                 "harness.eval.floor_pass_rate",
                 results.floor_pass_rate if results.floor_pass_rate is not None else -1.0,
             )
+            # Phase A refinement 4.3: cost telemetry — emit histogram
+            # observations for both arms (where defined) and count the
+            # cost-gate outcome.  Failure modes are mutually exclusive
+            # at this point (quality already passed); see Gate.decide.
+            if results.candidate_cost_per_success is not None:
+                harness_eval_cost_per_success_usd.labels(
+                    resource_type=resource.resource_type, arm="candidate"
+                ).observe(results.candidate_cost_per_success)
+            if results.baseline_cost_per_success is not None:
+                harness_eval_cost_per_success_usd.labels(
+                    resource_type=resource.resource_type, arm="baseline"
+                ).observe(results.baseline_cost_per_success)
+            if verdict == "reject_cost":
+                harness_eval_cost_gate_total.labels(outcome="reject_cost").inc()
+            elif (
+                results.candidate_cost_per_success is None
+                or results.baseline_cost_per_success is None
+            ):
+                # Cost stage auto-passed because one side had no signal.
+                harness_eval_cost_gate_total.labels(outcome="auto_pass").inc()
+            else:
+                harness_eval_cost_gate_total.labels(outcome="promote").inc()
 
             if verdict == "promote":
                 async with self._state_lock:
@@ -582,11 +608,16 @@ async def _eval_single_resource(
                     win_rate=f"{results.win_rate:.2f}",
                 )
             else:
-                # Both "refine" and "reject_floor" share the
-                # needs_refinement transition (caller's max-feedback /
-                # escalation logic handles them identically); the
-                # distinction surfaces in the span outcome attribute and
-                # the log line so operators can diagnose floor failures.
+                # "refine", "reject_floor", and "reject_cost" all share
+                # the needs_refinement transition — downstream
+                # feedback-loop logic handles them identically.  The
+                # distinction surfaces in span.outcome + the structured
+                # log line for operator diagnosis.
+                outcome_label = {
+                    "refine": "regressed",
+                    "reject_floor": "rejected_floor",
+                    "reject_cost": "rejected_cost",
+                }[verdict]
                 async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
@@ -595,13 +626,15 @@ async def _eval_single_resource(
                         refinement_count=resource.refinement_count + 1,
                     )
                 resource_span.set_attribute(
-                    "harness.eval.outcome",
-                    "rejected_floor" if verdict == "reject_floor" else "regressed",
+                    "harness.eval.outcome", outcome_label
                 )
+                progress_msg = {
+                    "refine": "regression",
+                    "reject_floor": "rejected (below floor)",
+                    "reject_cost": "rejected (cost regression)",
+                }[verdict]
                 self._emit_progress(
-                    "EXECUTION_EVAL", resource.path,
-                    "rejected (below floor)" if verdict == "reject_floor"
-                    else "regression",
+                    "EXECUTION_EVAL", resource.path, progress_msg,
                     results.candidate_pass_rate,
                 )
                 if verdict == "reject_floor":
@@ -615,6 +648,25 @@ async def _eval_single_resource(
                             if results.floor_pass_rate is not None
                             else "n/a"
                         ),
+                    )
+                elif verdict == "reject_cost":
+                    logger.warning(
+                        "EXECUTION_EVAL: Quality passed but cost regressed "
+                        "beyond τ",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                        candidate_cps=(
+                            f"${results.candidate_cost_per_success:.4f}"
+                            if results.candidate_cost_per_success is not None
+                            else "n/a"
+                        ),
+                        baseline_cps=(
+                            f"${results.baseline_cost_per_success:.4f}"
+                            if results.baseline_cost_per_success is not None
+                            else "n/a"
+                        ),
+                        tau=f"{tau:.2f}",
                     )
                 else:
                     logger.warning(
@@ -705,6 +757,30 @@ def _resolve_max_feedback(self: MultiResourceOrchestrator) -> int:
     if self.config.max_feedback_iterations is not None:
         return int(self.config.max_feedback_iterations)
     return DEFAULT_MAX_FEEDBACK_ITERATIONS
+
+
+# Phase A refinement 4.3: cost-gate tolerance.  ``τ`` is the fractional
+# headroom the candidate has above the incumbent's cost_per_success;
+# 0.10 = candidate may cost up to 10% more per success than incumbent.
+# Tighten over time as the gate matures.
+DEFAULT_TOKEN_REGRESSION_TOLERANCE = 0.10
+
+
+def _resolve_cost_tolerance() -> float:
+    """Read ``CGF_TOKEN_REGRESSION_TOLERANCE`` from the environment.
+
+    Invalid / non-positive values fall back to ``0.10``.  Operators can
+    set ``0.0`` for "no cost regression allowed" or e.g. ``0.5`` for a
+    looser gate during early calibration.
+    """
+    raw = os.environ.get("CGF_TOKEN_REGRESSION_TOLERANCE")
+    if not raw:
+        return DEFAULT_TOKEN_REGRESSION_TOLERANCE
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_TOKEN_REGRESSION_TOLERANCE
+    return max(0.0, value)
 
 
 def _should_promote(results: EvalResults, epsilon: float) -> bool:
@@ -806,8 +882,15 @@ def _write_aggregate_results(
                 "win_rate": results.win_rate,
                 "baseline_pass_rate": results.baseline_pass_rate,
                 "candidate_pass_rate": results.candidate_pass_rate,
+                "floor_pass_rate": results.floor_pass_rate,
                 "no_decision_rate": results.no_decision_rate,
                 "scenarios": len(results.scenarios),
+                # Phase A refinement 4.3: surface cost-per-success +
+                # gate inputs so post-mortem analysis doesn't need to
+                # re-derive them from per-resource eval-results.json.
+                "baseline_cost_per_success": results.baseline_cost_per_success,
+                "candidate_cost_per_success": results.candidate_cost_per_success,
+                "total_cost_usd": results.total_cost_usd,
                 "promoted": results.candidate_pass_rate
                 >= results.baseline_pass_rate,
             }

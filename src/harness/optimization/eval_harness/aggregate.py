@@ -165,3 +165,63 @@ def group_by_tag(
         for tag in s.tags:
             buckets[tag].append(s)
     return {tag: aggregate_subset(items) for tag, items in buckets.items()}
+
+
+# ---------------------------------------------------------------------------
+# Phase A refinement 4.3 — cost-per-success
+# ---------------------------------------------------------------------------
+
+
+def cost_per_success(
+    scenarios: Iterable[ScenarioResult],
+    arm: Arm,
+    exempt_scenario_ids: set[str] | None = None,
+) -> float | None:
+    """Compute cost-per-success for one arm across a set of scenarios.
+
+    ``cost_per_success = total_cost_usd / successful_completions`` where
+    *successful completions* are decisive trials that passed (per the
+    same definition as :func:`aggregate_arm`).  Failed trials count
+    zero successes — this correctly penalises brittle candidates that
+    spend tokens without producing wins (research § 3.2).
+
+    Returns ``None`` when the arm has zero successes; callers treat
+    None as "no signal" and let the cost gate auto-pass.
+
+    Scenarios in ``exempt_scenario_ids`` are excluded entirely — both
+    their cost and their successes (Phase A refinement 4.3
+    cost_gate_exempt opt-out).  Default empty set = no exemptions.
+    """
+    exempt = exempt_scenario_ids or set()
+    total_cost = 0.0
+    successes = 0
+    for sr in scenarios:
+        if sr.scenario_id in exempt:
+            continue
+        arm_results = _arm_of(sr, arm)
+        if arm_results is None:
+            continue
+        for trial in arm_results.trials:
+            total_cost += trial.transcript.total_cost_usd
+            # Successful = decisive AND passed (matches aggregate_arm's
+            # ``passing`` count semantics, not pass_rate which divides
+            # by decisive count).
+            if trial.passed and not trial.no_decision and not trial.error:
+                successes += 1
+    if successes == 0:
+        return None
+    return total_cost / successes
+
+
+def _arm_of(scenario: ScenarioResult, arm: Arm) -> ArmResults | None:
+    """Pick the named arm off a ScenarioResult, or None if absent.
+
+    Floor arm is optional; baseline / candidate are always populated.
+    """
+    if arm == "baseline":
+        return scenario.baseline
+    if arm == "candidate":
+        return scenario.candidate
+    if arm == "floor":
+        return scenario.floor
+    return None

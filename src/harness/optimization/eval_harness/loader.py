@@ -142,6 +142,7 @@ def _build_scenario(raw: dict[str, Any]) -> ScenarioWithGraders:
         tags=list(raw.get("tags") or []),
         held_out=bool(raw.get("held_out", False)),
         difficulty=raw.get("difficulty"),
+        cost_gate_exempt=bool(raw.get("cost_gate_exempt", False)),
     )
     graders = [build_grader(spec) for spec in raw["graders"]]
     return ScenarioWithGraders(scenario=scenario, graders=graders)

@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-Verdict = Literal["promote", "refine", "reject_floor"]
+Verdict = Literal["promote", "refine", "reject_floor", "reject_cost"]
 
 
 @dataclass(frozen=True)
@@ -43,9 +43,12 @@ class GateInputs:
     when the floor arm did not run — which is the common case after
     the first promotion (see module docstring).
 
-    Keeping this as a small frozen dataclass instead of positional
-    floats makes the call sites at execution_eval self-documenting and
-    makes adding the Step 3 cost fields a pure additive change.
+    Phase A refinement 4.3: cost-per-success inputs.  ``None`` for
+    either side means "no signal" and the cost stage auto-passes.
+    This handles the common case where the baseline has zero successes
+    (every passing candidate would otherwise be rejected for "infinite
+    cost regression").  ``tau`` is the cost tolerance (default 0.10 =
+    10 %); candidate cost ≤ baseline × (1 + tau) passes.
     """
 
     candidate_pass_rate: float
@@ -53,6 +56,11 @@ class GateInputs:
     floor_pass_rate: float | None
     is_first_promotion: bool
     epsilon: float = 0.0
+    # Cost stage (Step 3).  Defaults preserve Step 2 behaviour when
+    # callers haven't been updated yet — None values disable the gate.
+    candidate_cost_per_success: float | None = None
+    incumbent_cost_per_success: float | None = None
+    tau: float = 0.10
 
 
 def decide(inputs: GateInputs) -> Verdict:
@@ -77,11 +85,14 @@ def decide(inputs: GateInputs) -> Verdict:
     bootstrap-CI gate is what tightens ties when they become a
     real problem.
 
-    Returns ``"promote"`` when both stages pass.
+    Returns ``"promote"`` only when all stages pass.
 
-    Step 3 will extend the verdict matrix with a cost stage; the
-    "refine" return value already covers "quality passes, cost fails"
-    so callers don't need to change shape.
+    Phase A refinement 4.3 added a **cost stage** after the quality
+    stages.  Failing it returns ``"reject_cost"`` — quality is fine
+    but the candidate is too expensive vs the incumbent.  The two-gate
+    pattern (quality AND cost) is the multi-objective canon; weighted
+    scalars are explicitly avoided (Goodhart-on-tokens, Han et al.
+    2025).
     """
     # Stage 1: floor — first-time promotion only, and only when the
     # floor arm actually ran.
@@ -94,6 +105,19 @@ def decide(inputs: GateInputs) -> Verdict:
     incumbent_margin = inputs.incumbent_pass_rate + inputs.epsilon
     if inputs.candidate_pass_rate < incumbent_margin:
         return "refine"
+
+    # Stage 3 (Phase A refinement 4.3): cost.  Auto-passes when either
+    # side is None — incumbent=None means no signal to regress against
+    # (typically zero baseline successes), candidate=None means the
+    # candidate had zero successes and the quality stage would have
+    # already rejected it.
+    if (
+        inputs.candidate_cost_per_success is not None
+        and inputs.incumbent_cost_per_success is not None
+    ):
+        cost_ceiling = inputs.incumbent_cost_per_success * (1.0 + inputs.tau)
+        if inputs.candidate_cost_per_success > cost_ceiling:
+            return "reject_cost"
 
     return "promote"
 

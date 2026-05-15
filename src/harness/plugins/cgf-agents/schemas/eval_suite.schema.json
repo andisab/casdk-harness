@@ -155,6 +155,11 @@
           "type": "string",
           "description": "Eval-architect's difficulty estimate (40/40/20 split target)",
           "enum": ["easy", "medium", "hard"]
+        },
+        "cost_gate_exempt": {
+          "type": "boolean",
+          "description": "Phase A refinement 4.3: opt this scenario out of the per-arm cost-per-success gate. Quality gate still counts the scenario; only the cost aggregate excludes it. Use for scenarios where verbose chain-of-thought / tool-trace logging is intentional. Per-scenario opt-in only; no resource-type-level fallback.",
+          "default": false
         }
       }
     },

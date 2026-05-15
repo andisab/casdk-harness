@@ -244,6 +244,33 @@ harness_eval_judge_no_decision_total = Counter(
     ["model"],
 )
 
+# Phase A refinement 4.3: cost-per-success Pareto inputs.
+#
+# Histogram observes the per-arm ``cost_per_success`` in USD at the end
+# of each EXECUTION_EVAL round.  Buckets span 1¢ to $10 — typical
+# per-success cost for sonnet+opus eval is $0.05–$1.  Cardinality:
+# resource_type ∈ {agent, skill, command, mcp_tool, mcp_server} ×
+# arm ∈ {baseline, candidate, floor} → 15 series max.
+harness_eval_cost_per_success_usd = Histogram(
+    "harness_eval_cost_per_success_usd",
+    "Per-arm cost-per-success in USD, observed at EXECUTION_EVAL completion. "
+    "cost_per_success = total_cost_usd / decisive_passes; exempt scenarios "
+    "(cost_gate_exempt: true) are excluded from both numerator and denominator.",
+    ["resource_type", "arm"],
+    buckets=[0.01, 0.05, 0.10, 0.25, 0.50, 1.00, 2.50, 5.00, 10.00],
+)
+
+# Counter on cost-gate outcomes — promote / reject_cost / auto_pass /
+# missing_signal.  Lets Grafana track gate behaviour over time without
+# scraping eval-results.json.
+harness_eval_cost_gate_total = Counter(
+    "harness_eval_cost_gate_total",
+    "Cost-gate verdict counts.  ``outcome`` is one of: promote (cost gate "
+    "cleared), reject_cost (candidate ≤ incumbent × (1 + τ) failed), "
+    "auto_pass (one or both cost_per_success values were None — no signal).",
+    ["outcome"],
+)
+
 
 # Run-level status gauges (low cardinality, always populated during a run).
 # Designed for Grafana stat-panel queries like
