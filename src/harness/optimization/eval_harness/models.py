@@ -22,7 +22,7 @@ from harness.optimization.graders import (
     GraderResult,
 )
 
-Arm = Literal["baseline", "candidate"]
+Arm = Literal["baseline", "candidate", "floor"]
 ScenarioOutcome = Literal["baseline_win", "candidate_win", "tie", "no_decision"]
 
 
@@ -167,6 +167,12 @@ class ScenarioResult:
     baseline: ArmResults
     candidate: ArmResults
     outcome: ScenarioOutcome
+    # Phase A refinement 4.2: optional third arm.  Populated only on
+    # first-time-promotion eval runs, where the bare-model floor must
+    # be beaten before the candidate becomes the first incumbent.  Once
+    # any version has promoted, this stays None for the rest of the
+    # branch.
+    floor: ArmResults | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -178,6 +184,7 @@ class ScenarioResult:
             "outcome": self.outcome,
             "baseline": self.baseline.to_dict(),
             "candidate": self.candidate.to_dict(),
+            "floor": self.floor.to_dict() if self.floor is not None else None,
         }
 
 
@@ -217,6 +224,12 @@ class EvalResults:
     by_level: dict[str, SubsetStats]
     by_tag: dict[str, SubsetStats]
     total_tokens: int
+    # Phase A refinement 4.2: floor arm aggregate, populated only on
+    # first-time-promotion runs.  ``floor_pass_rate`` is the mean
+    # per-scenario floor arm pass-rate; ``None``-equivalent value is
+    # ``floor=None`` (i.e. the field below is also None).
+    floor: SubsetStats | None = None
+    floor_pass_rate: float | None = None
     # Phase A refinement 4.3: cost gate input.  Sum of every trial's
     # ``transcript.total_cost_usd`` across both arms — same value family
     # the SDK feeds to ``claude_code_cost_usage_USD_total`` in Prom, so
@@ -247,4 +260,6 @@ class EvalResults:
             "by_level": {k: v.to_dict() for k, v in self.by_level.items()},
             "by_tag": {k: v.to_dict() for k, v in self.by_tag.items()},
             "scenarios": [s.to_dict() for s in self.scenarios],
+            "floor": self.floor.to_dict() if self.floor is not None else None,
+            "floor_pass_rate": self.floor_pass_rate,
         }

@@ -50,7 +50,12 @@ from harness.optimization._orchestrator_helpers import (
     new_eval_task_id,
     versioned_path,
 )
+from harness.optimization._orchestrator_phases._baseline_floor import (
+    build_floor_resource,
+)
 from harness.optimization.eval_harness import EvalHarness, EvalResults
+from harness.optimization.gating import GateInputs, is_first_promotion
+from harness.optimization.gating import decide as gate_decide
 from harness.progress import OptimizationPhase, ResourceStatus
 
 if TYPE_CHECKING:
@@ -267,15 +272,21 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             continue
         res, results = outcome
         per_resource_results.append((res, results))
-        # F21: bucket unwinnable separately.  Reading the post-helper state
-        # is the authoritative source of truth — the helper already set
-        # status="unwinnable" if applicable.
+        # F21 + Phase A refinement 4.2: bucket from post-helper state.
+        # ``_eval_single_resource`` already wrote the authoritative
+        # status (optimized / unwinnable / needs_refinement) under the
+        # state lock; reading it here keeps the bucketing in lockstep
+        # with the gate verdict (incl. reject_floor → needs_refinement).
         post_state = self._state.resources.get(resource.path)
-        if post_state is not None and post_state.status == "unwinnable":
+        post_status = post_state.status if post_state is not None else None
+        if post_status == "unwinnable":
             unwinnable.append(res)
-        elif _should_promote(results, epsilon):
+        elif post_status == "optimized":
             promotions.append(res)
         else:
+            # needs_refinement covers both Phase A regressions and the
+            # new reject_floor verdict.  Treated identically by the
+            # downstream feedback-loop logic.
             regressions.append((res, results))
 
     # --- aggregate write ---
@@ -416,6 +427,19 @@ async def _eval_single_resource(
         )
         return None
 
+    # Phase A refinement 4.2: build floor arm exactly once per resource,
+    # only on the first-time-promotion path.  Once a resource has any
+    # promoted version (``last_promoted_version > 0``), the floor is
+    # never re-evaluated within this branch — the model is the
+    # experimental control and does not change mid-branch.
+    floor_path: Path | None = None
+    if is_first_promotion(resource.last_promoted_version):
+        floor_dir = workspace / "eval" / "floor" / Path(resource.path).parent
+        floor_path = build_floor_resource(
+            candidate_path=candidate_path,
+            output_dir=floor_dir,
+        )
+
     results_dir = workspace / "eval" / "results" / f"{resource.path}-v{resource.version}"
 
     # Per-resource sub-span (Phase A.7).  Captures the eval task_id
@@ -438,6 +462,7 @@ async def _eval_single_resource(
                 baseline_resource=baseline_path,
                 candidate_resource=candidate_path,
                 results_dir=results_dir,
+                baseline_floor=floor_path,
             )
         except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
             logger.error(
@@ -502,52 +527,103 @@ async def _eval_single_resource(
                     "scenarios or rubric need redesign"
                 ),
             )
-        elif _should_promote(results, epsilon):
-            async with self._state_lock:
-                self._state.update_resource(
-                    resource.path,
-                    status="optimized",
-                    last_evaluated_version=resource.version,
-                )
-                self._finalize_single_resource(resource.path)
-            # Tokens-to-goal: at promotion, observe the cumulative tokens
-            # for this resource.  Phase A approximation: per-run total only;
-            # cumulative across feedback iterations is a Phase B refinement.
-            harness_eval_tokens_to_goal.labels(
-                resource_type=resource.resource_type
-            ).observe(results.total_tokens)
-            resource_span.set_attribute("harness.eval.outcome", "promoted")
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "promoted",
-                results.candidate_pass_rate,
-            )
-            logger.info(
-                "EXECUTION_EVAL: Promoted",
-                path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
-            )
         else:
-            async with self._state_lock:
-                self._state.update_resource(
-                    resource.path,
-                    status="needs_refinement",
-                    last_evaluated_version=resource.version,
-                    refinement_count=resource.refinement_count + 1,
+            # Phase A refinement 4.2: dual-baseline gate via gating.decide.
+            # Verdict is one of {"promote", "refine", "reject_floor"};
+            # the prior boolean _should_promote helper still exists for
+            # backwards-compat call sites but we drive the orchestrator
+            # off the richer verdict.
+            verdict = gate_decide(
+                GateInputs(
+                    candidate_pass_rate=results.candidate_pass_rate,
+                    incumbent_pass_rate=results.baseline_pass_rate,
+                    floor_pass_rate=results.floor_pass_rate,
+                    is_first_promotion=is_first_promotion(
+                        resource.last_promoted_version
+                    ),
+                    epsilon=epsilon,
                 )
-            resource_span.set_attribute("harness.eval.outcome", "regressed")
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "regression",
-                results.candidate_pass_rate,
             )
-            logger.warning(
-                "EXECUTION_EVAL: Regression",
-                path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
+            resource_span.set_attribute(
+                "harness.eval.floor_pass_rate",
+                results.floor_pass_rate if results.floor_pass_rate is not None else -1.0,
             )
+
+            if verdict == "promote":
+                async with self._state_lock:
+                    self._state.update_resource(
+                        resource.path,
+                        status="optimized",
+                        last_evaluated_version=resource.version,
+                        last_promoted_version=resource.version,
+                    )
+                    self._finalize_single_resource(resource.path)
+                # Tokens-to-goal: at promotion, observe the cumulative tokens
+                # for this resource.  Phase A approximation: per-run total only;
+                # cumulative across feedback iterations is a Phase B refinement.
+                harness_eval_tokens_to_goal.labels(
+                    resource_type=resource.resource_type
+                ).observe(results.total_tokens)
+                resource_span.set_attribute("harness.eval.outcome", "promoted")
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, "promoted",
+                    results.candidate_pass_rate,
+                )
+                logger.info(
+                    "EXECUTION_EVAL: Promoted",
+                    path=resource.path,
+                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                    floor_pass_rate=(
+                        f"{results.floor_pass_rate:.2f}"
+                        if results.floor_pass_rate is not None
+                        else "n/a"
+                    ),
+                    win_rate=f"{results.win_rate:.2f}",
+                )
+            else:
+                # Both "refine" and "reject_floor" share the
+                # needs_refinement transition (caller's max-feedback /
+                # escalation logic handles them identically); the
+                # distinction surfaces in the span outcome attribute and
+                # the log line so operators can diagnose floor failures.
+                async with self._state_lock:
+                    self._state.update_resource(
+                        resource.path,
+                        status="needs_refinement",
+                        last_evaluated_version=resource.version,
+                        refinement_count=resource.refinement_count + 1,
+                    )
+                resource_span.set_attribute(
+                    "harness.eval.outcome",
+                    "rejected_floor" if verdict == "reject_floor" else "regressed",
+                )
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path,
+                    "rejected (below floor)" if verdict == "reject_floor"
+                    else "regression",
+                    results.candidate_pass_rate,
+                )
+                if verdict == "reject_floor":
+                    logger.warning(
+                        "EXECUTION_EVAL: Below floor — prompt engineering "
+                        "is net-negative vs bare model",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        floor_pass_rate=(
+                            f"{results.floor_pass_rate:.2f}"
+                            if results.floor_pass_rate is not None
+                            else "n/a"
+                        ),
+                    )
+                else:
+                    logger.warning(
+                        "EXECUTION_EVAL: Regression",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                        win_rate=f"{results.win_rate:.2f}",
+                    )
 
     return (resource, results)
 
@@ -632,13 +708,28 @@ def _resolve_max_feedback(self: MultiResourceOrchestrator) -> int:
 
 
 def _should_promote(results: EvalResults, epsilon: float) -> bool:
-    """Phase A simple-threshold gate.
+    """Backwards-compat shim — delegates to :mod:`gating`.
 
-    Promote when candidate.pass_rate strictly exceeds baseline by ε.
-    Equality is treated as failure to promote — we want a clear signal
-    of improvement, not a coin-flip tie.
+    Pre-refinement-4.2 callers (and the existing unit tests) expect a
+    boolean.  Internally we route through :func:`gate_decide` so that
+    the floor stage is honoured whenever floor_pass_rate is recorded
+    on the results.  Callers that need the richer 3-way verdict
+    should use :func:`gate_decide` directly.
+
+    ``is_first_promotion=True`` is assumed when floor data exists —
+    EvalHarness only emits ``floor_pass_rate`` on first-promotion runs
+    by construction, so this is exact, not heuristic.
     """
-    return results.candidate_pass_rate >= results.baseline_pass_rate + epsilon
+    verdict = gate_decide(
+        GateInputs(
+            candidate_pass_rate=results.candidate_pass_rate,
+            incumbent_pass_rate=results.baseline_pass_rate,
+            floor_pass_rate=results.floor_pass_rate,
+            is_first_promotion=results.floor_pass_rate is not None,
+            epsilon=epsilon,
+        )
+    )
+    return verdict == "promote"
 
 
 def _build_feedback_entry(

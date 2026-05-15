@@ -657,6 +657,13 @@ class ResourceStatus:
             scored by EXECUTION_EVAL (F17). EXECUTION_EVAL skips
             resources whose ``version`` has not advanced past this number,
             avoiding redundant re-evals during feedback rounds.
+        last_promoted_version: Most recent version that cleared the
+            promotion gate (Phase A refinement 4.2). 0 means no version
+            has ever promoted; the gate uses this to detect the
+            "first-time promotion" regime where the floor arm runs
+            (bare-model sanity check). Once any version promotes, the
+            floor arm is never run again within this branch — the model
+            is the experimental control and does not change mid-branch.
         quality: Quality scores (None if not yet evaluated)
         iterations: Number of optimization iterations completed
         refinement_count: Number of targeted refinement loops
@@ -678,6 +685,7 @@ class ResourceStatus:
     ] = "pending"
     version: int = 0
     last_evaluated_version: int = 0
+    last_promoted_version: int = 0
     quality: ResourceQuality | None = None
     iterations: int = 0
     refinement_count: int = 0
@@ -693,6 +701,7 @@ class ResourceStatus:
             "status": self.status,
             "version": self.version,
             "last_evaluated_version": self.last_evaluated_version,
+            "last_promoted_version": self.last_promoted_version,
             "quality": self.quality.to_dict() if self.quality else None,
             "iterations": self.iterations,
             "refinement_count": self.refinement_count,
@@ -714,6 +723,7 @@ class ResourceStatus:
             status=data.get("status", "pending"),
             version=data.get("version", 0),
             last_evaluated_version=data.get("last_evaluated_version", 0),
+            last_promoted_version=data.get("last_promoted_version", 0),
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),
@@ -926,6 +936,7 @@ class MultiResourceState:
         | None = None,
         version: int | None = None,
         last_evaluated_version: int | None = None,
+        last_promoted_version: int | None = None,
         quality: ResourceQuality | None = None,
         iterations: int | None = None,
         refinement_count: int | None = None,
@@ -963,6 +974,8 @@ class MultiResourceState:
             resource.version = version
         if last_evaluated_version is not None:
             resource.last_evaluated_version = last_evaluated_version
+        if last_promoted_version is not None:
+            resource.last_promoted_version = last_promoted_version
         if quality is not None:
             resource.quality = quality
         if iterations is not None:

@@ -47,10 +47,12 @@ from harness.optimization.eval_harness.aggregate import (
 from harness.optimization.eval_harness.loader import load_eval_suite
 from harness.optimization.eval_harness.models import (
     Arm,
+    ArmResults,
     EvalResults,
     EvalSuite,
     ScenarioResult,
     ScenarioWithGraders,
+    SubsetStats,
     TrialResult,
 )
 from harness.optimization.graders import (
@@ -358,6 +360,7 @@ class EvalHarness:
         baseline_resource: str | Path,
         candidate_resource: str | Path,
         results_dir: str | Path | None = None,
+        baseline_floor: str | Path | None = None,
     ) -> EvalResults:
         """Run the full eval suite against both arms and return results.
 
@@ -376,10 +379,18 @@ class EvalHarness:
         and the pass-rate signal was meaningless cross-resource
         accidents.  Scenarios with no explicit ``target_resource``
         fall back to the suite-level default.
+
+        Phase A refinement 4.2: when ``baseline_floor`` is provided,
+        a third arm runs concurrently with the other two for each
+        scenario.  This is the bare-model sanity check, used only at
+        the moment a resource is trying to promote its first version
+        (see :mod:`harness.optimization.gating`).  Pass ``None`` (or
+        omit) for the steady-state candidate-vs-incumbent case.
         """
         suite_path = Path(eval_suite_path)
         baseline_path = Path(baseline_resource)
         candidate_path = Path(candidate_resource)
+        floor_path = Path(baseline_floor) if baseline_floor is not None else None
 
         suite = load_eval_suite(suite_path)
         concurrency = _resolve_scenario_concurrency()
@@ -415,7 +426,8 @@ class EvalHarness:
         async def _one(swg: ScenarioWithGraders) -> ScenarioResult:
             async with semaphore:
                 return await self.run_scenario(
-                    swg, baseline_path, candidate_path, suite
+                    swg, baseline_path, candidate_path, suite,
+                    floor_resource=floor_path,
                 )
 
         # asyncio.gather preserves input order, so `scenarios` ends up
@@ -448,6 +460,7 @@ class EvalHarness:
         baseline_resource: Path,
         candidate_resource: Path,
         suite: EvalSuite,
+        floor_resource: Path | None = None,
     ) -> ScenarioResult:
         """Run K trials of each arm against one scenario.
 
@@ -457,18 +470,42 @@ class EvalHarness:
         arm remain sequential (their results are aggregated by
         :func:`aggregate_arm`; sequential is the safer default for
         rate-limit friendliness).
+
+        Phase A refinement 4.2: ``floor_resource`` adds a third arm
+        when provided.  All three arms run concurrently — they are
+        independent SDK calls.  The ``outcome`` decision still
+        compares baseline-vs-candidate (the floor arm informs the
+        promotion gate downstream but does not change the
+        per-scenario win/tie classification).
         """
-        baseline_trials, candidate_trials = await asyncio.gather(
-            self._run_arm(
-                scenario_with_graders, baseline_resource, "baseline", suite
-            ),
-            self._run_arm(
-                scenario_with_graders, candidate_resource, "candidate", suite
-            ),
-        )
+        if floor_resource is not None:
+            baseline_trials, candidate_trials, floor_trials = await asyncio.gather(
+                self._run_arm(
+                    scenario_with_graders, baseline_resource, "baseline", suite
+                ),
+                self._run_arm(
+                    scenario_with_graders, candidate_resource, "candidate", suite
+                ),
+                self._run_arm(
+                    scenario_with_graders, floor_resource, "floor", suite
+                ),
+            )
+        else:
+            baseline_trials, candidate_trials = await asyncio.gather(
+                self._run_arm(
+                    scenario_with_graders, baseline_resource, "baseline", suite
+                ),
+                self._run_arm(
+                    scenario_with_graders, candidate_resource, "candidate", suite
+                ),
+            )
+            floor_trials = None
 
         baseline_results = aggregate_arm("baseline", baseline_trials)
         candidate_results = aggregate_arm("candidate", candidate_trials)
+        floor_results = (
+            aggregate_arm("floor", floor_trials) if floor_trials is not None else None
+        )
         outcome = compare_arms(baseline_results, candidate_results)
 
         scenario = scenario_with_graders.scenario
@@ -481,6 +518,7 @@ class EvalHarness:
             baseline=baseline_results,
             candidate=candidate_results,
             outcome=outcome,
+            floor=floor_results,
         )
 
     # ----- per-arm / per-trial -----
@@ -725,18 +763,51 @@ class EvalHarness:
         held_out_subset = [s for s in scenarios if s.held_out]
         held_out_stats = aggregate_subset(held_out_subset) if held_out_subset else None
 
+        # Token / cost sums include the floor arm when present so
+        # operator dashboards see the full per-run footprint, not just
+        # baseline+candidate.  Phase A refinement 4.2.
+        def _all_arms(s: ScenarioResult) -> tuple[ArmResults, ...]:
+            arms: tuple[ArmResults, ...] = (s.baseline, s.candidate)
+            if s.floor is not None:
+                arms = (*arms, s.floor)
+            return arms
+
         total_tokens = sum(
             t.transcript.total_tokens
             for s in scenarios
-            for arm in (s.baseline, s.candidate)
+            for arm in _all_arms(s)
             for t in arm.trials
         )
         total_cost_usd = sum(
             t.transcript.total_cost_usd
             for s in scenarios
-            for arm in (s.baseline, s.candidate)
+            for arm in _all_arms(s)
             for t in arm.trials
         )
+
+        # Phase A refinement 4.2: floor arm aggregate.  We compute a
+        # SubsetStats *equivalent* shape but the win-rate axis isn't
+        # meaningful for floor (no baseline-vs-floor compare); we
+        # populate it with the mean floor pass-rate only.
+        floor_scenarios = [s for s in scenarios if s.floor is not None]
+        floor_stats: SubsetStats | None = None
+        floor_pass_rate: float | None = None
+        if floor_scenarios:
+            mean_floor_pass = (
+                sum(s.floor.pass_rate for s in floor_scenarios if s.floor)
+                / len(floor_scenarios)
+            )
+            floor_pass_rate = mean_floor_pass
+            # Reuse SubsetStats shape; win_rate / no_decision_rate not
+            # meaningful here so we leave them at 0.0.  Consumers should
+            # read ``EvalResults.floor_pass_rate`` for the headline number.
+            floor_stats = SubsetStats(
+                count=len(floor_scenarios),
+                win_rate=0.0,
+                baseline_pass_rate=0.0,
+                candidate_pass_rate=mean_floor_pass,
+                no_decision_rate=0.0,
+            )
 
         # Phase A refinement 4.1: pin judge identity for this run.
         # Resolve via the same helper LLMJudgeGrader uses so the recorded
@@ -801,6 +872,8 @@ class EvalHarness:
             total_cost_usd=total_cost_usd,
             judge_model_id=judge_model_id,
             judge_prompt_hash=judge_prompt_hash,
+            floor=floor_stats,
+            floor_pass_rate=floor_pass_rate,
         )
 
     @staticmethod
