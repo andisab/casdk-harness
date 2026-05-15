@@ -23,6 +23,7 @@ from harness.optimization._orchestrator_helpers import (
     AGENT_EVAL_ARCHITECT,
     classify_sdk_error,
     eval_phase_span,
+    eval_suite_sha256,
     new_eval_task_id,
 )
 from harness.optimization.protocols.signals import SignalType
@@ -187,15 +188,22 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
     # on disk; the signal is just an early hint.
     if suite_exists:
         self._state.eval_suite_path = "eval/eval-suite.yaml"
+        # Phase A refinement 4.4.a: capture suite hash here.  EXECUTION_EVAL
+        # checks against this on every round; mismatch → hard abort.  This
+        # is the single chokepoint where the suite-hash baseline is set;
+        # don't mutate eval-suite.yaml elsewhere without recomputing.
+        self._state.eval_suite_hash = eval_suite_sha256(suite_path)
         if eval_design_signals:
             logger.info(
                 "EVAL_DESIGN: Complete",
                 suite_path=str(suite_path),
+                suite_hash=self._state.eval_suite_hash[:16] + "...",
             )
         else:
             logger.info(
                 "EVAL_DESIGN: Suite created (no signal)",
                 suite_path=str(suite_path),
+                suite_hash=self._state.eval_suite_hash[:16] + "...",
             )
         self._emit_progress("EVAL_DESIGN", "all", "complete")
     else:

@@ -133,6 +133,10 @@ def _make_orchestrator(
     # Build state.
     state = MagicMock()
     state.eval_suite_path = eval_suite_path
+    # Phase A refinement 4.4.a: empty string disables the suite-hash
+    # mid-loop guard in EXECUTION_EVAL.  Tests that want to exercise
+    # the guard set this explicitly.
+    state.eval_suite_hash = ""
     state.eval_results_path = ""
     state.feedback_history = list(feedback_history or [])
     state.current_phase = OptimizationPhase.EXECUTION_EVAL

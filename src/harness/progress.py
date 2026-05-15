@@ -771,6 +771,12 @@ class MultiResourceState:
     user_decisions_path: str = ""
     resource_plan_path: str = ""
     eval_suite_path: str = ""
+    # Phase A refinement 4.4.a: SHA-256 of eval-suite.yaml bytes captured
+    # at EVAL_DESIGN exit.  EXECUTION_EVAL refuses to run if the live
+    # suite hash differs — guards against mid-loop scenario rewrites
+    # (intentional or accidental) leaking optimizer-side reasoning into
+    # the gate.  Empty string = no hash recorded yet.
+    eval_suite_hash: str = ""
     eval_results_path: str = ""
     feedback_history: list[dict[str, Any]] = field(default_factory=list)
     quality_threshold: float = 0.85
@@ -820,6 +826,7 @@ class MultiResourceState:
             "user_decisions_path": self.user_decisions_path,
             "resource_plan_path": self.resource_plan_path,
             "eval_suite_path": self.eval_suite_path,
+            "eval_suite_hash": self.eval_suite_hash,
             "eval_results_path": self.eval_results_path,
             "feedback_history": self.feedback_history,
             "quality_threshold": self.quality_threshold,
@@ -847,6 +854,7 @@ class MultiResourceState:
             user_decisions_path=data.get("user_decisions_path", ""),
             resource_plan_path=data.get("resource_plan_path", ""),
             eval_suite_path=data.get("eval_suite_path", ""),
+            eval_suite_hash=data.get("eval_suite_hash", ""),
             eval_results_path=data.get("eval_results_path", ""),
             feedback_history=data.get("feedback_history", []),
             quality_threshold=data.get("quality_threshold", 0.85),

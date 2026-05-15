@@ -48,7 +48,9 @@ from harness.monitoring import (
 from harness.optimization._orchestrator_helpers import (
     DEFAULT_EVAL_PROMOTION_EPSILON,
     DEFAULT_MAX_FEEDBACK_ITERATIONS,
+    DEFAULT_MIN_GAIN_PER_ROUND,
     eval_phase_span,
+    eval_suite_sha256,
     new_eval_task_id,
     versioned_path,
 )
@@ -169,6 +171,38 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             suite_path=str(suite_path),
         )
         return
+
+    # Phase A refinement 4.4.a: refuse to run if the live suite hash
+    # differs from what EVAL_DESIGN recorded.  Guards against mid-loop
+    # scenario rewrites (intentional or accidental) leaking optimizer
+    # reasoning into the gate.  Hard abort — looping back wouldn't fix
+    # the violation, and continuing would invalidate the comparison.
+    expected_hash = self._state.eval_suite_hash
+    if expected_hash:
+        live_hash = eval_suite_sha256(suite_path)
+        if live_hash != expected_hash:
+            logger.error(
+                "EXECUTION_EVAL: eval-suite.yaml hash changed mid-loop — "
+                "aborting",
+                expected=expected_hash[:16] + "...",
+                live=live_hash[:16] + "...",
+                hint=(
+                    "The eval suite was modified after EVAL_DESIGN. "
+                    "Refusing to run because the gate would no longer "
+                    "be comparing against the suite the candidate was "
+                    "iterated against.  Reset sessions/ and re-run if "
+                    "the modification was intentional."
+                ),
+            )
+            self._emit_progress(
+                "EXECUTION_EVAL", "all",
+                "aborted: eval-suite hash mismatch",
+            )
+            raise RuntimeError(
+                "EXECUTION_EVAL aborted: eval-suite.yaml hash "
+                f"{live_hash[:16]} differs from EVAL_DESIGN hash "
+                f"{expected_hash[:16]}"
+            )
 
     iterated_resources = _resources_to_evaluate(self)
     if not iterated_resources:
@@ -303,6 +337,12 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             aggregate_path.relative_to(workspace)
         )
 
+    # Phase A refinement 4.4.c: held-out scenario usage bookkeeping.
+    # Best-effort sidecar write — separate file so it doesn't trip the
+    # 4.4.a suite-hash check.  Phase D will rotate held-out on contact
+    # using this data.
+    _record_held_out_usage(workspace, per_resource_results)
+
     # --- decision: forward, loop, or escalate ---
     # F8: the gate must NEVER advance to VALIDATE with zero successful
     # promotions when something went wrong.  The forward branch now
@@ -376,9 +416,45 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         self._advance_phase(OptimizationPhase.VALIDATE)
         return
 
+    # Phase A refinement 4.4.b: stagnation early-stop.  Compute this
+    # round's mean candidate pass-rate across all per-resource results
+    # and compare against the previous round (if any).  When the gain
+    # is below the threshold, escalate to VALIDATE rather than burn
+    # another round on lateral drift.
+    round_mean_cpr = _round_mean_candidate_pass_rate(per_resource_results)
+    min_gain = _resolve_min_gain()
+    if feedback_count > 0 and self._state.feedback_history:
+        prev_round_mean = self._state.feedback_history[-1].get(
+            "round_mean_candidate_pass_rate"
+        )
+        if prev_round_mean is not None:
+            delta = round_mean_cpr - prev_round_mean
+            if delta < min_gain:
+                logger.warning(
+                    "EXECUTION_EVAL: Stagnation early-stop — escalating "
+                    "to VALIDATE without further ITERATE",
+                    round_mean_candidate_pass_rate=f"{round_mean_cpr:.3f}",
+                    previous_round_mean=f"{prev_round_mean:.3f}",
+                    delta=f"{delta:.3f}",
+                    min_gain=f"{min_gain:.3f}",
+                    hint=(
+                        "iteration is no longer improving meaningfully. "
+                        "Raise CGF_MIN_GAIN_PER_ROUND if you want more "
+                        "rounds, or lower it to let smaller gains through."
+                    ),
+                )
+                self._emit_progress(
+                    "EXECUTION_EVAL", "all",
+                    f"stagnation early-stop (Δ={delta:.3f}<{min_gain})",
+                )
+                self._advance_phase(OptimizationPhase.VALIDATE)
+                return
+
     # Loop back to ITERATE with feedback in state.
     feedback_entry = _build_feedback_entry(
-        regressions, feedback_iteration=feedback_count + 1
+        regressions,
+        feedback_iteration=feedback_count + 1,
+        round_mean_candidate_pass_rate=round_mean_cpr,
     )
     self._state.feedback_history.append(feedback_entry)
     self._state.current_phase = OptimizationPhase.ITERATE
@@ -808,9 +884,101 @@ def _should_promote(results: EvalResults, epsilon: float) -> bool:
     return verdict == "promote"
 
 
+def _record_held_out_usage(
+    workspace: Path,
+    per_resource_results: list[tuple[ResourceStatus, EvalResults]],
+) -> None:
+    """Phase A refinement 4.4.c: held-out scenario usage bookkeeping.
+
+    For every held-out scenario that was decisive (baseline+candidate
+    each had ≥1 decisive trial), increment its ``uses`` counter and
+    set ``first_used_at`` if still null.  Written to
+    ``eval/held-out-usage.json`` as a sidecar — NOT back to
+    eval-suite.yaml, which would trip 4.4.a's hash check.
+
+    Phase A is bookkeeping only.  Phase D will read this file to
+    rotate held-out scenarios on contact.
+
+    Best-effort: file IO failures are logged but never break the
+    pipeline (this is observability, not a gate).
+    """
+    if not per_resource_results:
+        return
+    usage_path = workspace / "eval" / "held-out-usage.json"
+    try:
+        existing: dict[str, dict[str, Any]] = {}
+        if usage_path.exists():
+            existing = json.loads(usage_path.read_text(encoding="utf-8"))
+        now = datetime.now(UTC).isoformat()
+        for _, results in per_resource_results:
+            for sr in results.scenarios:
+                if not sr.held_out:
+                    continue
+                # "Decisive" = both arms produced at least one decisive
+                # trial.  Matches compare_arms' no_decision detection.
+                if sr.baseline.decisive == 0 or sr.candidate.decisive == 0:
+                    continue
+                entry = existing.get(sr.scenario_id, {"uses": 0, "first_used_at": None})
+                entry["uses"] = int(entry.get("uses", 0)) + 1
+                if entry.get("first_used_at") is None:
+                    entry["first_used_at"] = now
+                existing[sr.scenario_id] = entry
+        usage_path.parent.mkdir(parents=True, exist_ok=True)
+        usage_path.write_text(
+            json.dumps(existing, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info(
+            "EXECUTION_EVAL: held-out usage updated",
+            path=str(usage_path),
+            tracked_scenarios=len(existing),
+        )
+    except Exception as exc:  # noqa: BLE001 — bookkeeping must not break gate
+        logger.warning(
+            "EXECUTION_EVAL: held-out usage bookkeeping failed (non-fatal)",
+            error=str(exc)[:200],
+        )
+
+
+def _round_mean_candidate_pass_rate(
+    per_resource_results: list[tuple[ResourceStatus, EvalResults]],
+) -> float:
+    """Phase A refinement 4.4.b: mean candidate pass-rate across all
+    resources in this round.
+
+    Used by the stagnation early-stop check.  Computed over the FULL
+    per-resource set (not just regressions) so the signal is stable
+    across rounds even as different resources move in and out of
+    refinement.  Empty list → 0.0 (safe default; the caller short-
+    circuits before computing if there's nothing to evaluate).
+    """
+    if not per_resource_results:
+        return 0.0
+    return sum(r.candidate_pass_rate for _, r in per_resource_results) / len(
+        per_resource_results
+    )
+
+
+def _resolve_min_gain() -> float:
+    """Phase A refinement 4.4.b: parse ``CGF_MIN_GAIN_PER_ROUND``.
+
+    Default 0.02 (2pp).  Negative values are clamped to 0 (= "any
+    non-regression survives").  Invalid → default.
+    """
+    raw = os.environ.get("CGF_MIN_GAIN_PER_ROUND")
+    if not raw:
+        return DEFAULT_MIN_GAIN_PER_ROUND
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_MIN_GAIN_PER_ROUND
+    return max(0.0, value)
+
+
 def _build_feedback_entry(
     regressions: list[tuple[ResourceStatus, EvalResults]],
     feedback_iteration: int,
+    round_mean_candidate_pass_rate: float | None = None,
 ) -> dict[str, Any]:
     """Assemble a feedback record for ``state.feedback_history``.
 
@@ -818,6 +986,10 @@ def _build_feedback_entry(
     show the optimizer which scenarios it failed and what the baseline
     handled correctly.  Held-out scenarios are explicitly stripped so
     the optimizer never sees them.
+
+    Phase A refinement 4.4.b: ``round_mean_candidate_pass_rate`` is
+    recorded so the next round's stagnation check can compare against
+    it cheaply (no recomputation needed).
     """
     resources_data: list[dict[str, Any]] = []
     for resource, results in regressions:
@@ -852,6 +1024,7 @@ def _build_feedback_entry(
         "feedback_iteration": feedback_iteration,
         "timestamp": datetime.now(UTC).isoformat(),
         "regressions": resources_data,
+        "round_mean_candidate_pass_rate": round_mean_candidate_pass_rate,
     }
 
 

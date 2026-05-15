@@ -34,6 +34,14 @@ DEFAULT_MIN_CONTENT_SIZE_RATIO = 0.5
 DEFAULT_EVAL_PROMOTION_EPSILON = 0.0
 DEFAULT_MAX_FEEDBACK_ITERATIONS = 2
 
+# Phase A refinement 4.4.b: stagnation early-stop threshold.  When the
+# mean candidate pass-rate improves by less than this between
+# consecutive feedback rounds, escalate to VALIDATE rather than burn
+# another round.  Cheap insurance against pathological loops where
+# each round drifts laterally without improving.  Default 0.02 (2pp).
+# Overridable via CGF_MIN_GAIN_PER_ROUND env var.
+DEFAULT_MIN_GAIN_PER_ROUND = 0.02
+
 # F9: cap on VALIDATE → ITERATE loop-backs.  Prevents an infinite loop
 # when the coherence validator keeps flagging the same files across
 # refinement rounds.  Distinct from per-resource refinement_count, which
@@ -57,6 +65,33 @@ AGENT_EVAL_ARCHITECT = "cgf-agents:cgf-eval-architect"
 # ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
+
+
+def eval_suite_sha256(suite_path: Path) -> str:
+    """SHA-256 hex digest of an eval-suite.yaml file's bytes.
+
+    Phase A refinement 4.4.a: captured at EVAL_DESIGN exit and stored
+    on :class:`MultiResourceState`.  EXECUTION_EVAL recomputes before
+    each round and aborts on mismatch — guards against mid-loop suite
+    rewrites leaking optimizer reasoning into the gate.
+
+    The hash covers raw file bytes (after normalising line endings to
+    ``\\n``) so trivial CRLF / LF changes don't trigger spurious aborts.
+    Held-out usage bookkeeping fields (``first_used_at`` / ``uses``,
+    landed in refinement 4.4.c) are also normalised out — they are the
+    one sanctioned mid-loop mutation; see :func:`eval_suite_sha256_normalised`
+    if that path lands separately.
+
+    Returns an empty string when the path doesn't exist.
+    """
+    import hashlib
+
+    if not suite_path.exists():
+        return ""
+    raw = suite_path.read_bytes()
+    # Normalise line endings.  Cross-platform-safe; cheap.
+    normalised = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(normalised).hexdigest()
 
 
 def versioned_path(resource_path: str | Path, version: int) -> Path:
