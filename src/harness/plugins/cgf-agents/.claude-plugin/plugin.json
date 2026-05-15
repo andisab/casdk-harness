@@ -19,15 +19,16 @@
     "research-team"
   ],
   "agents": [
-    "./agents/cgf-coherence-validator.md",
-    "./agents/cgf-criteria-synthesizer.md",
-    "./agents/cgf-orchestrator.md",
-    "./agents/cgf-prompt-optimizer.md",
-    "./agents/cgf-research-lead.md",
-    "./agents/cgf-resource-architect.md",
-    "./agents/cgf-result-evaluator.md",
-    "./agents/cgf-test-architect.md",
-    "./agents/cgf-test-validator.md"
+    "./agents/design/cgf-coherence-validator.md",
+    "./agents/design/cgf-criteria-synthesizer.md",
+    "./agents/design/cgf-orchestrator.md",
+    "./agents/design/cgf-prompt-optimizer.md",
+    "./agents/design/cgf-research-lead.md",
+    "./agents/design/cgf-resource-architect.md",
+    "./agents/design/cgf-result-evaluator.md",
+    "./agents/design/cgf-test-architect.md",
+    "./agents/design/cgf-test-validator.md",
+    "./agents/eval/cgf-eval-architect.md"
   ],
   "skills": [
     "./skills/cgf-optimize"

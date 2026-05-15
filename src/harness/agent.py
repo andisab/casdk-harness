@@ -581,6 +581,19 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         cli_env = os.environ.copy()
         cli_env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered mode
 
+        # Explicit HOME pin (Block 4 prep, 2026-05-14).  Sub-agent Bash
+        # tools that expand `~` (e.g. research-team:research-specialist
+        # writing notes to ~/Documents/ClaudeResearch/...) have been
+        # observed resolving HOME to /root despite the runtime user being
+        # `claude` (uid 996, $HOME=/home/claude in the container).  The
+        # subsequent Write fails with EACCES.  Setting HOME explicitly on
+        # the SDK subprocess env removes the ambiguity for the entire
+        # downstream chain (Claude CLI → bash subprocess → tool).  Falls
+        # back to the inherited value when /home/claude doesn't exist
+        # (e.g., running outside the container during tests).
+        if os.path.isdir("/home/claude"):
+            cli_env["HOME"] = "/home/claude"
+
         # Use override or load from file/config
         system_prompt = self._system_prompt_override or self._load_system_prompt()
         # Use RuntimeConfig for model and permission_mode (immutable, CLI overrides applied)
@@ -604,10 +617,10 @@ Use them via: Skill tool with skill name (e.g., "debugging")
         )
 
         # Plugin sub-agents are exposed to the Task tool by the SDK directly
-        # via ``plugins=`` (verified 2026-05-05; see docs/REFACTOR.md
-        # "SDK upstream investigation"). Harness sub-agents are auto-discovered
-        # from ``.claude/agents/`` through ``setting_sources=["project"]``.
-        # No ``agents=`` workaround needed.
+        # via ``plugins=`` (verified 2026-05-05; see CLAUDE.md
+        # § "Verified SDK Loading Behavior"). Harness sub-agents are
+        # auto-discovered from ``.claude/agents/`` through
+        # ``setting_sources=["project"]``. No ``agents=`` workaround needed.
         return ClaudeAgentOptions(
             allowed_tools=allowed_tools,
             permission_mode=permission_mode,

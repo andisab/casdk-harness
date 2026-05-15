@@ -1,0 +1,279 @@
+# GitHub Actions Workflow: Kubernetes Deployment with Progressive Rollout
+# This workflow demonstrates secure Kubernetes deployments with validation gates
+# - Manifest validation with dry-run
+# - Security scanning with kubesec
+# - Progressive rollout with health checks
+# - Automatic rollback on failure
+
+name: Kubernetes Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'manifests/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'manifests/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  KUBECTL_VERSION: 1.28.0
+
+jobs:
+  validate:
+    name: Validate Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Validate YAML syntax
+        run: |
+          for file in k8s/**/*.yaml manifests/**/*.yaml; do
+            if [ -f "$file" ]; then
+              echo "Validating $file"
+              kubectl apply --dry-run=client -f "$file"
+            fi
+          done
+
+      - name: Security scan with kubesec
+        uses: controlplaneio/kubesec-action@v0.0.2
+        with:
+          input: k8s/
+          format: json
+          threshold: 7
+
+      - name: Validate against live cluster (dry-run)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          # This requires cluster credentials to be configured
+          # For AWS EKS with OIDC, use aws-actions/configure-aws-credentials first
+          kubectl apply --dry-run=server -f k8s/ --recursive
+
+  deploy-dev:
+    name: Deploy to Development
+    needs: validate
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (for EKS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          role-session-name: github-actions-k8s-deploy-dev
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy to development
+        run: |
+          kubectl apply -f k8s/ --namespace=dev --recursive
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment --namespace=dev --timeout=5m
+
+      - name: Verify deployment health
+        run: |
+          kubectl get pods --namespace=dev
+          kubectl get services --namespace=dev
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: deploy-dev
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (for EKS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          role-session-name: github-actions-k8s-deploy-staging
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace staging --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Progressive rollout - Canary (10%)
+        run: |
+          # Scale current deployment for canary testing
+          kubectl apply -f k8s/canary/ --namespace=staging --recursive || true
+
+      - name: Wait for canary health
+        run: |
+          sleep 30
+          kubectl rollout status deployment --namespace=staging --timeout=3m
+
+      - name: Run smoke tests
+        run: |
+          # Add smoke test commands here
+          kubectl run smoke-test --image=curlimages/curl:latest --namespace=staging \
+            --restart=Never --rm -i --command -- curl -f http://my-service/health
+
+      - name: Full rollout
+        run: |
+          kubectl apply -f k8s/ --namespace=staging --recursive
+          kubectl rollout status deployment --namespace=staging --timeout=5m
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment --namespace=staging
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production  # Requires manual approval
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (for EKS)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN_PROD }}
+          role-session-name: github-actions-k8s-deploy-production
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME_PROD }} \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v${{ env.KUBECTL_VERSION }}
+
+      - name: Backup current state
+        run: |
+          kubectl get all --namespace=production -o yaml > backup-$(date +%Y%m%d-%H%M%S).yaml
+
+      - name: Progressive rollout - Canary (10%)
+        run: |
+          kubectl apply -f k8s/canary/ --namespace=production --recursive || true
+          kubectl rollout status deployment --namespace=production --timeout=3m
+
+      - name: Monitor canary metrics
+        run: |
+          # Monitor error rates, latency, etc.
+          sleep 60
+          # Add metric validation here
+
+      - name: Full production rollout
+        run: |
+          kubectl apply -f k8s/ --namespace=production --recursive
+          kubectl rollout status deployment --namespace=production --timeout=10m
+
+      - name: Post-deployment verification
+        run: |
+          kubectl get pods --namespace=production
+          kubectl get services --namespace=production
+          # Run production smoke tests
+          kubectl run prod-smoke-test --image=curlimages/curl:latest \
+            --namespace=production --restart=Never --rm -i --command -- \
+            curl -f https://api.example.com/health
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          kubectl rollout undo deployment --namespace=production
+          kubectl rollout status deployment --namespace=production
+
+      - name: Notify on success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: context.payload.deployment.id,
+              state: 'success',
+              description: 'Production deployment successful',
+              environment_url: 'https://api.example.com'
+            })
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Production Deployment Failed',
+              body: `Production deployment failed for commit ${{ github.sha }}\n\nAutomatic rollback initiated.\n\nSee [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+              labels: ['kubernetes', 'production', 'incident']
+            })

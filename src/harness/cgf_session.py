@@ -62,6 +62,14 @@ from harness.config import (
     RuntimeConfig,
     get_config,
 )
+from harness.monitoring import (
+    init_run_phases,
+    record_iteration,
+    record_phase_entry,
+    record_run_config,
+    record_run_path,
+    record_run_start,
+)
 
 # Load prompts from files
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -406,7 +414,7 @@ class CGFQASession:
 CGF_PHASES = (
     "qa",  # Q&A phase (gathering requirements)
     "research",  # Research phase (domain knowledge)
-    "research_iterate",  # Agentic optimization using research
+    "iterate",  # Agentic optimization using research
     "evaluate",  # Result evaluation
     "finalize",  # Final review and acceptance
     "complete",  # Terminal state
@@ -441,6 +449,16 @@ class CGFTaskList:
     # Error tracking
     error: str | None = None
 
+    # Baseline integrity (P0.1): SHA-256 of the pristine resource file,
+    # captured at the start of _run_optimization_phase.  Re-checked before
+    # each phase signal is processed; mismatch hard-fails the run.
+    baseline_hash: str | None = None
+
+    # Last evaluator recommendation (P0.4): parsed from
+    # reviews/v{N}_review.md after each [EVALUATE_COMPLETE].
+    # One of: ACCEPT, REFINE, REJECT, or None (before first evaluation).
+    last_recommendation: str | None = None
+
     # Timestamps
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     updated_at: str = ""
@@ -454,6 +472,8 @@ class CGFTaskList:
             "total_iterations": self.total_iterations,
             "checkpoints": self.checkpoints,
             "error": self.error,
+            "baseline_hash": self.baseline_hash,
+            "last_recommendation": self.last_recommendation,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -468,6 +488,8 @@ class CGFTaskList:
             total_iterations=data.get("total_iterations", 0),
             checkpoints=data.get("checkpoints", []),
             error=data.get("error"),
+            baseline_hash=data.get("baseline_hash"),
+            last_recommendation=data.get("last_recommendation"),
             created_at=data.get("created_at", datetime.now(UTC).isoformat()),
             updated_at=data.get("updated_at", ""),
         )
@@ -550,6 +572,7 @@ class CGFSessionRunner:
         goal: str | None = None,
         model: str | None = None,
         quiet: bool = False,
+        non_interactive: bool = False,
     ) -> None:
         """Initialize the CGF session runner.
 
@@ -560,6 +583,7 @@ class CGFSessionRunner:
             goal: Optional optimization goal (bypasses Q&A if provided)
             model: Claude model to use (defaults to config)
             quiet: Suppress system logs
+            non_interactive: Auto-continue at every phase checkpoint (no stdin prompts)
         """
         self.agent_name = agent_name
         self.workspace_base = workspace_base or Path("/workspace")
@@ -568,6 +592,9 @@ class CGFSessionRunner:
         self.goal = goal
         self.model_override = model
         self.quiet = quiet
+        self.non_interactive = non_interactive or os.environ.get(
+            "CGF_NON_INTERACTIVE", ""
+        ).lower() in ("1", "true", "yes")
         self.config = get_config()
         self._shutdown_requested = False
         self._shutdown_event: asyncio.Event | None = None
@@ -737,6 +764,10 @@ class CGFSessionRunner:
         if artifact_path:
             self.console.print(f"  [dim]Artifact: {artifact_path}[/dim]")
 
+        if self.non_interactive:
+            self.console.print("  [dim](non-interactive: auto-continue)[/dim]")
+            return "continue"
+
         self.console.print()
         self.console.print("  [bold cyan][C][/bold cyan]ontinue to next phase")
         self.console.print("  [bold cyan][E][/bold cyan]dit resource file first")
@@ -760,6 +791,44 @@ class CGFSessionRunner:
         except (KeyboardInterrupt, EOFError):
             self.console.print("\n[yellow]Interrupted. Saving state...[/yellow]")
             return "abort"
+
+    def _patch_summary_iterations(self, iteration: int) -> None:
+        """Overwrite agent-reported `iterations` in the latest *.summary.json
+        with the state-machine's `task_list.iteration`.
+
+        The orchestrator agent currently self-reports iteration counts that
+        can disagree with the state machine — CHANGELOG, summary.json, and
+        task_list.json have shown three different numbers for the same run.
+        Python owns this field at write-time so there is a single source of
+        truth.
+        """
+        if self.workspace_dir is None:
+            return
+        sessions_dir = self.workspace_dir / "sessions"
+        if not sessions_dir.exists():
+            return
+        try:
+            summaries = sorted(
+                sessions_dir.glob("*.summary.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if not summaries:
+                return
+            latest = summaries[0]
+            data = json.loads(latest.read_text())
+            if data.get("iterations") != iteration:
+                logger.info(
+                    "Patching summary.json iterations",
+                    file=str(latest),
+                    agent_reported=data.get("iterations"),
+                    state_machine=iteration,
+                )
+                data["iterations"] = iteration
+                data["_iterations_source"] = "task_list.iteration (state machine)"
+                latest.write_text(json.dumps(data, indent=2))
+        except Exception as e:  # pragma: no cover — never fail the run on this
+            logger.warning("Failed to patch summary.json iterations", error=str(e))
 
     def _find_resource_path(self) -> Path | None:
         """Find the resource file in the workspace.
@@ -808,6 +877,222 @@ class CGFSessionRunner:
         """Get hash of resource file content."""
         content = path.read_text()
         return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _baseline_hash_check_enabled() -> bool:
+        """Whether P0.1 baseline-hash protection is active.
+
+        Default ON; disable with ``CGF_BASELINE_HASH_CHECK=0`` for tests
+        or experimental runs.
+        """
+        return os.environ.get("CGF_BASELINE_HASH_CHECK", "1").lower() not in (
+            "0", "false", "no", "off"
+        )
+
+    @staticmethod
+    def _signal_strict() -> bool:
+        """Whether the P1.4 signal watchdog hard-fails on drift.
+
+        Default OFF (warn-only).  Enable with ``CGF_SIGNAL_STRICT=1``.
+        """
+        return os.environ.get("CGF_SIGNAL_STRICT", "0").lower() in (
+            "1", "true", "yes", "on"
+        )
+
+    @staticmethod
+    def _max_iterations_cap() -> int:
+        """P0.3 hard cap on iteration count (refuses ITERATION_COMPLETE
+        beyond this).  Default 3.
+
+        This is distinct from ``CGF_ITERATIONS`` (the spec-level
+        max_iterations the orchestrator agent reads), and acts as a
+        Python-side hard ceiling to prevent runaway cost.
+        """
+        try:
+            return max(1, int(os.environ.get("CGF_MAX_ITERATIONS", "3")))
+        except (ValueError, TypeError):
+            return 3
+
+    def _parse_review_recommendation(
+        self, review_path: Path
+    ) -> tuple[str | None, dict[str, list[str]]]:
+        """Parse RECOMMENDATION + refinement directives from a review file.
+
+        The evaluator's contract is to emit a ``<cgf_directive>`` XML
+        block at the top of the file (canonical form).  We also accept
+        a handful of legacy markdown shapes as fallbacks, because early
+        runs surfaced them in the wild before the contract was
+        tightened — see the test file for the exact list.
+
+        Args:
+            review_path: Path to ``reviews/v{N}_review.md``.
+
+        Returns:
+            ``(recommendation, hints_dict)`` where ``hints_dict`` may
+            contain keys ``target_sections``, ``target_competencies``,
+            ``refinement_hints`` (each a list of strings).  Returns
+            ``(None, {})`` if the file is missing or unparseable.
+        """
+        if not review_path.exists():
+            return None, {}
+        try:
+            content = review_path.read_text()
+        except OSError:
+            return None, {}
+
+        # ---- Form 1 (canonical): <cgf_directive> XML block ----
+        recommendation, hints = self._parse_directive_xml(content)
+        if recommendation is not None:
+            return recommendation, hints
+
+        # ---- Fallback forms (legacy markdown) ----
+        # Form 2: line-anchored `RECOMMENDATION: ACCEPT|REFINE|REJECT`
+        #   Also matches:  **RECOMMENDATION:** X / **RECOMMENDATION**: X /
+        #                  - **Recommendation:** X
+        m = re.search(
+            r"^[ \t\-\*]*\*{0,2}\s*RECOMMENDATION\s*\*{0,2}\s*[:=]\s*\*{0,2}\s*(ACCEPT|REFINE|REJECT)\b",
+            content,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if m:
+            recommendation = m.group(1).upper()
+
+        # Form 3: markdown table cell  | Recommendation | **REFINE** |
+        if recommendation is None:
+            m = re.search(
+                r"^\s*\|\s*Recommendation\s*\|\s*\*{0,2}\s*(ACCEPT|REFINE|REJECT)\s*\*{0,2}\s*\|",
+                content,
+                re.MULTILINE | re.IGNORECASE,
+            )
+            if m:
+                recommendation = m.group(1).upper()
+
+        # Form 4: `## Recommendation` header followed by standalone bold value.
+        if recommendation is None:
+            m = re.search(
+                r"^#{1,6}\s+Recommendation\s*$"
+                r"(?:[ \t]*\n){1,3}"
+                r"^[ \t]*\*{0,2}\s*(ACCEPT|REFINE|REJECT)\s*\*{0,2}\s*$",
+                content,
+                re.MULTILINE | re.IGNORECASE,
+            )
+            if m:
+                recommendation = m.group(1).upper()
+
+        # Legacy hint blocks (TARGET_SECTIONS: / dash-bullets).  Only
+        # populated if XML directive wasn't found.
+        legacy_hints: dict[str, list[str]] = {}
+        for label, key in (
+            ("TARGET_SECTIONS", "target_sections"),
+            ("TARGET_COMPETENCIES", "target_competencies"),
+            ("REFINEMENT_HINTS", "refinement_hints"),
+        ):
+            block = re.search(
+                rf"^[ \t]*\*?\*?{label}\*?\*?\s*[:=]?\s*\n((?:[ \t]*-[^\n]+\n?)+)",
+                content,
+                re.MULTILINE,
+            )
+            if block:
+                items = [
+                    re.sub(r"^[ \t]*-\s*", "", line).strip()
+                    for line in block.group(1).splitlines()
+                    if line.strip().startswith("-")
+                ]
+                if items:
+                    legacy_hints[key] = items
+
+        return recommendation, legacy_hints
+
+    @staticmethod
+    def _parse_directive_xml(
+        content: str,
+    ) -> tuple[str | None, dict[str, list[str]]]:
+        """Extract recommendation + refinement directives from a
+        ``<cgf_directive>...</cgf_directive>`` block.
+
+        Returns ``(None, {})`` if no block is found or the recommendation
+        tag is missing/invalid.  Uses regex (not a real XML parser) so it
+        tolerates surrounding markdown and unrelated angle brackets in
+        prose elsewhere in the file.
+        """
+        block_match = re.search(
+            r"<cgf_directive>(.*?)</cgf_directive>",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if not block_match:
+            return None, {}
+        block = block_match.group(1)
+
+        rec_match = re.search(
+            r"<recommendation>\s*(ACCEPT|REFINE|REJECT)\s*</recommendation>",
+            block,
+            re.IGNORECASE,
+        )
+        if not rec_match:
+            return None, {}
+        recommendation = rec_match.group(1).upper()
+
+        hints: dict[str, list[str]] = {}
+        for parent_tag, item_tag, key in (
+            ("target_sections", "section", "target_sections"),
+            ("target_competencies", "competency", "target_competencies"),
+            ("refinement_hints", "hint", "refinement_hints"),
+        ):
+            parent = re.search(
+                rf"<{parent_tag}>(.*?)</{parent_tag}>",
+                block,
+                re.DOTALL | re.IGNORECASE,
+            )
+            if not parent:
+                continue
+            items = [
+                m.group(1).strip()
+                for m in re.finditer(
+                    rf"<{item_tag}>(.*?)</{item_tag}>",
+                    parent.group(1),
+                    re.DOTALL | re.IGNORECASE,
+                )
+                if m.group(1).strip()
+            ]
+            if items:
+                hints[key] = items
+
+        return recommendation, hints
+
+    def _verify_baseline(
+        self,
+        task_list: "CGFTaskList",
+        resource_path: Path,
+    ) -> str | None:
+        """Re-hash the resource file and compare against the recorded baseline.
+
+        Returns ``None`` if the file is intact (or if checking is disabled
+        / no baseline recorded).  Returns an error message if the hash
+        differs.  Caller is responsible for marking the run failed.
+        """
+        if not self._baseline_hash_check_enabled():
+            return None
+        if not task_list.baseline_hash:
+            return None
+        if not resource_path.exists():
+            return (
+                f"Baseline file vanished mid-run: {resource_path} "
+                "(expected SHA-256 prefix "
+                f"{task_list.baseline_hash}, file no longer exists)."
+            )
+        current = self._get_resource_hash(resource_path)
+        if current != task_list.baseline_hash:
+            return (
+                "Baseline integrity violation: "
+                f"{resource_path} was modified during the run. "
+                f"Expected SHA-256 prefix {task_list.baseline_hash}, "
+                f"observed {current}.  The original resource file MUST NOT "
+                "be modified — optimized versions belong in "
+                "{resource}-v{N}.md.  Set CGF_BASELINE_HASH_CHECK=0 to "
+                "disable this check."
+            )
+        return None
 
     def _has_spec(self) -> bool:
         """Check if SPEC.md or cgf_spec.yaml exists.
@@ -1317,6 +1602,20 @@ Then output: [SPEC_READY]
             logger.error("Failed to parse YAML spec", error=str(e), yaml=yaml_content[:200])
             return None
 
+    def _iter_tool_use_blocks(self, message: object) -> list[object]:
+        """Yield ToolUseBlock-like blocks from a message.
+
+        Returns blocks that have both ``name`` and ``input`` attributes.
+        Tolerant of message types that don't expose ``content`` (returns []).
+        """
+        raw_content = getattr(message, "content", None)
+        if not isinstance(raw_content, list):
+            return []
+        return [
+            b for b in raw_content
+            if hasattr(b, "name") and hasattr(b, "input")
+        ]
+
     def _extract_content_str(self, message: object) -> str:
         """Extract string content from a message object."""
         raw_content = getattr(message, "content", None)
@@ -1341,12 +1640,12 @@ Then output: [SPEC_READY]
         """Build prompt for cgf-orchestrator with spec context."""
         try:
             orchestrator_prompt = load_prompt(
-                "plugins/cgf-agents/agents/cgf-orchestrator"
+                "plugins/cgf-agents/agents/design/cgf-orchestrator"
             )
         except FileNotFoundError:
             # Try alternate path
             orchestrator_path = (
-                Path("src/harness/plugins/cgf-agents/agents/cgf-orchestrator.md")
+                Path("src/harness/plugins/cgf-agents/agents/design/cgf-orchestrator.md")
             )
             if orchestrator_path.exists():
                 orchestrator_prompt = orchestrator_path.read_text()
@@ -1355,9 +1654,15 @@ Then output: [SPEC_READY]
                     "cgf-orchestrator.md not found in prompts or plugins"
                 )
 
-        # Read current resource content
-        resource_content = spec.resource_path.read_text()
-
+        # NOTE: we deliberately do NOT embed the resource content here.
+        # Linux's MAX_ARG_STRLEN (per-argv limit) is 128KB, and the SDK
+        # passes the entire system_prompt as one argv element to the
+        # bundled `claude` CLI.  A 49KB orchestrator prompt + an 82KB
+        # resource = E2BIG ([Errno 7] Argument list too long).  The
+        # orchestrator has the Read tool — point it at the file and let
+        # it pull the content on demand.  This also fixes a correctness
+        # bug: the resource changes across iterations, so embedding a
+        # stale snapshot at session start misleads the agent.
         prompt = f"""{orchestrator_prompt}
 
 ---
@@ -1370,13 +1675,16 @@ The following specification was created during the Q&A phase:
 {yaml.safe_dump(spec.to_dict(), default_flow_style=False)}
 ```
 
-## Current Resource Content
+## Current Resource (read on demand)
 
 **File**: {spec.resource_path}
 
-```markdown
-{resource_content}
-```
+The resource file is NOT inlined here — it would push this system
+prompt past the OS per-arg limit for moderately sized resources.
+Use the Read tool to load it when (and only when) you need its
+content.  Note that during ITERATE phases, candidate versions
+(`{spec.resource_path.stem}-v{{N}}.md` in the same directory) will be
+written by the optimizer subagent — Read those as needed too.
 
 ---
 
@@ -1407,9 +1715,9 @@ Begin optimization now.
 
         if phase == "research":
             return "Resume from RESEARCH phase. Continue gathering domain knowledge."
-        elif phase == "research_iterate":
+        elif phase == "iterate":
             return (
-                f"Resume from RESEARCH_ITERATE phase (iteration {iteration}). "
+                f"Resume from ITERATE phase (iteration {iteration}). "
                 "Continue agentic optimization using research findings."
             )
         elif phase == "evaluate":
@@ -1440,6 +1748,43 @@ Begin optimization now.
             )
             task_list.save(self.workspace_dir)
         self.task_list = task_list
+
+        # P0.1: Capture SHA-256 of the pristine resource file so we can detect
+        # any mid-run mutation (e.g. orchestrator overwriting the original
+        # with iteration content).  Only set on the first entry — resumes
+        # MUST trust the originally-recorded hash.
+        if (
+            task_list.baseline_hash is None
+            and spec.resource_path.exists()
+            and self._baseline_hash_check_enabled()
+        ):
+            task_list.baseline_hash = self._get_resource_hash(spec.resource_path)
+            logger.info(
+                "Baseline integrity hash captured",
+                resource=str(spec.resource_path),
+                sha256_prefix=task_list.baseline_hash,
+            )
+            task_list.save(self.workspace_dir)
+
+        # Initialize run-status gauges (label values surfaced in Grafana panels).
+        # `effort` is a placeholder until per-prompt effort tracking is wired
+        # through the SDK options; single-resource path has no eval pipeline.
+        resource_label = self.resource_name or "unknown"
+        record_run_path(resource_label, "single")
+        init_run_phases(resource_label)
+        record_phase_entry(resource_label, task_list.current_phase)
+        record_iteration(resource_label, task_list.iteration)
+        record_run_start(resource_label)
+        record_run_config(
+            resource=resource_label,
+            path="single",
+            mode="optimize",
+            model=spec.eval_model,
+            effort="default",
+            eval_enabled=False,
+            token_budget=0,
+            max_iterations=spec.max_iterations,
+        )
 
         # Display header
         is_resuming = task_list.iteration > 0 or task_list.current_phase != "research"
@@ -1478,27 +1823,161 @@ Begin optimization now.
                 # Build initial message (start or resume)
                 current_message = self._build_resume_message(task_list)
 
+                # Hard-contract enforcement: track how many of each signal the
+                # orchestrator agent emits this run.  `[OPTIMIZATION_COMPLETE]`
+                # is rejected if `iterate` or `evaluate` count == 0 — see
+                # CLAUDE.md "TODOs / hardening" for rationale.
+                #
+                # Seeded from the persisted task_list so resumes don't lose
+                # state.  `iterate` is authoritative from task_list.iteration;
+                # `evaluate` is reconstructed from prior checkpoints.
+                signal_counts = {
+                    "research": 0,
+                    "test_gen": 0,
+                    "iterate": task_list.iteration,
+                    "evaluate": sum(
+                        1 for cp in task_list.checkpoints
+                        if cp.get("phase") == "evaluate"
+                    ),
+                }
+
+                # P0.3 hard iteration cap (defense-in-depth: complements the
+                # spec.max_iterations the orchestrator agent self-polices).
+                iteration_cap = self._max_iterations_cap()
+
+                max_iters_str = (
+                    f"{iteration_cap} (Python cap) / "
+                    f"{spec.max_iterations} (spec)"
+                )
+                logger.info(
+                    "CGF optimization phase starting",
+                    resource=resource_label,
+                    iteration_cap=iteration_cap,
+                    max_iters=max_iters_str,
+                )
+
+                # P0.4: when the latest evaluation produced ACCEPT or REJECT,
+                # the next signal MUST be terminal — refuse another
+                # ITERATION_COMPLETE.  Restored from task_list on resume.
+                terminal_required: bool = task_list.last_recommendation in (
+                    "ACCEPT", "REJECT"
+                )
+
+                # P1.4 signal watchdog state.  Reset at the start of every
+                # agent turn (every execute() iteration).
+                # Tracks Write tool calls to *-v{N}.md and whether
+                # [ITERATION_COMPLETE] fired in the same turn.
+                pending_iteration_signal: int | None = None
+
                 while not self._shutdown_requested:
                     phase_transitioned = False
                     accumulated_content = ""
+                    pending_iteration_signal = None
 
                     async for message in agent_session.execute(current_message):
                         content = self._extract_content_str(message)
                         accumulated_content += content
                         parse_and_print_message(message, self.console)
 
+                        # P1.4 signal watchdog: detect Write tool calls
+                        # targeting versioned files like ``foo-v2.md``.
+                        # If the same turn also emits ITERATION_COMPLETE
+                        # we clear the flag; otherwise we warn/fail.
+                        for block in self._iter_tool_use_blocks(message):
+                            name = getattr(block, "name", "")
+                            if name != "Write":
+                                continue
+                            block_input = getattr(block, "input", None) or {}
+                            file_path = block_input.get("file_path", "") if isinstance(block_input, dict) else ""
+                            m = re.search(r"-v(\d+)\.md$", str(file_path))
+                            if m:
+                                pending_iteration_signal = int(m.group(1))
+                                logger.debug(
+                                    "Watchdog: pending iteration signal",
+                                    version=pending_iteration_signal,
+                                    file=file_path,
+                                )
+
+                        # P0.1 baseline integrity check — performed BEFORE
+                        # acting on any phase signal.  If the pristine
+                        # resource file has been mutated, hard-fail.
+                        if any(
+                            sig in content for sig in (
+                                "[RESEARCH_COMPLETE]",
+                                "[TEST_GEN_COMPLETE]",
+                                "[ITERATION_COMPLETE]",
+                                "[EVALUATE_COMPLETE]",
+                                "[OPTIMIZATION_COMPLETE]",
+                            )
+                        ):
+                            integrity_err = self._verify_baseline(
+                                task_list, spec.resource_path,
+                            )
+                            if integrity_err:
+                                logger.error(
+                                    "CGF baseline integrity violation",
+                                    error=integrity_err,
+                                )
+                                task_list.error = integrity_err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — "
+                                    "baseline integrity violation[/bold red]\n"
+                                    f"[red]{integrity_err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
                         # Check for terminal signals first
                         if "[OPTIMIZATION_COMPLETE]" in content:
+                            # Enforce signal-sequence contract.  Skipping the
+                            # iterate/evaluate phases means the dashboard,
+                            # iteration counter, and CHANGELOG all go dark.
+                            missing = [
+                                k for k in ("iterate", "evaluate")
+                                if signal_counts[k] == 0
+                            ]
+                            if missing:
+                                err = (
+                                    "Contract violation: [OPTIMIZATION_COMPLETE] "
+                                    f"fired without prior signals: {missing}. "
+                                    f"Counts so far: {signal_counts}. "
+                                    "The orchestrator agent must emit at least "
+                                    "one [ITERATION_COMPLETE] AND one "
+                                    "[EVALUATE_COMPLETE] (see cgf-orchestrator.md "
+                                    "§ Phase Completion Signals)."
+                                )
+                                logger.error("CGF contract violation", missing=missing, counts=signal_counts)
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    f"\n[bold red]Run failed — contract violation[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                # Record on dashboard so failure is visible
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
                             task_list.current_phase = "complete"
+                            record_phase_entry(resource_label, "complete")
                             task_list.add_checkpoint(
                                 "complete",
                                 str(self.workspace_dir),
-                                "Optimization completed successfully",
+                                f"Optimization completed successfully (signals: {signal_counts})",
                             )
                             task_list.save(self.workspace_dir)
+                            self._patch_summary_iterations(task_list.iteration)
                             self.console.print(
                                 "\n[bold green]Optimization completed![/bold green]"
                             )
+                            # Hold the metrics endpoint open long enough for
+                            # Prometheus (15s scrape interval) to capture the
+                            # final `complete=1` state. Otherwise the dashboard
+                            # ends up showing whichever phase was scraped just
+                            # before this transition.
+                            await asyncio.sleep(20)
                             return True
 
                         if "[OPTIMIZATION_FAILED]" in content:
@@ -1511,11 +1990,13 @@ Begin optimization now.
 
                         # Check for phase transition signals
                         if "[RESEARCH_COMPLETE]" in content:
+                            signal_counts["research"] += 1
                             task_list.current_phase = (
                                 "test_gen"
                                 if spec.optimizer_mode in ("python", "both")
-                                else "research_iterate"
+                                else "iterate"
                             )
+                            record_phase_entry(resource_label, task_list.current_phase)
                             task_list.add_checkpoint(
                                 "research",
                                 str(self.workspace_dir / "research"),
@@ -1543,7 +2024,9 @@ Begin optimization now.
                             break
 
                         if "[TEST_GEN_COMPLETE]" in content:
+                            signal_counts["test_gen"] += 1
                             task_list.current_phase = "optimize"
+                            record_phase_entry(resource_label, "optimize")
                             task_list.add_checkpoint(
                                 "test_gen",
                                 str(self.workspace_dir / "tests" / "test_suite.yaml"),
@@ -1562,46 +2045,357 @@ Begin optimization now.
                             break
 
                         if "[ITERATION_COMPLETE]" in content:
-                            task_list.iteration += 1
+                            prospective_iter = signal_counts["iterate"] + 1
+
+                            # P0.4: ACCEPT/REJECT means the last evaluator
+                            # decided the run was done.  Refuse another
+                            # iteration in that case.
+                            if terminal_required:
+                                err = (
+                                    "Contract violation: [ITERATION_COMPLETE] "
+                                    "fired after the evaluator returned "
+                                    f"RECOMMENDATION: {task_list.last_recommendation}. "
+                                    "Only [OPTIMIZATION_COMPLETE] (or [OPTIMIZATION_FAILED]) "
+                                    "is permitted after a terminal recommendation."
+                                )
+                                logger.error(
+                                    "CGF iteration after terminal recommendation",
+                                    recommendation=task_list.last_recommendation,
+                                )
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — iteration after "
+                                    "terminal recommendation[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
+                            # P0.2: pair-wise iter ↔ eval contract.  After
+                            # this ITERATION_COMPLETE, iter_count must not
+                            # exceed eval_count + 1 (each iteration must be
+                            # followed by an evaluation before the next).
+                            if prospective_iter > signal_counts["evaluate"] + 1:
+                                err = (
+                                    "Contract violation: [ITERATION_COMPLETE] "
+                                    f"#{prospective_iter} fired without a prior "
+                                    "[EVALUATE_COMPLETE] for the previous "
+                                    "iteration.  Counts: "
+                                    f"iterate={prospective_iter}, "
+                                    f"evaluate={signal_counts['evaluate']}.  "
+                                    "Protocol: write v{N}.md → "
+                                    "[ITERATION_COMPLETE] → dispatch evaluator "
+                                    "→ write reviews/v{N}_review.md → "
+                                    "[EVALUATE_COMPLETE] → only then v{N+1}.md."
+                                )
+                                logger.error(
+                                    "CGF pair-wise violation",
+                                    prospective_iter=prospective_iter,
+                                    eval_count=signal_counts["evaluate"],
+                                )
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — "
+                                    "pair-wise contract violation[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
+                            # P0.3: hard iteration cap (Python-side ceiling).
+                            if prospective_iter > iteration_cap:
+                                err = (
+                                    "Contract violation: [ITERATION_COMPLETE] "
+                                    f"#{prospective_iter} exceeds CGF_MAX_ITERATIONS "
+                                    f"cap of {iteration_cap}.  The orchestrator "
+                                    "agent must emit [OPTIMIZATION_COMPLETE] "
+                                    "(or [OPTIMIZATION_FAILED]) once the cap is "
+                                    "reached.  Set CGF_MAX_ITERATIONS higher to "
+                                    "permit more iterations."
+                                )
+                                logger.error(
+                                    "CGF iteration cap exceeded",
+                                    prospective_iter=prospective_iter,
+                                    cap=iteration_cap,
+                                )
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — iteration cap "
+                                    f"exceeded ({iteration_cap})[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
+                            signal_counts["iterate"] = prospective_iter
+                            task_list.iteration = prospective_iter
+                            record_iteration(resource_label, task_list.iteration)
                             task_list.save(self.workspace_dir)
+
+                            # P1.4: a Write to v{N}.md preceded this signal —
+                            # clear the watchdog flag.
+                            pending_iteration_signal = None
+
+                            # Pair-wise contract enforcement at the
+                            # protocol layer: after each [ITERATION_COMPLETE]
+                            # the orchestrator MUST dispatch the evaluator
+                            # and emit [EVALUATE_COMPLETE] before the next
+                            # iteration.  We saw orchestrator drift in
+                            # smoke run #5 where back-to-back
+                            # [ITERATION_COMPLETE] signals fired with no
+                            # evaluation in between (P0.2 caught it but
+                            # the prompt clearly wasn't direct enough).
+                            # The post-signal message tells the agent
+                            # explicitly what to do next.
+                            iter_n = task_list.iteration
+                            eval_directive = (
+                                f"Iteration {iter_n} complete (v{iter_n}.md written). "
+                                "You MUST now do the following — in this order, "
+                                "before any further work:\n\n"
+                                f"1. Dispatch `cgf-agents:cgf-result-evaluator` "
+                                "via the Task tool, passing the v"
+                                f"{iter_n}.md path and the SPEC.md path as "
+                                "inputs.\n"
+                                f"2. Wait for the evaluator to write "
+                                f"`workspace/{self.resource_name}/reviews/"
+                                f"v{iter_n}_review.md` "
+                                "containing a `<cgf_directive>` XML block at "
+                                "the top.\n"
+                                f"3. Emit `[EVALUATE_COMPLETE]` on its own "
+                                "line.\n\n"
+                                "DO NOT write `v"
+                                f"{iter_n + 1}.md` until "
+                                "`[EVALUATE_COMPLETE]` fires.  Pair-wise "
+                                "contract is enforced by the Python runner: "
+                                "back-to-back `[ITERATION_COMPLETE]` signals "
+                                "hard-fail the run."
+                            )
 
                             # Prompt for iteration review if enabled
                             if spec.iteration_review:
-                                # Use resource_name for versioned files
                                 version_file = (
-                                    f"{self.resource_name}-v{task_list.iteration}.md"
+                                    f"{self.resource_name}-v{iter_n}.md"
                                 )
                                 choice = await self._prompt_checkpoint(
-                                    f"iteration {task_list.iteration}",
+                                    f"iteration {iter_n}",
                                     str(self.workspace_dir / version_file),
                                 )
                                 if choice == "abort":
                                     return False
                                 elif choice == "edit":
                                     current_message = (
-                                        "User edited the resource. "
-                                        "Continue with next iteration."
+                                        "User edited the resource v"
+                                        f"{iter_n}.md. " + eval_directive
                                     )
                                 else:
-                                    current_message = "Continue with next iteration."
+                                    current_message = eval_directive
                             else:
-                                current_message = "Continue with next iteration."
+                                current_message = eval_directive
                             phase_transitioned = True
                             break
 
                         if "[EVALUATE_COMPLETE]" in content:
+                            # P0.4: require the review file to exist on disk
+                            # at the iteration we just completed.  The agent
+                            # CANNOT self-report a recommendation — it must
+                            # land in workspace/{resource}/reviews/v{N}_review.md
+                            # so Python can parse the authoritative source.
+                            review_iter = task_list.iteration
+                            review_path = (
+                                self.workspace_dir
+                                / "reviews"
+                                / f"v{review_iter}_review.md"
+                            )
+                            # Brief grace period in case the agent emitted the
+                            # signal while a Task subagent's filesystem write
+                            # is still flushing.  Polls every 0.5s up to 10s.
+                            # If the agent emitted the signal BEFORE
+                            # dispatching the evaluator (the actual contract
+                            # violation), the grace period is bounded — we
+                            # still fail the run, just not on a filesystem
+                            # race.
+                            if not review_path.exists():
+                                for _ in range(20):  # 20 * 0.5 = 10s max
+                                    await asyncio.sleep(0.5)
+                                    if review_path.exists():
+                                        break
+                            if not review_path.exists():
+                                err = (
+                                    "Contract violation: [EVALUATE_COMPLETE] "
+                                    f"fired but review file missing on disk. "
+                                    f"Expected: {review_path}.  The evaluator "
+                                    "subagent must Write the review BEFORE "
+                                    "the orchestrator emits the signal."
+                                )
+                                logger.error(
+                                    "CGF missing review file",
+                                    expected=str(review_path),
+                                    iteration=review_iter,
+                                )
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — review file "
+                                    "missing on disk[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
+                            recommendation, hints = self._parse_review_recommendation(
+                                review_path
+                            )
+                            if recommendation is None:
+                                err = (
+                                    "Contract violation: review file "
+                                    f"{review_path} is missing a parseable "
+                                    "'RECOMMENDATION: ACCEPT|REFINE|REJECT' "
+                                    "line.  The evaluator must include this "
+                                    "on its own line in the review."
+                                )
+                                logger.error(
+                                    "CGF malformed review file",
+                                    path=str(review_path),
+                                )
+                                task_list.error = err
+                                task_list.save(self.workspace_dir)
+                                self.console.print(
+                                    "\n[bold red]Run failed — malformed review "
+                                    "file[/bold red]\n"
+                                    f"[red]{err}[/red]"
+                                )
+                                record_phase_entry(resource_label, "failed")
+                                await asyncio.sleep(20)
+                                return False
+
+                            signal_counts["evaluate"] += 1
                             task_list.current_phase = "finalize"
+                            task_list.last_recommendation = recommendation
+                            record_phase_entry(resource_label, "finalize")
+                            task_list.add_checkpoint(
+                                "evaluate",
+                                str(review_path),
+                                f"Evaluation v{review_iter}: {recommendation}",
+                            )
+                            # Stash hints on the checkpoint so the next
+                            # iteration prompt can reference them.
+                            if task_list.checkpoints:
+                                task_list.checkpoints[-1]["recommendation"] = (
+                                    recommendation
+                                )
+                                if hints:
+                                    task_list.checkpoints[-1]["hints"] = hints
                             task_list.save(self.workspace_dir)
+
+                            # ACCEPT / REJECT → terminal required.
+                            terminal_required = recommendation in (
+                                "ACCEPT", "REJECT"
+                            )
+
+                            self.console.print(
+                                f"\n[bold cyan]Evaluator recommendation:[/bold cyan] "
+                                f"[bold]{recommendation}[/bold]"
+                            )
+                            if recommendation == "REFINE" and hints:
+                                self.console.print(
+                                    "[dim]Refinement hints will be passed to "
+                                    "the next iteration.[/dim]"
+                                )
 
                             choice = await self._prompt_checkpoint(
                                 "evaluate",
-                                str(self.workspace_dir / "reviews"),
+                                str(review_path),
                             )
                             if choice == "abort":
                                 return False
-                            current_message = "Continue to FINALIZE phase."
+
+                            # Build the next-message prompt.  For REFINE,
+                            # inject the structured hints so the orchestrator
+                            # can't ignore them.  For ACCEPT/REJECT, prompt
+                            # terminal signal explicitly.
+                            if recommendation == "REFINE" and hints:
+                                lines = [
+                                    "Continue to FINALIZE / next iteration.",
+                                    "",
+                                    f"Evaluator returned RECOMMENDATION: REFINE "
+                                    f"for v{review_iter}.  Apply the following "
+                                    "structured refinement directives in the "
+                                    "next iteration:",
+                                ]
+                                for label, key in (
+                                    ("TARGET_SECTIONS", "target_sections"),
+                                    ("TARGET_COMPETENCIES", "target_competencies"),
+                                    ("REFINEMENT_HINTS", "refinement_hints"),
+                                ):
+                                    items = hints.get(key) or []
+                                    if items:
+                                        lines.append("")
+                                        lines.append(f"{label}:")
+                                        for item in items:
+                                            lines.append(f"  - {item}")
+                                current_message = "\n".join(lines)
+                            elif recommendation == "ACCEPT":
+                                current_message = (
+                                    "Evaluator returned RECOMMENDATION: ACCEPT. "
+                                    "Emit [OPTIMIZATION_COMPLETE] now — do NOT "
+                                    "start another iteration."
+                                )
+                            elif recommendation == "REJECT":
+                                current_message = (
+                                    "Evaluator returned RECOMMENDATION: REJECT. "
+                                    "Emit [OPTIMIZATION_FAILED] now (or "
+                                    "[OPTIMIZATION_COMPLETE] if you choose to "
+                                    "preserve the original) — do NOT start "
+                                    "another iteration."
+                                )
+                            else:
+                                current_message = "Continue to FINALIZE phase."
                             phase_transitioned = True
                             break
+
+                    # P1.4 signal watchdog: at the end of the turn, if the
+                    # orchestrator wrote a versioned file but never emitted
+                    # [ITERATION_COMPLETE], either warn or hard-fail.
+                    if pending_iteration_signal is not None:
+                        wd_msg = (
+                            "Signal watchdog: orchestrator wrote "
+                            f"-v{pending_iteration_signal}.md but did not "
+                            "emit [ITERATION_COMPLETE] in the same turn.  "
+                            "This breaks the iteration counter, dashboard, "
+                            "and pair-wise contract."
+                        )
+                        if self._signal_strict():
+                            logger.error(
+                                "CGF signal watchdog (strict)",
+                                version=pending_iteration_signal,
+                            )
+                            task_list.error = wd_msg
+                            task_list.save(self.workspace_dir)
+                            self.console.print(
+                                "\n[bold red]Run failed — signal watchdog "
+                                "(strict mode)[/bold red]\n"
+                                f"[red]{wd_msg}[/red]"
+                            )
+                            record_phase_entry(resource_label, "failed")
+                            await asyncio.sleep(20)
+                            return False
+                        else:
+                            logger.warning(
+                                "CGF signal watchdog (warn)",
+                                version=pending_iteration_signal,
+                            )
+                            self.console.print(
+                                f"\n[yellow]{wd_msg}[/yellow]\n"
+                                "[dim]Set CGF_SIGNAL_STRICT=1 to hard-fail "
+                                "on this drift.[/dim]"
+                            )
 
                     # If no phase transition occurred, the agent finished
                     # its response without a signal - continue with a prompt
@@ -1687,6 +2481,14 @@ Examples:
         action="store_true",
         help="Suppress system logs",
     )
+    parser.add_argument(
+        "--non-interactive",
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Auto-continue at every phase checkpoint (no stdin prompts). "
+        "Also enabled via CGF_NON_INTERACTIVE=1.",
+    )
 
     args = parser.parse_args()
 
@@ -1712,6 +2514,7 @@ Examples:
         goal=args.goal,
         model=args.model,
         quiet=args.quiet,
+        non_interactive=args.non_interactive,
     )
 
     try:

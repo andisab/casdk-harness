@@ -106,7 +106,9 @@ class PluginManager:
         agents_dir = plugin_path / "agents"
         if not agents_dir.is_dir():
             return
-        for agent_file in sorted(agents_dir.glob("*.md")):
+        # rglob recurses into subdirs (e.g. agents/design/, agents/eval/) so
+        # plugins can organize agents by role without breaking discovery.
+        for agent_file in sorted(agents_dir.rglob("*.md")):
             parsed = _parse_agent_file(agent_file)
             if parsed is None:
                 continue

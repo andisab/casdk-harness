@@ -19,6 +19,7 @@ from harness.optimization.multi_resource_orchestrator import (
     DEFAULT_MAX_REFINEMENT,
     MultiResourceConfig,
     PathViolationError,
+    _ensure_metrics_server,
     _versioned_path,
     validate_write_path,
 )
@@ -589,3 +590,189 @@ class TestParseIterationResultDimensions:
         assert quality.completeness == 0.0
         assert quality.accuracy == 0.0
         assert quality.clarity == 0.0
+
+
+class TestEnsureMetricsServer:
+    """Coverage for the metrics-exposure helper that backstops Phase A
+    telemetry visibility in the standalone-orchestrator code path."""
+
+    def test_starts_server_when_port_free(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        called: dict[str, int] = {}
+
+        def fake_start(port: int) -> None:
+            called["port"] = port
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        _ensure_metrics_server(port=19090)
+        assert called == {"port": 19090}
+
+    def test_no_raise_when_port_in_use(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_start(port: int) -> None:
+            err = OSError("Address already in use")
+            err.errno = 98  # EADDRINUSE on Linux
+            raise err
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        # Must NOT raise — observability failures never break orchestration.
+        _ensure_metrics_server(port=19090)
+
+    def test_no_raise_on_eaddrinuse_macos(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """macOS uses errno 48 instead of 98 for EADDRINUSE."""
+
+        def fake_start(port: int) -> None:
+            err = OSError("Address already in use")
+            err.errno = 48
+            raise err
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        _ensure_metrics_server(port=19090)
+
+    def test_logs_and_swallows_unexpected_exceptions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fake_start(port: int) -> None:
+            raise RuntimeError("dependency missing")
+
+        monkeypatch.setattr(
+            "prometheus_client.start_http_server", fake_start
+        )
+        # Defensive: any failure to expose metrics must not propagate.
+        _ensure_metrics_server(port=19090)
+
+
+# =============================================================================
+# F22 — Subagent hang audit
+# =============================================================================
+
+
+class TestSubagentHangAudit:
+    """F22: phase-boundary audit detects orphaned ``claude`` subprocess
+    descendants left behind by SDK timeouts.  Pure observability — must
+    never raise or block phase progression."""
+
+    def test_audit_returns_only_claude_descendants(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        from harness.optimization import multi_resource_orchestrator as mro
+
+        # Build a fake psutil module exposing the minimal surface we use.
+        class _FakeProc:
+            def __init__(self, pid: int, name: str) -> None:
+                self.pid = pid
+                self._name = name
+
+            def name(self) -> str:
+                return self._name
+
+        class _FakeMe:
+            def children(self, recursive: bool = False) -> list[_FakeProc]:
+                # Mix of claude and non-claude descendants.
+                return [
+                    _FakeProc(101, "claude"),
+                    _FakeProc(102, "python"),
+                    _FakeProc(103, "Claude Code"),  # case-insensitive match
+                    _FakeProc(104, "bash"),
+                ]
+
+        fake_psutil = type(sys)("psutil")
+        fake_psutil.Process = lambda pid: _FakeMe()  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+        leaked = mro._audit_child_processes()
+        assert leaked == {101, 103}
+        assert 102 not in leaked
+        assert 104 not in leaked
+
+    def test_audit_returns_empty_set_when_psutil_unavailable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If psutil import fails, the audit must degrade silently to
+        an empty set rather than raise."""
+        from harness.optimization import multi_resource_orchestrator as mro
+
+        # Sabotage psutil import.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name: str, *a, **kw):
+            if name == "psutil":
+                raise ImportError("simulated missing psutil")
+            return real_import(name, *a, **kw)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert mro._audit_child_processes() == set()
+
+    def test_log_orphan_children_warns_on_diff(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A non-empty `after - before` diff produces a warning log line
+        with the leaked PIDs.  Observability only — never raises."""
+        from harness.optimization import multi_resource_orchestrator as mro
+
+        # Force the after-snapshot to return a fixed set; before is given.
+        monkeypatch.setattr(
+            mro, "_audit_child_processes", lambda: {201, 202, 203}
+        )
+
+        # Capture structlog output via patched logger.warning.
+        warnings: list[dict] = []
+
+        def fake_warning(event: str, **kwargs) -> None:
+            warnings.append({"event": event, **kwargs})
+
+        monkeypatch.setattr(mro.logger, "warning", fake_warning)
+
+        # before = {201} → leaked is {202, 203}
+        mro._log_orphan_children(phase_name="ITERATE", before={201})
+
+        assert len(warnings) == 1
+        w = warnings[0]
+        assert w["event"] == "Phase left subprocess descendants alive"
+        assert w["phase"] == "ITERATE"
+        assert sorted(w["leaked_pids"]) == [202, 203]
+        assert w["count"] == 2
+
+    def test_log_orphan_children_silent_when_no_diff(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When before == after, no log emission."""
+        from harness.optimization import multi_resource_orchestrator as mro
+
+        monkeypatch.setattr(
+            mro, "_audit_child_processes", lambda: {201, 202}
+        )
+
+        warnings: list[dict] = []
+        monkeypatch.setattr(
+            mro.logger, "warning",
+            lambda event, **kw: warnings.append({"event": event, **kw}),
+        )
+
+        mro._log_orphan_children(phase_name="ITERATE", before={201, 202})
+        assert warnings == []
+
+    def test_log_orphan_children_never_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Observability code must swallow internal errors."""
+        from harness.optimization import multi_resource_orchestrator as mro
+
+        def boom() -> set[int]:
+            raise RuntimeError("psutil exploded")
+
+        monkeypatch.setattr(mro, "_audit_child_processes", boom)
+        # Should not raise.
+        mro._log_orphan_children(phase_name="VALIDATE", before=set())

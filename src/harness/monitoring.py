@@ -178,37 +178,358 @@ interactive_message_types_total = Counter(
     ["agent", "message_type"],
 )
 
-# CGF (ContextGrad Framework) Metrics
-cgf_spans_collected = Counter(
-    "cgf_spans_collected_total",
-    "Total spans collected by CGF tracer",
-    ["agent", "span_kind"],
-)
+# CGF Stage 3 — Eval Framework Metrics (Phase A.6)
+#
+# (Five legacy cgf_* instruments — cgf_spans_collected_total,
+# cgf_spans_exported_total, cgf_adapter_transforms_total,
+# cgf_reward_composite, cgf_feedback_dimensions — were removed
+# 2026-05-14 after the G0 emission audit (docs/OBSERVABILITY.md § 3)
+# confirmed zero call sites for any of them.  They were holdovers
+# from an earlier optimization-store / reward-pipeline architecture
+# simplified during Block 4.  The harness_eval_* family below
+# functionally replaces them for Phase A onwards.)
+#
+# Cardinality notes:
+# - ``arm`` ∈ {baseline, candidate} (2 values)
+# - ``level`` ∈ {unit, trajectory, e2e} (3 values)
+# - ``status`` ∈ {pass, fail, no_decision} (3 values)
+# - ``phase`` ∈ {EVAL_DESIGN, EXECUTION_EVAL} (2 values)
+# - ``model`` is the judge model alias / ID — bounded to a small set
+# - ``resource_type`` ∈ the project-defined enum (~7 values)
+#
+# We deliberately do NOT label by ``scenario_id`` — that would unboundedly
+# grow as new SPECs are evaluated.  Per-scenario detail lives in
+# ``eval-results.json`` on disk.
 
-cgf_spans_exported = Counter(
-    "cgf_spans_exported_total",
-    "Total spans exported to store",
-    ["agent", "exporter"],
-)
-
-cgf_adapter_transforms = Counter(
-    "cgf_adapter_transforms_total",
-    "Adapter span-to-feedback transformations",
-    ["resource_type", "status"],
-)
-
-cgf_reward_composite = Histogram(
-    "cgf_reward_composite",
-    "Distribution of composite reward scores",
+harness_eval_tokens_to_goal = Histogram(
+    "harness_eval_tokens_to_goal",
+    "Tokens spent per resource until a candidate promotes (sum across "
+    "feedback iterations).  Observed at promotion time.",
     ["resource_type"],
-    buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+    buckets=[
+        10_000,
+        50_000,
+        100_000,
+        500_000,
+        1_000_000,
+        5_000_000,
+        10_000_000,
+    ],
 )
 
-cgf_feedback_dimensions = Gauge(
-    "cgf_feedback_dimensions",
-    "Current feedback dimension values",
-    ["resource_type", "dimension"],
+harness_eval_scenarios_total = Counter(
+    "harness_eval_scenarios_total",
+    "Eval scenarios run, by level, status, and arm.",
+    ["level", "status", "arm"],
 )
+
+harness_eval_arm_score = Histogram(
+    "harness_eval_arm_score",
+    "Per-scenario arm pass-rate distribution (0.0-1.0) by arm and level.",
+    ["arm", "level"],
+    buckets=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+)
+
+harness_eval_phase_duration_seconds = Histogram(
+    "harness_eval_phase_duration_seconds",
+    "Wall-clock duration of EVAL_DESIGN and EXECUTION_EVAL phases.",
+    ["phase"],
+    buckets=[10, 30, 60, 120, 300, 600, 1800, 3600, 7200],
+)
+
+harness_eval_judge_no_decision_total = Counter(
+    "harness_eval_judge_no_decision_total",
+    "LLM-judge no-decision events (parse failures or transport errors "
+    "after retry).  By judge model.",
+    ["model"],
+)
+
+
+# Run-level status gauges (low cardinality, always populated during a run).
+# Designed for Grafana stat-panel queries like
+# ``max by (phase) (harness_run_phase_info > 0)``.
+harness_run_phase_info = Gauge(
+    "harness_run_phase_info",
+    "Current optimization run phase indicator (1 = active, 0 = inactive). "
+    "Labels: resource (workspace-relative resource path), "
+    "phase (state-machine name, e.g. research, research_iterate, design, "
+    "generate, eval_design, iterate, execution_eval, validate, complete).",
+    ["resource", "phase"],
+)
+
+harness_run_iteration = Gauge(
+    "harness_run_iteration",
+    "Current iteration count for an in-flight optimization run.",
+    ["resource"],
+)
+
+harness_run_path_info = Gauge(
+    "harness_run_path_info",
+    "Active optimization path indicator (1 = active, 0 = inactive). "
+    "path is 'single' (cgf_session.py for one resource at a time) or "
+    "'multi' (multi_resource_orchestrator.py for plugin/skill-set/workflow "
+    "SPECs). Used by the Grafana 'Active Run Status' row to render the "
+    "correct pipeline panel for the run that's currently active.",
+    ["resource", "path"],
+)
+
+_RUN_PATHS = ("single", "multi")
+
+
+def record_run_path(resource: str, path: str) -> None:
+    """Mark `path` (single | multi) as the active optimization path for
+    `resource`.  Clears ALL prior series first so the gauge has
+    "current active run" semantics — re-runs against new resource
+    names don't leave orphan rows in the Grafana table until the 5-min
+    staleness window elapses.
+    """
+    if path not in _RUN_PATHS:
+        logger.warning("record_run_path: unknown path", path=path)
+        return
+    try:
+        # Wipe prior (resource, path) series so the dashboard shows
+        # only the currently-active run, not the union of all runs in
+        # the staleness window.
+        harness_run_path_info.clear()
+        for p in _RUN_PATHS:
+            harness_run_path_info.labels(resource=resource, path=p).set(
+                1 if p == path else 0
+            )
+    except Exception as e:  # pragma: no cover — observability never raises
+        logger.debug("record_run_path failed", error=str(e))
+
+_active_phases: dict[str, str] = {}
+
+# Phase progression for Grafana — ordered set of every phase name either
+# pipeline (single-resource cgf_session.py and multi-resource orchestrator) can
+# emit. Pre-seeded with value 0 at run start so the dashboard state-timeline
+# shows all phases up front, with one of them transitioning to 1 as the run
+# advances. Keep this synchronized with cgf_session.py phase transitions and
+# OptimizationPhase enum (lowercased).
+#
+# Single-resource path (cgf_session.py): research → optimize → finalize →
+#   complete, with `failed` as the contract-violation terminal state.
+# Multi-resource path (multi_resource_orchestrator.py): research → design
+#   → qa → generate → eval_design → iterate → execution_eval → validate →
+#   complete, with `failed` as terminal.
+#
+# Dashboard D70's Phase Progression splits into two State Timeline panels
+# — one per path — using the SINGLE_PATH_PHASES / MULTI_PATH_PHASES tuples
+# below as the hardcoded phase regex.  See docs/OBSERVABILITY.md § 4 D70.
+SINGLE_PATH_PHASES: tuple[str, ...] = (
+    "research",
+    "optimize",
+    "finalize",
+    "complete",
+    "failed",
+)
+MULTI_PATH_PHASES: tuple[str, ...] = (
+    "research",
+    "design",
+    "qa",
+    "generate",
+    "eval_design",
+    "iterate",
+    "execution_eval",
+    "validate",
+    "complete",
+    "failed",
+)
+KNOWN_RUN_PHASES: tuple[str, ...] = tuple(
+    # Union, preserving insertion order: single path first, then multi-only.
+    dict.fromkeys(SINGLE_PATH_PHASES + MULTI_PATH_PHASES)
+)
+
+
+def init_run_phases(resource: str) -> None:
+    """Seed phase gauge with 0 for every known phase so the Grafana
+    state-timeline shows the full progression from the start of the
+    run.  Also clears any prior-resource series for phase and
+    iteration so the panel shows only the currently-active run
+    (singleton semantic; matches `record_run_path`)."""
+    try:
+        # Drop prior series for any other resource so the panel
+        # doesn't accumulate orphans across re-runs.
+        harness_run_phase_info.clear()
+        harness_run_iteration.clear()
+        _active_phases.clear()
+        for phase in KNOWN_RUN_PHASES:
+            harness_run_phase_info.labels(resource=resource, phase=phase).set(0)
+    except Exception as e:  # pragma: no cover
+        logger.debug("init_run_phases failed", error=str(e))
+
+
+def record_phase_entry(resource: str, phase: str) -> None:
+    """Record entering a new phase. Marks any previous phase for the same
+    resource as inactive (set to 0) and the new phase as active (set to 1).
+
+    Safe to call from any code path; failures are swallowed so observability
+    code never breaks the pipeline.
+    """
+    try:
+        prev = _active_phases.get(resource)
+        if prev and prev != phase:
+            harness_run_phase_info.labels(resource=resource, phase=prev).set(0)
+        _active_phases[resource] = phase
+        harness_run_phase_info.labels(resource=resource, phase=phase).set(1)
+    except Exception as e:  # pragma: no cover — observability must never raise
+        logger.debug("record_phase_entry failed", error=str(e))
+
+
+def record_iteration(resource: str, iteration: int) -> None:
+    """Record current iteration count for a resource."""
+    try:
+        harness_run_iteration.labels(resource=resource).set(iteration)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_iteration failed", error=str(e))
+
+
+# Run config info-metric — exposed as a single-row table on the Grafana
+# overview dashboards via "Labels to fields" transform. Set to 1 at run
+# start with every config dimension as a label; cleared to 0 at run end so
+# stale rows don't accumulate.
+#
+# Cardinality caveat: token_budget and max_iterations are stringified
+# numbers. For a single-developer harness this is fine. Do not point this
+# series at a long-lived multi-tenant Prometheus without first moving the
+# numeric dimensions to a separate event log.
+harness_run_config_info = Gauge(
+    "harness_run_config_info",
+    "Active run configuration (info-metric, 1 = active run, 0 = cleared). "
+    "Labels: resource, path (single|multi), mode (optimize|interactive|"
+    "autonomous), model, effort, eval_enabled, token_budget, max_iterations.",
+    [
+        "resource",
+        "path",
+        "mode",
+        "model",
+        "effort",
+        "eval_enabled",
+        "token_budget",
+        "max_iterations",
+    ],
+)
+
+# Run start timestamp — used by the Grafana "Run Elapsed" stat panel as
+# ``time() - harness_run_start_timestamp{resource="..."}``. Set at the same
+# call site as ``init_run_phases`` and ``record_run_path``.
+harness_run_start_timestamp = Gauge(
+    "harness_run_start_timestamp",
+    "Unix epoch seconds at which the active run started. "
+    "Used by Grafana to compute run elapsed time as time() - this gauge.",
+    ["resource"],
+)
+
+# Task progress — populated by autonomous mode whenever task_list.json is
+# rewritten. Powers the Grafana D65 (Mode: Autonomous) "Task Progress"
+# header panels.  Status maps to TaskItem.status:
+#   completed = "PASS", failed = "FAIL", pending = None.
+harness_task_progress = Gauge(
+    "harness_task_progress",
+    "Autonomous-mode task counts by status. "
+    "Status is one of: completed, failed, pending.",
+    ["status"],
+)
+
+
+def record_run_config(
+    resource: str,
+    path: str,
+    mode: str,
+    model: str,
+    effort: str,
+    eval_enabled: bool,
+    token_budget: int,
+    max_iterations: int,
+) -> None:
+    """Set the run config info-metric to 1 with all config dimensions
+    as labels.  Call once at run start.
+
+    Singleton semantic: clears all prior series first so the Grafana
+    Run Config table shows exactly one row — the currently-active
+    run.  Without this, re-running against a different resource name
+    leaves orphan rows in the table for the 5-min staleness window.
+
+    Observability never raises.
+    """
+    try:
+        # Wipe prior series so only the current run appears.
+        harness_run_config_info.clear()
+        harness_run_config_info.labels(
+            resource=resource,
+            path=path,
+            mode=mode,
+            model=model,
+            effort=effort,
+            eval_enabled=str(eval_enabled).lower(),
+            token_budget=str(token_budget),
+            max_iterations=str(max_iterations),
+        ).set(1)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_run_config failed", error=str(e))
+
+
+def clear_run_config(
+    resource: str,
+    path: str,
+    mode: str,
+    model: str,
+    effort: str,
+    eval_enabled: bool,
+    token_budget: int,
+    max_iterations: int,
+) -> None:
+    """Clear the run config info-metric (set to 0) for the same label set
+    used at run start.  Call at run end so stale config rows don't linger
+    in Grafana."""
+    try:
+        harness_run_config_info.labels(
+            resource=resource,
+            path=path,
+            mode=mode,
+            model=model,
+            effort=effort,
+            eval_enabled=str(eval_enabled).lower(),
+            token_budget=str(token_budget),
+            max_iterations=str(max_iterations),
+        ).set(0)
+    except Exception as e:  # pragma: no cover
+        logger.debug("clear_run_config failed", error=str(e))
+
+
+def record_run_start(resource: str, timestamp: float | None = None) -> None:
+    """Record run start timestamp.  Defaults to ``time.time()`` if not
+    provided.
+
+    Singleton semantic: clears prior series so the "Run Elapsed" panel
+    on D00 / D70 reflects the current run only.
+
+    Observability never raises."""
+    import time
+
+    try:
+        ts = timestamp if timestamp is not None else time.time()
+        harness_run_start_timestamp.clear()
+        harness_run_start_timestamp.labels(resource=resource).set(ts)
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_run_start failed", error=str(e))
+
+
+_TASK_STATUSES = ("completed", "failed", "pending")
+
+
+def record_task_progress(counts: dict[str, int]) -> None:
+    """Record autonomous-mode task counts.  ``counts`` maps status →
+    count for status in {completed, failed, pending}; missing
+    statuses default to 0 so the gauge reflects the full snapshot.
+    Observability never raises."""
+    try:
+        for status in _TASK_STATUSES:
+            harness_task_progress.labels(status=status).set(
+                counts.get(status, 0)
+            )
+    except Exception as e:  # pragma: no cover
+        logger.debug("record_task_progress failed", error=str(e))
 
 
 class MetricsCollector:
@@ -321,6 +642,20 @@ class MetricsCollector:
                         if f.is_file()
                     )
                     checkpoint_size_bytes.set(total_size)
+
+                # Process memory (RSS). Linux container only — read /proc.
+                try:
+                    with open("/proc/self/status") as f:
+                        for line in f:
+                            if line.startswith("VmRSS:"):
+                                # Format: "VmRSS:    <kb> kB"
+                                kb = int(line.split()[1])
+                                memory_usage_bytes.labels(
+                                    component="agent_rss"
+                                ).set(kb * 1024)
+                                break
+                except (FileNotFoundError, ValueError, IndexError):
+                    pass  # Non-Linux or unparseable — skip silently.
 
                 await asyncio.sleep(60)  # Collect every minute
 
@@ -435,65 +770,8 @@ class MetricsCollector:
             agent=agent, message_type=message_type
         ).inc()
 
-    # CGF (ContextGrad Framework) Metrics Methods
-
-    @staticmethod
-    def record_span_collected(agent: str, span_kind: str) -> None:
-        """
-        Record a span collected by the CGF tracer.
-
-        Args:
-            agent: Agent name that generated the span
-            span_kind: Kind of span (e.g., agent_execution, tool_call, llm_request)
-        """
-        cgf_spans_collected.labels(agent=agent, span_kind=span_kind).inc()
-
-    @staticmethod
-    def record_span_exported(agent: str, exporter: str) -> None:
-        """
-        Record a span exported to a store backend.
-
-        Args:
-            agent: Agent name that generated the span
-            exporter: Exporter type (e.g., store, file, redis)
-        """
-        cgf_spans_exported.labels(agent=agent, exporter=exporter).inc()
-
-    @staticmethod
-    def record_adapter_transform(resource_type: str, success: bool) -> None:
-        """
-        Record an adapter transformation from spans to feedback.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            success: Whether the transformation succeeded
-        """
-        status = "success" if success else "error"
-        cgf_adapter_transforms.labels(resource_type=resource_type, status=status).inc()
-
-    @staticmethod
-    def record_reward(resource_type: str, composite_score: float) -> None:
-        """
-        Record a composite reward score from the reward system.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            composite_score: The weighted composite reward score (0.0 - 1.0)
-        """
-        cgf_reward_composite.labels(resource_type=resource_type).observe(composite_score)
-
-    @staticmethod
-    def set_feedback_dimension(
-        resource_type: str, dimension: str, value: float
-    ) -> None:
-        """
-        Set a feedback dimension value for monitoring.
-
-        Args:
-            resource_type: Type of resource (agent, skill, prompt, command)
-            dimension: Feedback dimension name (e.g., task_completion, efficiency)
-            value: Dimension value (0.0 - 1.0)
-        """
-        cgf_feedback_dimensions.labels(
-            resource_type=resource_type, dimension=dimension
-        ).set(value)
+    # (Five legacy CGF MetricsCollector methods — record_span_collected,
+    # record_span_exported, record_adapter_transform, record_reward,
+    # set_feedback_dimension — were removed 2026-05-14 alongside their
+    # backing instruments after the G0 emission audit. They had zero
+    # call sites. See the corresponding instrument-block comment above.)

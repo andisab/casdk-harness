@@ -400,7 +400,7 @@ make metrics        # Open Grafana
 make prometheus     # Open Prometheus
 ```
 
-**Full guide:** [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability) — architecture, the two dashboards (overview + CGF), how to add alert rules, first-response actions, and how to wire a real receiver (Slack / email / PagerDuty).
+**Full guide:** [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) — architecture, the 10 pre-provisioned dashboards, full metric inventory, the 13 alert rules, first-response actions, and how to wire a real receiver (Slack / email / PagerDuty).
 
 ---
 
@@ -465,8 +465,11 @@ docker stats         # Resource usage
 
 - [QUICKSTART.md](./QUICKSTART.md) — 5-minute setup
 - [CLAUDE.md](./CLAUDE.md) — Technical reference (architecture, CGF internals, configuration, gotchas)
-- [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md) — CGF deep dive
-- [docs/REFACTOR.md](./docs/REFACTOR.md) — Reorganization status, observability operator guide, hardening priorities
+- [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md) — CGF user guide (how to run, env vars, Grafana, troubleshooting)
+- [src/harness/optimization/CLAUDE.md](./src/harness/optimization/CLAUDE.md) — CGF technical reference (state machine, schemas, Python API, gotchas)
+- [docs/CGF-EVAL-ROADMAP.md](./docs/CGF-EVAL-ROADMAP.md) — Forward plan: Phase A polish + Phases B/C/D + Stage 4 + hardening backlog
+- [docs/PHASEA_SUMMARY.md](./docs/PHASEA_SUMMARY.md) — Phase A retrospective (what shipped, cost characteristics, lessons learned)
+- [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) — Observability operator guide (10 dashboards, 13 alerts, metric inventory)
 - [docs/ORCHESTRATION_PATTERNS.md](./docs/ORCHESTRATION_PATTERNS.md) — Multi-agent orchestration patterns reference
 - [docs/examples/](./docs/examples/) — Spec templates
 

@@ -1,0 +1,115 @@
+# Example: Secure ProviderConfig using OIDC/IRSA
+# This demonstrates AWS IRSA (IAM Roles for Service Accounts) setup
+
+---
+# AWS ProviderConfig using IRSA (RECOMMENDED)
+apiVersion: aws.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: aws-provider-config
+spec:
+  credentials:
+    source: InjectedIdentity  # Uses pod identity via IRSA
+
+---
+# Alternative: Azure ProviderConfig using Workload Identity
+apiVersion: azure.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: azure-provider-config
+spec:
+  credentials:
+    source: InjectedIdentity  # Uses Azure Workload Identity
+
+---
+# Alternative: GCP ProviderConfig using Workload Identity
+apiVersion: gcp.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: gcp-provider-config
+spec:
+  projectID: my-project-id
+  credentials:
+    source: InjectedIdentity  # Uses GCP Workload Identity
+
+---
+# ServiceAccount with IRSA annotation (AWS example)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-provider-aws
+  namespace: crossplane-system
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/crossplane-provider-aws
+
+---
+# Example IAM Policy for Crossplane (AWS)
+# This would be created outside Kubernetes via Terraform/CloudFormation/AWS Console
+#
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Action": [
+#         "rds:*",
+#         "ec2:Describe*",
+#         "ec2:CreateSecurityGroup",
+#         "ec2:AuthorizeSecurityGroupIngress"
+#       ],
+#       "Resource": "*",
+#       "Condition": {
+#         "StringEquals": {
+#           "aws:RequestedRegion": ["us-west-2", "us-east-1"]
+#         }
+#       }
+#     }
+#   ]
+# }
+
+---
+# IRSA Trust Policy (AWS)
+# Allows the Kubernetes ServiceAccount to assume the IAM role
+#
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Principal": {
+#         "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/EXAMPLE"
+#       },
+#       "Action": "sts:AssumeRoleWithWebIdentity",
+#       "Condition": {
+#         "StringEquals": {
+#           "oidc.eks.us-west-2.amazonaws.com/id/EXAMPLE:sub": "system:serviceaccount:crossplane-system:crossplane-provider-aws",
+#           "oidc.eks.us-west-2.amazonaws.com/id/EXAMPLE:aud": "sts.amazonaws.com"
+#         }
+#       }
+#     }
+#   ]
+# }
+
+---
+# Environment-specific ProviderConfigs
+# Use separate configs for dev/staging/prod with different IAM roles
+
+apiVersion: aws.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: aws-dev
+spec:
+  credentials:
+    source: InjectedIdentity
+
+---
+apiVersion: aws.crossplane.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: aws-prod
+spec:
+  credentials:
+    source: InjectedIdentity
+
+# Note: Different ServiceAccounts with different role-arn annotations
+# would be used for dev vs prod to enforce IAM boundaries

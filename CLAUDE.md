@@ -12,26 +12,52 @@ Technical reference for developers working on this repository and for Claude's o
 ### Working Features
 - Interactive mode with Rich CLI (`interactive.py`)
 - Autonomous mode with Tech Lead + Main agent (`autonomous.py`)
-- Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager) — see [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability)
+- Docker orchestration with self-contained observability stack (OTel Collector + Prometheus + Grafana + AlertManager + alertmanager-webhook) — see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) for architecture, dashboards (10), alert rules (13), gotchas, data persistence, and Stage-3 follow-ups
 - Checkpoint & recovery system with hourly auto-save
 - 4 MCP servers (3 in-process + 1 subprocess)
 - CLI tools: git, gh, glab
 - Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
 - Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
 - 14 harness agents (in `.claude/agents/`) + plugin agents reachable via `Task(subagent_type="plugin:agent")` or `harness.subagent.call_agent()` for standalone Python invocation
-- **CGF Optimization Framework** (1,499 unit tests passing as of 2026-05-08):
+- **CGF Optimization Framework** (1,702 unit tests + 16 integration tests passing as of 2026-05-08):
   - Stage 1: Protocol layer, resource architect agent, DESIGN phase — **shipped**
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds — **shipped**
-  - Stage 3: Eval Harness — **not started**, draft spec in `docs/CGF-EVAL-FRAMEWORK.md`
-  - Stage 4: Integration & hardening — not started, depends on Stage 3
+  - **Stage 3 Phase A: Eval Harness — shipped 2026-05-08**, six PRs (#7-#13 + A.7).
+    - A.1 schema, A.2 cgf-eval-architect agent, A.3 graders package, A.4 EvalHarness runner, A.5 EVAL_DESIGN+EXECUTION_EVAL orchestrator wiring, A.6 telemetry+Grafana, A.7 tracer spans + E2E integration test + smoke fixture.
+    - Pipeline: RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE (9 phases).
+    - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
+    - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
+    - Smoke fixtures at `tests/smoke/` (replaced the prior single-fixture `docs/examples/cgf-eval-smoke/` 2026-05-11). Run with `make smoke FIXTURE=<name>`; current fixtures: `python-expert` (single-resource), `iac-team` (multi-resource, AWS+K8s).
+  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-ROADMAP.md`.
+  - Stage 4: Integration & hardening — not started, depends on Phase D completion.
 
 ### Completed Recently
+- **Phase-1 smoke hardening (2026-05-11, `phase-a-fixes` branch)** — Surfaced + fixed five defects after the python-expert smoke run revealed the orchestrator agent was skipping intermediate phase signals (state machine, dashboard, iteration counter, summary.json, and CHANGELOG all reported different numbers). Shipped:
+  - **`cgf_session.py --non-interactive` flag** — auto-continue at every phase checkpoint (was blocking `make smoke` because `docker compose exec -T` has no TTY → EOF → "Interrupted"). Wired into Makefile.
+  - **Grafana "Active Run Status" row** — Phase Progression bargauge (14 phases incl. `failed`), Active Resource, Iteration, Cost / Tokens (15min). Path-specific phases (single-only, multi-only) dimmed gray; `failed` terminal red.
+  - **Phase gauge instrumentation** — `harness_run_phase_info{resource, phase}` + `harness_run_iteration{resource}` + `init_run_phases()` seeding + `record_phase_entry()` helper. Called from `cgf_session.py` and `multi_resource_orchestrator._advance_phase` so both paths populate the same series. Dashboard uses `last_over_time(...[2h])` so the most recent phase persists across runs even after the process exits.
+  - **(A) Contract enforcement** — `cgf_session.py` rejects `[OPTIMIZATION_COMPLETE]` if `iterate` count == 0 OR `evaluate` count == 0. Run exits non-zero with `record_phase_entry(resource, "failed")` so Grafana shows the red `failed` row. CHANGELOG + task_list capture the violation.
+  - **(B) `summary.json["iterations"]` from `task_list.iteration`** — `_patch_summary_iterations` overwrites the agent's self-reported count with state-machine truth at end-of-run. Adds `"_iterations_source"` field for traceability.
+  - **(D) Orchestrator prompt hardening** — `cgf-orchestrator.md` § Phase Completion Signals rewritten with explicit "STRICT CONTRACT" framing, hard rules (one `[ITERATION_COMPLETE]` per version, `[EVALUATE_COMPLETE]` after `RECOMMENDATION:` line, never jump straight from research to complete, line-anchored emission, narrative claims don't count).
+  - **`iterate` rename** — single-resource `research_iterate` collapsed into shared `iterate` so the dashboard and signal vocabulary use one name for both paths.
+  - **20s grace pause after `[OPTIMIZATION_COMPLETE]`** — keeps metrics endpoint alive long enough for Prometheus's 15s scrape interval to capture the final `complete=1` state.
+  - Deferred follow-ups (C path-filtered dashboard, E `iterate`/`optimize` collapse, F load-bearing `task_list.iteration`) tracked in TODOs section below.
+- **CGF Stage 3 Phase A — Eval Harness shipped (2026-05-08)** — Six PRs (#7, #8, #9, #11, #12, #13) plus A.7 closing PR, all merged to `contextgrad-eval`. Phases A.1 through A.7 cover the full eval framework end-to-end:
+  - **A.1 (#7)** — `eval_suite.schema.json` (Draft-07) with polymorphic graders + trajectory assertions; `jsonschema>=4.21.0` runtime dep; 37 schema-validation tests.
+  - **A.2 (#7)** — `cgf-eval-architect` agent (sonnet, 100 turns); reorganized `cgf-agents/agents/` into `design/` and `eval/` subdirs; `plugin_manager.glob → rglob` runtime fix.
+  - **A.3 (#8)** — `harness/optimization/graders/` package: ~600 LoC across 8 modules (scenario, transcript, base, deterministic, llm_judge, trajectory, composite, __init__). 72 tests covering all grader types + transcript-builder + the no_decision retry path.
+  - **A.4 (#9)** — `harness/optimization/eval_harness/` package: EvalHarness runner with two-arm baseline-vs-candidate execution, in-process runtime (Phase C will add ephemeral container). Loader validates against the schema; 37 tests.
+  - **Refactor (#11)** — Pure refactor: extracted phase methods from `multi_resource_orchestrator.py` (2157 LoC → 702 LoC) into `_orchestrator_phases/` package with mounting via class-attribute assignment.
+  - **A.5 (#12)** — Wired EVAL_DESIGN and EXECUTION_EVAL into the orchestrator. Per-resource EvalHarness invocation; simple-threshold promotion gate; loop-back to ITERATE with feedback (max 2 rounds, held-out scenarios stripped). 26 tests.
+  - **A.6 (#13)** — Five Prometheus instruments (`harness_eval_phase_duration_seconds`, `harness_eval_tokens_to_goal`, `harness_eval_scenarios_total`, `harness_eval_arm_score`, `harness_eval_judge_no_decision_total`); five env vars (`CGF_DESIGN_MODEL`, `CGF_JUDGE_MODEL`, `CGF_EVAL_TOKEN_BUDGET`, `CGF_EVAL_PROMOTION_EPSILON`, `CGF_EVAL_HELD_OUT_FRACTION`) wired through docker-compose.yml + `.env.example`; Grafana "Future" placeholder row replaced with five real panels. 29 tests.
+  - **A.7 (this branch)** — OTel tracer spans for eval phases (`harness.eval.{task_id,phase,resource_path,resource_type,outcome,candidate_pass_rate,baseline_pass_rate,win_rate,...}`), wrapping degrades to no-op when tracer unavailable. End-to-end integration test exercising the full 9-phase pipeline with mocked SDK calls (`tests/integration/test_full_pipeline_integration.py`). Runtime smoke fixture at `docs/examples/cgf-eval-smoke/SPEC.md` (greeter agent + calculator skill, `make optimize`-able with cost ~$0.10–$0.50 using sonnet, less with haiku). 11 + 2 new tests.
+  - **Net Phase A:** ~3500 LoC production code + ~3000 LoC tests across the seven PRs. The pipeline closes the optimization loop end-to-end: agents generate resources, the architect designs an eval suite, candidates run against baselines, the gate decides promotion, and feedback loops back to ITERATE until threshold or max-feedback. Phase B (bootstrap-CI gate, multi-judge ensemble) is the natural next major drop.
 - **Block 4 Part 3 — Observability (2026-05-05)** — Five phases, four commits, ~1,300 LoC of new infra (~440 LoC of deprecated harness metrics + tests dropped):
   - Phase 3A (`53d6748`) — OTel Collector sidecar (gRPC :4317 / HTTP :4318); SDK telemetry routed to bundled collector via literal compose env vars (not shell-interpolated, so host-shell OTel envvars don't leak into harness containers); cardinality knobs (`OTEL_METRICS_INCLUDE_SESSION_ID/ACCOUNT_UUID=false`); collector exposes SDK metrics on :8889 for Prometheus scrape.
   - Phase 3B (`f025870`) — Dropped 5 instruments + 4 methods from `monitoring.py` that the SDK now emits natively (`api_tokens_used_total`, `api_cost_dollars_total`, both cache-token counters, the cache-hit-ratio gauge, `record_tokens()` with its hardcoded pricing table). Renamed 11 surviving harness instruments with `harness_` prefix. Dropped 14 tests; 1534/0/0 passing.
   - Phase 3C (`e4494cc`) — Two pre-provisioned Grafana dashboards (`/d/casdk-overview`, `/d/casdk-cgf`) replacing the placeholder JSON. 26 panels total covering session health, tokens/cost (segmented by model + query_source), tool calls, latency p50/p95/p99, system resources, CGF tracer activity, and optimization quality.
   - Phase 3D (`34cfaba`) — AlertManager service (`prom/alertmanager:v0.27.0`) + a tiny stdlib-Python webhook-debug receiver. Discovered + fixed: Prometheus had `rule_files`/`alerting:` blocks nowhere in its config and `alerting.yml` wasn't even bind-mounted into the container — every rule on disk had been dead since the project started. 10 rules now active across 4 groups including pipeline self-monitoring (`OTelCollectorDown`, `AlertManagerDown`).
-  - Phase 3E — observability operator guide (architecture, dashboards, rule authoring, first-response actions, real-receiver wiring) authored as `docs/OBSERVABILITY.md`; README "Monitoring" section updated; this file's known-limitations + TODO entries removed. (Doc later consolidated into `docs/REFACTOR.md § Observability` 2026-05-07.)
+  - Phase 3E — observability operator guide (architecture, dashboards, rule authoring, first-response actions, real-receiver wiring) authored as `docs/OBSERVABILITY.md`; README "Monitoring" section updated; this file's known-limitations + TODO entries removed. (Doc was briefly consolidated into `docs/REFACTOR.md` 2026-05-07, then re-extracted to `docs/OBSERVABILITY.md` 2026-05-14 during the `grafana-refactor` branch as the canonical single-source-of-truth for the 10-dashboard + 13-alert architecture.)
   - **Net surface change:** harness now self-monitors its own observability pipeline (OTel collector, AlertManager) on top of monitoring application behavior; SDK telemetry adds `query_source` (main/auxiliary/subagent) segmentation that the previous harness counters never had; total stack: 7 services (was 4) — main-agent, prometheus, grafana, otel-collector, alertmanager, alertmanager-webhook, plus the multi-agent profile services.
 - **Block 2 Part 2 Phase 3 — Slim & rename `direct_agent` → `subagent` (2026-05-04)** — Steps 1-6 across 6 commits:
   - Step 1: Renamed 4 agent files + YAML `name:` fields to canonical short forms (`database-expert`, `gcp-architect`, `code-review-expert`, `sdet-expert`); dropped `testing-agent` and `reviewer-agent` aliases.
@@ -44,7 +70,7 @@ Technical reference for developers working on this repository and for Claude's o
 - **Block 2 Part 2 Phase 2 minimal — Hook event SDK-canonical names (2026-05-04)** — Renamed `HookEvent.POST_SESSION_START` → `SESSION_START` (value "PostSessionStart" → "SessionStart"); dropped unused `PRE_SESSION_START`. Tests 1591/0/0. Phase 2 full (plugin_manager.py collapse) deferred — gated on Phase 3 experiment results.
 - **Block 2 Part 2 Phase 1 — Filesystem Agent Discovery (2026-05-04)** — moved 14 agent configs from `src/harness/agents/configs/*.md` to canonical `.claude/agents/*.md`; `definitions.py` and `ResourceRegistry.discover()` repointed to new path; `setting_sources` narrowed `["user","project"]` → `["project"]` for container hermeticity; Dockerfile copies `.claude/` in dev + production stages; YAML `model: opus 4.1` normalized to canonical `opus` (12 files). Unit tests 1591/0/0.
 - **Block 2 Part 2 Phase 0 — SDK Bump + Task-Tool Verification (2026-05-04)** — `claude-agent-sdk` pinned `>=0.1.72` (was `>=0.1.0`, resolved to 0.1.12). Unit suite unchanged at 1591/0/0. **Runtime smoke verified**: `make interactive` → `Task(subagent_type="python-expert", ...)` returned a real response (`ResultMessage(is_error=False, num_turns=2)`), confirming issue #12212 is fixed for this harness. `ClaudeAgentOptions.skills=` parameter confirmed present (closes REFACTOR.md Risk #6). Unblocks Phases 1-3 (filesystem agent discovery, plugin_manager collapse, subagent.py retirement).
-- **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/REFACTOR.md](./docs/REFACTOR.md) for the full reorganization spec.
+- **Block 1 — Branch Reorganization (2026-05-01/02)** — 73 commits from `contextgrad-framework` promoted to `main` via PR #1. Branches now equal. `contextgrad-framework` reset as a slim branch off `main` for forthcoming Stage 3-4 eval-harness work. See [docs/CGF-EVAL-ROADMAP.md § 11.7](./docs/CGF-EVAL-ROADMAP.md#117-what-shipped--block-log) for the block log.
 - **Stage 2: MCP Tool/Server Creation Skills (2026-03-26)**
   - [x] `mcp-tool-creation` and `mcp-server-creation` skills with references/
   - [x] Full Python and TypeScript MCP server scaffolds in templates/
@@ -78,6 +104,34 @@ Technical reference for developers working on this repository and for Claude's o
   and `harness/interactive.py` (and possibly `harness/agent_progress.py`)
   to identify which renderer is responsible for each artifact, then
   decide what to clean up vs. accept as cost-of-doing-business.
+
+### CGF state-machine / observability — follow-ups (deferred 2026-05-11)
+
+After the Phase-1 smoke retrospective on `phase-a-fixes`, three further
+fixes are queued behind the just-shipped (A) signal-sequence enforcement,
+(B) summary.json single-source-of-truth, (D) orchestrator prompt
+hardening, and the Grafana gray-out of path-specific phases. Rationale
++ tradeoff matrix in chat history; brief here.
+
+- [ ] **(C) Path-filtered dashboard PHASES.** The current Grafana
+  "Phase Progression" panel shows all 14 phases with gray-out for
+  path-specific stages. A cleaner alternative is to surface a
+  `harness_run_path{value="single"|"multi"}` discriminator label and
+  render only the active path's phases. Deferred because the gray-out
+  approach (already shipped) captures ~80% of the value with much less
+  complexity. Revisit if users find the always-on rows confusing in
+  practice.
+- [ ] **(E) Collapse `iterate` / `optimize` across single + multi
+  paths.** Conceptually the same loop, but multi-resource has
+  loop-back semantics that single doesn't. Defer until Stage 3 Phase B
+  (statistical promotion gate) forces a rethink of the phase
+  vocabulary anyway. Breaking change — affects checkpoint resume.
+- [ ] **(F) Make `task_list.iteration` load-bearing.** Currently
+  write-only (used by Grafana, never read by gates or transition
+  logic). Drive `CGF_ITERATIONS` cap from it, gate promotion on it,
+  surface "iter N of M" stat in Grafana. **Locked behind (D)** —
+  worthless without reliable `[ITERATION_COMPLETE]` emission. Pair
+  with Phase B when its bootstrap-CI gate is designed.
 ### Recent fixes (2026-05-02)
 - ✓ All 5 pre-existing unit test failures fixed (1585 → 1591 passed, 0 failed). See REFACTOR.md Part 1E for the fix-by-fix breakdown. One of these (`9bf5a28`) was a real user-facing bug: `ENABLED_PLUGINS=` (empty) in `.env` previously caused zero plugins to load.
 
@@ -539,7 +593,7 @@ When running inside the harness container:
 
 #### Prometheus Metrics
 
-Two metric sources reach Prometheus (see [docs/REFACTOR.md § Observability](./docs/REFACTOR.md#4-observability) for the full picture):
+Two metric sources reach Prometheus (see [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) for the full picture):
 
 **Harness instruments** (port 9090, `harness_*` and `cgf_*` namespaces, scraped from each agent container):
 - `harness_agent_requests_total{agent, status}` — Request counter
@@ -863,7 +917,7 @@ uv run python -m harness.optimization.cli.section_optimize \
 
 ### Test Coverage
 
-**Current total: 1499 unit tests passing as of 2026-05-08** (1548 baseline post-Block-3 → 1534 after Block 4 Phase 3B → 1499 after dropping 35 stale `test_mcp_resource_generation.py` checks that asserted file paths inside the (now external) swe-marketplace clone of the `context-engineering` plugin).
+**Current total: 1534 unit tests passing as of 2026-05-05** (1548 baseline post-Block-3, minus 14 dropped in Block 4 Phase 3B for SDK-duplicate metrics).
 
 CGF-specific test areas (in `tests/unit/test_optimization/`):
 - OpenTelemetry tracing, optimization store, resource registry, adapter framework, reward system
@@ -918,33 +972,32 @@ Max refinement iterations: 3 before escalating to human review.
 
 For multi-resource SPEC.md files (plugins, skill-sets, workflows), the orchestrator delegates work to specialized agents:
 
-**State Machine:**
+**State Machine** (canonical 9-phase pipeline shipped in Phase A, plus `failed` terminal):
+
 ```
-PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE → COMPLETE
-    │           │         │          │          │           │
-    │     cgf-research  cgf-     context-   cgf-prompt  cgf-coherence
-    │        -lead      resource  engineer   -optimizer   -validator
-    │           │       -architect    │          │           │
-    │      [RESEARCH_  [DESIGN_  [GENERATE_  [ITERATE_  [VALIDATE_
-    │      COMPLETE]   COMPLETE] COMPLETE]   COMPLETE]  COMPLETE]
+RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE
 ```
-*Note: EVAL_DESIGN and EXECUTION_EVAL phases exist in the enum for future stages but are not yet orchestrated.*
+
+Allowed backward transitions: `EXECUTION_EVAL → ITERATE` (eval gate loop-back, max 2 rounds) and `VALIDATE → ITERATE` (coherence-validator loop-back, max 2 rounds).
 
 **Phase-to-Agent Mapping:**
 
-| Phase | Agent | Signal |
-|-------|-------|--------|
-| PLANNING | None (Python only) | State file created |
+| Phase | Driver | Signal |
+|-------|--------|--------|
 | RESEARCH | `cgf-agents:cgf-research-lead` | `[RESEARCH_COMPLETE]` |
 | DESIGN | `cgf-agents:cgf-resource-architect` | `[DESIGN_COMPLETE]` |
+| QA | Python auto-accept (no agent) | — |
 | GENERATE | `context-engineering:context-engineer` | `[GENERATE_COMPLETE:{path}]` |
+| EVAL_DESIGN | `cgf-agents:cgf-eval-architect` | `[EVAL_DESIGN_COMPLETE]` |
 | ITERATE | `cgf-agents:cgf-prompt-optimizer` | `[ITERATE_COMPLETE:{path}]` |
-| EVALUATE | `cgf-agents:cgf-result-evaluator` | `RECOMMENDATION: ACCEPT/REFINE/REJECT` |
+| EXECUTION_EVAL | `EvalHarness` runner (no agent — runs graders) | — (Python advances state) |
 | VALIDATE | `cgf-agents:cgf-coherence-validator` | `[VALIDATE_COMPLETE]` or `[VALIDATE_ISSUES:{count}]` |
+
+`cgf-result-evaluator` exists in `cgf-agents` (constant `AGENT_EVALUATE`) but is no longer wired — Phase A split the old `EVALUATE` phase into `EVAL_DESIGN` + `EXECUTION_EVAL`.
 
 **Core Principle:** Python is a thin state coordinator; agents do all the work. Each agent emits structured signals that Python parses to transition state.
 
-**Resume Support:** State tracked in `sessions/optimization-state.json`. Delete to restart; keeps research/artifacts.
+**Resume Support:** State tracked in `sessions/optimization-state.json`. Delete to restart; keeps research/artifacts. Full state-file schema + per-phase implementation details in `src/harness/optimization/CLAUDE.md`.
 
 ---
 
@@ -1014,7 +1067,8 @@ See [README.md#troubleshooting](./README.md#troubleshooting) for user-focused so
 #### Project Documentation
 - [README.md](./README.md) - User-facing documentation
 - [QUICKSTART.md](./QUICKSTART.md) - 5-minute setup
-- [docs/REFACTOR.md § Hardening](./docs/REFACTOR.md#3-hardening) - Production security priorities (P0-P3)
+- [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) - Architecture / metrics inventory / 10 dashboards / 13 alert rules / data persistence / gotchas. **Re-read before editing `config/monitoring/` or wiring new instruments.**
+- [docs/CGF-EVAL-ROADMAP.md § 10](./docs/CGF-EVAL-ROADMAP.md#10-hardening-backlog) - Production security priorities (P0-P3)
 
 #### Claude Agent SDK
 - [Agent SDK Overview](https://docs.claude.com/en/api/agent-sdk/overview)

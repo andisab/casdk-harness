@@ -103,6 +103,72 @@ groups:
           summary: "High token usage for {{ $labels.model }}"
           description: "Using {{ $value }} tokens/hour (threshold: 1M tokens/hour)"
 
+      # Cost spike — large 1-hour increase above the standing HighAPICost rate.
+      # Static threshold of $30 in any rolling hour; treat as ~3× the typical
+      # operational rate and tune to your environment. PromQL doesn't offer
+      # easy historical-P95 baselining, so this is intentionally a hard cap.
+      - alert: CostSpike
+        expr: |
+          sum(increase(claude_code_cost_usage_USD_total[1h])) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API cost spiked in the last hour"
+          description: "Cost increased by ${{ $value | printf \"%.2f\" }} in 1h (threshold: $30). Investigate runaway model/effort settings."
+
+      # Cache hit rate degradation — healthy long sessions sit at ≥90%;
+      # <60% sustained means the cache is busted each turn (timestamps in
+      # CLAUDE.md, mid-session model switches, MCP additions, capitalization
+      # drift in stable prefixes).  Only fires when there's actual token
+      # traffic in the denominator.
+      - alert: CacheHitRateDegraded
+        expr: |
+          (
+            sum(rate(claude_code_token_usage_tokens_total{type="cacheRead"}[5m]))
+            /
+            sum(rate(claude_code_token_usage_tokens_total{type=~"cacheRead|cacheCreation|input"}[5m]))
+          ) < 0.6
+          and
+          sum(rate(claude_code_token_usage_tokens_total{type=~"cacheRead|cacheCreation|input"}[5m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit rate below 60% for 30+ minutes"
+          description: "Cache hit rate is {{ $value | humanizePercentage }}. Healthy long sessions sit at ≥90%. Inspect CLAUDE.md for volatile content; check for mid-session /model switches."
+
+      # Token burn — catastrophic generation rate. The standing HighTokenUsage
+      # rule fires at 1M tok/h (≈278 tok/s); this rule fires at 100k tok/s
+      # sustained for 10m, which would consume the daily budget in minutes.
+      - alert: TokenBurnSustained
+        expr: |
+          sum(rate(claude_code_token_usage_tokens_total[5m])) > 100000
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Token burn rate above 100k tok/s for 10+ minutes"
+          description: "Generating {{ $value | humanize }} tok/s. Likely a runaway agent loop. Investigate before budget impact compounds."
+
+      # DEFERRED — Sustained retry exhaustion alert from spec § 9.1.
+      # Requires the SDK's `api_retries_exhausted` event, which only flows
+      # through OTLP logs.  Until Loki (Stage 3) lands, terminal API
+      # failures are approximated by the standing HighErrorRate rule
+      # (agent_alerts group) which fires on harness_agent_requests_total
+      # {status="error"}.  Restore this alert when Loki is wired:
+      #
+      # - alert: SustainedRetryExhaustion
+      #   expr: |
+      #     sum(rate({service_name="claude-code"} | json
+      #              | event_name="api_retries_exhausted" [5m])) > 0
+      #   for: 10m
+      #   labels:
+      #     severity: critical
+      #   annotations:
+      #     summary: "API retries exhausted — terminal failures sustained"
+      #     description: "Anthropic-side incident or rate limit. Check status.anthropic.com."
+
   - name: pipeline_alerts
     interval: 30s
     rules:

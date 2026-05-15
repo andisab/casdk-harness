@@ -16,6 +16,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Literal
 
+from harness.monitoring import record_task_progress
+
 
 class WorkspaceState(Enum):
     """Detected workspace states for autonomous mode.
@@ -410,6 +412,19 @@ class ProgressManager:
         with open(self.task_list_path, "w") as f:
             json.dump(task_list.to_dict(), f, indent=2)
 
+        # Surface live task counts to Prometheus for the Grafana D65
+        # (Mode: Autonomous) task-progress panels.  Maps TaskItem.status
+        # PASS → completed, FAIL → failed, None → pending.
+        counts = {"completed": 0, "failed": 0, "pending": 0}
+        for item in task_list.tasks:
+            if item.status == "PASS":
+                counts["completed"] += 1
+            elif item.status == "FAIL":
+                counts["failed"] += 1
+            else:
+                counts["pending"] += 1
+        record_task_progress(counts)
+
     # --- Session Operations ---
 
     def get_session_count(self) -> int:
@@ -633,8 +648,15 @@ class ResourceStatus:
     Attributes:
         path: Relative path to resource (e.g., "agents/iac-analyzer.md")
         resource_type: Type of resource (agent, skill, command)
-        status: Current status (pending, in_progress, generated, optimized, needs_refinement, failed)
+        status: Current status (pending, in_progress, generated, optimized,
+            needs_refinement, failed, unwinnable). ``unwinnable`` (F21)
+            means baseline+candidate both scored 0 on every scenario in
+            round 1; the orchestrator skips feedback rounds for these.
         version: Current version number (0 = original, 1+ = optimized)
+        last_evaluated_version: Last version of this resource that was
+            scored by EXECUTION_EVAL (F17). EXECUTION_EVAL skips
+            resources whose ``version`` has not advanced past this number,
+            avoiding redundant re-evals during feedback rounds.
         quality: Quality scores (None if not yet evaluated)
         iterations: Number of optimization iterations completed
         refinement_count: Number of targeted refinement loops
@@ -646,9 +668,16 @@ class ResourceStatus:
     path: str
     resource_type: str
     status: Literal[
-        "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+        "pending",
+        "in_progress",
+        "generated",
+        "optimized",
+        "needs_refinement",
+        "failed",
+        "unwinnable",
     ] = "pending"
     version: int = 0
+    last_evaluated_version: int = 0
     quality: ResourceQuality | None = None
     iterations: int = 0
     refinement_count: int = 0
@@ -663,6 +692,7 @@ class ResourceStatus:
             "resource_type": self.resource_type,
             "status": self.status,
             "version": self.version,
+            "last_evaluated_version": self.last_evaluated_version,
             "quality": self.quality.to_dict() if self.quality else None,
             "iterations": self.iterations,
             "refinement_count": self.refinement_count,
@@ -683,6 +713,7 @@ class ResourceStatus:
             resource_type=data["resource_type"],
             status=data.get("status", "pending"),
             version=data.get("version", 0),
+            last_evaluated_version=data.get("last_evaluated_version", 0),
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),
@@ -734,6 +765,11 @@ class MultiResourceState:
     feedback_history: list[dict[str, Any]] = field(default_factory=list)
     quality_threshold: float = 0.85
     max_iterations: int = 5
+    # F9: count of VALIDATE → ITERATE loop-backs.  Capped by
+    # config.max_validate_refinements so a flaky coherence-validator
+    # (or an upstream defect that VALIDATE keeps flagging) can't spin
+    # the pipeline indefinitely.
+    validate_refinement_count: int = 0
     started_at: str = ""
     updated_at: str = ""
 
@@ -762,6 +798,7 @@ class MultiResourceState:
             "feedback_history": self.feedback_history,
             "quality_threshold": self.quality_threshold,
             "max_iterations": self.max_iterations,
+            "validate_refinement_count": self.validate_refinement_count,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
         }
@@ -787,6 +824,7 @@ class MultiResourceState:
             feedback_history=data.get("feedback_history", []),
             quality_threshold=data.get("quality_threshold", 0.85),
             max_iterations=data.get("max_iterations", 5),
+            validate_refinement_count=data.get("validate_refinement_count", 0),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
         )
@@ -825,10 +863,17 @@ class MultiResourceState:
         self,
         path: str,
         status: Literal[
-            "pending", "in_progress", "generated", "optimized", "needs_refinement", "failed"
+            "pending",
+            "in_progress",
+            "generated",
+            "optimized",
+            "needs_refinement",
+            "failed",
+            "unwinnable",
         ]
         | None = None,
         version: int | None = None,
+        last_evaluated_version: int | None = None,
         quality: ResourceQuality | None = None,
         iterations: int | None = None,
         refinement_count: int | None = None,
@@ -842,6 +887,7 @@ class MultiResourceState:
             path: Resource path.
             status: New status.
             version: New version number.
+            last_evaluated_version: Last EXECUTION_EVAL'd version (F17).
             quality: New quality scores.
             iterations: Number of iterations.
             refinement_count: Number of refinement loops.
@@ -863,6 +909,8 @@ class MultiResourceState:
                 resource.error = ""
         if version is not None:
             resource.version = version
+        if last_evaluated_version is not None:
+            resource.last_evaluated_version = last_evaluated_version
         if quality is not None:
             resource.quality = quality
         if iterations is not None:

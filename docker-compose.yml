@@ -40,6 +40,18 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -58,6 +70,13 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-main
+      # Pin temporality to cumulative — defensive against future SDK default
+      # changes. VictoriaMetrics, Mimir, and Grafana Cloud silently drop delta
+      # metrics; we use Prometheus here but the pin costs nothing.
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      # Project taxonomy for cross-repo filtering. Single-user harness skips
+      # team= and cost_center= from the spec.
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
     volumes:
       - ./workspace:/workspace:delegated
       - ./.claude-plugin:/app/.claude-plugin:ro
@@ -116,6 +135,18 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -134,6 +165,8 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-agent-two
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -185,6 +218,18 @@ services:
       - ENABLED_PLUGINS=${ENABLED_PLUGINS:-}
       - SWE_MARKETPLACE_PATH=${SWE_MARKETPLACE_PATH:-}
       - SWE_MARKETPLACE_REF=${SWE_MARKETPLACE_REF:-}
+      # CGF Stage 3 — eval framework (Phase A.6).  Listed explicitly per
+      # the env-passthrough gotcha: vars not enumerated here NEVER reach
+      # the container even if set in .env.
+      - CGF_DESIGN_MODEL=${CGF_DESIGN_MODEL:-sonnet}
+      - CGF_JUDGE_MODEL=${CGF_JUDGE_MODEL:-opus}
+      - CGF_EVAL_TOKEN_BUDGET=${CGF_EVAL_TOKEN_BUDGET:-1000000}
+      - CGF_EVAL_PROMOTION_EPSILON=${CGF_EVAL_PROMOTION_EPSILON:-0.0}
+      - CGF_EVAL_HELD_OUT_FRACTION=${CGF_EVAL_HELD_OUT_FRACTION:-0.25}
+      # Phase-1 hardening knobs (phase-a-fixes, 2026-05-11).
+      - CGF_MAX_ITERATIONS=${CGF_MAX_ITERATIONS:-3}
+      - CGF_BASELINE_HASH_CHECK=${CGF_BASELINE_HASH_CHECK:-1}
+      - CGF_SIGNAL_STRICT=${CGF_SIGNAL_STRICT:-0}
       # OTel vars use literal values (NOT shell interpolation) so harness telemetry
       # always routes to the bundled collector regardless of what the host shell
       # has set (e.g., a global Claude Code OTLP endpoint). To redirect telemetry,
@@ -203,6 +248,8 @@ services:
       - OTEL_METRICS_INCLUDE_SESSION_ID=false
       - OTEL_METRICS_INCLUDE_ACCOUNT_UUID=false
       - OTEL_SERVICE_NAME=casdk-harness-agent-three
+      - OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+      - OTEL_RESOURCE_ATTRIBUTES=project=${PROJECT:-ab-casdk-harness}
       - REDIS_HOST=redis
       - REDIS_URL=redis://redis:6379
     volumes:

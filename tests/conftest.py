@@ -17,6 +17,26 @@ import pytest
 _token_budget = {"used": 0, "limit": 1_000_000}
 
 
+@pytest.fixture(autouse=True)
+def _reset_run_phase_gauges() -> Generator[None, None, None]:
+    """Reset `harness_run_phase_info` / `harness_run_iteration` gauges between
+    tests so that test fixture state doesn't leak into the live Prometheus
+    endpoint when pytest is invoked inside the main-agent container (the
+    metrics HTTP server is bound by the same process that runs the tests).
+
+    Without this, test resource names like ``test_initial_state_starts_at_r0``
+    show up on the Grafana "Active Resource" panel.
+    """
+    yield
+    try:
+        from harness import monitoring as _m
+        _m.harness_run_phase_info.clear()
+        _m.harness_run_iteration.clear()
+        _m._active_phases.clear()
+    except Exception:
+        pass
+
+
 @pytest.fixture
 def api_key() -> str | None:
     """
