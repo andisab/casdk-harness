@@ -972,33 +972,32 @@ Max refinement iterations: 3 before escalating to human review.
 
 For multi-resource SPEC.md files (plugins, skill-sets, workflows), the orchestrator delegates work to specialized agents:
 
-**State Machine:**
+**State Machine** (canonical 9-phase pipeline shipped in Phase A, plus `failed` terminal):
+
 ```
-PLANNING → RESEARCH → DESIGN → GENERATE → ITERATE → VALIDATE → COMPLETE
-    │           │         │          │          │           │
-    │     cgf-research  cgf-     context-   cgf-prompt  cgf-coherence
-    │        -lead      resource  engineer   -optimizer   -validator
-    │           │       -architect    │          │           │
-    │      [RESEARCH_  [DESIGN_  [GENERATE_  [ITERATE_  [VALIDATE_
-    │      COMPLETE]   COMPLETE] COMPLETE]   COMPLETE]  COMPLETE]
+RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE
 ```
-*Note: EVAL_DESIGN and EXECUTION_EVAL phases exist in the enum for future stages but are not yet orchestrated.*
+
+Allowed backward transitions: `EXECUTION_EVAL → ITERATE` (eval gate loop-back, max 2 rounds) and `VALIDATE → ITERATE` (coherence-validator loop-back, max 2 rounds).
 
 **Phase-to-Agent Mapping:**
 
-| Phase | Agent | Signal |
-|-------|-------|--------|
-| PLANNING | None (Python only) | State file created |
+| Phase | Driver | Signal |
+|-------|--------|--------|
 | RESEARCH | `cgf-agents:cgf-research-lead` | `[RESEARCH_COMPLETE]` |
 | DESIGN | `cgf-agents:cgf-resource-architect` | `[DESIGN_COMPLETE]` |
+| QA | Python auto-accept (no agent) | — |
 | GENERATE | `context-engineering:context-engineer` | `[GENERATE_COMPLETE:{path}]` |
+| EVAL_DESIGN | `cgf-agents:cgf-eval-architect` | `[EVAL_DESIGN_COMPLETE]` |
 | ITERATE | `cgf-agents:cgf-prompt-optimizer` | `[ITERATE_COMPLETE:{path}]` |
-| EVALUATE | `cgf-agents:cgf-result-evaluator` | `RECOMMENDATION: ACCEPT/REFINE/REJECT` |
+| EXECUTION_EVAL | `EvalHarness` runner (no agent — runs graders) | — (Python advances state) |
 | VALIDATE | `cgf-agents:cgf-coherence-validator` | `[VALIDATE_COMPLETE]` or `[VALIDATE_ISSUES:{count}]` |
+
+`cgf-result-evaluator` exists in `cgf-agents` (constant `AGENT_EVALUATE`) but is no longer wired — Phase A split the old `EVALUATE` phase into `EVAL_DESIGN` + `EXECUTION_EVAL`.
 
 **Core Principle:** Python is a thin state coordinator; agents do all the work. Each agent emits structured signals that Python parses to transition state.
 
-**Resume Support:** State tracked in `sessions/optimization-state.json`. Delete to restart; keeps research/artifacts.
+**Resume Support:** State tracked in `sessions/optimization-state.json`. Delete to restart; keeps research/artifacts. Full state-file schema + per-phase implementation details in `src/harness/optimization/CLAUDE.md`.
 
 ---
 

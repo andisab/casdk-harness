@@ -1,577 +1,338 @@
 # CGF User Guide
 
-This guide helps you optimize Claude Code resources using the Context Gradient Feedback (CGF) pipeline.
+Practical guide to running the Context Gradient Feedback (CGF) optimization
+pipeline. For internals (phase machine, schemas, Python API, extension
+points), see `src/harness/optimization/CLAUDE.md`. For the metrics &
+dashboards stack, see `docs/OBSERVABILITY.md`.
 
-## Quick Start
-
-Run your first optimization in 5 minutes.
-
-### Prerequisites
-
-- Python 3.10+
-- Anthropic API key configured
-
-### Basic Optimization
+## Quick start
 
 ```bash
-# Initialize a new CGF workspace
-make cgf-init NAME=python-expert
+# One-time: build images and start the harness
+make build
+make up
 
-# Copy your agent to the workspace
+# Initialize a workspace and edit the SPEC
+make cgf-init NAME=python-expert
+$EDITOR workspace/python-expert/SPEC.md
+
+# Drop the resource file you want to optimize into the workspace
 cp src/harness/agents/configs/python-expert.md workspace/python-expert/
 
-# Run optimization with a specific goal
-make optimize WORKSPACE=workspace/python-expert \
-  GOAL="improve async programming guidance"
-
-# Run with review mode (pauses after each iteration)
-CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/python-expert \
-  GOAL="better error handling"
+# Run optimization (auto-discovers SPEC.md in workspace/)
+make optimize
 ```
 
-> **Note**: For runnable end-to-end fixtures, see `tests/smoke/python-expert/` (single-resource) and `tests/smoke/iac-team/` (multi-resource) — these are the canonical Phase A reference invocations.
+There must be exactly one `SPEC.md` under `workspace/`. Auto-discovery
+fails fast if there are zero or multiple.
 
-### What Happens
-
-1. **Research Phase**: CGF analyzes the resource and goal, identifies competencies to optimize
-2. **Test Generation**: Creates a test suite targeting the optimization goal
-3. **Optimization**: Runs iterative improvements using the selected optimizer
-4. **Evaluation**: Reviews changes using CAIR assessment (Coherence, Alignment, Improvement, Regression)
-5. **Finalization**: Produces optimized resource file if evaluation passes
-
----
-
-## Resource Types
-
-CGF supports optimizing six resource types, each with a specialized strategy.
-
-### Agents
-
-Agent resources define AI assistant behaviors with system prompts.
-
-**Strategy**: `prompt_optimization`
-**Focus**: System prompt clarity, task handling, example quality
-
-**Example**:
-```bash
-make optimize WORKSPACE=workspace/python-expert GOAL="async programming"
-```
-
-**File Structure**:
-```yaml
----
-name: python-expert
-description: Python development assistant
-model: sonnet
-tools: Read, Write, Bash
----
-You are a Python expert...
-```
-
-### Skills
-
-Skills define triggered behaviors activated by user commands or phrases.
-
-**Strategy**: `trigger_optimization`
-**Focus**: Activation precision, false positive reduction, boundary handling
-
-**Example**:
-```bash
-make optimize WORKSPACE=workspace/joplin-research GOAL="better trigger detection"
-```
-
-**File Structure**:
-```yaml
----
-name: joplin-research
-description: Research documentation skill
-trigger_patterns:
-  - "/research"
-  - "research this topic"
----
-When activated, search and document...
-```
-
-### Commands
-
-Commands define slash commands with argument schemas.
-
-**Strategy**: `schema_optimization`
-**Focus**: Argument validation, error messages, help text quality
-
-**Example**:
-```bash
-make optimize WORKSPACE=workspace/optimize GOAL="clearer error messages"
-```
-
-**File Structure**:
-```yaml
----
-name: cgf-optimize
-command: /optimize
-arguments:
-  - name: resource
-    required: true
-  - name: --goal
-    required: true
----
-Run CGF optimization pipeline...
-```
-
-### Workflows
-
-Workflows define multi-step processes with state machines.
-
-**Strategy**: `workflow_optimization`
-**Focus**: State transitions, error recovery, step coordination
-
-**Example**:
-```bash
-make optimize WORKSPACE=workspace/deployment GOAL="reliability improvements"
-```
-
-**File Structure**:
-```yaml
----
-name: deployment-flow
-type: workflow
-steps:
-  - name: validate
-  - name: build
-  - name: deploy
----
-Execute deployment sequence...
-```
-
-### Hooks
-
-Hooks define lifecycle event handlers.
-
-**Strategy**: `trigger_optimization`
-**Focus**: Event matching, execution reliability
-
-### MCP Servers
-
-MCP server configurations define external tool integrations.
-
-**Strategy**: `schema_optimization`
-**Focus**: Configuration validation, error handling
-
----
-
-## Optimization Goals
-
-Writing effective optimization goals is crucial for good results.
-
-### Goal Writing Guidelines
-
-**Be Specific**: Target a particular capability or behavior.
+The fastest way to see the pipeline in action is to run a smoke fixture
+instead:
 
 ```bash
-# Good: Specific capability
-GOAL="improve async/await pattern explanations with practical examples"
-
-# Bad: Too vague
-GOAL="make it better"
+make smoke FIXTURE=python-expert   # single-resource, ~$0.10–$0.50 on sonnet
+make smoke FIXTURE=iac-team        # multi-resource, AWS + K8s
 ```
 
-**Be Measurable**: Include criteria that can be evaluated.
+Smoke fixtures live in `tests/smoke/<name>/` and are end-to-end against
+real LLMs.
+
+## What CGF does
+
+CGF takes a resource (an agent prompt, a skill, a multi-resource SPEC
+that bundles several) plus an optimization goal, and runs an iterative
+loop of:
+
+1. **Research** the resource and goal — identify competencies to target.
+2. **Design** how to refactor (multi-resource only — single-resource
+   skips this).
+3. **Generate / iterate** improved versions.
+4. **Evaluate** the new version against the baseline on a generated
+   eval suite. Promote only if it beats the baseline.
+5. **Validate** structural coherence before declaring done.
+
+The optimized version is written as `{resource}-v{N}.md` next to the
+original. **The original file is never modified.** Delete the
+`sessions/` directory to reset state without losing artifacts.
+
+### Two paths
+
+The pipeline branches on whether your SPEC.md has a `## Capabilities`
+section:
+
+| Path | Triggered by | Used for |
+|---|---|---|
+| Single-resource | No `## Capabilities` in SPEC | One agent/skill/command |
+| Multi-resource | `## Capabilities` present | Plugins, skill-sets, coordinated agent groups |
+
+Both are launched the same way (`make optimize`). The multi-resource
+path is the Phase A pipeline — 9 phases, two-arm eval gate, per-resource
+loop-back on failure.
+
+## Resource types
+
+| Type | What it optimizes |
+|---|---|
+| Agent | System prompt, task handling, examples |
+| Skill | Trigger precision, activation boundary, false-positive rate |
+| Command | Argument shape, error messages, help text |
+| Workflow | Step coordination, error recovery |
+| Hook | Event matching, execution reliability |
+| MCP server | Tool descriptions, validation, error responses |
+
+For a multi-resource SPEC, you mix any of these in one `## Capabilities`
+section and CGF figures out the resource plan in the DESIGN phase.
+
+## Writing good optimization goals
+
+Specific, measurable, achievable. The eval-architect agent grounds the
+eval suite in your goal — vague goals produce vague evals.
+
+Good:
+
+- `improve async/await pattern explanations with concrete asyncio.gather examples`
+- `reduce false activations on commands that don't match the trigger pattern`
+- `add error recovery guidance for transient database failures`
+
+Bad:
+
+- `make it better`
+- `feel more natural`
+- `add support for a new programming language` (outside scope of optimizing an existing resource)
+
+## Running the pipeline
 
 ```bash
-# Good: Measurable outcome
-GOAL="reduce false positive trigger rate for similar commands"
-
-# Bad: Subjective
-GOAL="feel more natural"
+make optimize          # Auto-discover SPEC.md
+make optimize-dryrun   # Print discovered SPEC and env settings, don't run
+make smoke FIXTURE=python-expert | iac-team
 ```
 
-**Be Achievable**: Stay within the resource's scope.
+The Makefile target does not take `WORKSPACE=` or `GOAL=` arguments.
+Put your goal in `SPEC.md`, then run.
+
+For finer control, invoke the CLI directly:
 
 ```bash
-# Good: Within scope
-GOAL="add error recovery guidance for database operations"
-
-# Bad: Outside scope
-GOAL="add support for a new programming language"
+docker compose exec main-agent python -m harness.cgf_session \
+  --path /workspace/python-expert \
+  --non-interactive
 ```
 
-### Example Goals by Resource Type
+`--non-interactive` auto-continues at every phase checkpoint (no TTY
+needed). Used by `make smoke`.
 
-| Resource | Example Goals |
-|----------|---------------|
-| Agent | "improve code review feedback quality", "better explain complex algorithms" |
-| Skill | "reduce false activations", "handle edge case triggers" |
-| Command | "clearer validation errors", "better help text examples" |
-| Workflow | "graceful interruption handling", "retry logic improvements" |
+### What to watch
 
----
+Three places to look while a run is in progress:
 
-## Pipeline Phases
+| Look at | For |
+|---|---|
+| Terminal output | Phase transitions, agent activity, errors |
+| `workspace/<name>/sessions/optimization-state.json` | Current phase, per-resource status, version, quality scores |
+| Grafana `/d/casdk-cgf` | Run timeline, iteration count, cost so far |
 
-The CGF pipeline executes through these phases:
+Inspect after a run completes:
 
-### INIT
+- `workspace/<name>/sessions/optimization-state.json` — state machine final position
+- `workspace/<name>/eval/` — eval suite + per-round results
+- `workspace/<name>/CHANGELOG.md` — narrative of what changed
+- `workspace/<name>/{resource}-v{N}.md` — optimized output(s)
 
-Creates workspace and validates configuration.
+## Review mode
 
-**Artifacts Created**:
-- `run_config.yaml` - Pipeline configuration
-- `run_state.json` - State tracking
-
-### RESEARCH
-
-Analyzes the resource and goal to identify optimization competencies.
-
-**What Happens**:
-1. Loads resource definition
-2. Analyzes optimization goal
-3. Identifies key competencies
-4. Documents edge cases and best practices
-
-**Artifacts Created**:
-- `research/eval_criteria.yaml` - Evaluation criteria with competencies
-
-### TEST_GEN
-
-Generates test cases targeting identified competencies.
-
-**What Happens**:
-1. Creates test cases for each competency
-2. Includes positive and negative cases
-3. Adds edge case coverage
-4. Validates test suite structure
-
-**Artifacts Created**:
-- `tests/test_suite.yaml` - Test suite with 10-50 test cases
-
-### OPTIMIZE
-
-Runs iterative optimization using the selected optimizer.
-
-**What Happens**:
-1. Establishes baseline score
-2. Generates prompt variants
-3. Evaluates against test suite
-4. Selects best performing version
-5. Repeats until convergence or max iterations
-
-**Artifacts Created**:
-- `{resource}-v{n}.md` - Optimized resource version
-- `sessions/{resource}-v{n}.summary.json` - Optimization metrics (machine-readable)
-
-### EVALUATE
-
-Reviews optimization results using CAIR assessment.
-
-**CAIR Dimensions**:
-- **C**oherence: Structure and readability
-- **A**lignment: Goal fidelity
-- **I**mprovement: What got better
-- **R**egression: What was lost
-
-**Recommendations**:
-- `ACCEPT` - Changes approved, proceed to finalize
-- `REFINE` - Further iteration needed
-- `REJECT` - Changes not acceptable
-
-**Artifacts Created**:
-- `reviews/v{n}_review.md` - Evaluation report
-
-### FINALIZE
-
-Handles the evaluation decision.
-
-**Actions by Recommendation**:
-- `ACCEPT`: Moves to COMPLETE
-- `REFINE`: Returns to OPTIMIZE for another iteration
-- `REJECT`: Marks run as failed
-
-### COMPLETE
-
-Pipeline finished successfully.
-
-**Final State**:
-- Optimized resource saved
-- Summary metrics recorded
-- Original resource preserved
-
----
-
-## Review Mode
-
-Use `--review` flag for human oversight at key decision points.
-
-### Enabling Review Mode
+To pause for human review after each iteration:
 
 ```bash
-CGF_ITERATION_REVIEW=true make optimize WORKSPACE=workspace/resource \
-  GOAL="optimization goal"
+CGF_ITERATION_REVIEW=true make optimize
 ```
 
-### Checkpoint Behavior
+The orchestrator will pause and wait for input before generating the
+next version. Useful for first-time optimization of a critical resource
+or when validating that the eval suite is targeting the right
+capabilities.
 
-In review mode, the pipeline pauses at:
+## Resuming
 
-1. **After RESEARCH**: Review eval_criteria.yaml before test generation
-2. **After EVALUATE**: Review recommendations before finalizing
+State is persisted in `workspace/<name>/sessions/`. To resume after
+interruption, just re-run `make optimize` — it picks up at the phase
+that was current when the run stopped.
 
-### Resuming from Checkpoint
+To reset and start over:
 
 ```bash
-# Resume from last checkpoint (re-run with same workspace)
-make optimize WORKSPACE=workspace/resource
-
-# To reset and start over, delete sessions directory
-rm -rf workspace/resource/sessions/
-make optimize WORKSPACE=workspace/resource
+make cgf-clean         # remove sessions/ dirs only (keep research, optimized files)
+make cgf-reset         # destructive: remove all CGF artifacts in workspace/
 ```
 
-### When to Use Review Mode
-
-- First time optimizing a critical resource
-- When optimization goal is complex
-- When you want to validate test cases before optimization
-- When reviewing AI-generated changes is required by policy
-
----
+To resume a multi-resource run from a specific phase, edit
+`sessions/optimization-state.json` directly — see
+`src/harness/optimization/CLAUDE.md` § "State file" for the schema.
 
 ## Configuration
 
-### Make Targets
+Most users only touch a handful of env vars. Set them in `.env` (loaded
+by `docker compose`) or override per-run on the command line.
 
-| Target | Description |
-|--------|-------------|
-| `make cgf-init NAME=<name>` | Initialize new CGF workspace |
-| `make optimize WORKSPACE=<path>` | Run optimization |
-| `make optimize-dryrun WORKSPACE=<path>` | Validate setup without running |
-| `make cgf-status` | Check optimization status |
-| `make cgf-clean` | Clean session state files |
-| `make cgf-reset` | Full reset (remove all workspaces) |
+### Common knobs
 
-### Environment Variables
+| Var | Default | When to change |
+|---|---|---|
+| `CGF_EVAL_MODEL` | sonnet | Drop to `haiku` for cheap iteration; raise to `opus` for highest-quality test scoring |
+| `CGF_JUDGE_MODEL` | opus | The judge in EXECUTION_EVAL. Most expensive call — drop to `sonnet` if you trust your rubrics |
+| `CGF_ITERATION_REVIEW` | false | Set `true` to pause after each iteration for review |
+| `CGF_MAX_ITERATIONS` | 3 | Hard cap on iterations per resource. Raise for hard goals; lower to budget-bound |
+| `CGF_VERBOSE` | true | Show agent activity in terminal |
+| `CGF_TOKEN_TRACKING` | false | Track token usage in `pipeline/config.py` flag (also visible in Grafana) |
 
-```bash
-# Required
-ANTHROPIC_API_KEY=sk-ant-...
-
-# Optimization settings (legacy single-resource path)
-CGF_ITERATIONS=10                  # Max iterations per section
-CGF_ITERATION_REVIEW=false         # Pause after each iteration
-CGF_EVAL_MODEL=sonnet              # sonnet (default), haiku, opus
-CGF_VERBOSE=true                   # Show progress output
-```
-
-#### Multi-resource eval pipeline (Phase A and later)
+### Less-common knobs
 
 | Var | Default | Purpose |
 |---|---|---|
-| `CGF_MAX_ITERATIONS` | 3 | Max iter↔eval cycles per resource |
-| `CGF_DESIGN_MODEL` | sonnet | Eval-architect model |
-| `CGF_JUDGE_MODEL` | opus | Eval-judge model (override to sonnet for cost) |
-| `CGF_EVAL_TOKEN_BUDGET` | 1 000 000 | Token ceiling per eval round |
-| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Simple-threshold gate margin |
-| `CGF_EVAL_HELD_OUT_FRACTION` | 0.25 | Architect target for held-out share |
-| `CGF_GENERATE_CONCURRENCY` | 8 | Parallel resource generation |
-| `CGF_ITERATE_CONCURRENCY` | 4 | Parallel resource iteration |
-| `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | Parallel per-resource eval |
-| `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Parallel scenarios inside one resource's eval |
-| `CGF_EVAL_TRIAL_TIMEOUT` | 180 | Per-trial cap (unit / e2e) |
-| `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` | 300 | Per-trial cap (trajectory) |
-| `CGF_ITERATE_TIMEOUT` | 1200 | Per-iteration wall-time cap |
+| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Promotion threshold; raise to require clearer wins |
+| `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Observability + cost-warn; not a hard cutoff yet |
+| `CGF_GENERATE_CONCURRENCY` | 8 | In-flight resource generation. Drop if you hit 429s |
+| `CGF_ITERATE_CONCURRENCY` | 4 | In-flight per-resource iteration |
+| `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | In-flight eval runs |
+| `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Scenarios per eval run |
+| `CGF_BASELINE_HASH_CHECK` | 1 | SHA-256 protection against silent baseline edits |
 
-#### Phase-level timeouts
+### Phase timeouts
 
-| Phase | Default | Env var |
+Each phase has a wall-time cap. Defaults are generous; raise only when a
+specific phase consistently times out on hard goals.
+
+| Phase | Default | Var |
 |---|---|---|
 | RESEARCH | 1800 s | `CGF_RESEARCH_TIMEOUT` |
 | GENERATE | 900 s | `CGF_GENERATE_TIMEOUT` |
 | ITERATE | 1200 s | `CGF_ITERATE_TIMEOUT` |
 | VALIDATE | 300 s | `CGF_VALIDATE_TIMEOUT` |
-| DESIGN | 900 s | (config-only) |
-| EVAL_DESIGN | 1200 s | (config-only) |
-| EXECUTION_EVAL | 1800 s | (config-only) |
+| EVAL trial (unit/e2e) | 180 s | `CGF_EVAL_TRIAL_TIMEOUT` |
+| EVAL trial (trajectory) | 300 s | `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` |
 
-#### Pipeline caps
+The full env-var-to-code-path map is in
+`src/harness/optimization/CLAUDE.md`.
 
-| Knob | Default | Source |
-|---|---|---|
-| `max_iterations` (per resource) | 5 | `CGF_MAX_ITERATIONS` |
-| `max_refinements` (per resource, validate-loop) | 1 | `DEFAULT_MAX_REFINEMENT` |
-| `max_validate_refinements` (pipeline) | 2 | `DEFAULT_MAX_VALIDATE_REFINEMENTS` |
-| `max_feedback_iterations` (execution-eval loop-back) | 2 | `DEFAULT_MAX_FEEDBACK_ITERATIONS` |
+## Reading Grafana
 
-### How to run the multi-resource pipeline
+Grafana lives at <http://localhost:3000> (login `admin` / `${GRAFANA_PASSWORD}`).
+Ten dashboards ship pre-provisioned. The ones a CGF user cares about
+during and after a run:
 
-```bash
-make build                                          # only if Dockerfile changed
-docker compose up -d --force-recreate main-agent    # to pick up src/ edits
-make smoke FIXTURE=iac-team                         # full multi-resource pipeline
-make smoke FIXTURE=python-expert                    # single-resource sanity
-```
+### `/d/casdk-cgf` — CGF Optimization
 
-Inspect after:
+The dashboard built for this pipeline. Look here first.
 
-- `workspace/<fixture>/sessions/optimization-state.json` — state machine
-- `workspace/<fixture>/eval/` — eval artifacts
-- `workspace/<fixture>/CHANGELOG.md` — narrative
-- Grafana CGF dashboard at <http://localhost:3000/d/casdk-cgf>
+- **Active Run Status** — current phase (highlighted across the 9-phase
+  bar), active resource, iteration counter, cost & tokens in the last
+  15 minutes. Path-specific phases dim gray when not applicable.
+  `failed` shows red.
+- **Eval Framework** — Phase A telemetry: per-arm pass rates, judge
+  no-decision rate, scenarios run, token spend per eval round.
+- **State Timeline** — phase transitions over time. Useful for seeing
+  loop-backs (`EXECUTION_EVAL → ITERATE`) and stuck phases.
 
-#### Resuming from existing state (skip workspace wipe)
+### `/d/casdk-overview` — Harness Overview
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T main-agent python -c "
-from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization
-import asyncio
-result = asyncio.run(run_multi_resource_optimization('/workspace/iac-team', verbose=True))
-print('Success!' if result.success else f'Failed: {result.error}')
-"
-```
+Top-level health: services up, agent activity, recent errors. Start
+here if something feels off and you're not sure where to look.
 
-#### Reset state to a specific phase
+### `/d/casdk-sdk-cost` — Cost & Spend
 
-```python
-import json
-state = json.load(open('workspace/iac-team/sessions/optimization-state.json'))
-state['current_phase'] = 'EVAL_DESIGN'
-state['phases_completed'] = ['RESEARCH', 'DESIGN', 'QA', 'GENERATE']
-state['eval_suite_path'] = ''
-state['eval_results_path'] = ''
-state['feedback_history'] = []
-state['validate_refinement_count'] = 0
-for r in state['resources'].values():
-    r['status'] = 'optimized'
-    r['version'] = 1
-    r['last_evaluated_version'] = 0  # F17: force re-eval
-json.dump(state, open('workspace/iac-team/sessions/optimization-state.json', 'w'), indent=2)
-```
+Token spend segmented by `model` (sonnet/opus/haiku) and `query_source`
+(main agent vs. subagent invocations). Useful after a run for the
+"what did this cost me" question.
 
-### SPEC.md
+### `/d/casdk-sdk-reliability` — Reliability & Errors
 
-The SPEC.md file defines your optimization goals. It's created by `make cgf-init` and can be edited manually:
+API errors, retries, transient failures. Check after a failed run to
+distinguish "network blip the harness should have retried" from
+"genuine config or agent error."
 
-```markdown
-# Optimization Specification
-
-## Resource
-- **Path**: python-expert.md
-- **Type**: agent
-
-## Goal
-Improve async programming guidance with practical concurrent examples.
-
-## Focus Areas
-- asyncio event loop fundamentals
-- async/await patterns
-- concurrent execution with gather()
-
-## Success Criteria
-- Clear examples of async patterns
-- Error handling guidance
-- Common pitfall documentation
-```
-
----
+Other dashboards (`sdk-productivity`, `sdk-cache`, `sdk-tools`,
+`mode-interactive`, `mode-autonomous`, `raw-events`) are less relevant
+during optimization runs. See `docs/OBSERVABILITY.md` for the full
+tour, alert rules, and metric inventory.
 
 ## Troubleshooting
 
-### Common Issues
+### "No SPEC.md found" or "Multiple SPEC.md files found"
 
-#### "Empty system prompt"
+`make optimize` requires exactly one. Create with `make cgf-init NAME=foo`,
+or remove extras.
 
-**Symptom**: Validation fails with empty prompt error.
+### Run completed but no `*-v1.md` was produced
 
-**Solution**: Ensure resource file has content after the YAML frontmatter.
+The contract enforcer rejected `[OPTIMIZATION_COMPLETE]` because no
+iteration or evaluation happened. Check the terminal — the orchestrator
+likely went straight from RESEARCH to COMPLETE without producing a
+candidate. `optimization-state.json` will show `current_phase: failed`.
+Re-run with a more specific goal or check the `cgf-orchestrator` prompt
+for issues.
 
-#### "No test cases generated"
+### Candidate scored well but didn't promote
 
-**Symptom**: TEST_GEN phase produces empty test suite.
+The promotion gate requires `candidate.pass_rate ≥ baseline.pass_rate +
+CGF_EVAL_PROMOTION_EPSILON`. Default epsilon is 0, so any strict
+improvement wins. If you set epsilon above 0, raise the bar deliberately.
 
-**Solution**:
-- Check optimization goal is specific enough
-- Verify eval_criteria.yaml has competencies defined
-- Review research notes for context
+### EXECUTION_EVAL keeps looping back to ITERATE
 
-#### "Low optimization scores"
+Max two feedback rounds (`DEFAULT_MAX_FEEDBACK_ITERATIONS`). After
+that, the run promotes whichever version had the best pass rate and
+moves on. If you want more aggressive iteration, change the constant in
+`_orchestrator_helpers.py` — there is no env var for this yet.
 
-**Symptom**: Final score not much better than baseline.
+### Rate-limit errors (429)
 
-**Solutions**:
-- Make optimization goal more specific
-- Increase max_iterations
-- Check test cases are relevant to goal
+Drop concurrency knobs: `CGF_GENERATE_CONCURRENCY=4`,
+`CGF_EVAL_SCENARIO_CONCURRENCY=3`. The harness retries transient 429s
+but sustained pressure means too much parallelism.
 
-#### "REJECT recommendation"
+### `~` paths fail with EACCES inside subagents
 
-**Symptom**: Evaluation rejects optimization.
+Known issue with `HOME` resolving to `/root` in subagent bash calls.
+Use absolute paths (`/home/claude/...`) until the env-passthrough fix
+lands. Tracked in project-root `CLAUDE.md` TODOs.
 
-**Solutions**:
-- Review the review report for specific issues
-- Adjust optimization goal
-- Check for regression in critical capabilities
-- Consider running with `CGF_ITERATION_REVIEW=true` for more control
-
-### Debug Mode
-
-```bash
-# Enable verbose logging
-CGF_VERBOSE=true make optimize WORKSPACE=workspace/resource
-
-# Dry run (validate without executing)
-make optimize-dryrun WORKSPACE=workspace/resource
-```
-
-### Getting Help
+### Debug mode
 
 ```bash
-# Check pipeline status
-make cgf-status
-
-# View workspace structure
-ls -la workspace/resource/
+CGF_VERBOSE=true make optimize             # show progress
+make optimize-dryrun                       # validate setup, don't run
 ```
 
----
+## Best practices
 
-## Best Practices
+**Before**
+- Save a copy of the original resource somewhere safe. The harness
+  doesn't modify it, but you may want to diff later anyway.
+- Write a specific, measurable goal. "Improve X" is not a goal;
+  "explain X with concrete asyncio.gather examples" is.
+- For a first run on a critical resource, set `CGF_ITERATION_REVIEW=true`.
 
-### Before Optimization
+**During**
+- Watch the CGF Grafana dashboard. The state timeline tells you whether
+  loop-backs are happening (which means the eval gate is doing its job).
+- Don't kill the container mid-run. Resume is the supported path:
+  `make optimize` again.
 
-1. **Backup original**: Keep a copy of the original resource
-2. **Define clear goal**: Write specific, measurable optimization goal
-3. **Start with review mode**: Use `CGF_ITERATION_REVIEW=true` for first optimization
+**After**
+- Diff `{resource}.md` vs `{resource}-v{N}.md`. Sometimes the win is
+  obvious; sometimes you want to merge by hand.
+- Read `CHANGELOG.md` for the narrative.
+- If the optimized version regresses on something the eval missed,
+  add a scenario to the eval suite and re-run. The eval suite is in
+  `eval/eval-suite.yaml` and is editable.
 
-### During Optimization
+## See also
 
-1. **Monitor progress**: Check iteration scores for convergence
-2. **Review test cases**: Ensure tests target the right capabilities
-3. **Watch for regressions**: Check CAIR report's Regression section
-
-### After Optimization
-
-1. **Validate manually**: Test optimized resource in real scenarios
-2. **Compare versions**: Review diff between original and optimized
-3. **Document changes**: Note what changed and why
-4. **Keep original**: Preserve `{resource}-orig.md` for rollback
-
-### Iteration Strategy
-
-```
-First run: Broad goal, CGF_ITERATION_REVIEW=true
-   ↓
-Review: Check competencies and test cases
-   ↓
-Refine: Narrow goal based on results
-   ↓
-Final: Automatic mode with specific goal
-```
-
----
-
-## See Also
-
-- `tests/smoke/python-expert/`, `tests/smoke/iac-team/` — runnable Phase A reference fixtures
-- [CGF-API-REFERENCE.md](./CGF-API-REFERENCE.md) - API reference documentation (Stages 1+2 era; Phase A refresh pending)
-- [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md) - Forward-looking plan for Phase A polish + Phases B/C/D + Stage 4
-- [PHASEA_SUMMARY.md](./PHASEA_SUMMARY.md) - Phase A retrospective: what shipped, cost characteristics, lessons learned
-- [OBSERVABILITY.md](./OBSERVABILITY.md) - Operator guide for the metrics/dashboards/alerts stack
-- [README.md](../README.md) - Quick start and overview
+- `src/harness/optimization/CLAUDE.md` — internals (state machine,
+  schemas, Python API, gotchas)
+- `docs/OBSERVABILITY.md` — full metrics/dashboards/alerts stack
+- `docs/CGF-EVAL-ROADMAP.md` — forward plan (Phase B/C/D, Stage 4)
+- `docs/PHASEA_SUMMARY.md` — Phase A retrospective
+- `tests/smoke/python-expert/`, `tests/smoke/iac-team/` — runnable
+  reference fixtures
+- `README.md` — top-level quick start

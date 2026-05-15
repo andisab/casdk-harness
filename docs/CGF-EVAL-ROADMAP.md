@@ -403,10 +403,9 @@ Add `--review` flag with optional checkpoints after DESIGN and EVAL_DESIGN phase
 
 ### Task 7 — Comprehensive documentation update
 
-- `CLAUDE.md` — full rewrite of CGF section to reflect new pipeline.
+- `CLAUDE.md` — full rewrite of CGF section to reflect new pipeline. (Done 2026-05-14: phase→agent table now reflects 9-phase pipeline including QA/EVAL_DESIGN/EXECUTION_EVAL.)
 - `README.md` — update user-facing docs with new commands and workflow.
-- `docs/CGF-API-REFERENCE.md` — add EVAL_DESIGN / EXECUTION_EVAL phases to state diagram + new artifact schemas.
-- `docs/CGF-USER-GUIDE.md` — add "Stage 3: Eval Harness" user-flow section.
+- `docs/CGF-USER-GUIDE.md` — rewritten 2026-05-14 around Phase A flow + Grafana section. The old `docs/CGF-API-REFERENCE.md` (which described a pre-Phase-A state machine that never shipped) was deleted; technical reference now lives in `src/harness/optimization/CLAUDE.md` so it auto-loads when Claude edits eval code.
 - `docs/CGF-EXAMPLES.md` (currently archived in `docs/attic/`) — rewrite around Phase A flow with eval-suite-generation + feedback-loop examples, then restore.
 
 ### Task 8 — Memory and auto-memory updates

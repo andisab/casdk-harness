@@ -465,7 +465,8 @@ docker stats         # Resource usage
 
 - [QUICKSTART.md](./QUICKSTART.md) — 5-minute setup
 - [CLAUDE.md](./CLAUDE.md) — Technical reference (architecture, CGF internals, configuration, gotchas)
-- [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md) — CGF deep dive (env vars, how to run, resume)
+- [docs/CGF-USER-GUIDE.md](./docs/CGF-USER-GUIDE.md) — CGF user guide (how to run, env vars, Grafana, troubleshooting)
+- [src/harness/optimization/CLAUDE.md](./src/harness/optimization/CLAUDE.md) — CGF technical reference (state machine, schemas, Python API, gotchas)
 - [docs/CGF-EVAL-ROADMAP.md](./docs/CGF-EVAL-ROADMAP.md) — Forward plan: Phase A polish + Phases B/C/D + Stage 4 + hardening backlog
 - [docs/PHASEA_SUMMARY.md](./docs/PHASEA_SUMMARY.md) — Phase A retrospective (what shipped, cost characteristics, lessons learned)
 - [docs/OBSERVABILITY.md](./docs/OBSERVABILITY.md) — Observability operator guide (10 dashboards, 13 alerts, metric inventory)
