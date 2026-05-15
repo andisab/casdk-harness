@@ -66,6 +66,7 @@ class AgentTranscript:
     final_output: str = ""
     total_turns: int = 0
     total_tokens: int = 0
+    total_cost_usd: float = 0.0
     is_error: bool = False
     error_message: str = ""
 
@@ -102,6 +103,7 @@ class TranscriptBuilder:
         self._final_output = ""
         self._total_turns = 0
         self._total_tokens = 0
+        self._total_cost_usd = 0.0
         self._is_error = False
         self._error_message = ""
 
@@ -140,6 +142,18 @@ class TranscriptBuilder:
                     int(getattr(usage, "input_tokens", 0) or 0)
                     + int(getattr(usage, "output_tokens", 0) or 0)
                 )
+            # Phase A refinement 4.3: capture per-call cost from the SDK.
+            # ``ResultMessage.total_cost_usd: float | None`` is populated by
+            # the SDK for the SAME call that feeds
+            # ``claude_code_cost_usage_USD_total`` in Prometheus, so the eval
+            # gate's view matches operator dashboards. None means the SDK
+            # didn't compute one (rare, e.g. system messages); treat as 0.
+            cost = getattr(message, "total_cost_usd", None)
+            if cost is not None:
+                import contextlib
+
+                with contextlib.suppress(TypeError, ValueError):
+                    self._total_cost_usd += float(cost)
             self._is_error = bool(getattr(message, "is_error", False))
             if self._is_error:
                 self._error_message = str(getattr(message, "result", ""))[:500]
@@ -186,6 +200,7 @@ class TranscriptBuilder:
             final_output=self._final_output,
             total_turns=total_turns,
             total_tokens=self._total_tokens,
+            total_cost_usd=self._total_cost_usd,
             is_error=self._is_error,
             error_message=self._error_message,
         )

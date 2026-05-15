@@ -105,6 +105,7 @@ class TrialResult:
             "final_output": self.transcript.final_output[:2000],
             "total_turns": self.transcript.total_turns,
             "total_tokens": self.transcript.total_tokens,
+            "total_cost_usd": self.transcript.total_cost_usd,
             "tool_calls": [
                 {"tool": t.tool_name, "args": t.arguments, "turn": t.turn_number}
                 for t in self.transcript.tool_calls
@@ -216,6 +217,17 @@ class EvalResults:
     by_level: dict[str, SubsetStats]
     by_tag: dict[str, SubsetStats]
     total_tokens: int
+    # Phase A refinement 4.3: cost gate input.  Sum of every trial's
+    # ``transcript.total_cost_usd`` across both arms — same value family
+    # the SDK feeds to ``claude_code_cost_usage_USD_total`` in Prom, so
+    # the gate's view and the operator dashboard agree.
+    total_cost_usd: float = 0.0
+    # Phase A refinement 4.1: pin the judge identity and prompt shape used
+    # for this run so Phase D's Cohen's-κ calibration check has a stable
+    # key per (judge_model_id, judge_prompt_hash, rubric).  Empty string
+    # means no LLM-judge graders fired (deterministic-only suite).
+    judge_model_id: str = ""
+    judge_prompt_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,6 +240,9 @@ class EvalResults:
             "candidate_pass_rate": self.candidate_pass_rate,
             "no_decision_rate": self.no_decision_rate,
             "total_tokens": self.total_tokens,
+            "total_cost_usd": self.total_cost_usd,
+            "judge_model_id": self.judge_model_id,
+            "judge_prompt_hash": self.judge_prompt_hash,
             "held_out": self.held_out.to_dict() if self.held_out is not None else None,
             "by_level": {k: v.to_dict() for k, v in self.by_level.items()},
             "by_tag": {k: v.to_dict() for k, v in self.by_tag.items()},

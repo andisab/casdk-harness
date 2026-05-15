@@ -427,7 +427,7 @@ class EvalHarness:
         )
 
         results = self._assemble_results(
-            scenarios, suite_path, baseline_path, candidate_path
+            scenarios, suite_path, baseline_path, candidate_path, suite
         )
 
         if results_dir is not None:
@@ -719,6 +719,7 @@ class EvalHarness:
         suite_path: Path,
         baseline_path: Path,
         candidate_path: Path,
+        suite: EvalSuite,
     ) -> EvalResults:
         overall = aggregate_subset(scenarios)
         held_out_subset = [s for s in scenarios if s.held_out]
@@ -730,6 +731,58 @@ class EvalHarness:
             for arm in (s.baseline, s.candidate)
             for t in arm.trials
         )
+        total_cost_usd = sum(
+            t.transcript.total_cost_usd
+            for s in scenarios
+            for arm in (s.baseline, s.candidate)
+            for t in arm.trials
+        )
+
+        # Phase A refinement 4.1: pin judge identity for this run.
+        # Resolve via the same helper LLMJudgeGrader uses so the recorded
+        # ID matches what the grader actually called.  Suite config
+        # overrides env (legacy path), env overrides default.
+        judge_model_id = ""
+        judge_prompt_hash = ""
+        if self._has_llm_judge(suite):
+            from harness.optimization.graders.llm_judge import (
+                _resolve_judge_model,
+            )
+            from harness.optimization.graders.llm_judge import (
+                judge_prompt_hash as compute_judge_prompt_hash,
+            )
+
+            judge_model_id = _resolve_judge_model(suite.config.eval_model)
+            # Hash is rubric-shape dependent; record the hash of the
+            # first scenario's first llm_judge prompt as a representative
+            # fingerprint for the suite.  Phase D's calibration may need
+            # per-rubric hashes — defer that until calibration lands.
+            for swg in suite.scenarios:
+                for g in swg.graders:
+                    rubric = getattr(g, "rubric", None)
+                    if rubric:
+                        # Use the first arm/trial transcript as the
+                        # transcript fingerprint, falling back to an
+                        # empty one if none ran.
+                        first_transcript = None
+                        for sr in scenarios:
+                            if sr.scenario_id == swg.scenario.id:
+                                for trial in sr.baseline.trials:
+                                    first_transcript = trial.transcript
+                                    break
+                                break
+                        if first_transcript is None:
+                            from harness.optimization.graders.transcript import (
+                                AgentTranscript,
+                            )
+
+                            first_transcript = AgentTranscript()
+                        judge_prompt_hash = compute_judge_prompt_hash(
+                            rubric, first_transcript
+                        )
+                        break
+                if judge_prompt_hash:
+                    break
 
         return EvalResults(
             suite_path=str(suite_path),
@@ -745,7 +798,19 @@ class EvalHarness:
             by_level=group_by_level(scenarios),
             by_tag=group_by_tag(scenarios),
             total_tokens=total_tokens,
+            total_cost_usd=total_cost_usd,
+            judge_model_id=judge_model_id,
+            judge_prompt_hash=judge_prompt_hash,
         )
+
+    @staticmethod
+    def _has_llm_judge(suite: EvalSuite) -> bool:
+        """True iff any scenario carries at least one LLMJudgeGrader."""
+        for swg in suite.scenarios:
+            for g in swg.graders:
+                if type(g).__name__ == "LLMJudgeGrader":
+                    return True
+        return False
 
     @staticmethod
     def _write_results(results: EvalResults, results_dir: Path) -> Path:

@@ -97,6 +97,20 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
         f"  - {r.path} (type: {r.resource_type})" for r in eligible
     )
 
+    # Phase A refinement 4.1: STRICT isolation contract for the
+    # eval-architect.  The architect designs the eval suite from inputs
+    # the optimizer has not influenced — SPEC, plan, criteria, file
+    # paths.  It MUST NOT see:
+    #   - optimizer rationale or diff
+    #   - iteration number / version
+    #   - feedback history
+    #   - per-resource gate verdicts from prior rounds
+    #   - any other-resource scores
+    # If you find yourself wanting to add any of those to this prompt,
+    # stop — that is exactly the leak this contract prevents.  Anthropic's
+    # *Three-Agent Harness* guidance: the agent designing the eval cannot
+    # have seen the optimizer's diff, because the optimizer hasn't
+    # produced one yet at EVAL_DESIGN time.
     prompt = f"""Design the evaluation suite for this multi-resource plugin.
 
 Workspace: {workspace}
