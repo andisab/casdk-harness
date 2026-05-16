@@ -283,12 +283,16 @@ def _parse_resource_file(resource_path: Path) -> dict[str, Any]:
 
     model_raw = str(meta.get("model") or "sonnet").lower().split()[0]
     model = model_raw if model_raw in _VALID_MODELS else "sonnet"
-    tools_raw = meta.get("tools") or ""
-    tools = (
-        [t.strip() for t in tools_raw.split(",") if t.strip()]
-        if isinstance(tools_raw, str) and tools_raw
-        else None
-    )
+    # ``tools`` may be a YAML list (the conventional CGF / Anthropic
+    # plugin form) or a comma-separated string (legacy). Handle both;
+    # anything else (None, dict, etc.) → no tool restriction.
+    tools_raw = meta.get("tools")
+    if isinstance(tools_raw, list):
+        tools = [str(t).strip() for t in tools_raw if str(t).strip()] or None
+    elif isinstance(tools_raw, str) and tools_raw.strip():
+        tools = [t.strip() for t in tools_raw.split(",") if t.strip()] or None
+    else:
+        tools = None
     return {
         "name": str(meta.get("name") or resource_path.stem),
         "description": str(meta.get("description") or ""),
