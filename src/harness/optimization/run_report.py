@@ -66,6 +66,11 @@ class EvalRoundEntry:
     no_decision_rate: float
     scenarios: int
     promoted: bool
+    # ``verdict`` is the authoritative gate decision (post-cgf-eval-ab).
+    # Older round files don't have it; loader falls back to ``promoted``
+    # and synthesizes "promote" / "refine" accordingly.  New code should
+    # read ``verdict`` for the full distinction.
+    verdict: str = "promote"
 
 
 @dataclass
@@ -305,6 +310,18 @@ def load_eval_rounds(workspace_root: Path) -> list[EvalRound]:
         entries: list[EvalRoundEntry] = []
         for raw in data.get("resources", []) or []:
             try:
+                promoted = bool(raw.get("promoted", False))
+                # Prefer the new ``verdict`` field; fall back to
+                # synthesizing one from the legacy boolean.  Old aggregate
+                # files predating cgf-eval-ab only carry ``promoted``,
+                # which conflated quality regressions with cost rejections —
+                # we can't recover the lost distinction, so the fallback
+                # is just promote-vs-refine.
+                verdict_raw = raw.get("verdict")
+                if isinstance(verdict_raw, str) and verdict_raw:
+                    verdict = verdict_raw
+                else:
+                    verdict = "promote" if promoted else "refine"
                 entries.append(
                     EvalRoundEntry(
                         path=raw.get("path", ""),
@@ -318,7 +335,8 @@ def load_eval_rounds(workspace_root: Path) -> list[EvalRound]:
                         ),
                         no_decision_rate=float(raw.get("no_decision_rate", 0.0)),
                         scenarios=int(raw.get("scenarios", 0)),
-                        promoted=bool(raw.get("promoted", False)),
+                        promoted=promoted,
+                        verdict=verdict,
                     )
                 )
             except (TypeError, ValueError):

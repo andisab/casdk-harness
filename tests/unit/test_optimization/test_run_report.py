@@ -136,6 +136,84 @@ def test_loaders_tolerate_missing_files(tmp_path: Path) -> None:
     assert run_report.load_eval_rounds(root) == []
 
 
+def test_load_eval_rounds_reads_verdict_field(tmp_path: Path) -> None:
+    """Post-cgf-eval-ab aggregate JSON carries a ``verdict`` field; the
+    loader should surface it on EvalRoundEntry."""
+    root = _make_workspace(
+        tmp_path,
+        state=_state(),
+        eval_rounds=[
+            {
+                "feedback_iteration": 1,
+                "timestamp": "2026-05-15T00:00:00+00:00",
+                "resources": [
+                    {
+                        "path": "agents/iac.md",
+                        "version": 1,
+                        "win_rate": 0.0,
+                        "baseline_pass_rate": 0.5,
+                        "candidate_pass_rate": 0.9,
+                        "no_decision_rate": 0.0,
+                        "scenarios": 3,
+                        "verdict": "reject_cost",
+                        "promoted": False,
+                    },
+                ],
+            }
+        ],
+    )
+    rounds = run_report.load_eval_rounds(root)
+    assert len(rounds) == 1
+    entry = rounds[0].entries[0]
+    assert entry.verdict == "reject_cost"
+    assert entry.promoted is False
+
+
+def test_load_eval_rounds_falls_back_to_promoted_for_legacy_files(
+    tmp_path: Path,
+) -> None:
+    """Round files written before cgf-eval-ab don't have ``verdict``.
+    Loader synthesizes one from the legacy ``promoted`` boolean so old
+    workspaces continue to render."""
+    root = _make_workspace(
+        tmp_path,
+        state=_state(),
+        eval_rounds=[
+            {
+                "feedback_iteration": 1,
+                "timestamp": "2026-05-08T00:00:00+00:00",
+                "resources": [
+                    {
+                        "path": "agents/promoted.md",
+                        "version": 1,
+                        "win_rate": 0.8,
+                        "baseline_pass_rate": 0.5,
+                        "candidate_pass_rate": 0.9,
+                        "no_decision_rate": 0.0,
+                        "scenarios": 3,
+                        "promoted": True,  # no verdict field
+                    },
+                    {
+                        "path": "agents/refined.md",
+                        "version": 1,
+                        "win_rate": 0.0,
+                        "baseline_pass_rate": 0.7,
+                        "candidate_pass_rate": 0.4,
+                        "no_decision_rate": 0.0,
+                        "scenarios": 3,
+                        "promoted": False,  # no verdict field
+                    },
+                ],
+            }
+        ],
+    )
+    rounds = run_report.load_eval_rounds(root)
+    assert len(rounds) == 1
+    entries = {e.path: e for e in rounds[0].entries}
+    assert entries["agents/promoted.md"].verdict == "promote"
+    assert entries["agents/refined.md"].verdict == "refine"
+
+
 def test_load_summaries_with_resource_path_field(tmp_path: Path) -> None:
     """Summary file with explicit resource_path is keyed correctly."""
     root = _make_workspace(

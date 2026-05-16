@@ -132,9 +132,9 @@ class TestEvalSuiteHashGuard:
 class TestStagnationEarlyStop:
     def test_round_mean_across_resources(self) -> None:
         results = [
-            (_res("a.md"), _eval_results(candidate_pass_rate=0.6)),
-            (_res("b.md"), _eval_results(candidate_pass_rate=0.4)),
-            (_res("c.md"), _eval_results(candidate_pass_rate=0.5)),
+            (_res("a.md"), _eval_results(candidate_pass_rate=0.6), "promote"),
+            (_res("b.md"), _eval_results(candidate_pass_rate=0.4), "refine"),
+            (_res("c.md"), _eval_results(candidate_pass_rate=0.5), "promote"),
         ]
         assert _round_mean_candidate_pass_rate(results) == pytest.approx(0.5)
 
@@ -178,7 +178,7 @@ class TestStagnationEarlyStop:
 class TestHeldOutUsageSidecar:
     def test_increments_uses_on_decisive_scenario(self, tmp_path: Path) -> None:
         results = [
-            (_res(), _eval_results(held_out_ids=["s1", "s2"])),
+            (_res(), _eval_results(held_out_ids=["s1", "s2"]), "promote"),
         ]
         _record_held_out_usage(tmp_path, results)
         usage = json.loads(
@@ -190,7 +190,7 @@ class TestHeldOutUsageSidecar:
 
     def test_increments_across_invocations(self, tmp_path: Path) -> None:
         """Re-running with the same scenario should bump uses, not reset."""
-        results = [(_res(), _eval_results(held_out_ids=["s1"]))]
+        results = [(_res(), _eval_results(held_out_ids=["s1"]), "promote")]
         _record_held_out_usage(tmp_path, results)
         _record_held_out_usage(tmp_path, results)
         _record_held_out_usage(tmp_path, results)
@@ -201,7 +201,7 @@ class TestHeldOutUsageSidecar:
 
     def test_first_used_at_set_once(self, tmp_path: Path) -> None:
         """first_used_at locks on the first contact and stays."""
-        results = [(_res(), _eval_results(held_out_ids=["s1"]))]
+        results = [(_res(), _eval_results(held_out_ids=["s1"]), "promote")]
         _record_held_out_usage(tmp_path, results)
         first_ts = json.loads(
             (tmp_path / "eval" / "held-out-usage.json").read_text()
@@ -232,7 +232,7 @@ class TestHeldOutUsageSidecar:
             no_decision_rate=0.0, held_out=None, by_level={}, by_tag={},
             total_tokens=0,
         )
-        _record_held_out_usage(tmp_path, [(_res(), r)])
+        _record_held_out_usage(tmp_path, [(_res(), r, "promote")])
         usage_path = tmp_path / "eval" / "held-out-usage.json"
         # Empty file is fine (no held-out scenarios to track).
         if usage_path.exists():
@@ -243,7 +243,7 @@ class TestHeldOutUsageSidecar:
         """When neither arm was decisive, the scenario didn't actually
         participate in a verdict — don't burn it."""
         results = [
-            (_res(), _eval_results(held_out_ids=["s1"], decisive_both=False)),
+            (_res(), _eval_results(held_out_ids=["s1"], decisive_both=False), "promote"),
         ]
         _record_held_out_usage(tmp_path, results)
         usage_path = tmp_path / "eval" / "held-out-usage.json"

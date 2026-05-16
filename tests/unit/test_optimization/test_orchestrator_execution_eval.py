@@ -532,6 +532,162 @@ class TestExecutionEvalAggregateOutput:
         assert orch._state.eval_results_path.endswith("execution-eval-round-1.json")
 
 
+class TestExecutionEvalAggregateVerdict:
+    """Aggregate JSON records the actual gate verdict, and the legacy
+    ``promoted`` field is derived strictly from that verdict — no more
+    pre-refinement pass-rate-delta approximation."""
+
+    @pytest.mark.asyncio
+    async def test_promote_verdict_in_aggregate(self, tmp_path: Path) -> None:
+        import json as _json
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        # Quality + cost both clear.
+        results = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5
+        )
+        results.candidate_cost_per_success = 0.05
+        results.baseline_cost_per_success = 0.06
+        # Skip first-promotion floor for cleanliness — last_promoted=1.
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        agg = _json.loads(
+            (tmp_path / "eval" / "execution-eval-round-1.json").read_text()
+        )
+        entry = agg["resources"][0]
+        assert entry["verdict"] == "promote"
+        assert entry["promoted"] is True
+        # Status agrees with verdict.
+        assert orch._state.resources["agents/iac.md"].status == "optimized"
+
+    @pytest.mark.asyncio
+    async def test_reject_cost_verdict_in_aggregate(
+        self, tmp_path: Path
+    ) -> None:
+        """The headline data-integrity case: candidate beats baseline on
+        quality but is too expensive.  Old aggregate would have written
+        ``promoted: true`` (pre-refinement formula); the new aggregate
+        writes ``verdict: reject_cost`` and ``promoted: false`` —
+        agreeing with the orchestrator state."""
+        import json as _json
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        results = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5
+        )
+        # Cost regressed 10x past 10% tolerance.
+        results.candidate_cost_per_success = 1.00
+        results.baseline_cost_per_success = 0.10
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        agg = _json.loads(
+            (tmp_path / "eval" / "execution-eval-round-1.json").read_text()
+        )
+        entry = agg["resources"][0]
+        assert entry["verdict"] == "reject_cost"
+        assert entry["promoted"] is False
+        # Status agrees with verdict — needs_refinement, NOT optimized.
+        assert (
+            orch._state.resources["agents/iac.md"].status
+            == "needs_refinement"
+        )
+
+    @pytest.mark.asyncio
+    async def test_refine_verdict_in_aggregate(self, tmp_path: Path) -> None:
+        """Quality regression → verdict=refine, promoted=false."""
+        import json as _json
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        bad = _make_eval_results(
+            candidate_pass_rate=0.3, baseline_pass_rate=0.7
+        )
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=bad)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        agg = _json.loads(
+            (tmp_path / "eval" / "execution-eval-round-1.json").read_text()
+        )
+        entry = agg["resources"][0]
+        assert entry["verdict"] == "refine"
+        assert entry["promoted"] is False
+
+    @pytest.mark.asyncio
+    async def test_unwinnable_verdict_in_aggregate(
+        self, tmp_path: Path
+    ) -> None:
+        """Both arms zero → unwinnable verdict (never reached the gate),
+        promoted=false."""
+        import json as _json
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        # Both arms 0 across all scenarios → F21 unwinnable.
+        unwinnable_results = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+            failing_scenarios=[
+                {
+                    "scenario_id": "scn-1",
+                    "outcome": "no_decision",
+                    "candidate_pass_rate": 0.0,
+                    "baseline_pass_rate": 0.0,
+                },
+            ],
+        )
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=unwinnable_results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        agg = _json.loads(
+            (tmp_path / "eval" / "execution-eval-round-1.json").read_text()
+        )
+        entry = agg["resources"][0]
+        assert entry["verdict"] == "unwinnable"
+        assert entry["promoted"] is False
+        assert (
+            orch._state.resources["agents/iac.md"].status == "unwinnable"
+        )
+
+
 class TestFeedbackBlockBuilder:
     """Direct unit tests for the iterate.py feedback prompt builder."""
 
@@ -876,3 +1032,168 @@ class TestExecutionEvalUnwinnable:
             baseline_pass_rate=0.0,
         )
         assert _is_unwinnable(results) is False
+
+
+# =============================================================================
+# Cost-gate counter — fires only when the cost stage was consulted
+# =============================================================================
+#
+# Phase A refinement (post-cgf-eval-ab review): ``gate_decide`` short-
+# circuits inside the quality stages.  ``refine`` and ``reject_floor``
+# never reach the cost stage, so counting them as ``outcome="promote"``
+# (or ``outcome="auto_pass"``) on ``harness_eval_cost_gate_total`` is
+# misleading.  The counter must only increment when the cost stage
+# actually evaluated.
+
+
+def _cost_counter_value(outcome: str) -> float:
+    """Read ``harness_eval_cost_gate_total{outcome=...}`` directly."""
+    from harness.monitoring import harness_eval_cost_gate_total
+
+    return harness_eval_cost_gate_total.labels(outcome=outcome)._value.get()
+
+
+class TestCostGateCounter:
+    """``harness_eval_cost_gate_total`` only increments when cost stage fired."""
+
+    @pytest.mark.asyncio
+    async def test_quality_refine_does_not_touch_counter(
+        self, tmp_path: Path
+    ) -> None:
+        """When the quality stage rejects (verdict=refine), the cost
+        stage was never consulted.  Counter must NOT increment for any
+        outcome label, even when cost data is present on the results."""
+        before = {
+            o: _cost_counter_value(o)
+            for o in ("promote", "reject_cost", "auto_pass")
+        }
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        # Quality regression (candidate < baseline) plus cost data
+        # populated on both arms.
+        bad_results = _make_eval_results(
+            candidate_pass_rate=0.3,
+            baseline_pass_rate=0.7,
+        )
+        bad_results.candidate_cost_per_success = 0.10
+        bad_results.baseline_cost_per_success = 0.05
+        # last_promoted_version=1 so we're in incumbent regime, not
+        # first-promotion (no floor arm to confuse the verdict).
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=bad_results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        # Verdict was "refine" → cost counter should be unchanged.
+        for outcome, prev in before.items():
+            assert _cost_counter_value(outcome) == prev, (
+                f"cost counter outcome={outcome!r} incremented on a "
+                f"quality-refine verdict (prev={prev}, now="
+                f"{_cost_counter_value(outcome)})"
+            )
+
+    @pytest.mark.asyncio
+    async def test_promote_with_cost_data_increments_promote(
+        self, tmp_path: Path
+    ) -> None:
+        """When quality clears AND cost stage clears, counter increments
+        outcome=promote."""
+        before = _cost_counter_value("promote")
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        good_results = _make_eval_results(
+            candidate_pass_rate=0.9,
+            baseline_pass_rate=0.5,
+        )
+        good_results.candidate_cost_per_success = 0.05
+        good_results.baseline_cost_per_success = 0.06  # candidate cheaper
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=good_results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        assert _cost_counter_value("promote") == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_promote_with_missing_cost_signal_increments_auto_pass(
+        self, tmp_path: Path
+    ) -> None:
+        """When quality clears but one cost side is None (e.g., baseline
+        had zero successful trials), the cost stage auto-passes.  Counter
+        increments outcome=auto_pass."""
+        before = _cost_counter_value("auto_pass")
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        results = _make_eval_results(
+            candidate_pass_rate=0.9,
+            baseline_pass_rate=0.0,  # zero successes → no cost signal
+        )
+        results.candidate_cost_per_success = 0.05
+        results.baseline_cost_per_success = None
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        assert _cost_counter_value("auto_pass") == before + 1.0
+
+    @pytest.mark.asyncio
+    async def test_reject_cost_increments_reject_cost(
+        self, tmp_path: Path
+    ) -> None:
+        """When quality clears but candidate is too expensive, verdict=
+        reject_cost and counter increments outcome=reject_cost."""
+        before = _cost_counter_value("reject_cost")
+
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        # Quality clear (candidate >= baseline), but cost regressed
+        # well past the default 10% tolerance.
+        results = _make_eval_results(
+            candidate_pass_rate=0.9,
+            baseline_pass_rate=0.5,
+        )
+        results.candidate_cost_per_success = 1.00  # 10x more than baseline
+        results.baseline_cost_per_success = 0.10
+        orch._state.resources["agents/iac.md"].last_promoted_version = 1
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        assert _cost_counter_value("reject_cost") == before + 1.0
+        # The resource should be flagged needs_refinement (not optimized).
+        assert (
+            orch._state.resources["agents/iac.md"].status
+            == "needs_refinement"
+        )
