@@ -35,9 +35,35 @@ def _make_eval_results(
     failing_scenarios: list[dict[str, Any]] | None = None,
 ) -> EvalResults:
     """Build an EvalResults skeleton with the per-scenario / arm details
-    we need to exercise the gate."""
+    we need to exercise the gate.
+
+    Default scenario behaviour (when ``failing_scenarios`` is omitted):
+    inject ONE synthetic scenario carrying the suite-level pass rates.
+    Post-cgf-eval-ab the gate fails closed on empty ``scenarios``, so a
+    test that wants to exercise the gate must have at least one
+    scenario.  Tests that explicitly want empty scenarios (e.g.,
+    ``TestExecutionEvalNoScenarios``) pass ``failing_scenarios=[]``.
+    """
     scenarios: list[ScenarioResult] = []
-    for entry in failing_scenarios or []:
+    if failing_scenarios is None:
+        # Sensible default — one scenario reflecting the headline rates.
+        failing_scenarios = [
+            {
+                "scenario_id": "default-scn",
+                "outcome": (
+                    "candidate_win"
+                    if candidate_pass_rate > baseline_pass_rate
+                    else (
+                        "baseline_win"
+                        if baseline_pass_rate > candidate_pass_rate
+                        else "tie"
+                    )
+                ),
+                "candidate_pass_rate": candidate_pass_rate,
+                "baseline_pass_rate": baseline_pass_rate,
+            }
+        ]
+    for entry in failing_scenarios:
         baseline = ArmResults(
             arm="baseline",
             trials=[],
@@ -447,6 +473,100 @@ class TestExecutionEvalGate:
             await orch._run_execution_eval()
 
         assert orch._state.resources["agents/iac.md"].status == "needs_refinement"
+
+
+class TestExecutionEvalNoScenarios:
+    """When the eval-architect didn't author scenarios for a resource,
+    the harness returns ``EvalResults.scenarios=[]``.  Pre-fix, the gate
+    saw 0-vs-0 and silently promoted (false success, no eval signal).
+    Post-fix, the resource is flagged needs_refinement and the helper
+    returns None — joining the F8 ``harness_errors`` collector so a
+    fully-broken eval-suite hard-aborts via the all-errored path."""
+
+    @pytest.mark.asyncio
+    async def test_empty_scenarios_marks_needs_refinement_not_promote(
+        self, tmp_path: Path
+    ) -> None:
+        """One resource gets empty scenarios, another gets a clean
+        promote.  The empty-scenarios resource must NOT silent-promote
+        and must record the diagnostic error.  The other resource
+        promotes normally so the run doesn't trigger the all-errored
+        abort path."""
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[
+                {"path": "agents/missing.md", "version": 1},
+                {"path": "agents/clean.md", "version": 1},
+            ],
+        )
+        empty = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+            failing_scenarios=[],  # explicit opt-out from the default
+        )
+        assert empty.scenarios == []  # sanity-check fixture
+        good = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5,
+            failing_scenarios=[
+                {
+                    "scenario_id": "scn-1",
+                    "outcome": "candidate_win",
+                    "candidate_pass_rate": 0.9,
+                    "baseline_pass_rate": 0.5,
+                },
+            ],
+        )
+
+        # Route different results per candidate path.
+        async def _per_resource(*args: Any, **kwargs: Any) -> Any:
+            if "missing" in str(kwargs.get("candidate_resource", "")):
+                return empty
+            return good
+
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(side_effect=_per_resource)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+        # Empty-scenarios resource: needs_refinement with diagnostic.
+        missing = orch._state.resources["agents/missing.md"]
+        assert missing.status == "needs_refinement"
+        assert "no scenarios applicable" in missing.error
+        # Clean resource: promoted normally.
+        clean = orch._state.resources["agents/clean.md"]
+        assert clean.status == "optimized"
+
+    @pytest.mark.asyncio
+    async def test_empty_scenarios_triggers_all_errored_abort(
+        self, tmp_path: Path
+    ) -> None:
+        """When EVERY resource hits the empty-scenarios path, F8 fires
+        and the run hard-aborts — the right behaviour for a broken
+        eval-suite.yaml that no amount of feedback iteration could
+        recover."""
+        orch = _make_orchestrator(
+            tmp_path,
+            resources=[{"path": "agents/iac.md", "version": 1}],
+        )
+        empty_results = _make_eval_results(
+            candidate_pass_rate=0.0,
+            baseline_pass_rate=0.0,
+            failing_scenarios=[],  # explicit opt-out from the default
+        )
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=empty_results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            with pytest.raises(
+                RuntimeError,
+                match="ALL resources errored|all .* resources errored",
+            ):
+                await orch._run_execution_eval()
 
 
 class TestExecutionEvalErrorHandling:
@@ -1030,6 +1150,7 @@ class TestExecutionEvalUnwinnable:
         results = _make_eval_results(
             candidate_pass_rate=0.0,
             baseline_pass_rate=0.0,
+            failing_scenarios=[],  # explicit opt-out from the default
         )
         assert _is_unwinnable(results) is False
 

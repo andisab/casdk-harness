@@ -156,3 +156,111 @@ class TestEdgeCases:
             candidate_path=candidate, output_dir=tmp_path / "floor"
         )
         assert floor_path.name == "iac-analyzer-v3-floor.md"
+
+
+# ---------------------------------------------------------------------------
+# ResourceStatus.from_dict migration (last_promoted_version)
+# ---------------------------------------------------------------------------
+#
+# Post-cgf-eval-ab fix: state files written before ``last_promoted_version``
+# existed don't carry it.  On resume, an already-promoted resource must
+# not be treated as if it had never been promoted — that would re-run
+# the first-time-promotion floor arm, burning ~1 full eval per resource
+# for no information gain.
+
+
+class TestResourceStatusFromDictMigration:
+    """``ResourceStatus.from_dict`` infers ``last_promoted_version`` when
+    the field is missing from a legacy state file."""
+
+    def test_explicit_value_wins(self) -> None:
+        """Explicit ``last_promoted_version`` in the dict is honoured
+        verbatim, even when it contradicts the inference rule."""
+        from harness.progress import ResourceStatus
+
+        # status=optimized + version=3 would infer 3; explicit 1 wins.
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "optimized",
+                "version": 3,
+                "last_promoted_version": 1,
+            }
+        )
+        assert r.last_promoted_version == 1
+
+    def test_inferred_for_optimized_resource_when_missing(self) -> None:
+        """Legacy state file: status=optimized, version=2, no
+        last_promoted_version key.  Migration infers value=2."""
+        from harness.progress import ResourceStatus
+
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "optimized",
+                "version": 2,
+            }
+        )
+        assert r.last_promoted_version == 2
+
+    def test_zero_for_pending_resource_when_missing(self) -> None:
+        """Pending resource → 0 (never promoted)."""
+        from harness.progress import ResourceStatus
+
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "pending",
+                "version": 0,
+            }
+        )
+        assert r.last_promoted_version == 0
+
+    def test_zero_for_needs_refinement_when_missing(self) -> None:
+        """needs_refinement: tried but never promoted, so stay at 0.
+        The floor arm SHOULD run on the next attempt — that's the
+        whole point of the first-promotion gate."""
+        from harness.progress import ResourceStatus
+
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "needs_refinement",
+                "version": 1,
+            }
+        )
+        assert r.last_promoted_version == 0
+
+    def test_zero_for_failed_when_missing(self) -> None:
+        """failed: GENERATE aborted; never promoted."""
+        from harness.progress import ResourceStatus
+
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "failed",
+                "version": 1,
+            }
+        )
+        assert r.last_promoted_version == 0
+
+    def test_explicit_zero_preserved(self) -> None:
+        """Explicit 0 in the dict is preserved — distinct from "missing
+        key" because new state files may legitimately write 0."""
+        from harness.progress import ResourceStatus
+
+        r = ResourceStatus.from_dict(
+            {
+                "path": "a.md",
+                "resource_type": "agent",
+                "status": "optimized",
+                "version": 2,
+                "last_promoted_version": 0,  # explicit, surprising, honoured
+            }
+        )
+        assert r.last_promoted_version == 0

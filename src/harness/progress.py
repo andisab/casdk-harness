@@ -712,18 +712,43 @@ class ResourceStatus:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ResourceStatus":
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Migration for ``last_promoted_version`` (added Phase A
+        refinement 4.2): state files written before this field existed
+        don't carry it.  When the resource is already ``optimized`` with
+        a non-zero version, infer ``last_promoted_version = version`` —
+        that's the only consistent interpretation of "this resource
+        already promoted to v{N}".  Without the migration, a resume
+        would see ``last_promoted_version == 0`` and re-run the
+        first-time-promotion floor arm unnecessarily.
+
+        Explicit values in the state file always win, so newer state
+        files override the inference.
+        """
         quality = None
         if data.get("quality"):
             quality = ResourceQuality.from_dict(data["quality"])
 
+        version = data.get("version", 0)
+        status = data.get("status", "pending")
+        # Migration: infer last_promoted_version when missing on an
+        # already-optimized resource.  Distinguish "key not present"
+        # from "explicit 0" by using sentinel rather than .get default.
+        if "last_promoted_version" in data:
+            last_promoted_version = data["last_promoted_version"]
+        elif status == "optimized" and version >= 1:
+            last_promoted_version = version
+        else:
+            last_promoted_version = 0
+
         return cls(
             path=data["path"],
             resource_type=data["resource_type"],
-            status=data.get("status", "pending"),
-            version=data.get("version", 0),
+            status=status,
+            version=version,
             last_evaluated_version=data.get("last_evaluated_version", 0),
-            last_promoted_version=data.get("last_promoted_version", 0),
+            last_promoted_version=last_promoted_version,
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),

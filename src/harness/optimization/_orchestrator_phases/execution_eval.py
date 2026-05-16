@@ -58,6 +58,7 @@ from harness.optimization._orchestrator_phases._baseline_floor import (
     build_floor_resource,
 )
 from harness.optimization.eval_harness import EvalHarness, EvalResults
+from harness.optimization.eval_harness.runner import _resource_target_key
 from harness.optimization.gating import GateInputs, is_first_promotion
 from harness.optimization.gating import decide as gate_decide
 from harness.progress import OptimizationPhase, ResourceStatus
@@ -592,6 +593,49 @@ async def _eval_single_resource(
             "harness.eval.baseline_pass_rate", results.baseline_pass_rate
         )
         resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
+
+        # No applicable scenarios → fail closed.  This happens when the
+        # eval-architect didn't author scenarios for this resource's
+        # ``target_resource`` key, or when the architect's
+        # ``target_resource`` field doesn't match the resource path
+        # produced by GENERATE.  Pre-fix the gate would silently
+        # promote on (0 ≥ 0) — a false success with no eval signal.
+        # Returning None here joins the F8 ``harness_errors`` path so
+        # the run hard-aborts when ALL resources hit this condition
+        # (typically a broken eval-suite.yaml).
+        if not results.scenarios:
+            target_key = _resource_target_key(candidate_path)
+            err_msg = (
+                "no scenarios applicable to this resource"
+                f" (target_key={target_key})"
+            )
+            logger.error(
+                "EXECUTION_EVAL: No scenarios applicable to resource — "
+                "refusing to gate",
+                path=resource.path,
+                target_key=target_key,
+                suite_path=str(suite_path),
+                hint=(
+                    "eval-architect didn't author scenarios for this "
+                    "target_resource, or the architect's target_resource "
+                    "key doesn't match the GENERATE-produced path. "
+                    "Inspect eval/eval-suite.yaml for matching "
+                    "target_resource entries."
+                ),
+            )
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    error=err_msg,
+                )
+            resource_span.set_attribute(
+                "harness.eval.outcome", "no_scenarios"
+            )
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, err_msg,
+            )
+            return None  # joins harness_errors via the outer collector
 
         # F21: detect resources where feedback iteration cannot help.
         # Both arms scoring 0 across every scenario means either the
