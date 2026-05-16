@@ -583,7 +583,7 @@ report: ## Regenerate sessions/RUN_REPORT.md (usage: make report [SPEC=workspace
 		if [ -f "$(SPEC)" ]; then WORKSPACE_DIR=$$(dirname "$(SPEC)"); fi; \
 		echo "$(GREEN)Rendering run report for $$WORKSPACE_DIR$(NC)"; \
 		docker compose $(COMPOSE_FILES) exec -T main-agent \
-			python -m harness.optimization.cli.run_report --workspace "/$$WORKSPACE_DIR"; \
+			python -m harness.optimization.cli.run_report --workspace "$$WORKSPACE_DIR"; \
 	else \
 		echo "$(GREEN)Auto-discovering SPEC.md in workspace/...$(NC)"; \
 		docker compose $(COMPOSE_FILES) exec -T main-agent \
