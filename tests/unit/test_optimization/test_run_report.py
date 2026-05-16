@@ -2,9 +2,10 @@
 
 The renderer is a pure-function view over state files written by the
 multi-resource orchestrator.  We exercise it against synthetic fixtures
-that mirror the on-disk shapes documented in ``docs/CGF-RUN-REPORT.md``
-(``optimization-state.json``, ``*.summary.json``,
-``execution-eval-round-*.json``).
+that mirror the on-disk shapes of ``optimization-state.json``,
+``*.summary.json``, and ``execution-eval-round-*.json``.  See
+``config/monitoring/CLAUDE.md`` (§ Other operator-facing surfaces) for
+the renderer's non-goals + deferred-TODO list.
 """
 
 from __future__ import annotations

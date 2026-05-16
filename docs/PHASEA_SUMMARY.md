@@ -5,9 +5,9 @@ This doc has four objectives:
 1. **Current state** — what works today, what's shipped, where the code lives. (§ 1)
 2. **Architecture & technical decisions** — what was built and *why*, including a per-phase walkthrough. (§ 2)
 3. **Key learnings from test runs** — what we observed under real load. (§ 3)
-4. **Phase A refinement plan** — the four refinements (eval-agent isolation, dual baseline, token-efficiency gating, pipeline tightening) we're landing on branch `cgf-eval-ab` before opening Phase B. Each refinement is grounded in Anthropic canonical guidance + 2024–2025 LLM-as-judge literature. (§ 4)
+4. **Phase A refinement plan** — the four refinements (eval-agent isolation, dual baseline, token-efficiency gating, pipeline tightening) that landed on branch `cgf-eval-ab` before opening Phase B, plus the post-review polish that followed. Each refinement is grounded in Anthropic canonical guidance + 2024–2025 LLM-as-judge literature. (§ 4)
 
-This is the retrospective + active-refinement-plan companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md), which carries the *longer*-term forward plan (Phases B/C/D, Stage 4, cross-cutting harness work). For per-defect fix histories see `git log` on `phase-a-fixes` / `phase-a-perf`. For day-to-day operational reference (env vars, how to run, resume from existing state) see [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
+This is the retrospective companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md), which carries the *longer*-term forward plan (Phases B/C/D, Stage 4, cross-cutting harness work). § 4.8–4.9 capture what landed; per-step engineering details live in the individual commit messages on `cgf-eval-ab`. For per-defect fix histories on the earlier rounds see `git log` on `phase-a-fixes` / `phase-a-perf`. For day-to-day operational reference (env vars, how to run, resume from existing state) see [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
 
 ---
 
@@ -332,7 +332,7 @@ Smoke after each: rerun the iac-team fixture and verify run #7 still hits COMPLE
 
 ### 4.8 What landed on `cgf-eval-ab`
 
-The four refinements were shipped in four sequential commits on branch `cgf-eval-ab`, each ending with the full unit suite green. Per-step engineering details in [PHASEA_REFINEMENT_PLAN.md](./PHASEA_REFINEMENT_PLAN.md).
+The four refinements were shipped in four sequential commits on branch `cgf-eval-ab`, each ending with the full unit suite green. Per-step engineering details in the commit messages.
 
 | Step | Refinement | Commit | Tests added | Unit suite total | Status |
 |---|---|---|---|---|---|
@@ -361,7 +361,32 @@ The four refinements were shipped in four sequential commits on branch `cgf-eval
 
 **Not yet verified under real load.** The next smoke run on `iac-team` (run #7) is the first end-to-end test. Expect cost +15-20% vs run #6 on first-promotion rounds; near-zero floor cost thereafter.
 
-### 4.9 Canonical references used in this plan
+### 4.9 Pre-smoke review polish (post-4.8)
+
+A code-review pass over the four shipped refinements before kicking off
+the iac-team smoke run #7 surfaced five additional fixes. None reshape
+the gate semantics; three correct latent defects that would have
+muddied the smoke data, two are independent guards. All five landed
+as separate commits on `cgf-eval-ab`.
+
+| # | Commit | Fix | Lines |
+|---|---|---|---|
+| A | `ecabe97` | Accept YAML-list `tools:` frontmatter in `_parse_resource_file` (smoke blocker — every iac-team agent uses the canonical list form). | +235 / −6 |
+| B | `6cae9d6` | Aggregate JSON records authoritative gate verdict; cost-gate counter only fires when cost stage was actually consulted (was mislabelling quality-rejected outcomes as cost-gate successes). | +518 / −44 |
+| C | `9bc2bb0` | Empty-scenario set fails closed via F8 path (was silently auto-promoting); `ResourceStatus.from_dict` infers `last_promoted_version` on resume from legacy state files. | +304 / −6 |
+| D | `5f224a0` | `judge_prompt_hash` is rubric+identity only via new `judge_rubric_hash(rubric, judge_model_id)` — stable across runs of the same suite (was transcript-mixed and non-deterministic, making it useless as Phase D's calibration key). | +225 / −35 |
+| E | `5f047e1` | Drop leading slash in `make report SPEC=…` --workspace handling (cosmetic). | +1 / −1 |
+
+**New surface added in this polish pass:**
+- `AggregateVerdict` literal type (superset of `gating.Verdict` with `"unwinnable"`) used by `execution_eval._eval_single_resource` return shape and `_write_aggregate_results`.
+- `judge_rubric_hash(rubric, judge_model_id)` exported from `graders.llm_judge` alongside the existing transcript-sensitive `judge_prompt_hash` (now repurposed for per-trial debugging only).
+- `_make_eval_results` test helper now injects a default 1-scenario list when `failing_scenarios` is omitted — pre-fix, every gate-exercising test silently relied on the empty-scenarios silent-promote bug.
+
+**Unit suite:** 2035 passing (was 1986 after § 4.8; +49 new tests from this polish).
+
+**Smoke status:** still unverified under load. Run #7 is the next checkpoint.
+
+### 4.10 Canonical references used in this plan
 
 - [Three-Agent Harness for Long-Running Apps — Anthropic](https://www.anthropic.com/engineering/harness-design-long-running-apps) — separation-of-concerns rationale (4.1)
 - [Building Effective Agents — Anthropic](https://www.anthropic.com/engineering/building-effective-agents) — evaluator-optimizer pattern (4.4)

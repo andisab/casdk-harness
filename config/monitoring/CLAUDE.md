@@ -43,6 +43,55 @@ config/monitoring/
 - **Changing collector config** — `docker compose restart otel-collector` + verify metrics still flow with `curl localhost:9090/api/v1/label/__name__/values | jq -r '.data[]' | grep claude_code_`.
 - **Changing datasource UID** — Grafana refuses in-place updates. The `deleteDatasources:` block in `datasources/prometheus.yml` is what lets the new definition land cleanly. Don't remove it.
 
+## Other operator-facing surfaces (outside this directory)
+
+Two surfaces serve operators alongside this dashboard stack — they
+live elsewhere in the tree but answer adjacent "what's happening"
+questions. Worth knowing about so we don't accidentally rebuild what
+already exists.
+
+### RUN_REPORT.md — file-based parallel to Grafana
+
+Rendered by `src/harness/optimization/run_report.py`. Output:
+`workspace/{spec}/sessions/RUN_REPORT.md`. Pure derived view over
+`optimization-state.json` + `*.summary.json` + `eval/execution-eval-round-*.json`
++ `CHANGELOG.md` — no new persistence (one exception: `phase_timings`
+added to the state file, ~10 LOC in `_advance_phase()`).
+
+- **Regenerates** on every phase boundary and per-resource event,
+  piggybacked on `_save_state()` — no new write cadence.
+- **Re-render manually:** `make report SPEC=workspace/<name>`.
+- **Disable:** `CGF_RUN_REPORT=0` (default on).
+- **Reset:** `cgf-clean` wipes it along with the rest of session state;
+  next `make optimize` regenerates from scratch.
+
+Mermaid gantt + accessible table for phase progression; per-resource
+verdict table; collapsible iteration history; auto-emitted open-issues
+callouts (F21 unwinnable, F25 GENERATE timeout, pending r2 verdict).
+
+**Deliberate non-goals** (don't try to make it these):
+- Not a Grafana replacement — Grafana owns live ops time-series, alerts,
+  oncall, cross-run trends.
+- Not a replacement for `optimization-state.json` (machine truth) or
+  `CHANGELOG.md` (human-authored narrative; the report *links to* it).
+- Not a cross-run comparison view ("was today better than yesterday?").
+- Not a sign-off workflow — Stage 4 `--review` mode adds checkpoints;
+  the report renders the *current* checkpoint state but doesn't host UI.
+
+**Deferred TODO:** `--watch` mode (tail-the-file via entr/watchman).
+Defer until the report has been in the workflow for a week and we know
+the cadence operators actually want.
+
+### Eval framework instruments (Grafana D70)
+
+The eval-framework metrics (`harness_eval_*`) flow through the same
+Prometheus pipeline as everything else here, but their call sites live
+in `_orchestrator_phases/execution_eval.py` and `graders/llm_judge.py`.
+When a panel on D70 goes empty, check those modules' emit sites and
+the singleton-helper semantics in `src/harness/monitoring.py`.
+
+---
+
 ## Non-obvious gotchas (full list in `docs/OBSERVABILITY.md` § 6)
 
 - Panel `datasource` fields must use the **literal UID** `"uid": "prometheus"` — Grafana doesn't interpolate `${datasource}` in `datasource.uid`.

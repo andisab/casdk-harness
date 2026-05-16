@@ -11,7 +11,8 @@ Pure-function view over the existing state files written by the
 
 The renderer joins these into a human-readable markdown report at
 ``sessions/RUN_REPORT.md``.  No new persistence; the report is purely
-derived.  See ``docs/CGF-RUN-REPORT.md`` for the design rationale.
+derived.  See ``config/monitoring/CLAUDE.md`` (§ Other operator-facing
+surfaces) for the non-goals + deferred-TODO list.
 """
 
 from __future__ import annotations
