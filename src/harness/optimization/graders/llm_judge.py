@@ -131,16 +131,52 @@ _build_user_prompt = build_user_prompt
 
 
 def judge_prompt_hash(rubric: str, transcript: AgentTranscript) -> str:
-    """SHA-256 of the user prompt that would be sent for this (rubric, transcript).
+    """SHA-256 of the *user prompt* that would be sent for this (rubric,
+    transcript) pair.
 
-    Phase A refinement 4.1: recorded on :class:`EvalResults` so Phase D's
-    Cohen's-κ calibration check has a stable key per
-    ``(judge_model_id, rubric_version, transcript_shape)``.
+    Intended for per-trial debugging / replay — the hash IS transcript-
+    sensitive so two trials of the same scenario produce different
+    hashes.  Not suitable as a calibration key (see
+    :func:`judge_rubric_hash` for that — recorded on EvalResults).
+
+    Kept stable so existing tests that pin (rubric, transcript) →
+    deterministic hash continue to pass.
     """
     import hashlib
 
     body = build_user_prompt(rubric, transcript)
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def judge_rubric_hash(rubric: str, judge_model_id: str = "") -> str:
+    """SHA-256 of the *judge identity* for this rubric — stable across
+    runs of the same suite.
+
+    Hashes ``(rubric_text, judge_system_prompt, judge_model_id)``.
+    Excludes the agent transcript intentionally: transcripts vary
+    run-to-run from LLM stochasticity, so transcript-mixed hashes are
+    unique per run and useless as Phase D's Cohen's-κ calibration key
+    (which needs to compare grader behaviour across runs of the same
+    suite/rubric).
+
+    Recorded on :class:`EvalResults.judge_prompt_hash` so the
+    calibration check can group judgments by
+    ``(judge_model_id, rubric_version)`` and compute kappa per group.
+
+    Args:
+        rubric: The rubric text that anchors the judge.
+        judge_model_id: Resolved judge model identifier (e.g.
+            ``claude-opus-4-5-20250929``).  When empty, hash captures
+            rubric + system-prompt identity only.
+    """
+    import hashlib
+
+    payload = (
+        f"rubric:\n{rubric.strip()}\n"
+        f"system:\n{_SYSTEM_PROMPT}\n"
+        f"model:\n{judge_model_id.strip()}\n"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 _INTEGER_RE = re.compile(r"\b([1-5])\b")

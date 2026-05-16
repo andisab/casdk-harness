@@ -828,49 +828,39 @@ class EvalHarness:
             )
 
         # Phase A refinement 4.1: pin judge identity for this run.
-        # Resolve via the same helper LLMJudgeGrader uses so the recorded
-        # ID matches what the grader actually called.  Suite config
-        # overrides env (legacy path), env overrides default.
+        # Resolve via the same helper LLMJudgeGrader uses so the
+        # recorded ID matches what the grader actually called.  Suite
+        # config overrides env (legacy path), env overrides default.
+        #
+        # Hash is rubric+judge-identity only — NOT transcript-sensitive.
+        # The transcript varies run-to-run from LLM stochasticity, so
+        # transcript-mixed hashes would be unique per run and useless
+        # as Phase D's Cohen's-κ calibration key.  See
+        # ``llm_judge.judge_rubric_hash`` for the contract.
         judge_model_id = ""
         judge_prompt_hash = ""
         if self._has_llm_judge(suite):
             from harness.optimization.graders.llm_judge import (
                 _resolve_judge_model,
-            )
-            from harness.optimization.graders.llm_judge import (
-                judge_prompt_hash as compute_judge_prompt_hash,
+                judge_rubric_hash,
             )
 
             judge_model_id = _resolve_judge_model(suite.config.eval_model)
-            # Hash is rubric-shape dependent; record the hash of the
-            # first scenario's first llm_judge prompt as a representative
-            # fingerprint for the suite.  Phase D's calibration may need
-            # per-rubric hashes — defer that until calibration lands.
+            # Use the first scenario's first llm_judge rubric as a
+            # representative fingerprint for the suite.  Phase D may
+            # need per-rubric hashes — defer that until calibration
+            # lands and we know what calibration scoping wants.
             for swg in suite.scenarios:
+                rubric_for_hash: str | None = None
                 for g in swg.graders:
                     rubric = getattr(g, "rubric", None)
                     if rubric:
-                        # Use the first arm/trial transcript as the
-                        # transcript fingerprint, falling back to an
-                        # empty one if none ran.
-                        first_transcript = None
-                        for sr in scenarios:
-                            if sr.scenario_id == swg.scenario.id:
-                                for trial in sr.baseline.trials:
-                                    first_transcript = trial.transcript
-                                    break
-                                break
-                        if first_transcript is None:
-                            from harness.optimization.graders.transcript import (
-                                AgentTranscript,
-                            )
-
-                            first_transcript = AgentTranscript()
-                        judge_prompt_hash = compute_judge_prompt_hash(
-                            rubric, first_transcript
-                        )
+                        rubric_for_hash = rubric
                         break
-                if judge_prompt_hash:
+                if rubric_for_hash:
+                    judge_prompt_hash = judge_rubric_hash(
+                        rubric_for_hash, judge_model_id
+                    )
                     break
 
         return EvalResults(

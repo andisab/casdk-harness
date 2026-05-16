@@ -161,6 +161,9 @@ class TestJudgeModelResolution:
 
 
 class TestJudgePromptHash:
+    """``judge_prompt_hash`` is the per-trial debugging hash — IS
+    transcript-sensitive, NOT suitable as a calibration key."""
+
     def test_deterministic(self) -> None:
         t = AgentTranscript(final_output="same", total_turns=2)
         h1 = judge_prompt_hash("r", t)
@@ -184,6 +187,167 @@ class TestJudgePromptHash:
         assert len(h) == 64
         # All hex chars
         int(h, 16)
+
+
+class TestJudgeRubricHash:
+    """``judge_rubric_hash`` is the calibration key — rubric + judge
+    identity only, NOT transcript-sensitive.  Two runs of the same
+    suite (with different stochastic transcripts) must produce the
+    same hash so Phase D's Cohen's-κ check can group judgments per
+    ``(judge_model_id, rubric_version)``."""
+
+    def test_invariant_under_transcript_change(self) -> None:
+        """The headline contract: this is what makes the hash usable as
+        a calibration key.  Pre-fix this was transcript-mixed and
+        non-deterministic across runs."""
+        from harness.optimization.graders.llm_judge import judge_rubric_hash
+
+        # The function doesn't take a transcript at all — pin that.
+        h1 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
+        h2 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
+        assert h1 == h2
+
+    def test_changes_on_rubric_change(self) -> None:
+        from harness.optimization.graders.llm_judge import judge_rubric_hash
+
+        h1 = judge_rubric_hash("rubric A", "opus")
+        h2 = judge_rubric_hash("rubric B", "opus")
+        assert h1 != h2
+
+    def test_changes_on_model_change(self) -> None:
+        """Calibration scope includes the judge model — opus and sonnet
+        produce different judgments, so the kappa key must distinguish."""
+        from harness.optimization.graders.llm_judge import judge_rubric_hash
+
+        h1 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
+        h2 = judge_rubric_hash("same rubric", "claude-sonnet-4-20250514")
+        assert h1 != h2
+
+    def test_changes_on_system_prompt_change(self) -> None:
+        """The judge's system prompt is part of judge identity.  If we
+        ever rev the system prompt, calibration must be re-collected."""
+        from harness.optimization.graders import llm_judge
+
+        original = llm_judge._SYSTEM_PROMPT
+        h_orig = llm_judge.judge_rubric_hash("r", "opus")
+        try:
+            llm_judge._SYSTEM_PROMPT = original + " Be especially strict."
+            h_changed = llm_judge.judge_rubric_hash("r", "opus")
+        finally:
+            llm_judge._SYSTEM_PROMPT = original
+        assert h_orig != h_changed
+
+    def test_hash_is_hex_sha256(self) -> None:
+        from harness.optimization.graders.llm_judge import judge_rubric_hash
+
+        h = judge_rubric_hash("r", "opus")
+        assert len(h) == 64
+        int(h, 16)
+
+    def test_empty_model_id_still_hashes(self) -> None:
+        """Empty model id is allowed (rubric+system-prompt fingerprint)."""
+        from harness.optimization.graders.llm_judge import judge_rubric_hash
+
+        h = judge_rubric_hash("r", "")
+        assert len(h) == 64
+
+
+class TestEvalResultsJudgeHashStability:
+    """Integration: ``EvalResults.judge_prompt_hash`` (assembled by the
+    runner) must be the rubric-based hash, NOT the transcript-mixed
+    one.  Two runs of the same suite differ in transcript content but
+    must produce the SAME judge_prompt_hash."""
+
+    def test_judge_prompt_hash_is_stable_across_runs(self) -> None:
+        from unittest.mock import MagicMock
+
+        from harness.optimization.eval_harness.models import (
+            ArmResults,
+            EvalConfig,
+            EvalSuite,
+            ScenarioResult,
+            ScenarioWithGraders,
+            TrialResult,
+        )
+        from harness.optimization.eval_harness.runner import EvalHarness
+        from harness.optimization.graders.llm_judge import LLMJudgeGrader
+        from harness.optimization.graders.scenario import EvalScenario
+
+        scenario = EvalScenario(
+            id="scn", level="unit", prompt="p", target_resource="x"
+        )
+        judge = LLMJudgeGrader(rubric="Quality rubric")
+        suite = EvalSuite(
+            version="1.0",
+            target_resource="x",
+            scenarios=[ScenarioWithGraders(scenario=scenario, graders=[judge])],
+            config=EvalConfig(eval_model="opus"),
+        )
+
+        # Two runs with different transcript content — same suite.
+        run_a_scenarios = [
+            ScenarioResult(
+                scenario_id="scn", level="unit", held_out=False, tags=[],
+                difficulty=None,
+                baseline=ArmResults(
+                    arm="baseline",
+                    trials=[
+                        TrialResult(
+                            arm="baseline", trial_index=0,
+                            transcript=AgentTranscript(
+                                final_output="run-A output", total_turns=2
+                            ),
+                            grader_results=[], passed=True, no_decision=False,
+                        ),
+                    ],
+                    decisive=1, pass_rate=1.0, pass_at_k=1.0,
+                    pass_caret_k=1.0, avg_score=1.0,
+                ),
+                candidate=ArmResults(
+                    arm="candidate", trials=[], decisive=0,
+                    pass_rate=0.0, pass_at_k=0.0, pass_caret_k=0.0,
+                    avg_score=0.0,
+                ),
+                outcome="no_decision",
+            )
+        ]
+        run_b_scenarios = [
+            ScenarioResult(
+                scenario_id="scn", level="unit", held_out=False, tags=[],
+                difficulty=None,
+                baseline=ArmResults(
+                    arm="baseline",
+                    trials=[
+                        TrialResult(
+                            arm="baseline", trial_index=0,
+                            transcript=AgentTranscript(
+                                final_output="run-B is wildly different",
+                                total_turns=17,
+                            ),
+                            grader_results=[], passed=True, no_decision=False,
+                        ),
+                    ],
+                    decisive=1, pass_rate=1.0, pass_at_k=1.0,
+                    pass_caret_k=1.0, avg_score=1.0,
+                ),
+                candidate=ArmResults(
+                    arm="candidate", trials=[], decisive=0,
+                    pass_rate=0.0, pass_at_k=0.0, pass_caret_k=0.0,
+                    avg_score=0.0,
+                ),
+                outcome="no_decision",
+            )
+        ]
+        harness = EvalHarness()
+        results_a = harness._assemble_results(
+            run_a_scenarios, MagicMock(), MagicMock(), MagicMock(), suite
+        )
+        results_b = harness._assemble_results(
+            run_b_scenarios, MagicMock(), MagicMock(), MagicMock(), suite
+        )
+        # The headline guarantee:
+        assert results_a.judge_prompt_hash == results_b.judge_prompt_hash
+        assert len(results_a.judge_prompt_hash) == 64
 
 
 # ---------------------------------------------------------------------------
