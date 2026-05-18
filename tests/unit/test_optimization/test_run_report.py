@@ -564,3 +564,214 @@ def test_artifacts_section_includes_links(tmp_path: Path) -> None:
     assert "eval/eval-suite.yaml" in out
     assert "[`CHANGELOG.md`](../CHANGELOG.md)" in out
     assert "Grafana dashboard" in out
+
+
+# ---------------------------------------------------------------------------
+# I15 — verdict subtype + cost-per-success surfacing in the report
+# ---------------------------------------------------------------------------
+
+
+def test_gate_column_distinguishes_verdict_subtypes(tmp_path: Path) -> None:
+    """The Gate column must show distinct labels for reject_cost,
+    reject_floor, and refine — collapsing them to a single
+    ``❌ Reject`` (pre-I15 behaviour) loses critical diagnostic
+    signal.
+    """
+    state = _state(
+        current_phase="COMPLETE",
+        resources={
+            "skills/a.md": _resource(path="skills/a.md", version=1),
+            "skills/b.md": _resource(path="skills/b.md", version=1),
+            "skills/c.md": _resource(path="skills/c.md", version=1),
+        },
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "skills/a.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.67,
+                    "candidate_pass_rate": 0.67, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_cost",
+                    "baseline_cost_per_success": 0.10,
+                    "candidate_cost_per_success": 0.18,
+                },
+                {
+                    "path": "skills/b.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.67,
+                    "candidate_pass_rate": 0.33, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_floor",
+                    "floor_pass_rate": 0.67,
+                },
+                {
+                    "path": "skills/c.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.67,
+                    "candidate_pass_rate": 0.33, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "refine",
+                },
+            ],
+        }
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    # Each subtype shows up as its own label — operators can grep for
+    # "Reject cost" specifically to find cost-rejected resources.
+    assert "Reject cost" in out
+    assert "Reject floor" in out
+    assert "Refine" in out
+
+
+def test_per_version_row_renders_cost_per_success_delta(tmp_path: Path) -> None:
+    """Each per-version row in the resource details table must surface
+    cost-per-success when available, formatted as ``$baseline → $candidate (Δ%)``.
+    """
+    state = _state(
+        current_phase="COMPLETE",
+        resources={"skills/p.md": _resource(path="skills/p.md", version=1)},
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "skills/p.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.67,
+                    "candidate_pass_rate": 0.67, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_cost",
+                    "baseline_cost_per_success": 0.10,
+                    "candidate_cost_per_success": 0.16,
+                },
+                {
+                    "path": "skills/p.md", "version": 2,
+                    "win_rate": 0.33, "baseline_pass_rate": 0.67,
+                    "candidate_pass_rate": 1.00, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": True,
+                    "verdict": "promote",
+                    "baseline_cost_per_success": 0.10,
+                    "candidate_cost_per_success": 0.10,
+                },
+            ],
+        }
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    # Cost column header exists.
+    assert "Cost/success" in out
+    # v1 cost row: $0.10 → $0.16 (+60%)
+    assert "$0.10" in out and "$0.16" in out
+    assert "+60%" in out
+
+
+def test_summary_breaks_out_rejection_subtypes(tmp_path: Path) -> None:
+    """When at least one rejection happened, the Summary table breaks
+    out the reject_cost / reject_floor / quality counts as sub-rows so
+    operators can spot which gate is firing most often.
+    """
+    state = _state(
+        current_phase="COMPLETE",
+        resources={
+            "a.md": _resource(path="a.md", status="needs_refinement"),
+            "b.md": _resource(path="b.md", status="needs_refinement"),
+            "c.md": _resource(path="c.md", status="needs_refinement"),
+        },
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "a.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.7,
+                    "candidate_pass_rate": 0.7, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_cost",
+                },
+                {
+                    "path": "b.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.7,
+                    "candidate_pass_rate": 0.3, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_floor", "floor_pass_rate": 0.7,
+                },
+                {
+                    "path": "c.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.7,
+                    "candidate_pass_rate": 0.3, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "refine",
+                },
+            ],
+        }
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    assert "cost regression | 1 |" in out
+    assert "below floor | 1 |" in out
+    assert "quality regression | 1 |" in out
+
+
+def test_summary_surfaces_floor_arm_signal(tmp_path: Path) -> None:
+    """When any floor arm ran, the Summary table mentions it; the
+    "below floor in N" counter is the safety-net visibility signal."""
+    state = _state(
+        current_phase="COMPLETE",
+        resources={
+            "a.md": _resource(path="a.md", status="needs_refinement"),
+        },
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "a.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 0.5,
+                    "candidate_pass_rate": 0.3, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False,
+                    "verdict": "reject_floor",
+                    "floor_pass_rate": 0.5,
+                },
+            ],
+        }
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    assert "Floor arm ran" in out
+    assert "below floor in 1" in out
+
+
+def test_summary_omits_subtype_breakdown_for_clean_run(tmp_path: Path) -> None:
+    """When no rejections happened, the subtype rows are suppressed to
+    keep the Summary table compact."""
+    state = _state(
+        current_phase="COMPLETE",
+        resources={
+            "a.md": _resource(path="a.md", version=1),
+        },
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "a.md", "version": 1,
+                    "win_rate": 0.5, "baseline_pass_rate": 0.5,
+                    "candidate_pass_rate": 1.0, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": True, "verdict": "promote",
+                },
+            ],
+        }
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    # No rejections → no breakdown.
+    assert "cost regression" not in out
+    assert "below floor" not in out
+    assert "quality regression" not in out
+    # Promoted count still surfaces.
+    assert "✅ Promoted | 1 |" in out

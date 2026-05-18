@@ -59,7 +59,13 @@ from harness.optimization._orchestrator_phases._baseline_floor import (
 )
 from harness.optimization.eval_harness import EvalHarness, EvalResults
 from harness.optimization.eval_harness.runner import _resource_target_key
-from harness.optimization.gating import GateInputs, is_first_promotion
+from harness.optimization.gating import (
+    GateInputs,
+    _resolve_cost_quality_bonus,
+    effective_cost_tolerance,
+    is_first_promotion,
+)
+from harness.optimization.gating import Verdict as GateVerdict
 from harness.optimization.gating import decide as gate_decide
 from harness.progress import OptimizationPhase, ResourceStatus
 
@@ -269,7 +275,12 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     per_resource_results: list[
         tuple[ResourceStatus, EvalResults, AggregateVerdict]
     ] = []
-    regressions: list[tuple[ResourceStatus, EvalResults]] = []
+    # I15: include verdict in regression tuples so ``_build_feedback_entry``
+    # can surface the failure-mode (reject_floor / refine / reject_cost) to
+    # the optimizer's per-call prompt.  ``unwinnable`` is filtered out
+    # earlier via the post-helper status check, so the type here uses
+    # ``gating.Verdict`` (no "unwinnable") rather than ``AggregateVerdict``.
+    regressions: list[tuple[ResourceStatus, EvalResults, GateVerdict]] = []
     promotions: list[ResourceStatus] = []
     # F21: unwinnable resources (both arms scored 0 across all scenarios)
     # are tracked separately — they're neither promotions (no signal of
@@ -336,8 +347,16 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         else:
             # needs_refinement covers both Phase A regressions and the
             # new reject_floor verdict.  Treated identically by the
-            # downstream feedback-loop logic.
-            regressions.append((res, results))
+            # downstream feedback-loop logic, but the verdict carries
+            # through so the optimizer's per-call prompt can branch
+            # by failure-mode (I15).
+            #
+            # ``verdict`` is one of ``promote|refine|reject_floor|reject_cost``
+            # here — ``unwinnable`` already went into ``unwinnable`` above
+            # via the ``post_status == "unwinnable"`` branch.  A
+            # defensive narrow keeps the type stable.
+            assert verdict != "unwinnable"
+            regressions.append((res, results, verdict))
 
     # --- aggregate write ---
     aggregate_path = _write_aggregate_results(
@@ -1060,7 +1079,7 @@ def _resolve_min_gain() -> float:
 
 
 def _build_feedback_entry(
-    regressions: list[tuple[ResourceStatus, EvalResults]],
+    regressions: list[tuple[ResourceStatus, EvalResults, GateVerdict]],
     feedback_iteration: int,
     round_mean_candidate_pass_rate: float | None = None,
 ) -> dict[str, Any]:
@@ -1074,9 +1093,30 @@ def _build_feedback_entry(
     Phase A refinement 4.4.b: ``round_mean_candidate_pass_rate`` is
     recorded so the next round's stagnation check can compare against
     it cheaply (no recomputation needed).
+
+    I15: each regression entry now carries the gate verdict and the
+    full cost-gate inputs so the optimizer's per-call refinement prompt
+    can branch by failure-mode:
+
+      - ``verdict``: ``"refine"`` / ``"reject_floor"`` / ``"reject_cost"``
+      - ``baseline_cost_per_success`` / ``candidate_cost_per_success``
+      - ``floor_pass_rate``: populated on first-time-promotion rounds
+      - ``cost_tolerance``: the base τ at gate time
+      - ``effective_cost_tolerance``: τ_eff after quality-scaled bonus
+      - ``cost_per_success_delta_pct``: candidate cps minus incumbent
+        cps as a fraction of incumbent (positive = regressed)
+
+    Without these the optimizer can't tell whether to TRIM (cost
+    rejection) vs ADD-COVERAGE (quality rejection) vs DROP-STRUCTURE
+    (floor rejection).  Run #7 demonstrated the failure mode: cost-
+    rejected candidates got re-bloated in r2 because the optimizer
+    saw only pass-rate equality and concluded "quality is fine."
     """
+    base_tau = _resolve_cost_tolerance()
+    bonus_factor = _resolve_cost_quality_bonus()
+
     resources_data: list[dict[str, Any]] = []
-    for resource, results in regressions:
+    for resource, results, verdict in regressions:
         failing = []
         for sr in results.scenarios:
             if sr.held_out:
@@ -1094,12 +1134,41 @@ def _build_feedback_entry(
                         "tags": list(sr.tags),
                     }
                 )
+
+        # I15: compute effective τ at feedback-write time so the
+        # optimizer sees the same number the gate used.  ``decide``
+        # recomputes it during evaluation; we mirror that here rather
+        # than threading the value through the helper signature.
+        quality_delta = (
+            results.candidate_pass_rate - results.baseline_pass_rate
+        )
+        eff_tau = effective_cost_tolerance(
+            base_tau=base_tau,
+            quality_delta=quality_delta,
+            bonus_factor=bonus_factor,
+        )
+
+        # cps delta — only meaningful when both sides have signal.
+        b_cps = results.baseline_cost_per_success
+        c_cps = results.candidate_cost_per_success
+        if b_cps is not None and c_cps is not None and b_cps > 0:
+            cps_delta_pct = (c_cps - b_cps) / b_cps
+        else:
+            cps_delta_pct = None
+
         resources_data.append(
             {
                 "path": resource.path,
+                "verdict": verdict,
                 "candidate_pass_rate": results.candidate_pass_rate,
                 "baseline_pass_rate": results.baseline_pass_rate,
+                "floor_pass_rate": results.floor_pass_rate,
                 "win_rate": results.win_rate,
+                "baseline_cost_per_success": b_cps,
+                "candidate_cost_per_success": c_cps,
+                "cost_per_success_delta_pct": cps_delta_pct,
+                "cost_tolerance": base_tau,
+                "effective_cost_tolerance": eff_tau,
                 "failing_scenarios": failing,
             }
         )

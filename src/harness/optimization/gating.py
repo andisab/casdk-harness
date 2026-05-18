@@ -23,16 +23,104 @@ Phase A refinement 4.2 introduces two changes:
    calibration) extend the decision without re-threading state
    through ``execution_eval``.
 
-The cost stage of the gate lands in Step 3.  This module ships with a
-quality-only :func:`decide` signature; Step 3 adds the ``cost`` axis.
+Phase A refinement 4.3 added a third, **cost** stage.  Step 4 (this
+refinement, I15) makes the cost gate's tolerance ``τ`` **quality-aware**:
+big quality gains earn extra cost-growth headroom, so a candidate that
+shifts pass-rate by +13pp doesn't get rejected for a 16% cost-per-success
+bump.  See :func:`effective_cost_tolerance` below — it does NOT collapse
+quality and cost into a weighted scalar (Goodhart-on-tokens, Han et al.
+2025); it just lets ``τ`` borrow signal from the quality delta.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 
 Verdict = Literal["promote", "refine", "reject_floor", "reject_cost"]
+
+# I15 — quality-scaled cost tolerance defaults.
+#
+# ``DEFAULT_COST_QUALITY_BONUS = 1.0`` means: each percentage point of
+# candidate quality gain over incumbent grants 1 percentage point of
+# extra cost-growth headroom on top of ``base_tau``.  At +10pp quality,
+# effective τ rises from 0.10 to 0.20.  Clamped at ``DEFAULT_COST_TAU_CAP``
+# so a +60pp quality jump can't make the cost gate functionally useless.
+DEFAULT_COST_QUALITY_BONUS = 1.0
+DEFAULT_COST_TAU_CAP = 0.5
+
+
+def _resolve_cost_quality_bonus() -> float:
+    """Resolve ``CGF_COST_QUALITY_BONUS`` env override.
+
+    Default ``DEFAULT_COST_QUALITY_BONUS = 1.0``.  Operators tune this
+    when they want to permit faster cost growth for quality wins (raise)
+    or hold the cost line strictly (lower toward 0).  Negative values
+    are clamped to 0 (we never punish quality gains with a tighter cost
+    gate; only Phase A.4.4.b stagnation early-stop handles "quality drop
+    that was within ε").
+    """
+    raw = os.environ.get("CGF_COST_QUALITY_BONUS")
+    if not raw:
+        return DEFAULT_COST_QUALITY_BONUS
+    try:
+        v = float(raw)
+    except ValueError:
+        return DEFAULT_COST_QUALITY_BONUS
+    return max(0.0, v)
+
+
+def effective_cost_tolerance(
+    base_tau: float,
+    quality_delta: float,
+    bonus_factor: float | None = None,
+    bonus_cap: float = DEFAULT_COST_TAU_CAP,
+) -> float:
+    """Quality-scaled cost-growth tolerance for the cost gate.
+
+    .. math::
+
+        \\tau_\\mathrm{eff} = base\\_tau + \\min\\bigl(bonus\\_cap,\\ \\max(0, \\Delta \\cdot bonus\\_factor)\\bigr)
+
+    Where ``Δ`` is ``candidate.pass_rate - incumbent.pass_rate`` (a value
+    in roughly ``[-1, 1]``; positive when candidate quality improved).
+    ``bonus_factor`` defaults to ``CGF_COST_QUALITY_BONUS`` env (default
+    ``1.0``).
+
+    The ``bonus_cap`` clamps only the **quality-derived bonus**, never
+    ``base_tau`` itself.  Operators who deliberately set
+    ``CGF_TOKEN_REGRESSION_TOLERANCE=1.0`` (permissive run) still get
+    their chosen ceiling; we only refuse to let a single huge quality
+    jump grant unbounded extra cost headroom on top of that.
+
+    **Worked examples** at default ``bonus_factor=1.0``,
+    ``bonus_cap=0.5``, ``base_tau=0.10``:
+
+    +-----------------+-------+--------------------------------+
+    | Quality Δ       | τ_eff | Comment                        |
+    +=================+=======+================================+
+    | −0.10           | 0.10  | floor at base (max(0, …) clamp)|
+    +-----------------+-------+--------------------------------+
+    |  0.00           | 0.10  | unchanged from Phase A.4.3     |
+    +-----------------+-------+--------------------------------+
+    | +0.13 (13 pp)   | 0.23  | sample real-quality win case   |
+    +-----------------+-------+--------------------------------+
+    | +0.30 (30 pp)   | 0.40  | recovery (0.33 → 0.63) ok      |
+    +-----------------+-------+--------------------------------+
+    | +0.60 (60 pp)   | 0.60  | bonus clamped at 0.50          |
+    +-----------------+-------+--------------------------------+
+
+    This is **not** a weighted-sum scalar (PHASEA_SUMMARY § 4.3 explicitly
+    warned against that).  The quality and cost stages remain
+    independent: we just let ``τ`` borrow signal from the quality delta
+    so that a +N pp quality win can absorb up to N pp of cost-per-success
+    regression without rejection.
+    """
+    if bonus_factor is None:
+        bonus_factor = _resolve_cost_quality_bonus()
+    bonus = min(bonus_cap, max(0.0, quality_delta * bonus_factor))
+    return base_tau + bonus
 
 
 @dataclass(frozen=True)
@@ -106,16 +194,25 @@ def decide(inputs: GateInputs) -> Verdict:
     if inputs.candidate_pass_rate < incumbent_margin:
         return "refine"
 
-    # Stage 3 (Phase A refinement 4.3): cost.  Auto-passes when either
-    # side is None — incumbent=None means no signal to regress against
-    # (typically zero baseline successes), candidate=None means the
-    # candidate had zero successes and the quality stage would have
+    # Stage 3 (Phase A refinement 4.3 + I15): cost.  Auto-passes when
+    # either side is None — incumbent=None means no signal to regress
+    # against (typically zero baseline successes), candidate=None means
+    # the candidate had zero successes and the quality stage would have
     # already rejected it.
+    #
+    # I15: τ is scaled by the quality delta so a real quality win can
+    # absorb proportional cost growth.  See
+    # :func:`effective_cost_tolerance` for the math.
     if (
         inputs.candidate_cost_per_success is not None
         and inputs.incumbent_cost_per_success is not None
     ):
-        cost_ceiling = inputs.incumbent_cost_per_success * (1.0 + inputs.tau)
+        quality_delta = inputs.candidate_pass_rate - inputs.incumbent_pass_rate
+        effective_tau = effective_cost_tolerance(
+            base_tau=inputs.tau,
+            quality_delta=quality_delta,
+        )
+        cost_ceiling = inputs.incumbent_cost_per_success * (1.0 + effective_tau)
         if inputs.candidate_cost_per_success > cost_ceiling:
             return "reject_cost"
 

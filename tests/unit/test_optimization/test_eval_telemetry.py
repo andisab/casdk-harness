@@ -486,11 +486,12 @@ class TestEnvVarsExposed:
     @pytest.mark.parametrize(
         "var",
         [
-            "CGF_DESIGN_MODEL",
             "CGF_JUDGE_MODEL",
             "CGF_EVAL_TOKEN_BUDGET",
             "CGF_EVAL_PROMOTION_EPSILON",
-            "CGF_EVAL_HELD_OUT_FRACTION",
+            "CGF_TOKEN_REGRESSION_TOLERANCE",
+            "CGF_COST_QUALITY_BONUS",  # I15
+            "CGF_MIN_GAIN_PER_ROUND",
         ],
     )
     def test_var_in_docker_compose(self, var: str, compose_yaml: str) -> None:
@@ -501,11 +502,12 @@ class TestEnvVarsExposed:
     @pytest.mark.parametrize(
         "var",
         [
-            "CGF_DESIGN_MODEL",
             "CGF_JUDGE_MODEL",
             "CGF_EVAL_TOKEN_BUDGET",
             "CGF_EVAL_PROMOTION_EPSILON",
-            "CGF_EVAL_HELD_OUT_FRACTION",
+            "CGF_TOKEN_REGRESSION_TOLERANCE",
+            "CGF_COST_QUALITY_BONUS",  # I15
+            "CGF_MIN_GAIN_PER_ROUND",
         ],
     )
     def test_var_in_env_example(self, var: str, env_example: str) -> None:

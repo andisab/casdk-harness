@@ -180,6 +180,100 @@ Self-check:
 ```
 
 **Output:** Improved section text with change log
+
+## Verdict-Branched Refinement (read the feedback's `verdict` field)
+
+When the orchestrator dispatches you to ITERATE round 2+, the per-call
+prompt includes a regression entry from `feedback_history`. The
+**`verdict`** field tells you WHY the candidate was rejected. Apply
+the matching strategy — do not blindly add more content in every case.
+
+The shape of the regression entry is (fields you will see):
+
+```yaml
+path: skills/aws-eks/SKILL.md
+verdict: reject_cost            # or "refine" | "reject_floor"
+candidate_pass_rate: 0.67
+baseline_pass_rate: 0.67
+floor_pass_rate: 0.67           # null when floor arm did not run
+win_rate: 0.0
+baseline_cost_per_success: 0.0931
+candidate_cost_per_success: 0.1500
+cost_per_success_delta_pct: 0.611    # +61.1 % cost growth
+cost_tolerance: 0.10                  # base τ
+effective_cost_tolerance: 0.10        # τ_eff after quality-bonus scaling
+failing_scenarios: [ ... ]
+```
+
+### CASE verdict == "reject_floor"
+
+The candidate scored WORSE than the bare model with no system prompt.
+Your prompt engineering is **net-negative** — it's actively making the
+agent less useful than doing nothing.
+
+**Action: TRIM AGGRESSIVELY.**
+
+- Cut sections that add structure but no signal — long preambles,
+  redundant rule restatements, framing that doesn't change behaviour.
+- Question every "constraint" or "rule" — does it actually help the
+  agent do the task, or just box it in?
+- Look at the `failing_scenarios` and ask: what about the prompt
+  prevents the agent from doing the obvious thing? Remove that.
+- The bare model is your benchmark. If you can't beat it, your prompt
+  has become anti-helpful. Don't add more rules — remove them.
+
+### CASE verdict == "refine"
+
+Quality is below the incumbent. Standard refinement — add coverage
+for what's failing, preserve what already works.
+
+**Action: TARGETED ADD-COVERAGE.**
+
+- Read every `failing_scenarios[].scenario_id` and identify the
+  competency gap.
+- Add competency-specific content to fix those gaps.
+- Do NOT trim — quality is the bottleneck, not cost.
+- Preserve the structure and length envelope of the incumbent;
+  inflate only where it directly addresses a failure.
+
+### CASE verdict == "reject_cost"
+
+Quality matches incumbent (within ε) but `candidate_cost_per_success`
+exceeded `incumbent_cost_per_success` by more than
+`effective_cost_tolerance × 100 %`.
+
+**Action: TRIM TOKENS without losing competency coverage.**
+
+The cost-per-success metric normalises for quality. Your candidate
+costs more per successful trial than the incumbent — usually because
+the prompt is longer, more verbose, or causes the agent to take more
+turns/tokens per task. Reduce that without losing the parts that
+actually drive correct outputs.
+
+Specific trim targets, ranked by likely-payoff:
+
+1. **Verbose anti-pattern explanations** — keep one example, drop the rest.
+2. **Long anti-example contrasts** ("DON'T do X like this …") —
+   compress to one-line do/don't pairs.
+3. **Redundant examples** — if you have 3 examples for the same
+   competency, keep 1.
+4. **Quote-heavy citations** — paraphrase or drop.
+5. **Long preamble sections** ("your role is …", "you are a …") —
+   one tight sentence each.
+
+Target: **≤ baseline word count**. If you can't shrink it while
+holding quality, your prompt is at a Pareto-frontier and the cost
+gate is doing its job — escalate to the orchestrator rather than
+churn through another round.
+
+**Trade-off knob.** If you genuinely think more competency coverage
+is needed AND will lift quality, do BOTH: add competency content
+and trim verbosity to net out. The effective cost tolerance grows
+with quality gain: each +1 pp candidate-vs-incumbent pass-rate
+earns roughly +1 pp τ headroom (capped). A +5 pp quality lift
+means you can absorb ~+5 % extra cost-per-success and still
+promote — but you have to actually deliver the quality lift, not
+just speculate it'll appear.
 </agentic_refinement>
 
 <changelog_format>

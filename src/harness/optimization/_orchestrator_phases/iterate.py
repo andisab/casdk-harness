@@ -959,6 +959,8 @@ def _build_feedback_block(
         return ""
 
     # Collect entries for this specific resource, most-recent first.
+    # I15: also propagate the gate verdict + cost-stage inputs so the
+    # optimizer's verdict-branched refinement strategy can fire.
     entries: list[dict[str, Any]] = []
     for entry in feedback_history:
         for resource_entry in entry.get("regressions", []):
@@ -968,13 +970,28 @@ def _build_feedback_block(
                         "feedback_iteration": entry.get(
                             "feedback_iteration", "?"
                         ),
+                        "verdict": resource_entry.get("verdict", "refine"),
                         "candidate_pass_rate": resource_entry.get(
                             "candidate_pass_rate", 0.0
                         ),
                         "baseline_pass_rate": resource_entry.get(
                             "baseline_pass_rate", 0.0
                         ),
+                        "floor_pass_rate": resource_entry.get("floor_pass_rate"),
                         "win_rate": resource_entry.get("win_rate", 0.0),
+                        "baseline_cost_per_success": resource_entry.get(
+                            "baseline_cost_per_success"
+                        ),
+                        "candidate_cost_per_success": resource_entry.get(
+                            "candidate_cost_per_success"
+                        ),
+                        "cost_per_success_delta_pct": resource_entry.get(
+                            "cost_per_success_delta_pct"
+                        ),
+                        "cost_tolerance": resource_entry.get("cost_tolerance"),
+                        "effective_cost_tolerance": resource_entry.get(
+                            "effective_cost_tolerance"
+                        ),
                         "failing_scenarios": resource_entry.get(
                             "failing_scenarios", []
                         ),
@@ -999,19 +1016,87 @@ def _build_feedback_block(
         else ""
     )
 
+    # I15: verdict-specific framing so the optimizer's verdict-branched
+    # refinement strategy in cgf-prompt-optimizer.md can fire correctly.
+    verdict = latest["verdict"]
+    floor_pr = latest["floor_pass_rate"]
+    b_cps = latest["baseline_cost_per_success"]
+    c_cps = latest["candidate_cost_per_success"]
+    cps_delta = latest["cost_per_success_delta_pct"]
+    base_tau = latest["cost_tolerance"]
+    eff_tau = latest["effective_cost_tolerance"]
+
+    cost_block_lines: list[str] = []
+    if b_cps is not None and c_cps is not None:
+        cost_block_lines.append(
+            f"  baseline cost-per-success:  ${b_cps:.4f}"
+        )
+        cost_block_lines.append(
+            f"  candidate cost-per-success: ${c_cps:.4f}"
+        )
+        if cps_delta is not None:
+            cost_block_lines.append(
+                f"  cps delta:                  {cps_delta:+.1%}"
+            )
+        if base_tau is not None and eff_tau is not None:
+            cost_block_lines.append(
+                f"  cost tolerance (τ):         base {base_tau:.1%} → "
+                f"effective {eff_tau:.1%} (after quality-bonus scaling)"
+            )
+    cost_block = "\n".join(cost_block_lines)
+    floor_line = (
+        f"  floor (bare-model) pass_rate: {floor_pr:.2f}"
+        if floor_pr is not None
+        else ""
+    )
+
+    # Verdict-specific action header — this is what the optimizer's
+    # system-prompt CASE table keys off.
+    verdict_actions = {
+        "reject_floor": (
+            "REJECTED — below floor.  The bare-model arm scored "
+            "higher than your candidate.  Your prompt engineering "
+            "is net-negative.\n"
+            "Action: TRIM AGGRESSIVELY.  Remove rules / framing that "
+            "boxes the agent in.  Question every constraint."
+        ),
+        "reject_cost": (
+            "REJECTED — cost regression.  Quality matched the "
+            "incumbent, but cost-per-success exceeded the cost-gate "
+            "allowance.\n"
+            "Action: TRIM TOKENS.  Cut verbose anti-pattern "
+            "explanations, redundant examples, long preambles.  "
+            "Target ≤ baseline word count.  Do NOT add new content "
+            "unless it lifts quality enough to earn extra cost "
+            "headroom (each +1pp quality grants ~+1% τ)."
+        ),
+        "refine": (
+            "REFINEMENT — quality below incumbent.\n"
+            "Action: ADD COMPETENCY COVERAGE for failing scenarios.  "
+            "Preserve length envelope; inflate only where it directly "
+            "addresses a failure."
+        ),
+    }
+    action_header = verdict_actions.get(verdict, verdict_actions["refine"])
+
     return f"""
 
 ## Feedback from previous EXECUTION_EVAL (round {latest["feedback_iteration"]})
 
-Your previous candidate did not promote.  Aggregate scores:
+**Verdict: `{verdict}`** — {action_header}
+
+Aggregate scores:
   candidate pass_rate: {latest["candidate_pass_rate"]:.2f}
   baseline pass_rate:  {latest["baseline_pass_rate"]:.2f}
+{floor_line}
   win_rate:            {latest["win_rate"]:.2f}
+{cost_block}
 
 Scenarios where the candidate did NOT beat the baseline:
 {scenario_lines}
 {overflow}
 
-Use these failures to guide this iteration.  Held-out scenarios are
-intentionally not shown — do not infer or attempt to enumerate them.
+Use these failures to guide this iteration, following the verdict-specific
+strategy above.  Held-out scenarios are intentionally not shown — do not
+infer or attempt to enumerate them.
 """

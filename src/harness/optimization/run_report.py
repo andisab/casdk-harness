@@ -72,6 +72,15 @@ class EvalRoundEntry:
     # and synthesizes "promote" / "refine" accordingly.  New code should
     # read ``verdict`` for the full distinction.
     verdict: str = "promote"
+    # I15: cost-per-success surfaces in per-version rows so the Gate
+    # column can label "reject_cost" with concrete numbers.  Both
+    # ``None`` when the arm had zero successful trials (auto-pass).
+    baseline_cost_per_success: float | None = None
+    candidate_cost_per_success: float | None = None
+    # Phase A.4.2 floor pass rate — populated only on first-promotion
+    # rounds.  Lets the report's summary table show "N candidates
+    # below floor" without re-deriving from optimization-state.
+    floor_pass_rate: float | None = None
 
 
 @dataclass
@@ -323,6 +332,17 @@ def load_eval_rounds(workspace_root: Path) -> list[EvalRound]:
                     verdict = verdict_raw
                 else:
                     verdict = "promote" if promoted else "refine"
+                # I15: pull cost-per-success + floor.  Defensive nulls;
+                # legacy aggregate files predating cgf-eval-ab 4.3 don't
+                # carry these fields, so renderer must degrade gracefully.
+                def _opt_float(v: Any) -> float | None:
+                    if v is None:
+                        return None
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return None
+
                 entries.append(
                     EvalRoundEntry(
                         path=raw.get("path", ""),
@@ -338,6 +358,13 @@ def load_eval_rounds(workspace_root: Path) -> list[EvalRound]:
                         scenarios=int(raw.get("scenarios", 0)),
                         promoted=promoted,
                         verdict=verdict,
+                        baseline_cost_per_success=_opt_float(
+                            raw.get("baseline_cost_per_success")
+                        ),
+                        candidate_cost_per_success=_opt_float(
+                            raw.get("candidate_cost_per_success")
+                        ),
+                        floor_pass_rate=_opt_float(raw.get("floor_pass_rate")),
                     )
                 )
             except (TypeError, ValueError):
@@ -379,6 +406,48 @@ _PHASE_ORDER: tuple[str, ...] = (
     "VALIDATE",
     "COMPLETE",
 )
+
+
+# I15 — verdict + cost rendering helpers.
+
+# Verdict → Gate column label.  Pre-cgf-eval-ab aggregate files only
+# carry promote/refine; new files distinguish reject_floor / reject_cost.
+# Operators read this column for at-a-glance triage so labels stay
+# under ~16 chars to keep table cells tight.
+_GATE_LABEL: dict[str, str] = {
+    "promote": "✅ Promote",
+    "refine": "❌ Refine",
+    "reject_cost": "❌ Reject cost",
+    "reject_floor": "❌ Reject floor",
+    "unwinnable": "⚠️ Unwinnable",
+}
+
+
+def _gate_label(verdict: str) -> str:
+    """Map a gate verdict to its Gate-column markdown label.
+
+    Unknown verdicts fall back to a literal echo so a future verdict
+    addition surfaces in the report rather than silently displaying
+    a generic ❌ Reject.
+    """
+    return _GATE_LABEL.get(verdict, f"❌ {verdict}")
+
+
+def _cps_label(entry: EvalRoundEntry) -> str:
+    """Render baseline / candidate cost-per-success as a column cell.
+
+    Returns ``"—"`` when either side is unavailable.  Format:
+    ``$0.12 → $0.18 (+50%)`` so the delta is the most-glanceable token.
+    """
+    b = entry.baseline_cost_per_success
+    c = entry.candidate_cost_per_success
+    if b is None or c is None:
+        return "—"
+    if b > 0:
+        delta_pct = (c - b) / b
+        return f"${b:.2f} → ${c:.2f} ({delta_pct:+.0%})"
+    # b == 0: candidate vs zero-cost baseline — render without delta.
+    return f"${b:.2f} → ${c:.2f}"
 
 
 def render(workspace_root: Path) -> str:
@@ -474,9 +543,21 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
     promoted = 0
     refined = 0
     rejected = 0
+    # I15: split rejected into sub-buckets so operators see whether the
+    # cost gate vs floor gate vs quality stage is the dominant rejection
+    # mode.  Sum still equals ``rejected`` (the old aggregate stays
+    # accurate for legacy readers).
+    rejected_cost = 0
+    rejected_floor = 0
+    rejected_quality = 0
     unwinnable = 0
     generate_failed = 0
     pending = 0
+    # I15: count of first-promotion rounds that actually ran the floor
+    # arm.  Surfaces "the floor mechanism is engaged" without forcing
+    # operators to grep optimization-state for last_promoted_version.
+    floor_ran = 0
+    floor_below = 0
 
     latest_verdict = _latest_verdict_by_path(eval_rounds)
     for path, res in resources.items():
@@ -496,6 +577,24 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
                 refined += 1
             else:
                 rejected += 1
+                v = (verdict.verdict or "").lower()
+                if v == "reject_cost":
+                    rejected_cost += 1
+                elif v == "reject_floor":
+                    rejected_floor += 1
+                else:
+                    rejected_quality += 1
+        # I15: tally floor-arm signal across all resources / rounds.  A
+        # floor result lives only on first-promotion rounds; once an
+        # incumbent exists, floor_pass_rate is None.  ``floor_below``
+        # counts cases where candidate < floor (the safety-net catch).
+        for r in eval_rounds:
+            for e in r.entries:
+                if e.path != path or e.floor_pass_rate is None:
+                    continue
+                floor_ran += 1
+                if e.candidate_pass_rate < e.floor_pass_rate:
+                    floor_below += 1
 
     mean_quality = _mean_quality(resources)
 
@@ -508,15 +607,36 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
         f"| ✅ Promoted | {promoted} |",
         f"| 🔄 Refined (recovered via feedback) | {refined} |",
         f"| ❌ Rejected | {rejected} |",
-        f"| ⚠️ Unwinnable | {unwinnable} |",
-        f"| ❌ GENERATE failed | {generate_failed} |",
-        f"| ⏸ Pending | {pending} |",
-        (
-            f"| Mean quality (overall) | {mean_quality:.2f} |"
-            if mean_quality is not None
-            else "| Mean quality (overall) | — |"
-        ),
     ]
+    # I15 sub-breakdown — only emit when at least one was hit, to keep
+    # the table compact for clean runs.
+    if rejected_cost or rejected_floor or rejected_quality:
+        lines.append(
+            f"|     · cost regression | {rejected_cost} |"
+        )
+        lines.append(
+            f"|     · below floor | {rejected_floor} |"
+        )
+        lines.append(
+            f"|     · quality regression | {rejected_quality} |"
+        )
+    lines.extend(
+        [
+            f"| ⚠️ Unwinnable | {unwinnable} |",
+            f"| ❌ GENERATE failed | {generate_failed} |",
+            f"| ⏸ Pending | {pending} |",
+        ]
+    )
+    if floor_ran:
+        lines.append(
+            f"| 🏁 Floor arm ran | {floor_ran} time(s); "
+            f"candidate below floor in {floor_below} |"
+        )
+    lines.append(
+        f"| Mean quality (overall) | {mean_quality:.2f} |"
+        if mean_quality is not None
+        else "| Mean quality (overall) | — |"
+    )
     return "\n".join(lines)
 
 
@@ -693,17 +813,29 @@ def _render_per_resource(
             continue
 
         body: list[str] = ["", "<details>", f"<summary>{summary_line}</summary>", ""]
-        body.append("| Version | Pass rate | Quality | Words | Iterations | Gate |")
-        body.append("|---|---|---|---|---|---|")
+        body.append(
+            "| Version | Pass rate | Quality | Words | Iterations | "
+            "Cost/success | Gate |"
+        )
+        body.append("|---|---|---|---|---|---|---|")
         for v in versions_sorted:
             v_verdict = verdicts_by_version.get(v)
             v_summary = path_summaries.get(v)
             pass_rate = (
                 f"{v_verdict.candidate_pass_rate:.2f}" if v_verdict else "—"
             )
+            # I15: verdict-aware Gate column.  Collapse pre-cgf-eval-ab
+            # legacy "refine" / "reject" into a single ❌ Reject for
+            # backcompat; new verdicts get their own labels so operators
+            # can spot reject_cost vs reject_floor at a glance.
             gate = "—"
             if v_verdict is not None:
-                gate = "✅ Promote" if v_verdict.promoted else "❌ Reject"
+                gate = _gate_label(v_verdict.verdict)
+            # I15: cost-per-success column.  When both baseline and
+            # candidate have signal, render "$baseline → $candidate
+            # (Δ%)" so a glance shows whether cost regressed.  When
+            # either is None, show "—".
+            cps = _cps_label(v_verdict) if v_verdict is not None else "—"
             quality = (
                 f"{v_summary.quality_overall:.2f}"
                 if v_summary and v_summary.quality_overall
@@ -721,7 +853,7 @@ def _render_per_resource(
             )
             body.append(
                 f"| v{v} | {pass_rate} | {quality} | {words} | "
-                f"{iterations} | {gate} |"
+                f"{iterations} | {cps} | {gate} |"
             )
 
         latest_summary = path_summaries.get(versions_sorted[-1])

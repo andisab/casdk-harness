@@ -201,13 +201,23 @@ def _ginputs(
     candidate_cps: float | None,
     incumbent_cps: float | None,
     tau: float = 0.10,
+    candidate_pass: float | None = None,
+    incumbent_pass: float | None = None,
 ) -> GateInputs:
-    """Quality always passes (candidate=1.0, incumbent=0.5) unless asked
-    otherwise; isolates the cost stage."""
-    candidate_pass = 1.0 if quality_passes else 0.0
+    """Quality stays at parity (1.0 == 1.0) by default so quality_delta=0
+    and the I15 quality-bonus contributes nothing — letting these tests
+    exercise the cost stage in isolation.  Older tests assumed quality_delta=0
+    implicitly; after I15 we make it explicit.  Pass ``quality_passes=False``
+    to force a quality-stage failure, or override ``candidate_pass`` /
+    ``incumbent_pass`` to test the quality-bonus behaviour.
+    """
+    cp = candidate_pass if candidate_pass is not None else (
+        1.0 if quality_passes else 0.0
+    )
+    ip = incumbent_pass if incumbent_pass is not None else 1.0
     return GateInputs(
-        candidate_pass_rate=candidate_pass,
-        incumbent_pass_rate=0.5,
+        candidate_pass_rate=cp,
+        incumbent_pass_rate=ip,
         floor_pass_rate=None,
         is_first_promotion=False,
         epsilon=0.0,
@@ -308,3 +318,148 @@ class TestEnvKnob:
         regression allowed") for safety."""
         monkeypatch.setenv("CGF_TOKEN_REGRESSION_TOLERANCE", "-0.5")
         assert _resolve_cost_tolerance() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestQualityScaledCostTolerance — I15
+#
+# When quality improves over the incumbent, ``effective_cost_tolerance``
+# scales ``τ`` upward so cost-per-success regressions proportional to the
+# quality gain still promote.  Quality drops never tighten the gate
+# (max(0, …) clamp); the quality-stage check has already handled them.
+# ---------------------------------------------------------------------------
+
+
+class TestQualityScaledCostTolerance:
+    def test_quality_flat_uses_base_tau(self) -> None:
+        """Δquality = 0 → effective τ == base τ (no I15 effect)."""
+        from harness.optimization.gating import effective_cost_tolerance
+
+        assert effective_cost_tolerance(
+            base_tau=0.10, quality_delta=0.0, bonus_factor=1.0
+        ) == 0.10
+
+    def test_quality_drop_clamped_to_base_tau(self) -> None:
+        """Δquality < 0 must NOT tighten the cost gate.
+
+        Quality regression is handled by the incumbent stage upstream;
+        the cost gate's job is "cost regression on equal/better quality."
+        """
+        from harness.optimization.gating import effective_cost_tolerance
+
+        assert effective_cost_tolerance(
+            base_tau=0.10, quality_delta=-0.20, bonus_factor=1.0
+        ) == 0.10
+
+    def test_small_quality_gain_grants_proportional_bonus(self) -> None:
+        """+13pp quality → +13pp τ headroom (with bonus_factor=1.0)."""
+        from harness.optimization.gating import effective_cost_tolerance
+
+        tau = effective_cost_tolerance(
+            base_tau=0.10, quality_delta=0.13, bonus_factor=1.0
+        )
+        assert abs(tau - 0.23) < 1e-9
+
+    def test_large_quality_gain_hits_bonus_cap(self) -> None:
+        """+60pp quality with cap=0.5 → bonus clamped at 0.5; τ_eff = 0.6."""
+        from harness.optimization.gating import effective_cost_tolerance
+
+        tau = effective_cost_tolerance(
+            base_tau=0.10,
+            quality_delta=0.60,
+            bonus_factor=1.0,
+        )
+        assert abs(tau - 0.60) < 1e-9
+
+    def test_bonus_factor_two_doubles_per_pp_credit(self) -> None:
+        """bonus_factor=2.0 → 2pp τ per pp quality."""
+        from harness.optimization.gating import effective_cost_tolerance
+
+        tau = effective_cost_tolerance(
+            base_tau=0.10, quality_delta=0.10, bonus_factor=2.0
+        )
+        assert abs(tau - 0.30) < 1e-9
+
+    def test_bonus_factor_zero_disables_scaling(self) -> None:
+        """bonus_factor=0 reverts to pure Phase A.4.3 behaviour."""
+        from harness.optimization.gating import effective_cost_tolerance
+
+        for delta in [-0.5, 0.0, 0.3, 1.0]:
+            assert effective_cost_tolerance(
+                base_tau=0.10, quality_delta=delta, bonus_factor=0.0
+            ) == 0.10
+
+    def test_decide_promotes_when_quality_win_offsets_cost_growth(self) -> None:
+        """Real I15 scenario: +13pp quality, +16% cps growth.
+
+        Pre-I15: refine (cost gate ceiling = 1.10, candidate at 1.16
+        exceeds → reject_cost).  Post-I15: effective τ = 0.23, ceiling
+        = 1.23, candidate at 1.16 passes → promote.
+        """
+        v = decide(_ginputs(
+            incumbent_pass=0.67,
+            candidate_pass=0.80,    # +0.13 → +0.13 τ bonus
+            candidate_cps=1.16,
+            incumbent_cps=1.0,
+            tau=0.10,
+        ))
+        assert v == "promote"
+
+    def test_decide_rejects_when_cost_growth_exceeds_quality_credit(self) -> None:
+        """Quality +5pp, cost +25% → still rejects (5pp credit not enough)."""
+        v = decide(_ginputs(
+            incumbent_pass=0.67,
+            candidate_pass=0.72,    # +0.05 → +0.05 τ bonus
+            candidate_cps=1.25,
+            incumbent_cps=1.0,
+            tau=0.10,
+        ))
+        # Effective τ = 0.15 → ceiling = 1.15.  Candidate at 1.25 > 1.15.
+        assert v == "reject_cost"
+
+
+# ---------------------------------------------------------------------------
+# TestCostQualityBonusEnv — CGF_COST_QUALITY_BONUS parsing
+# ---------------------------------------------------------------------------
+
+
+class TestCostQualityBonusEnv:
+    def test_default_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.optimization.gating import (
+            DEFAULT_COST_QUALITY_BONUS,
+            _resolve_cost_quality_bonus,
+        )
+
+        monkeypatch.delenv("CGF_COST_QUALITY_BONUS", raising=False)
+        assert _resolve_cost_quality_bonus() == DEFAULT_COST_QUALITY_BONUS == 1.0
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.optimization.gating import _resolve_cost_quality_bonus
+
+        monkeypatch.setenv("CGF_COST_QUALITY_BONUS", "2.5")
+        assert _resolve_cost_quality_bonus() == 2.5
+
+    def test_zero_disables_scaling(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.optimization.gating import _resolve_cost_quality_bonus
+
+        monkeypatch.setenv("CGF_COST_QUALITY_BONUS", "0")
+        assert _resolve_cost_quality_bonus() == 0.0
+
+    def test_negative_clamped_to_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Negative would PUNISH quality gains with tighter cost gate —
+        nonsensical; clamp to 0 (revert to base τ behaviour)."""
+        from harness.optimization.gating import _resolve_cost_quality_bonus
+
+        monkeypatch.setenv("CGF_COST_QUALITY_BONUS", "-1.0")
+        assert _resolve_cost_quality_bonus() == 0.0
+
+    def test_invalid_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from harness.optimization.gating import (
+            DEFAULT_COST_QUALITY_BONUS,
+            _resolve_cost_quality_bonus,
+        )
+
+        monkeypatch.setenv("CGF_COST_QUALITY_BONUS", "abc")
+        assert _resolve_cost_quality_bonus() == DEFAULT_COST_QUALITY_BONUS

@@ -898,6 +898,138 @@ class TestFeedbackBlockBuilder:
         assert "s08" not in block
         assert "plus 7 more" in block
 
+    # ----- I15: verdict-branched feedback -----------------------------
+
+    @staticmethod
+    def _feedback_history(verdict: str, **overrides: object) -> list[dict]:
+        """Build a feedback_history list with a single resource entry.
+
+        Overrides any default field; the goal is to exercise the
+        verdict-specific action-header branches in
+        :func:`_build_feedback_block`.
+        """
+        entry: dict[str, object] = {
+            "path": "agents/iac.md",
+            "verdict": verdict,
+            "candidate_pass_rate": 0.67,
+            "baseline_pass_rate": 0.67,
+            "floor_pass_rate": None,
+            "win_rate": 0.0,
+            "baseline_cost_per_success": 0.10,
+            "candidate_cost_per_success": 0.17,
+            "cost_per_success_delta_pct": 0.70,
+            "cost_tolerance": 0.10,
+            "effective_cost_tolerance": 0.10,
+            "failing_scenarios": [],
+        }
+        entry.update(overrides)
+        return [{"feedback_iteration": 1, "regressions": [entry]}]
+
+    def test_verdict_reject_cost_emits_trim_directive(self) -> None:
+        """The reject_cost branch must instruct the optimizer to TRIM."""
+        from harness.optimization._orchestrator_phases.iterate import (
+            _build_feedback_block,
+        )
+
+        history = self._feedback_history("reject_cost")
+        block = _build_feedback_block(history, "agents/iac.md")
+        assert "reject_cost" in block
+        assert "TRIM" in block.upper()
+        assert "cost regression" in block.lower()
+        assert "$0.1000" in block or "0.10" in block  # baseline cps surfaces
+        assert "+70.0%" in block or "70.0%" in block  # cps delta surfaces
+
+    def test_verdict_reject_floor_emits_below_floor_directive(self) -> None:
+        """The reject_floor branch must mention the bare-model floor and
+        instruct to TRIM AGGRESSIVELY."""
+        from harness.optimization._orchestrator_phases.iterate import (
+            _build_feedback_block,
+        )
+
+        history = self._feedback_history(
+            "reject_floor",
+            floor_pass_rate=0.67,
+            candidate_pass_rate=0.33,
+        )
+        block = _build_feedback_block(history, "agents/iac.md")
+        assert "reject_floor" in block
+        assert "below floor" in block.lower() or "bare-model" in block.lower()
+        assert "TRIM" in block.upper()
+        assert "floor (bare-model)" in block.lower() or "floor" in block.lower()
+
+    def test_verdict_refine_emits_add_coverage_directive(self) -> None:
+        """The refine branch is the original Phase A semantic: quality
+        below incumbent, add competency coverage."""
+        from harness.optimization._orchestrator_phases.iterate import (
+            _build_feedback_block,
+        )
+
+        history = self._feedback_history(
+            "refine",
+            candidate_pass_rate=0.33,
+            baseline_pass_rate=0.67,
+        )
+        block = _build_feedback_block(history, "agents/iac.md")
+        assert "refine" in block.lower()
+        assert "REFINEMENT" in block or "ADD COMPETENCY" in block
+
+    def test_cost_block_omitted_when_cps_unavailable(self) -> None:
+        """When either side has None cost-per-success, the cost block
+        is suppressed so we don't render nonsense."""
+        from harness.optimization._orchestrator_phases.iterate import (
+            _build_feedback_block,
+        )
+
+        history = self._feedback_history(
+            "refine",
+            baseline_cost_per_success=None,
+            candidate_cost_per_success=None,
+            cost_per_success_delta_pct=None,
+        )
+        block = _build_feedback_block(history, "agents/iac.md")
+        assert "cost-per-success" not in block.lower()
+        assert "$" not in block  # no dollar figures
+
+    def test_legacy_feedback_entry_without_verdict_defaults_to_refine(
+        self,
+    ) -> None:
+        """A pre-I15 feedback_history entry has no verdict field.  The
+        builder must default to the refine branch for backcompat — old
+        on-disk state must still load and render usefully.
+        """
+        from harness.optimization._orchestrator_phases.iterate import (
+            _build_feedback_block,
+        )
+
+        # Pre-I15 shape: only the original 5 fields.
+        history = [
+            {
+                "feedback_iteration": 1,
+                "regressions": [
+                    {
+                        "path": "agents/iac.md",
+                        "candidate_pass_rate": 0.33,
+                        "baseline_pass_rate": 0.67,
+                        "win_rate": 0.0,
+                        "failing_scenarios": [
+                            {
+                                "scenario_id": "s1",
+                                "level": "unit",
+                                "outcome": "baseline_win",
+                                "baseline_pass_rate": 0.7,
+                                "candidate_pass_rate": 0.3,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+        block = _build_feedback_block(history, "agents/iac.md")
+        assert "refine" in block.lower()
+        assert "REFINEMENT" in block or "ADD COMPETENCY" in block
+        # No crash, no KeyError, no missing-field exceptions.
+        assert "round 1" in block
+
 
 # =============================================================================
 # F17 — EXECUTION_EVAL skip unchanged resources
