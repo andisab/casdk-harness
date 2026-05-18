@@ -127,9 +127,19 @@ def effective_cost_tolerance(
 class GateInputs:
     """The numbers ``Gate.decide`` operates on.
 
-    All pass-rates are in [0.0, 1.0].  ``floor_pass_rate`` is ``None``
-    when the floor arm did not run — which is the common case after
-    the first promotion (see module docstring).
+    All pass-rates are in [0.0, 1.0].
+
+    **Naming gotcha (I11).** ``floor_pass_rate`` reads as "the pass rate
+    of the floor (bare-model) arm" — that is NOT what it means here.
+    It is the floor arm's **own** pass rate (i.e. how the bare model
+    scored on its own arm of the scenario suite).  Compare against
+    ``candidate_pass_rate`` directly to detect "candidate is worse than
+    no prompt at all."  Specifically the floor stage checks
+    ``candidate_pass_rate >= floor_pass_rate + 2 * epsilon``.
+
+    ``floor_pass_rate`` is ``None`` when the floor arm did not run —
+    which is the common case after the first promotion (see module
+    docstring).
 
     Phase A refinement 4.3: cost-per-success inputs.  ``None`` for
     either side means "no signal" and the cost stage auto-passes.

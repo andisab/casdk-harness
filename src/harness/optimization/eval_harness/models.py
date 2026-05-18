@@ -233,8 +233,18 @@ class EvalResults:
     total_tokens: int
     # Phase A refinement 4.2: floor arm aggregate, populated only on
     # first-time-promotion runs.  ``floor_pass_rate`` is the mean
-    # per-scenario floor arm pass-rate; ``None``-equivalent value is
-    # ``floor=None`` (i.e. the field below is also None).
+    # per-scenario floor arm pass-rate (i.e. how the bare-model arm
+    # scored) — this is the value the gate compares against.
+    #
+    # I11 — naming gotcha: ``floor`` is a ``SubsetStats`` whose
+    # ``candidate_pass_rate`` field carries ``floor_pass_rate`` (the
+    # bare-model score), and whose ``baseline_pass_rate`` field is
+    # always 0.0.  The reuse of the SubsetStats shape is structural
+    # vestige; nothing currently reads the nested ``floor`` block.
+    # **Always read ``EvalResults.floor_pass_rate`` for the
+    # bare-model score** — never trust the nested SubsetStats fields,
+    # which were repurposed in a way that doesn't match the surrounding
+    # ``held_out`` / ``by_level`` / ``by_tag`` semantics.
     floor: SubsetStats | None = None
     floor_pass_rate: float | None = None
     # Phase A refinement 4.3: cost-per-success gate inputs.  ``None``

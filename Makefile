@@ -643,7 +643,7 @@ smoke: ## Run a smoke fixture (FIXTURE=<name>, e.g. python-expert | iac-team)
 	echo "$(CYAN)==> Running optimization$(NC)"; \
 	if grep -q "## Capabilities" "$$WORKSPACE_DIR/SPEC.md" 2>/dev/null; then \
 		echo "$(CYAN)    (multi-resource path)$(NC)"; \
-		docker compose $(COMPOSE_FILES) exec -T main-agent python -c "\
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -u -c "\
 from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization; \
 import asyncio; \
 result = asyncio.run(run_multi_resource_optimization('/workspace/$(FIXTURE)', verbose=True)); \
@@ -651,7 +651,7 @@ print('Success!' if result.success else f'Failed: {result.error}')"; \
 		OPT_EXIT=$$?; \
 	else \
 		echo "$(CYAN)    (single-resource path)$(NC)"; \
-		docker compose $(COMPOSE_FILES) exec -T main-agent python -m harness.cgf_session --path "/workspace/$(FIXTURE)" --non-interactive; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -u -m harness.cgf_session --path "/workspace/$(FIXTURE)" --non-interactive; \
 		OPT_EXIT=$$?; \
 	fi; \
 	echo ""; \
