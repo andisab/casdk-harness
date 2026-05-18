@@ -30,21 +30,48 @@ echo "==> iac-team smoke: pre-run setup"
 # ---------------------------------------------------------------------------
 # 1. Tooling sanity check (always runs)
 # ---------------------------------------------------------------------------
-# These CLIs need to be on PATH inside the main-agent container for the
-# graders. The harness Dockerfile installs them; this is a probe, not a
-# hard gate (some graders will work even if a subset is missing).
+# These CLIs need to be on PATH **inside the main-agent container** —
+# the graders run there, not on the host. The Dockerfile installs them
+# (see agents/main/Dockerfile § "IaC eval tooling"); this is a probe to
+# catch image-build drift, not a hard gate (some graders will work even
+# if a subset is missing).
+#
+# I1 fix: probe inside the container via `docker compose exec` so we
+# report what the graders will actually see. Falls back to host-side
+# probing if the container isn't running (e.g. user is running setup.sh
+# in isolation for debugging). The host-side check is informational
+# only — the graders don't run on the host.
 
+probe_inside_container() {
+    local tool="$1"
+    # `command` is a shell builtin, not an executable; wrap in `sh -c`
+    # so `docker exec` can find it.  Bare `docker exec -T main-agent
+    # command -v X` fails with "command: executable not found in PATH".
+    docker compose exec -T main-agent sh -c "command -v '$tool'" >/dev/null 2>&1
+}
+
+# Decide probe scope: use the container if it's running, otherwise fall
+# back to the host (with a header that says so).
+if docker compose ps main-agent 2>/dev/null | grep -q 'running\|Up'; then
+    probe_scope="container"
+    probe_cmd="probe_inside_container"
+else
+    probe_scope="host (container not running — fallback probe)"
+    probe_cmd="command -v"
+fi
+
+echo "    Probing for IaC graders' required CLIs in: $probe_scope"
 missing_tools=()
 for tool in kubectl helm terraform trivy kubeconform; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
+    if ! $probe_cmd "$tool" >/dev/null 2>&1; then
         missing_tools+=("$tool")
     fi
 done
 
 if [ "${#missing_tools[@]}" -gt 0 ]; then
-    echo "    WARN: missing CLI tools: ${missing_tools[*]}"
-    echo "          (eval graders that need them will fail; consider"
-    echo "           rebuilding the harness image)"
+    echo "    WARN: missing CLI tools in $probe_scope: ${missing_tools[*]}"
+    echo "          (eval graders that need them will fail; rebuild the"
+    echo "           harness image with 'make build' if running in container)"
 else
     echo "    All required CLIs present (kubectl, helm, terraform, trivy, kubeconform)"
 fi
