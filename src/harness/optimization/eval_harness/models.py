@@ -28,11 +28,18 @@ ScenarioOutcome = Literal["baseline_win", "candidate_win", "tie", "no_decision"]
 
 @dataclass
 class EvalConfig:
-    """Suite-level run configuration (mirrors ``config`` in the schema)."""
+    """Suite-level run configuration (mirrors ``config`` in the schema).
+
+    ``eval_model`` is optional (I6): when ``None``, the runner resolves
+    the judge model via ``CGF_JUDGE_MODEL`` env (default opus per Phase
+    A.4.1).  Suites that hardcode a value here override every operator's
+    env choice silently — the architect template no longer emits this
+    field for that reason.
+    """
 
     trials_per_scenario: int = 3
     timeout_seconds: int = 300
-    eval_model: str = "claude-opus-4-5-20250929"
+    eval_model: str | None = None
     token_budget: int | None = None
     held_out_fraction: float = 0.25
 

@@ -54,8 +54,7 @@
         },
         "eval_model": {
           "type": "string",
-          "description": "Default LLM-judge model identifier (e.g., 'claude-opus-4-5-20250929'). Overridable per llm_judge grader.",
-          "default": "claude-opus-4-5-20250929"
+          "description": "OPTIONAL — leave unset to use the CGF_JUDGE_MODEL env var (default opus per Phase A.4.1). Setting this here overrides every operator's env choice; only do that when you need a fixed judge identity for replay/calibration. Accepts short names (haiku/sonnet/opus) or full model IDs; short names resolve via MODEL_SHORTHAND_MAP. Overridable per llm_judge grader."
         },
         "token_budget": {
           "type": "integer",

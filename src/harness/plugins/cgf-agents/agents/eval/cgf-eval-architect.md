@@ -177,7 +177,10 @@ description: "Eval suite for <plugin_name>"
 config:
   trials_per_scenario: 1   # smoke-test phase — fast end-to-end. raise to 3+ for statistical stability in Phase B
   timeout_seconds: 300
-  eval_model: "claude-sonnet-4-5-20250929"
+  # eval_model: OMIT this field. The runner resolves the judge model
+  # via the CGF_JUDGE_MODEL env var (default: opus); hardcoding a value
+  # here would override every operator's env choice silently and
+  # bypass the Phase A.4.1 opus-judge default.
   held_out_fraction: 0.33
 
 scenarios:

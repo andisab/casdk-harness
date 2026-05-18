@@ -119,10 +119,17 @@ def _build_suite(doc: dict[str, Any]) -> EvalSuite:
 
 
 def _build_config(raw: dict[str, Any]) -> EvalConfig:
+    # I6: ``eval_model`` is intentionally optional and defaults to None.
+    # When None, the runner falls through to ``CGF_JUDGE_MODEL`` env
+    # (default opus per Phase A.4.1).  Passing an explicit string here —
+    # even via a stale loader default — would silently override the
+    # operator's env choice and bypass the opus-judge intent.
+    raw_eval_model = raw.get("eval_model")
+    eval_model = str(raw_eval_model) if raw_eval_model else None
     return EvalConfig(
         trials_per_scenario=int(raw.get("trials_per_scenario", 3)),
         timeout_seconds=int(raw.get("timeout_seconds", 300)),
-        eval_model=str(raw.get("eval_model", "claude-opus-4-5-20250929")),
+        eval_model=eval_model,
         token_budget=(
             int(raw["token_budget"]) if "token_budget" in raw else None
         ),
