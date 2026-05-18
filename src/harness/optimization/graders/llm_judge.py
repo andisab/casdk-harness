@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from harness.config import MODEL_SHORTHAND_MAP
 from harness.optimization.graders.base import BaseGrader, GraderResult
 from harness.optimization.graders.scenario import EvalScenario
 from harness.optimization.graders.transcript import AgentTranscript
@@ -31,21 +32,21 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# Maps short model names to full model IDs.  Mirrors the table in
-# ``harness.optimization.testcases.validators`` for consistency.
-_MODEL_ALIAS = {
-    "haiku": "claude-3-5-haiku-20241022",
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-5-20250929",
-}
-
-_DEFAULT_JUDGE_MODEL = "claude-opus-4-5-20250929"
+# Short-name → full model ID resolution is centralized in
+# ``harness.config.MODEL_SHORTHAND_MAP`` (the single source of truth for
+# both the harness and the CGF graders).  We expose ``_DEFAULT_JUDGE_MODEL``
+# as a derived constant so callers that want "the canonical judge model"
+# get it via one import, but ``MODEL_SHORTHAND_MAP`` is the only place
+# the IDs live.
+_DEFAULT_JUDGE_MODEL = MODEL_SHORTHAND_MAP["opus"]
 
 
 def _resolve_judge_model(model: str | None) -> str:
     """Apply the precedence: explicit param > env var > default opus.
 
-    Short names (haiku/sonnet/opus) are expanded to full model IDs.
+    Short names (haiku/sonnet/opus) are expanded to full model IDs via
+    :data:`harness.config.MODEL_SHORTHAND_MAP` — same table the rest of
+    the harness uses, so a single edit there picks up every consumer.
 
     Phase A refinement 4.1: WARN when the resolved judge model matches
     ``CGF_DESIGN_MODEL`` (self-preference bias — judges prefer text from
@@ -54,11 +55,11 @@ def _resolve_judge_model(model: str | None) -> str:
     judging must differ from the agent producing.
     """
     candidate = model or os.environ.get("CGF_JUDGE_MODEL") or _DEFAULT_JUDGE_MODEL
-    resolved = _MODEL_ALIAS.get(candidate, candidate)
+    resolved = MODEL_SHORTHAND_MAP.get(candidate, candidate)
 
     design_raw = os.environ.get("CGF_DESIGN_MODEL")
     if design_raw:
-        design_resolved = _MODEL_ALIAS.get(design_raw, design_raw)
+        design_resolved = MODEL_SHORTHAND_MAP.get(design_raw, design_raw)
         if design_resolved == resolved:
             logger.warning(
                 "judge model matches design/optimizer model — "

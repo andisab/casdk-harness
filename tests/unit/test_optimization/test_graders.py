@@ -503,11 +503,44 @@ class TestLLMJudgeGrader:
             assert not r.passed
 
     def test_model_alias_resolves(self) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
         from harness.optimization.graders.llm_judge import _resolve_judge_model
 
-        assert _resolve_judge_model("opus") == "claude-opus-4-5-20250929"
-        assert _resolve_judge_model("sonnet") == "claude-sonnet-4-20250514"
-        assert _resolve_judge_model("haiku") == "claude-3-5-haiku-20241022"
+        # Aliases resolve to the canonical map's values — no duplication.
+        assert _resolve_judge_model("opus") == MODEL_SHORTHAND_MAP["opus"]
+        assert _resolve_judge_model("sonnet") == MODEL_SHORTHAND_MAP["sonnet"]
+        assert _resolve_judge_model("haiku") == MODEL_SHORTHAND_MAP["haiku"]
+
+    def test_model_alias_targets_current_versions(self) -> None:
+        """Guards I14: the alias map MUST track current Anthropic model IDs.
+
+        When Anthropic ships a newer minor (e.g. Sonnet 4.7), update
+        ``MODEL_SHORTHAND_MAP`` in ``harness/config.py`` and bump these
+        assertions in lockstep.  If this test fails because the alias
+        moved forward by a minor version, you almost certainly want to
+        update the test; if it fails because the alias regressed to an
+        older version, that's the bug this test was written to catch.
+        """
+        from harness.config import MODEL_SHORTHAND_MAP
+
+        # Current canonical pair as of 2026-05.  Unversioned forms
+        # (major.minor without date suffix) auto-resolve to latest patch.
+        assert MODEL_SHORTHAND_MAP["opus"] == "claude-opus-4-7"
+        assert MODEL_SHORTHAND_MAP["sonnet"] == "claude-sonnet-4-6"
+        assert MODEL_SHORTHAND_MAP["haiku"] == "claude-haiku-4-5"
+
+    def test_llm_judge_imports_canonical_alias_map(self) -> None:
+        """Single-source guarantee: llm_judge has no local alias table.
+
+        Prevents the I14 regression — a stale ``_MODEL_ALIAS`` dict
+        living inside ``llm_judge.py`` that drifts from ``config.py``.
+        """
+        from harness.optimization.graders import llm_judge as llm_judge_module
+
+        assert not hasattr(llm_judge_module, "_MODEL_ALIAS"), (
+            "llm_judge must not own a private _MODEL_ALIAS dict; "
+            "import MODEL_SHORTHAND_MAP from harness.config instead"
+        )
 
     def test_model_explicit_passthrough(self) -> None:
         from harness.optimization.graders.llm_judge import _resolve_judge_model
@@ -519,16 +552,18 @@ class TestLLMJudgeGrader:
         )
 
     def test_model_default_when_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
         from harness.optimization.graders.llm_judge import _resolve_judge_model
 
         monkeypatch.delenv("CGF_JUDGE_MODEL", raising=False)
-        assert _resolve_judge_model(None) == "claude-opus-4-5-20250929"
+        assert _resolve_judge_model(None) == MODEL_SHORTHAND_MAP["opus"]
 
     def test_model_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
         from harness.optimization.graders.llm_judge import _resolve_judge_model
 
         monkeypatch.setenv("CGF_JUDGE_MODEL", "haiku")
-        assert _resolve_judge_model(None) == "claude-3-5-haiku-20241022"
+        assert _resolve_judge_model(None) == MODEL_SHORTHAND_MAP["haiku"]
 
 
 # =============================================================================

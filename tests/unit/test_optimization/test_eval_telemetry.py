@@ -439,18 +439,21 @@ class TestLLMJudgeNoDecisionCounter:
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(side_effect=RuntimeError("boom"))
         with patch.object(llm_judge_module, "get_judge_client", return_value=mock_client):
+            from harness.config import MODEL_SHORTHAND_MAP
+
+            opus_id = MODEL_SHORTHAND_MAP["opus"]
             grader = LLMJudgeGrader(rubric="Score 1-5.", eval_model="opus")
             transcript = AgentTranscript(final_output="x")
             scenario = EvalScenario(id="x", level="unit", prompt="hi")
 
             before = _counter_value(
                 harness_eval_judge_no_decision_total,
-                model="claude-opus-4-5-20250929",
+                model=opus_id,
             )
             result = await grader.grade(transcript, scenario)
             after = _counter_value(
                 harness_eval_judge_no_decision_total,
-                model="claude-opus-4-5-20250929",
+                model=opus_id,
             )
 
         assert result.no_decision is True

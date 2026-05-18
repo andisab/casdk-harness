@@ -103,19 +103,25 @@ class TestJudgePromptIsolation:
 
 class TestJudgeModelResolution:
     def test_explicit_param_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
+
         monkeypatch.setenv("CGF_JUDGE_MODEL", "sonnet")
         monkeypatch.delenv("CGF_DESIGN_MODEL", raising=False)
-        assert _resolve_judge_model("opus") == "claude-opus-4-5-20250929"
+        assert _resolve_judge_model("opus") == MODEL_SHORTHAND_MAP["opus"]
 
     def test_env_when_no_param(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
+
         monkeypatch.setenv("CGF_JUDGE_MODEL", "sonnet")
         monkeypatch.delenv("CGF_DESIGN_MODEL", raising=False)
-        assert _resolve_judge_model(None) == "claude-sonnet-4-20250514"
+        assert _resolve_judge_model(None) == MODEL_SHORTHAND_MAP["sonnet"]
 
     def test_default_when_neither(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from harness.config import MODEL_SHORTHAND_MAP
+
         monkeypatch.delenv("CGF_JUDGE_MODEL", raising=False)
         monkeypatch.delenv("CGF_DESIGN_MODEL", raising=False)
-        assert _resolve_judge_model(None) == "claude-opus-4-5-20250929"
+        assert _resolve_judge_model(None) == MODEL_SHORTHAND_MAP["opus"]
 
     def test_warn_when_judge_equals_design(
         self, monkeypatch: pytest.MonkeyPatch
@@ -127,14 +133,21 @@ class TestJudgeModelResolution:
         Uses ``structlog.testing.capture_logs`` because the harness routes
         warnings through structlog, not stdlib ``logging`` — pytest's
         ``caplog`` fixture sees nothing.
+
+        I14 regression guard: with the alias map fixed, both
+        ``CGF_JUDGE_MODEL=sonnet`` and ``CGF_DESIGN_MODEL=sonnet`` now
+        resolve to the SAME ID (previously they'd resolve to two
+        different Sonnet builds, silencing the WARN).
         """
         import structlog
+
+        from harness.config import MODEL_SHORTHAND_MAP
 
         monkeypatch.setenv("CGF_JUDGE_MODEL", "sonnet")
         monkeypatch.setenv("CGF_DESIGN_MODEL", "sonnet")
         with structlog.testing.capture_logs() as logs:
             resolved = _resolve_judge_model(None)
-        assert resolved == "claude-sonnet-4-20250514"
+        assert resolved == MODEL_SHORTHAND_MAP["sonnet"]
         warn_events = [e for e in logs if e.get("log_level") == "warning"]
         assert any(
             "self-preference" in e.get("event", "").lower() for e in warn_events
@@ -203,8 +216,8 @@ class TestJudgeRubricHash:
         from harness.optimization.graders.llm_judge import judge_rubric_hash
 
         # The function doesn't take a transcript at all — pin that.
-        h1 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
-        h2 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
+        h1 = judge_rubric_hash("same rubric", "claude-opus-4-7")
+        h2 = judge_rubric_hash("same rubric", "claude-opus-4-7")
         assert h1 == h2
 
     def test_changes_on_rubric_change(self) -> None:
@@ -219,8 +232,8 @@ class TestJudgeRubricHash:
         produce different judgments, so the kappa key must distinguish."""
         from harness.optimization.graders.llm_judge import judge_rubric_hash
 
-        h1 = judge_rubric_hash("same rubric", "claude-opus-4-5-20250929")
-        h2 = judge_rubric_hash("same rubric", "claude-sonnet-4-20250514")
+        h1 = judge_rubric_hash("same rubric", "claude-opus-4-7")
+        h2 = judge_rubric_hash("same rubric", "claude-sonnet-4-6")
         assert h1 != h2
 
     def test_changes_on_system_prompt_change(self) -> None:
