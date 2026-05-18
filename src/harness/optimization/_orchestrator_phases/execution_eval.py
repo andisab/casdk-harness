@@ -852,6 +852,25 @@ async def _eval_single_resource(
                         win_rate=f"{results.win_rate:.2f}",
                     )
 
+        # I10: stamp the authoritative verdict back into the per-resource
+        # ``eval-results.json``.  ``EvalHarness.run`` already wrote the
+        # file pre-gate (the harness doesn't know about ``last_promoted_version``
+        # or env-driven τ); we rewrite it now so on-disk readers see
+        # promote / refine / reject_floor / reject_cost / unwinnable
+        # rather than having to derive it from the aggregate JSON.
+        # Failure here must not crash the phase — observability bug
+        # shouldn't bring down the pipeline.
+        results.verdict = verdict_for_aggregate
+        try:
+            _stamp_verdict_on_disk(results_dir, results)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "EXECUTION_EVAL: could not stamp verdict on eval-results.json",
+                path=resource.path,
+                results_dir=str(results_dir),
+                error=str(exc)[:200],
+            )
+
     return (resource, results, verdict_for_aggregate)
 
 
@@ -939,6 +958,25 @@ def _resolve_max_feedback(self: MultiResourceOrchestrator) -> int:
 # 0.10 = candidate may cost up to 10% more per success than incumbent.
 # Tighten over time as the gate matures.
 DEFAULT_TOKEN_REGRESSION_TOLERANCE = 0.10
+
+
+def _stamp_verdict_on_disk(results_dir: Path, results: EvalResults) -> None:
+    """I10 — rewrite ``eval-results.json`` with the gate verdict populated.
+
+    ``EvalHarness.run`` writes the JSON pre-gate (it can't know
+    ``last_promoted_version`` or env-driven τ), so the on-disk
+    artifact would otherwise carry ``verdict: null`` for the rest of
+    its life.  Mutating ``results.verdict`` and re-serialising closes
+    that observability gap.
+
+    Best-effort: callers wrap the invocation in their own try/except so
+    a permissions / disk-full error here can't sink the eval phase.
+    """
+    out = results_dir / "eval-results.json"
+    out.write_text(
+        json.dumps(results.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _resolve_cost_tolerance() -> float:

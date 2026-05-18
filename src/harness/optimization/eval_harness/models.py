@@ -256,6 +256,14 @@ class EvalResults:
     # means no LLM-judge graders fired (deterministic-only suite).
     judge_model_id: str = ""
     judge_prompt_hash: str = ""
+    # I10: gate verdict stamped after ``execution_eval`` decides
+    # ``promote`` / ``refine`` / ``reject_floor`` / ``reject_cost`` /
+    # ``unwinnable``.  ``None`` while ``EvalHarness`` writes the file
+    # for the first time (pre-gate); execution_eval rewrites the JSON
+    # with the verdict populated once the gate has run, so on-disk
+    # readers see the authoritative decision.  Phase D calibration
+    # joins on this field.
+    verdict: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -271,6 +279,7 @@ class EvalResults:
             "total_cost_usd": self.total_cost_usd,
             "judge_model_id": self.judge_model_id,
             "judge_prompt_hash": self.judge_prompt_hash,
+            "verdict": self.verdict,
             "held_out": self.held_out.to_dict() if self.held_out is not None else None,
             "by_level": {k: v.to_dict() for k, v in self.by_level.items()},
             "by_tag": {k: v.to_dict() for k, v in self.by_tag.items()},

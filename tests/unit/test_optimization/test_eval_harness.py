@@ -226,6 +226,85 @@ class TestLoader:
         suite = load_eval_suite(path)
         assert suite.config.eval_model == "claude-opus-4-7"
 
+    def test_eval_results_to_dict_includes_verdict_field(self) -> None:
+        """I10: ``EvalResults.to_dict()`` must include ``verdict`` so the
+        on-disk ``eval-results.json`` carries the gate decision.
+
+        ``EvalHarness.run`` writes the file before the gate fires, so
+        the field starts as ``None``; ``execution_eval`` re-stamps it
+        post-gate via ``_stamp_verdict_on_disk``.  Either way the key
+        is present.
+        """
+        from harness.optimization.eval_harness.models import EvalResults
+
+        empty = EvalResults(
+            suite_path="x.yaml",
+            baseline_resource="b.md",
+            candidate_resource="c.md",
+            timestamp="2026-05-18T00:00:00+00:00",
+            scenarios=[],
+            win_rate=0.0,
+            baseline_pass_rate=0.0,
+            candidate_pass_rate=0.0,
+            no_decision_rate=0.0,
+            held_out=None,
+            by_level={},
+            by_tag={},
+            total_tokens=0,
+        )
+        d = empty.to_dict()
+        assert "verdict" in d
+        assert d["verdict"] is None  # default, pre-stamp
+
+        # After stamping, the field round-trips through to_dict.
+        empty.verdict = "reject_cost"
+        assert empty.to_dict()["verdict"] == "reject_cost"
+
+    def test_stamp_verdict_on_disk_rewrites_eval_results_json(
+        self, tmp_path: Path
+    ) -> None:
+        """I10: ``_stamp_verdict_on_disk`` rewrites the on-disk JSON
+        with the stamped verdict; subsequent readers see the gate
+        decision rather than ``null``.
+        """
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _stamp_verdict_on_disk,
+        )
+        from harness.optimization.eval_harness.models import EvalResults
+
+        results = EvalResults(
+            suite_path="x.yaml",
+            baseline_resource="b.md",
+            candidate_resource="c.md",
+            timestamp="2026-05-18T00:00:00+00:00",
+            scenarios=[],
+            win_rate=0.0,
+            baseline_pass_rate=0.5,
+            candidate_pass_rate=0.5,
+            no_decision_rate=0.0,
+            held_out=None,
+            by_level={},
+            by_tag={},
+            total_tokens=0,
+        )
+        # Simulate EvalHarness writing the file first (no verdict yet).
+        results_dir = tmp_path / "eval" / "results" / "x"
+        results_dir.mkdir(parents=True)
+        out = results_dir / "eval-results.json"
+        out.write_text(json.dumps(results.to_dict(), indent=2))
+        # Sanity: initial file has verdict=null.
+        loaded = json.loads(out.read_text())
+        assert loaded["verdict"] is None
+
+        # Stamp + re-read.
+        results.verdict = "promote"
+        _stamp_verdict_on_disk(results_dir, results)
+
+        loaded = json.loads(out.read_text())
+        assert loaded["verdict"] == "promote"
+        # Other fields preserved.
+        assert loaded["candidate_pass_rate"] == 0.5
+
     def test_architect_prompt_does_not_hardcode_eval_model(self) -> None:
         """I6 regression guard: the cgf-eval-architect agent's prompt
         must not emit a literal ``eval_model:`` line in its output-schema
