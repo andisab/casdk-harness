@@ -717,6 +717,39 @@ def write_summary_json(
             path=str(target),
             error=str(exc),
         )
+        return
+
+    # I8 — defensive cleanup: remove any stray summary files the agent
+    # wrote despite the system prompt forbidding it.  Run #7 surfaced two
+    # naming conventions coexisting in the same workspace (Python's
+    # ``{stem}-v{N}.summary.json`` and agent-emitted
+    # ``{slug}-v{N}.summary.json``), which broke ``sessions/`` cleanup
+    # semantics and the run-report glob.  Keep only the canonical one.
+    try:
+        sessions_dir = target.parent
+        canonical_name = target.name
+        for stray in sessions_dir.glob(f"*-v{version}.summary.json"):
+            if stray.name == canonical_name:
+                continue
+            try:
+                stray.unlink()
+                logger.info(
+                    "SUMMARY_JSON: removed stray agent-written summary",
+                    canonical=str(target),
+                    stray=str(stray),
+                )
+            except OSError as exc:
+                logger.warning(
+                    "SUMMARY_JSON: could not remove stray summary",
+                    path=str(stray),
+                    error=str(exc),
+                )
+    except OSError as exc:  # noqa: BLE001 — glob failure must not block
+        logger.debug(
+            "SUMMARY_JSON: stray-cleanup glob failed",
+            sessions_dir=str(target.parent),
+            error=str(exc),
+        )
 
 
 def create_changelog_header(

@@ -428,6 +428,94 @@ class TestWriteSummaryJson:
         assert payload["word_count"] == 4700
         assert payload["quality"]["overall"] == 0.82
 
+    def test_removes_stray_agent_written_summary_with_slug_name(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """I8 — if the agent ignored its system prompt and emitted a
+        differently-named summary file (run #7 surfaced
+        ``aws-cli-v1.summary.json`` alongside the canonical
+        ``SKILL-v1.summary.json``), Python's writer must clean it up so
+        only the canonical name survives.  ``sessions/`` cleanup glob
+        semantics + the run-report renderer both depend on a single
+        naming convention.
+        """
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="skills/aws-cli/SKILL.md",
+            resource_type="skill",
+            version=0,
+        )
+        quality = ResourceQuality(
+            overall=0.85, completeness=0.85, accuracy=0.85, clarity=0.85
+        )
+
+        # Simulate the agent having written its own slug-named summary
+        # file BEFORE Python writes the canonical one.
+        sessions_dir = tmp_path / "skills/aws-cli/sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        stray = sessions_dir / "aws-cli-v1.summary.json"
+        stray.write_text('{"_written_by": "agent", "version": 1}')
+        assert stray.exists()
+
+        # Python writes the canonical summary — should also nuke the
+        # stray as part of the post-write cleanup.
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=1,
+            parsed={"summary": "x", "key_improvements": []},
+            quality=quality,
+            iteration=1,
+            word_count=1000,
+        )
+
+        canonical = sessions_dir / "SKILL-v1.summary.json"
+        assert canonical.exists()
+        assert not stray.exists(), (
+            "stray agent-written summary should have been removed; "
+            "only the canonical file should survive"
+        )
+
+    def test_does_not_remove_summaries_from_other_versions(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """I8 — the stray-cleanup scope is restricted to the version being
+        written.  Old versions' summary files (legitimate audit trail)
+        must survive.
+        """
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="skills/aws-cli/SKILL.md",
+            resource_type="skill",
+            version=1,
+        )
+        quality = ResourceQuality(
+            overall=0.85, completeness=0.85, accuracy=0.85, clarity=0.85
+        )
+
+        # Older v1 summary (legitimate, must stay) + a stray v2 (must die).
+        sessions_dir = tmp_path / "skills/aws-cli/sessions"
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+        old_v1 = sessions_dir / "SKILL-v1.summary.json"
+        old_v1.write_text('{"version": 1}')
+        stray_v2 = sessions_dir / "aws-cli-v2.summary.json"
+        stray_v2.write_text('{"_written_by": "agent"}')
+
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=2,
+            parsed={"summary": "", "key_improvements": []},
+            quality=quality,
+            iteration=1,
+            word_count=1000,
+        )
+
+        # Canonical v2 written, stray v2 deleted, legitimate v1 preserved.
+        assert (sessions_dir / "SKILL-v2.summary.json").exists()
+        assert not stray_v2.exists()
+        assert old_v1.exists()
+
 
 class TestIterateSingleResourceWritesSummary:
     """Integration-style coverage: verify the two call sites inside

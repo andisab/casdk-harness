@@ -77,10 +77,24 @@ Benefits:
 
 **Phase R3: OUTPUT**
 1. Merge improved sections preserving template structure
-2. Write to workspace/{resource_id}/{resource_id}-v{N}.md (same directory as original!)
-3. **Do NOT write any `sessions/*.summary.json` file in multi-resource mode.**
-   Python writes the canonical machine-readable summary from the signals below.
-   Your job is the resource file plus the signals; the JSON is generated for you.
+2. Write the optimized version to the **versioned audit path** —
+   the orchestrator gives you this path in the per-call prompt.  In
+   general it is `{parent_dir_of_original}/{stem}-v{N}.{ext}`:
+   - Single-resource mode: e.g. `workspace/python-expert/python-expert-v1.md`
+   - Multi-resource agent: e.g. `workspace/iac-team/agents/iac-analyzer-v1.md`
+   - Multi-resource skill: e.g. `workspace/iac-team/skills/aws-cli/SKILL-v1.md`
+   The canonical filename (no `-vN` suffix) is owned by the orchestrator
+   — Python copies your versioned audit file into it after each round.
+   Do NOT write to the canonical filename yourself.
+3. **NEVER write any `*.summary.json` file.**  This applies to BOTH
+   single-resource and multi-resource modes.  Python writes the
+   canonical summary from the signals below at
+   `{parent_dir_of_original}/sessions/{stem}-v{N}.summary.json` —
+   if you also write one (even with a different name like
+   `aws-cli-v1.summary.json`), you introduce naming inconsistency that
+   trips the run-report renderer and breaks `sessions/` cleanup
+   semantics.  Your job is the resource file plus the signals; the
+   JSON is generated for you.
 4. **Emit completion signals** (for orchestrator to parse):
    ```
    [ITERATE_COMPLETE:{resource_path}]
@@ -428,11 +442,17 @@ When merging optimized sections:
 **Primary output:**
 - `workspace/{resource_id}/{resource_id}-v{N}.md` - Optimized resource version
 
-**Supporting artifacts:**
-- `workspace/{resource_id}/sessions/{resource_id}-v{N}.summary.json` —
-  Improvement summary.  **Written by Python in multi-resource mode** from
-  the `[SUMMARY]` / `[KEY_IMPROVEMENTS]` signal blocks above.  Agent should
-  only emit the signals; do not write the JSON file directly.
+**Supporting artifacts (Python writes; agent must NOT):**
+- `{parent_dir_of_original}/sessions/{stem}-v{N}.summary.json` —
+  Improvement summary.  **Always written by Python** from the
+  `[SUMMARY]` / `[KEY_IMPROVEMENTS]` signal blocks above, in both
+  single-resource and multi-resource modes.  Agent emits ONLY the
+  signals; never write the JSON file directly (any name).  Examples
+  of correct on-disk paths (note `{stem}` matches the original file's
+  basename without extension — `SKILL`, not the parent dir slug):
+  - `workspace/python-expert/sessions/python-expert-v1.summary.json`
+  - `workspace/iac-team/agents/sessions/iac-analyzer-v1.summary.json`
+  - `workspace/iac-team/skills/aws-cli/sessions/SKILL-v1.summary.json`
 - `workspace/{resource_id}/CHANGELOG.md` - Optimization history (single-resource mode)
 </output_artifacts>
 
