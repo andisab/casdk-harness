@@ -820,6 +820,7 @@ class MultiResourceOrchestrator:
     _insert_changelog_entry = _iterate_phase.insert_changelog_entry
     _update_changelog = _iterate_phase.update_changelog
     _get_word_count = _iterate_phase.get_word_count
+    _write_summary_json = _iterate_phase.write_summary_json
     _run_execution_eval = _execution_eval_phase.run_phase
     _delegate_validation = _validate_phase.delegate
 

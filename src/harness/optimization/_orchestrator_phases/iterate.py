@@ -29,6 +29,7 @@ Functions mounted onto :class:`MultiResourceOrchestrator` as:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 from datetime import UTC, datetime
@@ -212,6 +213,10 @@ Apply research heuristics and self-critique.
 Save optimized version to:
 {workspace / versioned_path(resource.path, resource.version + 1)}
 
+DO NOT write any sessions/*.summary.json file — Python writes the canonical
+machine-readable summary from the signals below.  Your job is the resource
+file plus the signals; the JSON is generated for you.
+
 When complete, emit signals:
 [ITERATE_COMPLETE:{resource.path}]
 version: {resource.version + 1}
@@ -221,8 +226,13 @@ quality_accuracy: {{0.0-1.0}}
 quality_clarity: {{0.0-1.0}}
 word_count: {{count}}
 [SUMMARY]
-{{1-2 sentence summary of key improvements}}
+{{1-2 sentence prose summary of what changed and why}}
 [/SUMMARY]
+[KEY_IMPROVEMENTS]
+- {{bullet point: one concrete improvement}}
+- {{bullet point: another}}
+- {{...up to ~7 bullets, brief — these surface in the per-resource report}}
+[/KEY_IMPROVEMENTS]
 """
 
         logger.info(
@@ -306,14 +316,30 @@ word_count: {{count}}
                         accuracy=result.get("quality_accuracy", 0.0),
                         clarity=result.get("quality_clarity", 0.0),
                     )
+                # Capture new version BEFORE update_resource, which mutates
+                # resource.version in-place (progress.py:1007).  Without
+                # this, the summary path would silently double-bump.
+                new_version = resource.version + 1
                 async with self._state_lock:
                     self._state.update_resource(
                         resource.path,
-                        version=resource.version + 1,
+                        version=new_version,
                         iterations=iteration,
                         quality=quality,
                     )
                     self._save_state()
+
+                # Python owns the canonical summary.json — agent contributes
+                # only the narrative via [SUMMARY] / [KEY_IMPROVEMENTS]
+                # signals (now embedded in `result`).
+                self._write_summary_json(
+                    resource=resource,
+                    version=new_version,
+                    parsed=result,
+                    quality=quality,
+                    iteration=iteration,
+                    word_count=word_count_after,
+                )
 
                 logger.info(
                     "ITERATE: Iteration complete",
@@ -363,14 +389,30 @@ word_count: {{count}}
                             if fallback_quality
                             else ResourceQuality(overall=current_quality)
                         )
+                        # Capture new version BEFORE update_resource — see
+                        # the signal-branch comment above for the rationale.
+                        new_version = resource.version + 1
                         async with self._state_lock:
                             self._state.update_resource(
                                 resource.path,
-                                version=resource.version + 1,
+                                version=new_version,
                                 iterations=iteration,
                                 quality=quality,
                             )
                             self._save_state()
+
+                        # Signal-less fallback: agent didn't emit narrative,
+                        # but the resource file exists.  Still write the
+                        # canonical summary so the report has metrics.
+                        fallback_words = self._get_word_count(versioned_file)
+                        self._write_summary_json(
+                            resource=resource,
+                            version=new_version,
+                            parsed={},
+                            quality=quality,
+                            iteration=iteration,
+                            word_count=fallback_words,
+                        )
 
                         logger.info(
                             "ITERATE: File created (no signal)",
@@ -513,6 +555,7 @@ def parse_iteration_result(
         "quality_overall": None,
         "word_count": None,
         "summary": None,
+        "key_improvements": [],
     }
 
     # Extract quality_overall: X.XX (multiple patterns for permissiveness)
@@ -556,7 +599,124 @@ def parse_iteration_result(
     if summary_match:
         result["summary"] = summary_match.group(1).strip()
 
+    # Extract [KEY_IMPROVEMENTS]...[/KEY_IMPROVEMENTS] as a bullet list.
+    # Each non-empty line starting with `-`, `*`, or a digit is one bullet;
+    # leading marker + whitespace is stripped.  Empty block → empty list.
+    improvements_match = re.search(
+        r"\[KEY_IMPROVEMENTS\]\s*(.*?)\s*\[/KEY_IMPROVEMENTS\]",
+        response,
+        re.DOTALL,
+    )
+    if improvements_match:
+        block = improvements_match.group(1)
+        bullets: list[str] = []
+        for raw_line in block.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            line = re.sub(r"^[\-\*•]\s+", "", line)
+            line = re.sub(r"^\d+[\.\)]\s+", "", line)
+            if line:
+                bullets.append(line)
+        result["key_improvements"] = bullets
+
     return result
+
+
+def canonical_summary_path(resource_path: str, version: int) -> Path:
+    """Canonical location for the per-version ``*.summary.json``.
+
+    Mirrors :func:`versioned_path` for the resource file: for a resource at
+    ``{parent}/{name}.md`` v``N``, the summary lives at
+    ``{parent}/sessions/{name}-v{N}.summary.json``.  Matches what most agents
+    historically emit and what the renderer's
+    ``workspace_root.glob("**/sessions/*.summary.json")`` picks up.
+
+    Returns a relative path.  The caller is responsible for resolving against
+    the workspace root and validating with :func:`validate_write_path`.
+    """
+    versioned = versioned_path(resource_path, version)
+    return versioned.parent / "sessions" / f"{versioned.stem}.summary.json"
+
+
+def write_summary_json(
+    self: MultiResourceOrchestrator,
+    resource: ResourceStatus,
+    version: int,
+    parsed: dict[str, Any],
+    quality: ResourceQuality,
+    iteration: int,
+    word_count: int | None = None,
+) -> None:
+    """Write the canonical per-version summary file.
+
+    The orchestrator owns this file (Python writes it, not the agent).
+    The schema is fixed; the agent contributes only the narrative fields
+    (``summary`` prose + ``key_improvements`` bullets), both parsed from
+    signal blocks in the agent response by :func:`parse_iteration_result`.
+
+    Best-effort: any I/O or path-validation failure is logged and
+    swallowed so iteration progress is never blocked by a summary write
+    going wrong.
+    """
+    if not self.config or not self.config.workspace_dir:
+        return
+
+    workspace = self.config.workspace_dir
+    rel_path = canonical_summary_path(resource.path, version)
+    target = workspace / rel_path
+
+    try:
+        validate_write_path(target, workspace)
+    except Exception as exc:  # noqa: BLE001 — defensive
+        logger.warning(
+            "SUMMARY_JSON: refusing to write outside workspace",
+            path=str(target),
+            error=str(exc),
+        )
+        return
+
+    resource_id = Path(resource.path).stem
+    if resource_id == "SKILL":  # skill resources: use parent dir name
+        resource_id = Path(resource.path).parent.name or resource_id
+
+    versioned_resource = versioned_path(resource.path, version)
+    payload: dict[str, Any] = {
+        "resource_path": resource.path,
+        "resource_id": resource_id,
+        "version": version,
+        "output_path": str(versioned_resource),
+        "timestamp": datetime.now(UTC).isoformat(),
+        "iteration": f"{iteration}/{self.config.max_iterations}",
+        "iterations": iteration,
+        "quality": {
+            "overall": round(quality.overall, 4) if quality.overall else 0.0,
+            "completeness": round(quality.completeness, 4)
+            if quality.completeness
+            else 0.0,
+            "accuracy": round(quality.accuracy, 4) if quality.accuracy else 0.0,
+            "clarity": round(quality.clarity, 4) if quality.clarity else 0.0,
+        },
+        "word_count": word_count if word_count is not None else 0,
+        "summary": parsed.get("summary") or "",
+        "key_improvements": list(parsed.get("key_improvements") or []),
+        "_written_by": "orchestrator",
+    }
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+        logger.info(
+            "SUMMARY_JSON: wrote summary",
+            path=str(target),
+            version=version,
+        )
+    except OSError as exc:
+        logger.warning(
+            "SUMMARY_JSON: failed to write",
+            path=str(target),
+            error=str(exc),
+        )
 
 
 def create_changelog_header(

@@ -78,7 +78,9 @@ Benefits:
 **Phase R3: OUTPUT**
 1. Merge improved sections preserving template structure
 2. Write to workspace/{resource_id}/{resource_id}-v{N}.md (same directory as original!)
-3. Generate improvement summary JSON: sessions/{resource_id}-v{N}.summary.json (machine consumption)
+3. **Do NOT write any `sessions/*.summary.json` file in multi-resource mode.**
+   Python writes the canonical machine-readable summary from the signals below.
+   Your job is the resource file plus the signals; the JSON is generated for you.
 4. **Emit completion signals** (for orchestrator to parse):
    ```
    [ITERATE_COMPLETE:{resource_path}]
@@ -89,9 +91,17 @@ Benefits:
    quality_clarity: {0.0-1.0}
    word_count: {count}
    [SUMMARY]
-   {1-2 sentence summary of key improvements}
+   {1-2 sentence prose summary of what changed and why}
    [/SUMMARY]
+   [KEY_IMPROVEMENTS]
+   - one concrete improvement
+   - another improvement
+   - ...up to ~7 brief bullets — these surface in the per-resource report
+   [/KEY_IMPROVEMENTS]
    ```
+   The `[SUMMARY]` block is freeform narrative; `[KEY_IMPROVEMENTS]` must be
+   a bullet list (one `-` per line).  Python parses both and embeds them in
+   the canonical summary JSON.
 5. **CHANGELOG management** - depends on context:
    - **Multi-resource mode** (orchestrator manages CHANGELOG): Skip direct CHANGELOG writes.
      Detect by checking: `task_list.json` exists with multiple resources OR
@@ -325,7 +335,10 @@ When merging optimized sections:
 - `workspace/{resource_id}/{resource_id}-v{N}.md` - Optimized resource version
 
 **Supporting artifacts:**
-- `workspace/{resource_id}/sessions/{resource_id}-v{N}.summary.json` - Improvement summary
+- `workspace/{resource_id}/sessions/{resource_id}-v{N}.summary.json` —
+  Improvement summary.  **Written by Python in multi-resource mode** from
+  the `[SUMMARY]` / `[KEY_IMPROVEMENTS]` signal blocks above.  Agent should
+  only emit the signals; do not write the JSON file directly.
 - `workspace/{resource_id}/CHANGELOG.md` - Optimization history (single-resource mode)
 </output_artifacts>
 

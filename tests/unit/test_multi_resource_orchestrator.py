@@ -11,6 +11,7 @@ Tests the pipeline improvements:
 """
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -210,6 +211,452 @@ class TestParseIterationResult:
         assert result["quality_overall"] is None
         assert result["word_count"] is None
         assert result["summary"] is None
+        # New field — list, defaults to empty.
+        assert result["key_improvements"] == []
+
+    def test_parses_key_improvements_block(self, orchestrator: MagicMock) -> None:
+        """Should parse [KEY_IMPROVEMENTS] bullet list into a list of strings."""
+        response = """
+        [ITERATE_COMPLETE:agents/foo.md]
+        quality_overall: 0.87
+        [KEY_IMPROVEMENTS]
+        - Added retry logic
+        - Refactored error path
+        - Clarified docstrings
+        [/KEY_IMPROVEMENTS]
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["key_improvements"] == [
+            "Added retry logic",
+            "Refactored error path",
+            "Clarified docstrings",
+        ]
+
+    def test_key_improvements_strips_various_bullet_markers(
+        self, orchestrator: MagicMock
+    ) -> None:
+        """Should accept -, *, •, and numbered list markers."""
+        response = """
+        [KEY_IMPROVEMENTS]
+        - dash bullet
+        * star bullet
+        • bullet bullet
+        1. numbered with dot
+        2) numbered with paren
+        [/KEY_IMPROVEMENTS]
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["key_improvements"] == [
+            "dash bullet",
+            "star bullet",
+            "bullet bullet",
+            "numbered with dot",
+            "numbered with paren",
+        ]
+
+    def test_key_improvements_empty_block_yields_empty_list(
+        self, orchestrator: MagicMock
+    ) -> None:
+        """An empty [KEY_IMPROVEMENTS] block should yield an empty list,
+        not crash."""
+        response = """
+        [KEY_IMPROVEMENTS]
+        [/KEY_IMPROVEMENTS]
+        """
+        result = orchestrator._parse_iteration_result(response)
+        assert result["key_improvements"] == []
+
+
+class TestWriteSummaryJson:
+    """Tests for the Python-owned summary.json writer."""
+
+    @pytest.fixture
+    def orchestrator(self, tmp_path: Path) -> Any:
+        from harness.optimization.multi_resource_orchestrator import (
+            MultiResourceOrchestrator,
+        )
+
+        config = MultiResourceConfig(workspace_dir=tmp_path, max_iterations=3)
+        return MultiResourceOrchestrator(config)
+
+    def test_writes_canonical_summary_for_agent_resource(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """For agents/foo.md v3, summary should land at
+        agents/sessions/foo-v3.summary.json with all metric fields and the
+        narrative blocks embedded."""
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="agents/foo.md",
+            resource_type="agent",
+            version=2,
+        )
+        parsed = {
+            "quality_overall": 0.88,
+            "word_count": 5400,
+            "summary": "Tightened the error path and added retries.",
+            "key_improvements": ["Added retries", "Clarified docstrings"],
+        }
+        quality = ResourceQuality(
+            overall=0.88, completeness=0.9, accuracy=0.87, clarity=0.87
+        )
+
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=3,
+            parsed=parsed,
+            quality=quality,
+            iteration=2,
+            word_count=5400,
+        )
+
+        target = tmp_path / "agents/sessions/foo-v3.summary.json"
+        assert target.exists()
+        import json
+
+        payload = json.loads(target.read_text())
+        assert payload["resource_path"] == "agents/foo.md"
+        assert payload["resource_id"] == "foo"
+        assert payload["version"] == 3
+        assert payload["output_path"] == "agents/foo-v3.md"
+        assert payload["iteration"] == "2/3"
+        assert payload["iterations"] == 2
+        assert payload["quality"]["overall"] == 0.88
+        assert payload["quality"]["completeness"] == 0.9
+        assert payload["word_count"] == 5400
+        assert payload["summary"] == "Tightened the error path and added retries."
+        assert payload["key_improvements"] == ["Added retries", "Clarified docstrings"]
+        assert payload["_written_by"] == "orchestrator"
+
+    def test_skill_resource_id_uses_parent_directory(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """For skills/aws-eks/SKILL.md, resource_id should be the parent
+        dirname ('aws-eks'), not the literal stem 'SKILL'."""
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="skills/aws-eks/SKILL.md",
+            resource_type="skill",
+            version=0,
+        )
+        quality = ResourceQuality(
+            overall=0.85, completeness=0.85, accuracy=0.85, clarity=0.85
+        )
+
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=1,
+            parsed={"summary": "", "key_improvements": []},
+            quality=quality,
+            iteration=1,
+            word_count=9500,
+        )
+
+        target = tmp_path / "skills/aws-eks/sessions/SKILL-v1.summary.json"
+        assert target.exists()
+        import json
+
+        payload = json.loads(target.read_text())
+        assert payload["resource_id"] == "aws-eks"
+        assert payload["output_path"] == "skills/aws-eks/SKILL-v1.md"
+
+    def test_path_traversal_is_refused(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """A resource path that escapes the workspace must NOT write a
+        summary file outside it."""
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="../escape.md",
+            resource_type="agent",
+            version=0,
+        )
+        quality = ResourceQuality(
+            overall=0.8, completeness=0.8, accuracy=0.8, clarity=0.8
+        )
+
+        # Should not raise — failure is logged and swallowed.
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=1,
+            parsed={},
+            quality=quality,
+            iteration=1,
+            word_count=100,
+        )
+
+        # Nothing should appear above the workspace root.
+        outside = tmp_path.parent / "sessions"
+        assert not outside.exists() or not any(outside.iterdir())
+
+    def test_empty_narrative_writes_default_fields(
+        self, orchestrator: Any, tmp_path: Path
+    ) -> None:
+        """When the agent doesn't emit [SUMMARY] / [KEY_IMPROVEMENTS]
+        (e.g., the signal-less fallback branch), the JSON should still be
+        written with empty narrative fields and full metrics."""
+        from harness.progress import ResourceQuality, ResourceStatus
+
+        resource = ResourceStatus(
+            path="commands/iac.md",
+            resource_type="command",
+            version=1,
+        )
+        quality = ResourceQuality(
+            overall=0.82, completeness=0.85, accuracy=0.8, clarity=0.8
+        )
+
+        orchestrator._write_summary_json(
+            resource=resource,
+            version=2,
+            parsed={},
+            quality=quality,
+            iteration=1,
+            word_count=4700,
+        )
+
+        target = tmp_path / "commands/sessions/iac-v2.summary.json"
+        assert target.exists()
+        import json
+
+        payload = json.loads(target.read_text())
+        assert payload["summary"] == ""
+        assert payload["key_improvements"] == []
+        assert payload["word_count"] == 4700
+        assert payload["quality"]["overall"] == 0.82
+
+
+class TestIterateSingleResourceWritesSummary:
+    """Integration-style coverage: verify the two call sites inside
+    ``_iterate_single_resource`` actually invoke ``write_summary_json``
+    with valid inputs.  The standalone ``TestWriteSummaryJson`` class
+    above proves the writer works in isolation; these tests prove the
+    wiring around it works too.
+
+    ``call_agent_simple`` is monkeypatched to return a synthetic agent
+    response.  Everything else (signal parsing, state updates, the
+    CHANGELOG writer, the canonical-path computation, and the writer
+    itself) runs through the real code path.
+    """
+
+    @pytest.fixture
+    def workspace(self, tmp_path: Path) -> Path:
+        """Workspace with an original resource file ready for iteration."""
+        (tmp_path / "agents").mkdir()
+        (tmp_path / "agents" / "foo.md").write_text(
+            "# Original agent prompt\n\nSome baseline content here.\n"
+        )
+        return tmp_path
+
+    def _build_spec(self, workspace: Path) -> Any:
+        """Construct a minimal real MultiResourceSpec.
+
+        Using the real dataclass (rather than MagicMock) avoids attribute
+        access shenanigans inside the CHANGELOG header writer.
+        """
+        from harness.optimization.multi_resource_spec import (
+            MultiResourceSpec,
+            SpecType,
+        )
+
+        return MultiResourceSpec(
+            name="TestPlugin",
+            spec_type=SpecType.PLUGIN,
+            purpose="test purpose for integration coverage",
+            source_path=workspace / "SPEC.md",
+            content_hash="deadbeefcafe",
+        )
+
+    def _build_state(self, workspace: Path) -> Any:
+        """Construct MultiResourceState with a single agent resource."""
+        from harness.progress import (
+            MultiResourceState,
+            OptimizationPhase,
+            ResourceStatus,
+        )
+
+        state = MultiResourceState(
+            spec_path=str(workspace / "SPEC.md"),
+            spec_type="plugin",
+            spec_hash="deadbeefcafe",
+            current_phase=OptimizationPhase.ITERATE,
+        )
+        state.resources = {
+            "agents/foo.md": ResourceStatus(
+                path="agents/foo.md",
+                resource_type="agent",
+                version=0,
+                status="generated",
+            )
+        }
+        return state
+
+    def _build_orchestrator(self, workspace: Path) -> Any:
+        from harness.optimization.multi_resource_orchestrator import (
+            MultiResourceOrchestrator,
+        )
+
+        config = MultiResourceConfig(
+            workspace_dir=workspace,
+            max_iterations=1,
+            quality_threshold=0.0,  # any quality clears threshold → loop exits
+            iterate_timeout=10,
+            verbose=False,
+            follow_logs=False,
+        )
+        orch = MultiResourceOrchestrator(config)
+        orch._spec = self._build_spec(workspace)
+        orch._state = self._build_state(workspace)
+        # Skip finalize side effects (file renames etc.) — we only care
+        # about the summary-write wiring.
+        orch._finalize_single_resource = lambda *a, **kw: None
+        return orch
+
+    async def test_signal_branch_writes_canonical_summary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        workspace: Path,
+    ) -> None:
+        """When the agent emits a full [ITERATE_COMPLETE] response with
+        narrative blocks, _iterate_single_resource must write the
+        canonical summary.json with all parsed fields."""
+        import json
+
+        synthetic_response = (
+            "[ITERATE_COMPLETE:agents/foo.md]\n"
+            "version: 1\n"
+            "quality_overall: 0.88\n"
+            "quality_completeness: 0.90\n"
+            "quality_accuracy: 0.87\n"
+            "quality_clarity: 0.86\n"
+            "word_count: 250\n"
+            "[SUMMARY]\n"
+            "Tightened the error path and added retries.\n"
+            "[/SUMMARY]\n"
+            "[KEY_IMPROVEMENTS]\n"
+            "- Added retry logic\n"
+            "- Clarified error messages\n"
+            "- Refactored validation\n"
+            "[/KEY_IMPROVEMENTS]\n"
+        )
+
+        async def fake_call_agent_simple(*args: Any, **kwargs: Any) -> str:
+            return synthetic_response
+
+        # The function is imported locally inside _iterate_single_resource
+        # via `from harness.subagent import call_agent_simple`, so we patch
+        # at the source module.
+        monkeypatch.setattr(
+            "harness.subagent.call_agent_simple", fake_call_agent_simple
+        )
+
+        orch = self._build_orchestrator(workspace)
+        resource = orch._state.resources["agents/foo.md"]
+
+        # _iterate_single_resource is a module-private helper called by
+        # the mounted `delegate`; call it directly with the orchestrator
+        # bound as self.
+        from harness.optimization._orchestrator_phases import iterate as iterate_mod
+
+        await iterate_mod._iterate_single_resource(orch, resource)
+
+        target = workspace / "agents" / "sessions" / "foo-v1.summary.json"
+        assert target.exists(), (
+            "signal-branch wiring did not write canonical summary.json"
+        )
+        payload = json.loads(target.read_text())
+        assert payload["resource_path"] == "agents/foo.md"
+        assert payload["resource_id"] == "foo"
+        assert payload["version"] == 1
+        assert payload["output_path"] == "agents/foo-v1.md"
+        assert payload["iteration"] == "1/1"
+        assert payload["iterations"] == 1
+        assert payload["quality"]["overall"] == 0.88
+        assert payload["quality"]["completeness"] == 0.9
+        assert payload["quality"]["accuracy"] == 0.87
+        assert payload["quality"]["clarity"] == 0.86
+        assert payload["word_count"] == 250
+        assert payload["summary"] == (
+            "Tightened the error path and added retries."
+        )
+        assert payload["key_improvements"] == [
+            "Added retry logic",
+            "Clarified error messages",
+            "Refactored validation",
+        ]
+        assert payload["_written_by"] == "orchestrator"
+
+    async def test_fallback_branch_writes_summary_when_signal_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        workspace: Path,
+    ) -> None:
+        """When the agent writes the versioned file but emits NO
+        [ITERATE_COMPLETE] signal, _iterate_single_resource takes the
+        fallback path: evaluates quality via the evaluator, updates
+        state, and must still write the canonical summary.json (with
+        empty narrative fields since the agent didn't provide any)."""
+        import json
+
+        from harness.progress import ResourceQuality
+
+        # Agent response with NO completion signal — but the agent did
+        # write the v1 file (simulate by writing it ourselves below).
+        async def fake_call_agent_simple(*args: Any, **kwargs: Any) -> str:
+            return "Generated v1 content (no signal emitted)."
+
+        monkeypatch.setattr(
+            "harness.subagent.call_agent_simple", fake_call_agent_simple
+        )
+
+        # Pre-create the versioned file so the fallback file-existence
+        # check succeeds.
+        (workspace / "agents" / "foo-v1.md").write_text(
+            "# v1 optimized\n\nFallback-branch content with multiple words "
+            "so word_count parses to a non-trivial number.\n"
+        )
+
+        orch = self._build_orchestrator(workspace)
+
+        # Stub the evaluator so the fallback path gets a non-zero quality
+        # without us standing up a real QualityEvaluator (which would
+        # require API access).
+        async def fake_evaluate(*args: Any, **kwargs: Any) -> ResourceQuality:
+            return ResourceQuality(
+                overall=0.82,
+                completeness=0.85,
+                accuracy=0.80,
+                clarity=0.80,
+            )
+
+        orch._evaluate_resource_quality_full = fake_evaluate
+
+        resource = orch._state.resources["agents/foo.md"]
+
+        # _iterate_single_resource is a module-private helper called by
+        # the mounted `delegate`; call it directly with the orchestrator
+        # bound as self.
+        from harness.optimization._orchestrator_phases import iterate as iterate_mod
+
+        await iterate_mod._iterate_single_resource(orch, resource)
+
+        target = workspace / "agents" / "sessions" / "foo-v1.summary.json"
+        assert target.exists(), (
+            "fallback-branch wiring did not write canonical summary.json"
+        )
+        payload = json.loads(target.read_text())
+        assert payload["resource_path"] == "agents/foo.md"
+        assert payload["version"] == 1
+        # Narrative is empty (agent didn't emit blocks) but metrics are filled.
+        assert payload["summary"] == ""
+        assert payload["key_improvements"] == []
+        assert payload["quality"]["overall"] == 0.82
+        # word_count came from the on-disk v1 file via _get_word_count.
+        assert payload["word_count"] > 0
+        assert payload["_written_by"] == "orchestrator"
 
 
 class TestGetResourceInstructions:
