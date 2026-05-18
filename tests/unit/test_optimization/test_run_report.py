@@ -443,8 +443,11 @@ def test_per_resource_table_renders_all_resources(tmp_path: Path) -> None:
     ]
     root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
     out = run_report.render(root)
-    assert "`skills/a/SKILL.md`" in out
-    assert "`agents/x.md`" in out
+    # Paths surface in the per-resource summary lines (wrapped in <code>
+    # since the merged section uses inline <details> blocks rather than
+    # a flat markdown table).
+    assert "<code>skills/a/SKILL.md</code>" in out
+    assert "<code>agents/x.md</code>" in out
     assert "+0.33" in out
     assert "✅ Promoted r1" in out
 
@@ -481,6 +484,8 @@ def test_per_resource_status_recovered_after_regression(tmp_path: Path) -> None:
 
 
 def test_iteration_history_emitted_for_multi_version_resource(tmp_path: Path) -> None:
+    """The merged per-resource section emits a <details> block with the
+    full version chain for any resource with >1 verdict."""
     state = _state(
         current_phase="COMPLETE",
         resources={"skills/p.md": _resource(path="skills/p.md", version=2)},
@@ -501,10 +506,13 @@ def test_iteration_history_emitted_for_multi_version_resource(tmp_path: Path) ->
     ]
     root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
     out = run_report.render(root)
-    assert "## Iteration history" in out
+    # Section title is now just per-resource results.
+    assert "## Per-resource results" in out
+    assert "## Iteration history" not in out
+    # Multi-version resource opens an inline <details> block.
     assert "<details>" in out
     assert "skills/p.md" in out
-    # Both versions and gate verdicts visible.
+    # Both versions and gate verdicts visible inside the details block.
     assert "v1" in out and "v2" in out
     assert "❌ Reject" in out and "✅ Promote" in out
 

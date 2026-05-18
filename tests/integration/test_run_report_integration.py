@@ -45,7 +45,7 @@ def test_render_against_real_workspace(tmp_path: Path) -> None:
     # The legacy state has 18 resources, 1 unwinnable, 1 failed.
     assert "Resources planned | 18" in content
     assert "Unwinnable" in content
-    # Iteration history must surface pulumi-cdk (the only multi-version).
+    # Per-resource section must surface every resource path.
     assert "skills/pulumi-cdk/SKILL.md" in content
     # Artifacts pointing at the existing files
     assert "eval-suite.yaml" in content

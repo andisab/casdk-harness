@@ -149,8 +149,8 @@ def load_summaries(
                 quality_overall=_safe_float(
                     (data.get("quality") or {}).get("overall")
                 ),
-                word_count=_safe_int(data.get("word_count")),
-                iterations=_safe_int(data.get("iterations")),
+                word_count=_extract_word_count(data.get("word_count")),
+                iterations=_extract_iterations(data),
                 key_improvements=_normalize_improvements(
                     data.get("key_improvements", [])
                 ),
@@ -400,8 +400,7 @@ def render(workspace_root: Path) -> str:
         _render_header(workspace_root, state),
         _render_summary(state, eval_rounds),
         _render_phase_progression(state),
-        _render_per_resource(state, eval_rounds),
-        _render_iteration_history(state, summaries, eval_rounds),
+        _render_per_resource(state, summaries, eval_rounds),
         _render_open_issues(state, eval_rounds),
         _render_artifacts(workspace_root, state),
     ]
@@ -534,12 +533,29 @@ def _render_phase_progression(state: dict[str, Any]) -> str:
         if not timing:
             continue
         duration_s = timing.get("duration_s")
-        duration_label = _format_duration(duration_s) if duration_s else "1s"
-        is_active = phase == current_phase and phase not in completed
-        marker = "active, " if is_active else ("done, " if duration_s else "")
+        # Mermaid gantt with `dateFormat X` (numeric/unix-time) requires the
+        # duration field to be a plain integer count of seconds. Composite
+        # strings like "6m 07s" / "1h 35m 22s" / "<1s" silently parse to 0
+        # and collapse every bar to the start time. Use _format_duration only
+        # for the human-readable per-phase table below.
+        try:
+            duration_int = max(1, int(round(float(duration_s)))) if duration_s else 1
+        except (TypeError, ValueError):
+            duration_int = 1
+        # COMPLETE is terminal — when it's the current phase the run is
+        # finished, so render it as `done` rather than `active`.
+        is_terminal_complete = phase == "COMPLETE" and current_phase == "COMPLETE"
+        is_active = (
+            phase == current_phase and phase not in completed and not is_terminal_complete
+        )
+        marker = (
+            "active, "
+            if is_active
+            else ("done, " if (duration_s or is_terminal_complete) else "")
+        )
         tag = phase.lower().replace("_", "")
         anchor = "0" if not seen_first else f"after {gantt_rows[-1][0]}"
-        gantt_rows.append((tag, f"    {phase}        :{marker}{tag}, {anchor}, {duration_label}"))
+        gantt_rows.append((tag, f"    {phase}        :{marker}{tag}, {anchor}, {duration_int}s"))
         seen_first = True
 
     mermaid_block = ""
@@ -578,11 +594,17 @@ def _render_phase_progression(state: dict[str, Any]) -> str:
             continue
         started = _fmt_ts(timing.get("started_at"))
         duration_s = timing.get("duration_s")
+        # COMPLETE is terminal — when it's the current phase the run is
+        # finished, even though it has no duration_s (nothing transitions
+        # away from it).
+        is_terminal_complete = phase == "COMPLETE" and current_phase == "COMPLETE"
         if duration_s is not None:
             status_marker = "✅" if phase in completed else "🔄"
             table_lines.append(
                 f"| {phase} | {status_marker} | {started} | {_format_duration(duration_s)} |"
             )
+        elif is_terminal_complete:
+            table_lines.append(f"| {phase} | ✅ | {started} | — |")
         else:
             table_lines.append(f"| {phase} | 🔄 Running | {started} | — |")
 
@@ -597,147 +619,132 @@ def _render_phase_progression(state: dict[str, Any]) -> str:
 
 def _render_per_resource(
     state: dict[str, Any],
+    summaries: dict[str, list[VersionSummary]],
     eval_rounds: list[EvalRound],
 ) -> str:
+    """One ``<details>`` block per resource, summary line up top, version
+    chain inside.
+
+    Replaces the prior split between ``## Per-resource results`` (flat
+    summary table) and ``## Iteration history`` (per-resource detail
+    blocks).  The two carried overlapping data — latest pass rates,
+    quality, and gate decision appeared in both — so this collapses
+    them into a single section keyed by resource path.
+
+    Single-version resources with no eval verdict get rendered as a
+    flat list item (no ``<details>``) since there's nothing to drill
+    into.
+    """
     resources = state.get("resources", {}) or {}
     if not resources:
         return "## Per-resource results\n\n_No resources tracked yet._"
 
     latest_verdict = _latest_verdict_by_path(eval_rounds)
+    blocks = ["## Per-resource results", ""]
 
-    rows = []
     for path in sorted(resources.keys()):
         res = resources[path]
         rtype = res.get("resource_type", "?")
-        version = res.get("version", 0)
+        version = res.get("version", 0) or 0
         version_label = f"v{version}" if version else "—"
+
         verdict = latest_verdict.get(path)
+        verdicts_by_version = _verdicts_for_resource(path, eval_rounds)
+        path_summaries = {s.version: s for s in summaries.get(path, [])}
 
         if verdict is not None:
             baseline = f"{verdict.baseline_pass_rate:.2f}"
             candidate = f"{verdict.candidate_pass_rate:.2f}"
             delta = verdict.candidate_pass_rate - verdict.baseline_pass_rate
-            delta_label = f"{'+' if delta > 0 else ''}{delta:.2f}" if delta else "0.00"
+            delta_label = (
+                f"{'+' if delta > 0 else ''}{delta:.2f}" if delta else "±0.00"
+            )
+            pass_summary = f"pass {baseline}→{candidate} ({delta_label})"
         else:
-            baseline = "—"
-            candidate = "—"
-            delta_label = "—"
+            pass_summary = "_pending eval_"
 
         quality_overall = _safe_float((res.get("quality") or {}).get("overall"))
-        quality_label = f"{quality_overall:.2f}" if quality_overall else "—"
+        quality_summary = (
+            f" · quality {quality_overall:.2f}" if quality_overall else ""
+        )
         status_label = _resource_status_label(path, res, eval_rounds)
 
-        rows.append(
-            f"| `{path}` | {rtype} | {version_label} | {baseline} | "
-            f"{candidate} | {delta_label} | {quality_label} | {status_label} |"
+        summary_line = (
+            f"<strong><code>{path}</code></strong> — "
+            f"{status_label} · {rtype} · {version_label} · "
+            f"{pass_summary}{quality_summary}"
         )
 
-    lines = [
-        "## Per-resource results",
-        "",
-        "| Resource | Type | Latest | Baseline pass | Candidate pass | Δ | Quality | Status |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
-    lines.extend(rows)
-    return "\n".join(lines)
-
-
-def _render_iteration_history(
-    state: dict[str, Any],
-    summaries: dict[str, list[VersionSummary]],
-    eval_rounds: list[EvalRound],
-) -> str:
-    """Collapsible per-resource version chain.
-
-    Driven by ``state.resources`` — any resource with ``version > 1`` or
-    that appears in multiple eval rounds gets a block.  Per-version
-    summaries are joined when available; missing summaries render as
-    ``—`` rather than skipping the row.
-    """
-    resources = state.get("resources", {}) or {}
-
-    interesting: list[str] = []
-    for path, res in resources.items():
-        version = res.get("version", 0) or 0
-        verdicts = _verdicts_for_resource(path, eval_rounds)
-        if version > 1 or len(verdicts) > 1:
-            interesting.append(path)
-
-    if not interesting:
-        return (
-            "## Iteration history\n\n"
-            "_No resources have been iterated more than once yet. "
-            "Per-version narratives are in [`CHANGELOG.md`](../CHANGELOG.md)._"
-        )
-
-    blocks = ["## Iteration history"]
-    for path in sorted(interesting):
-        res = resources[path]
-        verdicts_by_version = _verdicts_for_resource(path, eval_rounds)
-        path_summaries = {s.version: s for s in summaries.get(path, [])}
-
-        # Build the version set from both eval rounds + summaries +
-        # state.version.
+        # Version chain.  Drawn from eval verdicts + summary files +
+        # state.version so we surface every version the orchestrator
+        # touched, even when artifacts are partial.
         versions_seen = (
             set(verdicts_by_version.keys())
             | set(path_summaries.keys())
-            | {res.get("version", 0) or 0}
+            | {version}
         )
         versions_seen.discard(0)
-        if not versions_seen:
-            continue
         versions_sorted = sorted(versions_seen)
 
-        latest_summary = path_summaries.get(versions_sorted[-1])
-        header = f"<strong><code>{path}</code></strong> — {len(versions_sorted)} versions"
-        blocks.append("")
-        blocks.append(f"<details>\n<summary>{header}</summary>\n")
-        blocks.append("| Version | Pass rate | Quality | Words | Iterations | Gate |")
-        blocks.append("|---|---|---|---|---|---|")
+        # Bare list item when there's nothing to drill into.
+        if len(versions_sorted) <= 1 and not verdicts_by_version:
+            blocks.append(f"- {summary_line}")
+            blocks.append("")
+            continue
+
+        body: list[str] = ["", "<details>", f"<summary>{summary_line}</summary>", ""]
+        body.append("| Version | Pass rate | Quality | Words | Iterations | Gate |")
+        body.append("|---|---|---|---|---|---|")
         for v in versions_sorted:
-            verdict = verdicts_by_version.get(v)
-            summary = path_summaries.get(v)
-            pass_rate = f"{verdict.candidate_pass_rate:.2f}" if verdict else "—"
+            v_verdict = verdicts_by_version.get(v)
+            v_summary = path_summaries.get(v)
+            pass_rate = (
+                f"{v_verdict.candidate_pass_rate:.2f}" if v_verdict else "—"
+            )
             gate = "—"
-            if verdict is not None:
-                gate = "✅ Promote" if verdict.promoted else "❌ Reject"
+            if v_verdict is not None:
+                gate = "✅ Promote" if v_verdict.promoted else "❌ Reject"
             quality = (
-                f"{summary.quality_overall:.2f}"
-                if summary and summary.quality_overall
+                f"{v_summary.quality_overall:.2f}"
+                if v_summary and v_summary.quality_overall
                 else "—"
             )
             words = (
-                f"{summary.word_count:,}"
-                if summary and summary.word_count
+                f"{v_summary.word_count:,}"
+                if v_summary and v_summary.word_count
                 else "—"
             )
             iterations = (
-                str(summary.iterations)
-                if summary and summary.iterations is not None
+                str(v_summary.iterations)
+                if v_summary and v_summary.iterations is not None
                 else "—"
             )
-            blocks.append(
+            body.append(
                 f"| v{v} | {pass_rate} | {quality} | {words} | "
                 f"{iterations} | {gate} |"
             )
+
+        latest_summary = path_summaries.get(versions_sorted[-1])
         if latest_summary and latest_summary.key_improvements:
-            blocks.append("")
-            blocks.append(
+            body.append("")
+            body.append(
                 f"**Improvements applied (v{latest_summary.version}):**"
             )
             for imp in latest_summary.key_improvements[:8]:
-                blocks.append(f"- {imp}")
+                body.append(f"- {imp}")
             if len(latest_summary.key_improvements) > 8:
-                blocks.append(
+                body.append(
                     f"- _…and {len(latest_summary.key_improvements) - 8} more_"
                 )
-        blocks.append("")
-        blocks.append(
-            f"[Full CHANGELOG.md entry →](../CHANGELOG.md#resource-{_anchorize(path)})"
+        body.append("")
+        body.append(
+            f"[Full CHANGELOG.md entry →]"
+            f"(../CHANGELOG.md#resource-{_anchorize(path)})"
         )
-        blocks.append("</details>")
+        body.append("</details>")
+        blocks.extend(body)
 
-    return "\n".join(blocks)
+    return "\n".join(blocks).rstrip()
 
 
 def _render_open_issues(
@@ -991,6 +998,44 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _extract_word_count(value: Any) -> int | None:
+    """Accept either an int or a dict-of-counts shape.
+
+    Some agents emit ``"word_count": 4834``; others emit a richer
+    ``{"original": 3450, "optimized": 5967, "delta": 2517, ...}``.
+    Prefer the optimized count when present; otherwise fall back to
+    original / delta / first numeric value.
+    """
+    if isinstance(value, dict):
+        for key in ("optimized", "final", "after", "current", "original", "before"):
+            n = _safe_int(value.get(key))
+            if n is not None:
+                return n
+        for v in value.values():
+            n = _safe_int(v)
+            if n is not None:
+                return n
+        return None
+    return _safe_int(value)
+
+
+def _extract_iterations(data: dict[str, Any]) -> int | None:
+    """Read the iteration count from either schema variant.
+
+    Two shapes in the wild: ``"iterations": 1`` (int) and
+    ``"iteration": "2/2"`` (current/max string). The latter comes from
+    ITERATE-phase agents; pull the leading current-iteration number.
+    """
+    n = _safe_int(data.get("iterations"))
+    if n is not None:
+        return n
+    raw = data.get("iteration")
+    if isinstance(raw, str):
+        head = raw.split("/", 1)[0].strip()
+        return _safe_int(head)
+    return _safe_int(raw)
 
 
 _ANCHOR_RE = re.compile(r"[^a-z0-9]+")
