@@ -167,3 +167,36 @@ class TestExtractTextPreview:
     def test_short_text_passes_through(self) -> None:
         msg = _Message([_TextBlock("hi")])
         assert extract_text_preview(msg) == "hi"
+
+    def test_signal_marker_preserved_when_truncating(self) -> None:
+        """J1: when an AssistantMessage carries a CGF signal marker
+        past the truncation cap, the preview should slice to end at
+        the marker so log readers always see what completed —
+        previously the head-of-text truncation clipped the marker.
+        """
+        text = (
+            "Generated production-ready SKILL.md with 14 sections "
+            "covering OIDC workflows, matrix strategies, GHA reusable "
+            "workflows, OIDC trust policies for AWS, and more. "
+            "[GENERATE_COMPLETE:skills/github-actions/SKILL.md]"
+        )
+        msg = _Message([_TextBlock(text)])
+        preview = extract_text_preview(msg, max_len=150)
+        assert "[GENERATE_COMPLETE:skills/github-actions/SKILL.md]" in preview
+        assert preview.startswith("...")  # signals front-elision
+
+    def test_signal_marker_inside_cap_uses_normal_truncation(self) -> None:
+        """When the marker fits inside max_len, fall through to the
+        standard head-of-text truncation (no biasing needed)."""
+        text = "[ITERATE_COMPLETE:skills/foo.md] " + "a" * 500
+        msg = _Message([_TextBlock(text)])
+        preview = extract_text_preview(msg, max_len=150)
+        assert preview.startswith("[ITERATE_COMPLETE:skills/foo.md]")
+        assert preview.endswith("...")
+
+    def test_supports_validate_issues_marker(self) -> None:
+        """`[VALIDATE_ISSUES:N]` is also a signal worth preserving."""
+        text = ("prose " * 40) + "[VALIDATE_ISSUES:3]"
+        msg = _Message([_TextBlock(text)])
+        preview = extract_text_preview(msg, max_len=150)
+        assert "[VALIDATE_ISSUES:3]" in preview

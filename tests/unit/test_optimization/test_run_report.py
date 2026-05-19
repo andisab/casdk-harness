@@ -775,3 +775,70 @@ def test_summary_omits_subtype_breakdown_for_clean_run(tmp_path: Path) -> None:
     assert "quality regression" not in out
     # Promoted count still surfaces.
     assert "✅ Promoted | 1 |" in out
+
+
+def test_summary_refined_counter_tracks_recoveries(tmp_path: Path) -> None:
+    """J2: `recovered via feedback` is a sub-count of Promoted —
+    counts resources whose latest verdict is `promote` AND had at
+    least one prior rejection.  Before the fix this row was always
+    0 because the elif chain made `_has_recovered` unreachable for
+    promoted resources.
+    """
+    state = _state(
+        current_phase="COMPLETE",
+        resources={
+            "a.md": _resource(path="a.md", version=1),  # clean promote on r1
+            "b.md": _resource(path="b.md", version=2),  # recovered on r2
+            "c.md": _resource(path="c.md", version=2),  # still failing on r2
+        },
+    )
+    eval_rounds = [
+        {
+            "feedback_iteration": 1,
+            "resources": [
+                {
+                    "path": "a.md", "version": 1,
+                    "win_rate": 0.5, "baseline_pass_rate": 0.5,
+                    "candidate_pass_rate": 1.0, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": True, "verdict": "promote",
+                },
+                {
+                    "path": "b.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 1.0,
+                    "candidate_pass_rate": 1.0, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False, "verdict": "reject_cost",
+                },
+                {
+                    "path": "c.md", "version": 1,
+                    "win_rate": 0.0, "baseline_pass_rate": 1.0,
+                    "candidate_pass_rate": 0.67, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False, "verdict": "refine",
+                },
+            ],
+        },
+        {
+            "feedback_iteration": 2,
+            "resources": [
+                {
+                    "path": "b.md", "version": 2,
+                    "win_rate": 0.0, "baseline_pass_rate": 1.0,
+                    "candidate_pass_rate": 1.0, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": True, "verdict": "promote",
+                },
+                {
+                    "path": "c.md", "version": 2,
+                    "win_rate": 0.0, "baseline_pass_rate": 1.0,
+                    "candidate_pass_rate": 0.67, "no_decision_rate": 0.0,
+                    "scenarios": 3, "promoted": False, "verdict": "refine",
+                },
+            ],
+        },
+    ]
+    root = _make_workspace(tmp_path, state=state, eval_rounds=eval_rounds)
+    out = run_report.render(root)
+    # a + b both ended in `promote`, so total Promoted = 2.
+    assert "✅ Promoted | 2 |" in out
+    # Of those, only b had a prior rejection → 1 recovered.
+    assert "recovered via feedback | 1 |" in out
+    # c is the lone Rejected.
+    assert "❌ Rejected | 1 |" in out

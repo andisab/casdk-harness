@@ -572,9 +572,13 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
                 pending += 1
             elif verdict.promoted:
                 promoted += 1
-            elif _has_recovered(path, eval_rounds):
-                # Failed earlier round but later promoted
-                refined += 1
+                # J2: "refined" is a sub-count of promoted — resources
+                # that cleared the gate after at least one prior
+                # rejection.  Previous `elif` chain made this
+                # unreachable because every recovered resource has
+                # verdict.promoted=True on its final round.
+                if _has_recovered(path, eval_rounds):
+                    refined += 1
             else:
                 rejected += 1
                 v = (verdict.verdict or "").lower()
@@ -605,7 +609,7 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
         "|---|---|",
         f"| Resources planned | {n_total} |",
         f"| ✅ Promoted | {promoted} |",
-        f"| 🔄 Refined (recovered via feedback) | {refined} |",
+        f"|     · 🔄 recovered via feedback | {refined} |",
         f"| ❌ Rejected | {rejected} |",
     ]
     # I15 sub-breakdown — only emit when at least one was hit, to keep
