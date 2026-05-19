@@ -1,0 +1,1229 @@
+{
+  "title": "1: Cost & Spend",
+  "uid": "casdk-cost",
+  "tags": [
+    "claude",
+    "harness"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "mode",
+        "label": "Mode",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_config_info, mode)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_config_info, mode)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "resource",
+        "label": "Resource",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_phase_info{resource!~\"test_.*\"}, resource)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "path",
+        "label": "Path",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(harness_run_path_info, path)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(harness_run_path_info, path)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      },
+      {
+        "name": "model",
+        "label": "Model",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(claude_code_cost_usage_USD_total, model)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(claude_code_cost_usage_USD_total, model)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "hide": 0,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "All Harness Dashboards",
+      "type": "dashboards",
+      "tags": [
+        "claude",
+        "harness"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link"
+    },
+    {
+      "title": "0: Main",
+      "type": "link",
+      "url": "/d/casdk-overview",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "2: Cache & Token Efficiency",
+      "type": "link",
+      "url": "/d/casdk-cache",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "3: Productivity & Tools",
+      "type": "link",
+      "url": "/d/casdk-productivity",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "4: Errors & Reliability",
+      "type": "link",
+      "url": "/d/casdk-reliability",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "5: Mode: Interactive",
+      "type": "link",
+      "url": "/d/casdk-mode-interactive",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "6: Mode: Autonomous",
+      "type": "link",
+      "url": "/d/casdk-mode-autonomous",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "7: Mode: CGF Optimization",
+      "type": "link",
+      "url": "/d/casdk-cgf",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "9: TBD: Raw Events",
+      "type": "link",
+      "url": "/d/casdk-raw-events",
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 2,
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "id": 10050,
+      "title": "Spend (last 24h)",
+      "description": "Total cost across the rolling 24-hour window ending now. Independent of dashboard time picker. \"Today\" approximated as 24h because Prometheus cannot trivially align to midnight in a user-local timezone.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total{model=~\"$model\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 10060,
+      "title": "Tokens In (last 24h)",
+      "description": "Sum of input + cache-read + cache-creation tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens in\" semantics.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "id": 10070,
+      "title": "Tokens Out (last 24h)",
+      "description": "Output tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens out\".",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=\"output\"}[24h]))",
+          "refId": "A",
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 10100,
+      "type": "stat",
+      "title": "Spend Rate ($/hour)",
+      "description": "Current cost rate normalized to per-hour from a 5m window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) * 3600",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10110,
+      "type": "stat",
+      "title": "Spend (selected range)",
+      "description": "Total spend across the dashboard time window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "none",
+        "colorMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10120,
+      "type": "stat",
+      "title": "Cost / Accepted Edit",
+      "description": "Average cost per accepted code edit, computed as total spend ÷ total accepted edits across the dashboard range. A defensible efficiency KPI; rising values point to too much Opus where Sonnet would suffice, or over-high `effort` settings.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range])) / sum(increase(claude_code_code_edit_tool_decision_total{decision=\"accept\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "decimals": 3
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10130,
+      "type": "stat",
+      "title": "Projected Monthly Spend",
+      "description": "Average daily spend over the last 7 days × 30. Directional, not a forecast — Anthropic has re-priced Opus downward 3× within a year. Empty if Prometheus has < 7d of retained samples.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_cost_usage_USD_total[7d])) / 7 * 30",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10200,
+      "type": "timeseries",
+      "title": "Spend by Model",
+      "description": "Per-model cost rate. Inspect for mid-session model switches.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (model) (rate(claude_code_cost_usage_USD_total{model=~\"$model\"}[5m])) * 3600",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 260
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*opus.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#A855F7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*sonnet.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3B82F6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*haiku.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#22C55E"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10210,
+      "type": "timeseries",
+      "title": "Spend by query_source",
+      "description": "Cost rate broken down by main / subagent / auxiliary. Subagents (Task tool) typically use ~7× more tokens than the main thread — this panel surfaces the differential.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (query_source) (rate(claude_code_cost_usage_USD_total[5m])) * 3600",
+          "legendFormat": "{{query_source}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 260
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^subagent$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#A855F7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^main$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3B82F6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^auxiliary$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#22C55E"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10220,
+      "type": "timeseries",
+      "title": "Spend by effort",
+      "description": "low / medium / high / xhigh / max. Cost scales with extended-thinking budget; this is the canonical lever for tuning cost-per-task. Empty when no `effort=` label is propagated by the SDK.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (effort) (rate(claude_code_cost_usage_USD_total[5m])) * 3600",
+          "legendFormat": "{{effort}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 260
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(xhigh|max)$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#A855F7"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^high$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3B82F6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^medium$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#14B8A6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^low$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#22C55E"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10230,
+      "type": "barchart",
+      "title": "Spend by Terminal Type (selected range)",
+      "description": "vscode / tmux / cursor / iTerm.app / non-interactive. Horizontal bar, not pie — pies misrepresent the unequal magnitudes.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (terminal_type) (increase(claude_code_cost_usage_USD_total[$__range]))",
+          "legendFormat": "{{terminal_type}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10300,
+      "type": "timeseries",
+      "title": "Cost per Commit",
+      "description": "CAVEAT: claude_code_commit_count_total is empty in 24h on typical CGF-optimization workloads — see OBSERVABILITY.md § 6 item 7. This panel will render empty until Claude commits in-session (typically only happens in autonomous mode).",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) / sum(rate(claude_code_commit_count_total[5m]))",
+          "legendFormat": "$/commit",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10310,
+      "type": "timeseries",
+      "title": "Cost per PR",
+      "description": "CAVEAT: claude_code_pull_request_count_total only fires when Claude itself opens the PR in-session (via `gh pr create` or an MCP tool). Manual PRs do not register. See OBSERVABILITY.md § 6 item 7.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) / sum(rate(claude_code_pull_request_count_total[5m]))",
+          "legendFormat": "$/PR",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "currencyUSD",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -235,27 +235,27 @@ The dashboard built for this pipeline. Look here first.
 - **State Timeline** — phase transitions over time. Useful for seeing
   loop-backs (`EXECUTION_EVAL → ITERATE`) and stuck phases.
 
-### `/d/casdk-overview` — Harness Overview
+### `/d/casdk-overview` — Main
 
 Top-level health: services up, agent activity, recent errors. Start
 here if something feels off and you're not sure where to look.
 
-### `/d/casdk-sdk-cost` — Cost & Spend
+### `/d/casdk-cost` — Cost & Spend
 
 Token spend segmented by `model` (sonnet/opus/haiku) and `query_source`
 (main agent vs. subagent invocations). Useful after a run for the
 "what did this cost me" question.
 
-### `/d/casdk-sdk-reliability` — Reliability & Errors
+### `/d/casdk-reliability` — Errors & Reliability
 
 API errors, retries, transient failures. Check after a failed run to
 distinguish "network blip the harness should have retried" from
 "genuine config or agent error."
 
-Other dashboards (`sdk-productivity`, `sdk-cache`, `sdk-tools`,
-`mode-interactive`, `mode-autonomous`, `raw-events`) are less relevant
-during optimization runs. See `docs/OBSERVABILITY.md` for the full
-tour, alert rules, and metric inventory.
+Other dashboards (`casdk-cache`, `casdk-productivity`,
+`casdk-mode-interactive`, `casdk-mode-autonomous`, `casdk-raw-events`)
+are less relevant during optimization runs. See `docs/OBSERVABILITY.md`
+for the full tour, alert rules, and metric inventory.
 
 ## Troubleshooting
 

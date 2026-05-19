@@ -1,6 +1,6 @@
 {
-  "title": "Claude Agent Harness \u2014 Mode: Interactive",
-  "uid": "casdk-mode-interactive",
+  "title": "2: Cache & Token Efficiency",
+  "uid": "casdk-cache",
   "tags": [
     "claude",
     "harness"
@@ -10,7 +10,7 @@
   "version": 1,
   "refresh": "30s",
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {
@@ -172,7 +172,7 @@
       "icon": "external link"
     },
     {
-      "title": "00 \u2014 Overview",
+      "title": "0: Main",
       "type": "link",
       "url": "/d/casdk-overview",
       "icon": "dashboard",
@@ -181,52 +181,43 @@
       "targetBlank": false
     },
     {
-      "title": "10 \u2014 SDK: Cost & Spend",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-cost",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "20 \u2014 SDK: Productivity",
+      "title": "3: Productivity & Tools",
       "type": "link",
-      "url": "/d/casdk-sdk-productivity",
+      "url": "/d/casdk-productivity",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "4: Errors & Reliability",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-reliability",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
+      "title": "5: Mode: Interactive",
       "type": "link",
-      "url": "/d/casdk-sdk-tools",
+      "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "50 \u2014 SDK: Reliability",
-      "type": "link",
-      "url": "/d/casdk-sdk-reliability",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "65 \u2014 Mode: Autonomous",
+      "title": "6: Mode: Autonomous",
       "type": "link",
       "url": "/d/casdk-mode-autonomous",
       "icon": "dashboard",
@@ -235,7 +226,7 @@
       "targetBlank": false
     },
     {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -244,7 +235,7 @@
       "targetBlank": false
     },
     {
-      "title": "99 \u2014 Raw Events",
+      "title": "9: TBD: Raw Events",
       "type": "link",
       "url": "/d/casdk-raw-events",
       "icon": "dashboard",
@@ -255,13 +246,13 @@
   ],
   "panels": [
     {
-      "id": 60100,
+      "id": 30100,
       "type": "stat",
-      "title": "Active Sessions",
-      "description": "Active interactive sessions (harness_agent_active_sessions).",
+      "title": "Cache Hit Rate (Overall)",
+      "description": "cacheRead / (cacheRead + cacheCreation + input) over the rate interval. Healthy Claude Code sessions sit at ≥90%; <60% means cache is busted each turn (timestamps in CLAUDE.md, mid-session model switches, MCP additions, capitalization drift in stable prefixes).",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 0
       },
@@ -271,7 +262,82 @@
       },
       "targets": [
         {
-          "expr": "sum(harness_agent_active_sessions)",
+          "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "green",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30110,
+      "type": "stat",
+      "title": "Effective $/Mtok (any type)",
+      "description": "Average cost per million tokens across all types. Cache reads (0.1× input price) and cache writes (1.25–2× input price) make this much lower than the model's base input price when caching is healthy. Spec § 1.4 derives a per-type formula; this is the aggregate version that doesn't require per-model base-price lookup.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) * 1e6 / sum(rate(claude_code_token_usage_tokens_total[5m]))",
           "refId": "A",
           "instant": false
         }
@@ -293,7 +359,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -301,27 +367,27 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "none",
-          "decimals": 0
+          "unit": "currencyUSD",
+          "decimals": 2
         },
         "overrides": []
       }
     },
     {
-      "id": 60110,
+      "id": 30120,
       "type": "stat",
-      "title": "Prompts (selected range)",
-      "description": "User prompts submitted in the current dashboard window.",
+      "title": "Cache Read : Creation Ratio",
+      "description": "cacheRead / cacheCreation over 5m. High = lots of reuse from cached prefixes (healthy). Low = cache is being written but evicted before reuse — TTL too short for your workflow, or system prompts are unstable across turns. Above ~10:1 is typical for a long well-cached session.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 8,
+        "x": 16,
         "y": 0
       },
       "datasource": {
@@ -330,7 +396,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(harness_session_prompts_total[$__range]))",
+          "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[5m])) / sum(rate(claude_code_token_usage_tokens_total{type=\"cacheCreation\"}[5m]))",
           "refId": "A",
           "instant": false
         }
@@ -352,7 +418,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -360,141 +426,23 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
           "unit": "none",
-          "decimals": 0
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 60120,
-      "type": "stat",
-      "title": "Responses (selected range)",
-      "description": "Agent responses in the current dashboard window.",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(harness_session_responses_total[$__range]))",
-          "refId": "A",
-          "instant": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "none",
-          "decimals": 0
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 60130,
-      "type": "stat",
-      "title": "Session Duration P95",
-      "description": "P95 from harness_session_duration_seconds_bucket histogram.",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(harness_session_duration_seconds_bucket[$__range])))",
-          "refId": "A",
-          "instant": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "none",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "s",
           "decimals": 1
         },
         "overrides": []
       }
     },
     {
-      "id": 60200,
+      "id": 30200,
       "type": "timeseries",
-      "title": "Conversation Flow",
-      "description": "Rate of user prompts and agent responses, overlaid. Visualizes the rhythm of human-AI interaction over the session. A responsive session shows close-coupled rates; long stretches of prompt-only suggest the agent is mid-thinking or mid-tool-call.",
+      "title": "Cache Hit Rate — Over Time",
+      "description": "Cache hit rate over time. Threshold band: ≥90% green, 60–80% amber, <60% red. Mid-session model switches will visibly destroy this — cache is per-model with no cross-model reuse.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -507,14 +455,9 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(harness_session_prompts_total[1m])) * 60",
-          "legendFormat": "prompts/min",
+          "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+          "legendFormat": "cache hit rate",
           "refId": "A"
-        },
-        {
-          "expr": "sum(rate(harness_session_responses_total[1m])) * 60",
-          "legendFormat": "responses/min",
-          "refId": "B"
         }
       ],
       "options": {
@@ -539,28 +482,29 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "none",
+          "unit": "percentunit",
           "custom": {
-            "fillOpacity": 15,
+            "fillOpacity": 10,
             "lineWidth": 1,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "decimals": 2
         },
         "overrides": []
       }
     },
     {
-      "id": 60300,
+      "id": 30300,
       "type": "timeseries",
-      "title": "Tool Calls (rate by tool_name, status)",
-      "description": "Tool invocation rate broken out by tool_name and status. Errors and successes stack visually.",
+      "title": "Cache Hit Rate by Model",
+      "description": "Per-model cache hit rate. Switching models mid-session destroys the cache for the new model until it builds up — visible here as one line dropping to 0 while the previous model's line goes flat.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -573,8 +517,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (tool_name, status) (rate(harness_tool_calls_total[5m])) * 60",
-          "legendFormat": "{{tool_name}} / {{status}}",
+          "expr": "sum by (model) (rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum by (model) (rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\",model=~\"$model\"}[$__rate_interval]))",
+          "legendFormat": "{{model}}",
           "refId": "A"
         }
       ],
@@ -582,7 +526,8 @@
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": true,
+          "width": 250
         },
         "tooltip": {
           "mode": "multi",
@@ -600,28 +545,29 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "none",
+          "unit": "percentunit",
           "custom": {
             "fillOpacity": 5,
             "lineWidth": 1,
             "showPoints": "never",
             "spanNulls": false
-          }
+          },
+          "decimals": 2
         },
         "overrides": []
       }
     },
     {
-      "id": 60310,
-      "type": "barchart",
-      "title": "Tool Calls (selected range)",
-      "description": "Most-used tools across the window. Horizontal bar, not pie.",
+      "id": 30310,
+      "type": "timeseries",
+      "title": "Token Mix (stacked area)",
+      "description": "Rate of each token type. A long, cache-healthy session is dominated by cacheRead (cheap). cacheCreation spikes at the start of each new prompt prefix. input/output are the residual.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -634,77 +580,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (tool_name) (increase(harness_tool_calls_total[$__range]))",
-          "legendFormat": "{{tool_name}}",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "orientation": "horizontal",
-        "showValue": "auto",
-        "stacking": "none",
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0,
-        "legend": {
-          "showLegend": false,
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "none",
-          "decimals": 0,
-          "custom": {
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "lineWidth": 1
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 60400,
-      "type": "timeseries",
-      "title": "Message Types (stacked)",
-      "description": "Stacked area of message-type rates: text / tool_use / tool_result / thinking. Shows how much of the session is thinking vs tool execution vs reply text.",
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 20
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by (message_type) (rate(harness_message_types_total[5m])) * 60",
-          "legendFormat": "{{message_type}}",
+          "expr": "sum by (type) (rate(claude_code_token_usage_tokens_total[5m]))",
+          "legendFormat": "{{type}}",
           "refId": "A"
         }
       ],
@@ -712,7 +589,8 @@
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": true,
+          "width": 250
         },
         "tooltip": {
           "mode": "multi",
@@ -730,13 +608,13 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "none",
+          "unit": "short",
           "custom": {
             "fillOpacity": 60,
             "lineWidth": 1,
@@ -752,211 +630,130 @@
       }
     },
     {
-      "id": 60900,
-      "type": "row",
-      "title": "SDK Economics \u2014 see Dashboards 10 (Cost) and 30 (Cache)",
-      "collapsed": true,
+      "id": 30400,
+      "type": "timeseries",
+      "title": "Output : Input Ratio by Model",
+      "description": "output / input token rate by model. Opus 4.7's new tokenizer emits up to 35% more output tokens for the same prose; session-to-session delta surfaces the impact. The harness doesn't separate extended-thinking tokens — they fold into output.",
       "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 26
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 20
       },
-      "panels": [
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
         {
-          "id": 60910,
-          "type": "stat",
-          "title": "Session Cost (1h window)",
-          "description": "Cost in the current 1h window. Drill into D10 for full breakdown.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 0,
-            "y": 27
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "fixed",
-                "fixedColor": "text-primary"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "currencyUSD",
-              "decimals": 2
-            },
-            "overrides": []
-          }
-        },
-        {
-          "id": 60920,
-          "type": "stat",
-          "title": "Tokens (1h window)",
-          "description": "Total tokens. Drill into D30 for cache breakdown.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 8,
-            "y": 27
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "sum(increase(claude_code_token_usage_tokens_total[$__range]))",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "fixed",
-                "fixedColor": "text-primary"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "short",
-              "decimals": 0
-            },
-            "overrides": []
-          }
-        },
-        {
-          "id": 60930,
-          "type": "stat",
-          "title": "Cache Hit Rate (rate interval)",
-          "description": "Headline cache hit rate. Threshold-colored.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 16,
-            "y": 27
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "percentunit",
-              "decimals": 1,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "red",
-                    "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 0.6
-                  },
-                  {
-                    "color": "green",
-                    "value": 0.9
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          }
+          "expr": "sum by (model) (rate(claude_code_token_usage_tokens_total{type=\"output\",model=~\"$model\"}[5m])) / sum by (model) (rate(claude_code_token_usage_tokens_total{type=\"input\",model=~\"$model\"}[5m]))",
+          "legendFormat": "{{model}}",
+          "refId": "A"
         }
-      ]
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 250
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30410,
+      "type": "timeseries",
+      "title": "Cache Hit Rate by query_source",
+      "description": "Per-query_source cache hit rate. main / subagent / auxiliary. Subagents (Task tool) tend to have lower hit rates because each Task invocation pays cacheCreation for its own context — this panel surfaces the cost differential.",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (query_source) (rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum by (query_source) (rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+          "legendFormat": "{{query_source}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 250
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
     }
   ]
 }

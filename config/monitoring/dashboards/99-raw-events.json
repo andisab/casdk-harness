@@ -1,5 +1,5 @@
 {
-  "title": "Claude Agent Harness \u2014 Raw Events (Stage 3)",
+  "title": "9: TBD: Raw Events",
   "uid": "casdk-raw-events",
   "tags": [
     "claude",
@@ -41,7 +41,7 @@
       "icon": "external link"
     },
     {
-      "title": "00 \u2014 Overview",
+      "title": "0: Main",
       "type": "link",
       "url": "/d/casdk-overview",
       "icon": "dashboard",
@@ -50,52 +50,43 @@
       "targetBlank": false
     },
     {
-      "title": "10 \u2014 SDK: Cost & Spend",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-cost",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "20 \u2014 SDK: Productivity",
+      "title": "2: Cache & Token Efficiency",
       "type": "link",
-      "url": "/d/casdk-sdk-productivity",
+      "url": "/d/casdk-cache",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "3: Productivity & Tools",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-productivity",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
+      "title": "4: Errors & Reliability",
       "type": "link",
-      "url": "/d/casdk-sdk-tools",
+      "url": "/d/casdk-reliability",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "50 \u2014 SDK: Reliability",
-      "type": "link",
-      "url": "/d/casdk-sdk-reliability",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "60 \u2014 Mode: Interactive",
+      "title": "5: Mode: Interactive",
       "type": "link",
       "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
@@ -104,7 +95,7 @@
       "targetBlank": false
     },
     {
-      "title": "65 \u2014 Mode: Autonomous",
+      "title": "6: Mode: Autonomous",
       "type": "link",
       "url": "/d/casdk-mode-autonomous",
       "icon": "dashboard",
@@ -113,7 +104,7 @@
       "targetBlank": false
     },
     {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -126,7 +117,7 @@
     {
       "id": 99100,
       "type": "text",
-      "title": "Stage 3 \u2014 Raw Events (requires Loki)",
+      "title": "Stage 3 — Raw Events (requires Loki)",
       "gridPos": {
         "h": 18,
         "w": 24,
@@ -135,7 +126,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "# Stage 3 \u2014 Raw Events explorer\n\nThis dashboard is a **placeholder**. The full panel will be a single Logs panel templated by `prompt.id` and `session.id`, enabling forensic drill-down into the OTLP event stream that Claude Code emits alongside metrics.\n\n## Prerequisite\n\nAdds Loki to the Docker Compose stack and wires the OTel Collector's logs pipeline to it. See `docs/OBSERVABILITY.md` \u00a7 9.1.\n\n## What gets unlocked\n\n- Per-request cost attribution (\"which API call cost $1.40?\")\n- Tool execution P50/P95/P99 latency by tool name (LogQL `quantile_over_time`)\n- Session reconstruction via `prompt.id` join across events\n- Status-code segmentation on `api_error` (429 vs 5xx vs 529)\n- Compaction event correlation with metric dips\n- The deferred D40 and D50 panels marked \"Loki-dependent\"\n\n## Status\n\nDeferred indefinitely. Turn on when there's a clear ROI signal (e.g., debugging a specific incident that Prometheus aggregate metrics can't explain). Cost: one additional container (~200 MB RAM) and a small change to `config/monitoring/otel-collector.yml`."
+        "content": "# Stage 3 — Raw Events explorer\n\nThis dashboard is a **placeholder**. The full panel will be a single Logs panel templated by `prompt.id` and `session.id`, enabling forensic drill-down into the OTLP event stream that Claude Code emits alongside metrics.\n\n## Prerequisite\n\nAdds Loki to the Docker Compose stack and wires the OTel Collector's logs pipeline to it. See `docs/OBSERVABILITY.md` § 9.1.\n\n## What gets unlocked\n\n- Per-request cost attribution (\"which API call cost $1.40?\")\n- Tool execution P50/P95/P99 latency by tool name (LogQL `quantile_over_time`)\n- Session reconstruction via `prompt.id` join across events\n- Status-code segmentation on `api_error` (429 vs 5xx vs 529)\n- Compaction event correlation with metric dips\n- The deferred D3 and D4 panels marked \"Loki-dependent\"\n\n## Status\n\nDeferred indefinitely. Turn on when there's a clear ROI signal (e.g., debugging a specific incident that Prometheus aggregate metrics can't explain). Cost: one additional container (~200 MB RAM) and a small change to `config/monitoring/otel-collector.yml`."
       },
       "fieldConfig": {
         "defaults": {},

@@ -132,7 +132,7 @@ Populated by `multi_resource_orchestrator` + `_orchestrator_phases/{eval_design,
 
 ### 3.4 Run-level status (6 metrics)
 
-Powers the D00 / D70 Active Run Status row and the spec's `$mode` / `$path` / `$resource` template variables.
+Powers the D0 / D7 Active Run Status row and the spec's `$mode` / `$path` / `$resource` template variables.
 
 | Metric | Type | Emitted from | Notes |
 |---|---|---|---|
@@ -153,7 +153,7 @@ The Claude Code CLI emits these natively over OTLP when `CLAUDE_CODE_ENABLE_TELE
 | `claude_code_lines_of_code_count_total{type}` | `type=added` and `type=removed` confirmed live. Use `sum_over_time` not `increase` (delta-style counter). |
 | `claude_code_pull_request_count_total` | Fires only when Claude in-session opens a PR. Expected absent on CGF workloads. |
 | `claude_code_commit_count_total` | Fires only when Claude in-session calls `git commit`. Expected absent on CGF workloads. |
-| `claude_code_cost_usage_USD_total{model, query_source, effort, agent_name, plugin_name, terminal_type}` | All 6 segmentation dimensions land. Core of D10 spend panels. |
+| `claude_code_cost_usage_USD_total{model, query_source, effort, agent_name, plugin_name, terminal_type}` | All 6 segmentation dimensions land. Core of D1 spend panels. |
 | `claude_code_token_usage_tokens_total{type, model, query_source, effort, agent_name}` | All 4 `type` values (input/output/cacheRead/cacheCreation) confirmed. Cache hit formula = `cacheRead / (cacheRead + cacheCreation + input)`. |
 | `claude_code_code_edit_tool_decision_total{tool_name, decision, language, exported_source}` | **Name correction vs upstream spec:** SDK emits `_total`, not `_count_total`. Label `exported_source` (renamed from SDK's `source` due to Prometheus collision — see § 6). |
 | `claude_code_active_time_seconds_total{type}` | `type=cli` consistent; `type=user` interactive-only. Productivity-multiplier panel divides by zero on non-interactive workloads. |
@@ -166,20 +166,19 @@ Five `cgf_*` instruments (`cgf_spans_collected_total`, `cgf_spans_exported_total
 
 ## 4. Dashboards
 
-10 dashboards under the **"Claude Agent Harness"** folder. UIDs are stable; bookmarks and Data Links use them.
+9 dashboards under the **"Claude Agent Harness"** folder. UIDs are stable; bookmarks and Data Links use them.
 
 | # | UID | Main function | Headline panels |
 |---|---|---|---|
-| **00** | `casdk-overview` | **Mode-aware integration hub.** First stop. Active Mode panel value-maps to deep-link the relevant Tier 3 dashboard. | Active Mode, Run Config, Run Elapsed; 5 universal KPIs (Spend, Cache Hit, Edit Accept, Tokens, Error Rate) with Data Links to D10/D30/D40/D50; Spend by Model + Cache Hit Rate trends; three collapsed mode-aware rows; System Health row (workspace files, checkpoint size, agent RSS). |
-| **10** | `casdk-sdk-cost` | **Cost & Spend.** Where the money goes. | Spend rate, total spend, $/accepted-edit, projected monthly. Spend by model / query_source / effort / terminal_type. $/commit + $/PR with empty-panel caveats. |
-| **20** | `casdk-sdk-productivity` | **Session & Productivity.** | Active sessions, sessions started, net LoC (`sum_over_time`, not `increase`). Sessions by start_type, LoC added/removed, CLI vs user time, harness session duration P50/P95. |
-| **30** | `casdk-sdk-cache` | **Cache & Token Efficiency.** Highest-leverage dashboard per spec — cache health directly drives cost. | Cache hit rate (overall + threshold-banded; ≥90% green / 60-80% amber / <60% red), effective $/Mtok, cache read:creation ratio, hit rate over time, hit rate by model, token mix stacked area, output:input ratio by model, hit rate by query_source. |
-| **40** | `casdk-sdk-tools` | **Tool & Code Quality.** | Edit acceptance rate overall + per-tool small-multiples. Rejection rate by `language` and `exported_source`. Most-used tools horizontal bar. Harness-side tool calls by status. Stage-3 panels (P50/P95 duration, MCP tool calls, Bash frequency) noted as deferred. |
-| **50** | `casdk-sdk-reliability` | **Reliability & Errors.** Prometheus-only subset; richer SDK error breakdown needs Loki. | Harness error rate (proxy), counts (error/timeout/success), per-agent error rate, request status by agent, agent duration P50/P95/P99. Collapsed Stage-3 placeholder row for status-code segmentation + TTFT + retries. |
-| **60** | `casdk-mode-interactive` | **Mode: Interactive.** Active during `make interactive`. | Session header (sessions, prompts, responses, P95 duration), conversation flow (overlaid prompts + responses rate), tool usage time-series + bar, message types stacked area. Collapsed SDK Economics row with deep-links. |
-| **65** | `casdk-mode-autonomous` | **Mode: Autonomous.** Active during `make autonomous`. | Task progress header (completed / pending / failed / completion %), commits over time + LoC delta, agent duration P50/P95 by agent, task progress as time-series. Collapsed SDK Economics row. |
-| **70** | `casdk-cgf` | **Mode: CGF Optimization.** Active during `make optimize`. | Run Config table, Phase Progression State Timeline (was bargauge), Iteration + Run Elapsed + Active Path/Resource, Cost + Tokens + Cache Hit + Cost-by-Model. Eval Framework row (collapsed) with phase duration + tokens-to-goal + scenarios + arm scores + judge no-decisions. |
-| **99** | `casdk-raw-events` | **Stage 3 placeholder.** Text panel explaining the Loki prerequisite. Holds the UID for cross-dashboard Data Links. | (Single Text panel; activates when Loki lands.) |
+| **0** | `casdk-overview` | **Main.** Mode-aware integration hub. First stop. Active Mode panel value-maps to deep-link the relevant Tier 3 dashboard. | Active Mode, Run Config, Run Elapsed; 5 universal KPIs (Spend, Cache Hit, Edit Accept, Tokens, Error Rate) with Data Links to D1/D2/D3/D4; Spend by Model + Cache Hit Rate trends; three collapsed mode-aware rows; System Health row (workspace files, checkpoint size, agent RSS). |
+| **1** | `casdk-cost` | **Cost & Spend.** Where the money goes. | Spend rate, total spend, $/accepted-edit, projected monthly. Spend by model / query_source / effort / terminal_type. $/commit + $/PR with empty-panel caveats. |
+| **2** | `casdk-cache` | **Cache & Token Efficiency.** Highest-leverage dashboard per spec — cache health directly drives cost. | Cache hit rate (overall + threshold-banded; ≥90% green / 60-80% amber / <60% red), effective $/Mtok, cache read:creation ratio, hit rate over time, hit rate by model, token mix stacked area, output:input ratio by model, hit rate by query_source. |
+| **3** | `casdk-productivity` | **Productivity & Tools.** Combined session/productivity and edit-quality view. | Active sessions, sessions started, net LoC, edit acceptance rate; sessions by start_type + terminal_type; CLI vs user time; session duration P50/P95; accepted/rejected edits; LoC added/removed; acceptance rate by tool_name; rejection rate by language + exported_source; tool calls by tool_name + status; edit decisions barchart. |
+| **4** | `casdk-reliability` | **Errors & Reliability.** Prometheus-only subset; richer SDK error breakdown needs Loki. | Harness error rate (proxy), counts (error/timeout/success), per-agent error rate, request status by agent, agent duration P50/P95/P99. Collapsed Stage-3 placeholder row for status-code segmentation + TTFT + retries. |
+| **5** | `casdk-mode-interactive` | **Mode: Interactive.** Active during `make interactive`. | Session header (sessions, prompts, responses, P95 duration), conversation flow (overlaid prompts + responses rate), tool usage time-series + bar, message types stacked area. Collapsed SDK Economics row with deep-links. |
+| **6** | `casdk-mode-autonomous` | **Mode: Autonomous.** Active during `make autonomous`. | Task progress header (completed / pending / failed / completion %), commits over time + LoC delta, agent duration P50/P95 by agent, task progress as time-series. Collapsed SDK Economics row. |
+| **7** | `casdk-cgf` | **Mode: CGF Optimization.** Active during `make optimize`. | Run Config table, Phase Progression State Timeline (was bargauge), Iteration + Run Elapsed + Active Path/Resource, Cost + Tokens + Cache Hit + Cost-by-Model. Eval Framework row (collapsed) with phase duration + tokens-to-goal + scenarios + arm scores + judge no-decisions. |
+| **9** | `casdk-raw-events` | **TBD: Raw Events.** Stage 3 placeholder. Text panel explaining the Loki prerequisite. Holds the UID for cross-dashboard Data Links. | (Single Text panel; activates when Loki lands.) |
 
 **Shared conventions across all 10:**
 
@@ -188,7 +187,7 @@ Five `cgf_*` instruments (`cgf_spans_collected_total`, `cgf_spans_exported_total
 - 5 shared template variables: `$datasource`, `$mode`, `$resource`, `$path`, `$model`. (`$user` and `$loki_datasource` deliberately omitted — single-user; no Loki.)
 - Dashboard Links bar at top of every dashboard linking to all siblings.
 - `null+nan → "—"` gray on every Stat / Table panel.
-- Structural color only: gray=context, blue=informational, green=healthy, amber=warning band, red=error/failure, purple=optimize-mode discriminator on D00.
+- Structural color only: gray=context, blue=informational, green=healthy, amber=warning band, red=error/failure, purple=optimize-mode discriminator on D0.
 
 ---
 
@@ -226,15 +225,15 @@ These are the gotchas that have surfaced during the refactor. Re-read before deb
 
 3. **`${datasource}` doesn't interpolate in panel `datasource.uid`.** Only in query expressions. Use the literal `"uid": "prometheus"` in every panel JSON. The template variable still works for query-level dynamic switching if a second datasource is ever added.
 
-4. **SDK metric-name correction.** Upstream Anthropic spec lists the edit-decision counter as `claude_code_code_edit_tool_decision_count_total`. **Reality: SDK emits `claude_code_code_edit_tool_decision_total`** (no `_count` infix). Every D40 PromQL panel uses the corrected name.
+4. **SDK metric-name correction.** Upstream Anthropic spec lists the edit-decision counter as `claude_code_code_edit_tool_decision_count_total`. **Reality: SDK emits `claude_code_code_edit_tool_decision_total`** (no `_count` infix). Every D3 edit-decision PromQL panel uses the corrected name.
 
-5. **Prometheus label-collision rename.** The scrape job applies a `source="claude-sdk-harness"` label. The SDK separately emits its own `source` attribute on `code_edit_tool_decision` (with values `config`/`hook`/`user_permanent`/…). Prometheus resolves the collision by renaming the SDK's attribute to **`exported_source`**. Same applies to `job` → `exported_job`. D40 "Rejection rate by source" panels query `exported_source`.
+5. **Prometheus label-collision rename.** The scrape job applies a `source="claude-sdk-harness"` label. The SDK separately emits its own `source` attribute on `code_edit_tool_decision` (with values `config`/`hook`/`user_permanent`/…). Prometheus resolves the collision by renaming the SDK's attribute to **`exported_source`**. Same applies to `job` → `exported_job`. D3 "Rejection rate by source" panels query `exported_source`.
 
 6. **LoC counters are delta-style.** Use `sum_over_time(...[$__range])`, **not** `increase()`, on `claude_code_lines_of_code_count_total`. `increase()` extrapolates them to nonsense values — single most common dashboard mistake in community examples.
 
-7. **`claude_code_commit_count_total` and `pull_request_count_total` are typically empty.** They fire only when Claude in-session invokes `git commit` / `gh pr create`. CGF optimization runs don't commit; autonomous mode may, depending on workflow. D10's $/commit and $/PR panels carry explicit caveats; expect them to render empty on a typical workload.
+7. **`claude_code_commit_count_total` and `pull_request_count_total` are typically empty.** They fire only when Claude in-session invokes `git commit` / `gh pr create`. CGF optimization runs don't commit; autonomous mode may, depending on workflow. D1's $/commit and $/PR panels carry explicit caveats; expect them to render empty on a typical workload.
 
-8. **`claude_code_active_time_seconds_total{type="user"}` is interactive-only.** The "Productivity multiplier (cli/user)" panel divides by zero on non-interactive workloads. D20 documents this; treat the metric as directional, never as a performance KPI.
+8. **`claude_code_active_time_seconds_total{type="user"}` is interactive-only.** The "Productivity multiplier (cli/user)" panel divides by zero on non-interactive workloads. D3 documents this; treat the metric as directional, never as a performance KPI.
 
 9. **Compose env passthrough is enumeration-based.** The `environment:` block in `docker-compose.yml` lists explicit `${VAR:-default}` entries. Variables not enumerated never reach the container even if set in `.env`. OTel envvars (`OTEL_*`) use literal values, not shell-interpolated, so host-shell envvars cannot leak into the harness containers.
 
@@ -262,13 +261,13 @@ Three retention layers shape what dashboards can show.
 
 - **Trend panels** (time-series like Spend by Model, Cache Hit Rate Over Time, Phase Progression State Timeline, Task Progress Over Time, etc.) — display every sample within the dashboard time range.  Set the time picker to "Last 7 days" and the panel renders the last week.
 - **Stat panels with `lastNotNull`** (Spend, Cache Hit, Edit Accept Rate, etc.) — evaluate at the *end* of the dashboard time range and reduce to the most recent non-null sample.  Set the range to a past hour and the stat reflects what was happening then.
-- **Instant `== 1` panels** (D00/D70 Run Config table, D00 Active Mode) — Grafana evaluates these at the end of the dashboard time range.  Set the range to "yesterday 14:00 → 15:00" and the Run Config table shows whatever run was active at 15:00 yesterday.  Genuinely useful for historical drill-down.
+- **Instant `== 1` panels** (D0/D7 Run Config table, D0 Active Mode) — Grafana evaluates these at the end of the dashboard time range.  Set the range to "yesterday 14:00 → 15:00" and the Run Config table shows whatever run was active at 15:00 yesterday.  Genuinely useful for historical drill-down.
 
 So **yes, data from just-finished runs appears in the dashboards** — within retention.  Trend panels show it automatically; current-state panels (Run Config, Phase Progression rightmost segment) require shifting the time picker back to encompass the run.
 
 ### What is not currently set up
 
-- **No run-history listing UI.** The State Timeline on D70 is the closest thing — colored bars show when each phase was active over the dashboard window, which implicitly lists past runs as colored segments separated by gaps.  But there's no "list all runs in the last week" Grafana panel.
+- **No run-history listing UI.** The State Timeline on D7 is the closest thing — colored bars show when each phase was active over the dashboard window, which implicitly lists past runs as colored segments separated by gaps.  But there's no "list all runs in the last week" Grafana panel.
 - **No durable per-run summary store.** Prometheus is the only persistence layer for metrics.  On-disk artifacts (`CHANGELOG.md`, `summary.json`, `task_list.json` per the run's workspace directory) exist but are not surfaced in Grafana.  To inspect a past run's full state, walk the workspace tree on disk.
 - **No fine-grained event drill-down.** That requires Loki (see § 9.1) — `prompt.id` and `session.id` would let you reconstruct an individual session from its event stream.
 
@@ -276,10 +275,10 @@ So **yes, data from just-finished runs appears in the dashboards** — within re
 
 | Task | How |
 |---|---|
-| See what ran yesterday | Open D70 → time picker → "yesterday".  Phase Progression shows the run as a sequence of colored segments; Run Config row reflects the config at end of range. |
-| Compare two runs | Open two browser tabs with D00 / D70 at different time ranges. |
-| Find the cost of a specific past run | D10, set time range to the run's window.  "Spend (selected range)" stat shows total. |
-| Investigate a cache regression | D30, "Last 24 hours" or wider.  Cache Hit Rate Over Time visualizes the drop; switch to per-model variant to identify which model lost cache health. |
+| See what ran yesterday | Open D7 → time picker → "yesterday".  Phase Progression shows the run as a sequence of colored segments; Run Config row reflects the config at end of range. |
+| Compare two runs | Open two browser tabs with D0 / D7 at different time ranges. |
+| Find the cost of a specific past run | D1, set time range to the run's window.  "Spend (selected range)" stat shows total. |
+| Investigate a cache regression | D2, "Last 24 hours" or wider.  Cache Hit Rate Over Time visualizes the drop; switch to per-model variant to identify which model lost cache health. |
 | Audit alert firings | D-pipeline rules in Prometheus (`/api/v1/rules`); past firings: `ALERTS{alertname="..."}` over a wide time range. |
 
 ---
@@ -363,8 +362,8 @@ Both deferred indefinitely per the v2 dashboard spec — turn on when there's a 
 - Session reconstruction via `prompt.id` join across events
 - Error detail: 429 vs 5xx vs 529 segmentation (the SDK metric counts errors but doesn't segment by code)
 - Compaction event correlation with metric dips
-- D99 (Raw Events) dashboard activation
-- The D40 / D50 panels marked "Loki-dependent"
+- D9 (TBD: Raw Events) dashboard activation
+- The D3 / D4 panels marked "Loki-dependent"
 - The `SustainedRetryExhaustion` alert from § 5
 
 **Infrastructure cost:** one additional container (~200 MB RAM for single-tenant monolithic Loki with filesystem storage), plus OTel Collector configured with a Loki exporter.
@@ -397,4 +396,4 @@ Both deferred indefinitely per the v2 dashboard spec — turn on when there's a 
 - Set `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1` and `OTEL_TRACES_EXPORTER=otlp` on the agent service env in `docker-compose.yml`.
 - Add an `otlp` traces exporter to `otel-collector.yml`; replace `[debug]` in the `traces:` pipeline.
 - Add a Tempo datasource to `config/monitoring/datasources/`.
-- Build the deferred Stage 3 panels in D50 (currently a collapsed Text-panel placeholder).
+- Build the deferred Stage 3 panels in D4 (currently a collapsed Text-panel placeholder).

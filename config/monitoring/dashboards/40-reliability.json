@@ -1,6 +1,6 @@
 {
-  "title": "Claude Agent Harness \u2014 SDK: Reliability & Errors",
-  "uid": "casdk-sdk-reliability",
+  "title": "4: Errors & Reliability",
+  "uid": "casdk-reliability",
   "tags": [
     "claude",
     "harness"
@@ -172,7 +172,7 @@
       "icon": "external link"
     },
     {
-      "title": "00 \u2014 Overview",
+      "title": "0: Main",
       "type": "link",
       "url": "/d/casdk-overview",
       "icon": "dashboard",
@@ -181,43 +181,34 @@
       "targetBlank": false
     },
     {
-      "title": "10 \u2014 SDK: Cost & Spend",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-cost",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "20 \u2014 SDK: Productivity",
+      "title": "2: Cache & Token Efficiency",
       "type": "link",
-      "url": "/d/casdk-sdk-productivity",
+      "url": "/d/casdk-cache",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "3: Productivity & Tools",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-productivity",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
-      "type": "link",
-      "url": "/d/casdk-sdk-tools",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "60 \u2014 Mode: Interactive",
+      "title": "5: Mode: Interactive",
       "type": "link",
       "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
@@ -226,7 +217,7 @@
       "targetBlank": false
     },
     {
-      "title": "65 \u2014 Mode: Autonomous",
+      "title": "6: Mode: Autonomous",
       "type": "link",
       "url": "/d/casdk-mode-autonomous",
       "icon": "dashboard",
@@ -235,7 +226,7 @@
       "targetBlank": false
     },
     {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -244,7 +235,7 @@
       "targetBlank": false
     },
     {
-      "title": "99 \u2014 Raw Events",
+      "title": "9: TBD: Raw Events",
       "type": "link",
       "url": "/d/casdk-raw-events",
       "icon": "dashboard",
@@ -258,7 +249,7 @@
       "id": 50100,
       "type": "stat",
       "title": "Harness Error Rate",
-      "description": "Fraction of harness agent requests that errored. Prometheus-only proxy for SDK-side API reliability \u2014 actual `api_error` event data needs Loki (Stage 3). See OBSERVABILITY.md \u00a7 5 (alert rules) + \u00a7 9 (Stage 3 deferred panels).",
+      "description": "Fraction of harness agent requests that errored. Prometheus-only proxy for SDK-side API reliability — actual `api_error` event data needs Loki (Stage 3). See OBSERVABILITY.md § 5 (alert rules) + § 9 (Stage 3 deferred panels).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -300,7 +291,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -368,7 +359,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -376,7 +367,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -427,7 +418,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -435,7 +426,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -486,7 +477,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "text-primary"
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -494,7 +485,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -550,7 +541,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -612,7 +603,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -632,8 +623,8 @@
     {
       "id": 50300,
       "type": "timeseries",
-      "title": "Agent Duration \u2014 P50 / P95 / P99",
-      "description": "Histogram from harness_agent_duration_seconds_bucket. The harness duration is the full agent execution cycle, not per-LLM-call latency \u2014 for that, you need Loki/Tempo (Stage 3).",
+      "title": "Agent Duration — P50 / P95 / P99",
+      "description": "Histogram from harness_agent_duration_seconds_bucket. The harness duration is the full agent execution cycle, not per-LLM-call latency — for that, you need Loki/Tempo (Stage 3).",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -683,7 +674,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -703,7 +694,7 @@
     {
       "id": 50900,
       "type": "row",
-      "title": "Stage 3 \u2014 Deferred (Loki + Traces required)",
+      "title": "Stage 3 — Deferred (Loki + Traces required)",
       "collapsed": true,
       "gridPos": {
         "h": 1,
@@ -724,7 +715,7 @@
           },
           "options": {
             "mode": "markdown",
-            "content": "These panels are deferred to Stage 3 (Loki + Tempo) per `docs/OBSERVABILITY.md` \u00a7 9.\n\n**Requires Loki (\u00a7 9.1):**\n\n- API errors by `status_code` (429 vs 5xx vs 529 segmentation)\n- API errors by `model`\n- API request P50/P95/P99 latency by model\n- `api_retries_exhausted` rate (terminal-failure signal)\n- MCP server connection failures by `server_name`\n- Internal errors / auth failures / compaction failures\n\n**Requires Traces beta (\u00a7 9.2):**\n\n- TTFT (time to first token) P50 / P95 by model \u2014 highest-value traces panel; add first when Tempo is deployed.\n- Average attempts per request (silent 2nd-attempt successes that `api_retries_exhausted` doesn't surface)."
+            "content": "These panels are deferred to Stage 3 (Loki + Tempo) per `docs/OBSERVABILITY.md` § 9.\n\n**Requires Loki (§ 9.1):**\n\n- API errors by `status_code` (429 vs 5xx vs 529 segmentation)\n- API errors by `model`\n- API request P50/P95/P99 latency by model\n- `api_retries_exhausted` rate (terminal-failure signal)\n- MCP server connection failures by `server_name`\n- Internal errors / auth failures / compaction failures\n\n**Requires Traces beta (§ 9.2):**\n\n- TTFT (time to first token) P50 / P95 by model — highest-value traces panel; add first when Tempo is deployed.\n- Average attempts per request (silent 2nd-attempt successes that `api_retries_exhausted` doesn't surface)."
           },
           "fieldConfig": {
             "defaults": {},

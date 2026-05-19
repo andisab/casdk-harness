@@ -1,5 +1,5 @@
 {
-  "title": "Claude Agent Harness \u2014 Overview",
+  "title": "0: Main",
   "uid": "casdk-overview",
   "tags": [
     "claude",
@@ -172,52 +172,43 @@
       "icon": "external link"
     },
     {
-      "title": "10 \u2014 SDK: Cost & Spend",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-cost",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "20 \u2014 SDK: Productivity",
+      "title": "2: Cache & Token Efficiency",
       "type": "link",
-      "url": "/d/casdk-sdk-productivity",
+      "url": "/d/casdk-cache",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "3: Productivity & Tools",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-productivity",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
+      "title": "4: Errors & Reliability",
       "type": "link",
-      "url": "/d/casdk-sdk-tools",
+      "url": "/d/casdk-reliability",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "50 \u2014 SDK: Reliability",
-      "type": "link",
-      "url": "/d/casdk-sdk-reliability",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "60 \u2014 Mode: Interactive",
+      "title": "5: Mode: Interactive",
       "type": "link",
       "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
@@ -226,7 +217,7 @@
       "targetBlank": false
     },
     {
-      "title": "65 \u2014 Mode: Autonomous",
+      "title": "6: Mode: Autonomous",
       "type": "link",
       "url": "/d/casdk-mode-autonomous",
       "icon": "dashboard",
@@ -235,7 +226,7 @@
       "targetBlank": false
     },
     {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -244,7 +235,7 @@
       "targetBlank": false
     },
     {
-      "title": "99 \u2014 Raw Events",
+      "title": "9: TBD: Raw Events",
       "type": "link",
       "url": "/d/casdk-raw-events",
       "icon": "dashboard",
@@ -258,7 +249,7 @@
       "id": 110,
       "type": "stat",
       "title": "Active Mode",
-      "description": "Mode of the currently-running CGF or autonomous session, from harness_run_config_info{mode}. Shows '\u2014' when no instrumented run is active. INTERACTIVE mode currently does not emit harness_run_config_info \u2014 see OBSERVABILITY.md \u00a7 3.4; D60 covers interactive-mode panels directly.",
+      "description": "Mode of the currently-running CGF or autonomous session, from harness_run_config_info{mode}. Shows '—' when no instrumented run is active. INTERACTIVE mode currently does not emit harness_run_config_info — see OBSERVABILITY.md § 3.4; D5 covers interactive-mode panels directly.",
       "gridPos": {
         "h": 3,
         "w": 4,
@@ -332,7 +323,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -426,7 +417,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -483,7 +474,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -541,7 +532,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -569,7 +560,7 @@
           "links": [
             {
               "title": "Open Cost & Spend dashboard",
-              "url": "/d/casdk-sdk-cost",
+              "url": "/d/casdk-cost",
               "targetBlank": false
             }
           ]
@@ -581,7 +572,7 @@
       "id": 220,
       "type": "stat",
       "title": "Cache Hit Rate",
-      "description": "Headline cache health \u2014 see D30 for full breakdown. Healthy sessions sit at \u226590%; <60% means cache is busted each turn.",
+      "description": "Headline cache health — see D2 for full breakdown. Healthy sessions sit at ≥90%; <60% means cache is busted each turn.",
       "gridPos": {
         "h": 4,
         "w": 5,
@@ -623,7 +614,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -651,7 +642,7 @@
           "links": [
             {
               "title": "Open Cache & Token Efficiency dashboard",
-              "url": "/d/casdk-sdk-cache",
+              "url": "/d/casdk-cache",
               "targetBlank": false
             }
           ]
@@ -663,7 +654,7 @@
       "id": 230,
       "type": "stat",
       "title": "Edit Accept Rate",
-      "description": "accept / (accept + reject) for code-edit tools. See D40 for breakdown.",
+      "description": "accept / (accept + reject) for code-edit tools. See D3 for breakdown.",
       "gridPos": {
         "h": 4,
         "w": 5,
@@ -705,7 +696,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -732,8 +723,8 @@
           },
           "links": [
             {
-              "title": "Open Tool & Code Quality dashboard",
-              "url": "/d/casdk-sdk-tools",
+              "title": "Open Productivity & Tools dashboard",
+              "url": "/d/casdk-productivity",
               "targetBlank": false
             }
           ]
@@ -788,7 +779,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -804,7 +795,7 @@
       "id": 250,
       "type": "stat",
       "title": "Error Rate",
-      "description": "harness_agent_requests_total{status=\"error\"} rate over total. Prometheus-only proxy for SDK API reliability \u2014 see D50.",
+      "description": "harness_agent_requests_total{status=\"error\"} rate over total. Prometheus-only proxy for SDK API reliability — see D4.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -846,7 +837,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -874,7 +865,7 @@
           "links": [
             {
               "title": "Open Reliability & Errors dashboard",
-              "url": "/d/casdk-sdk-reliability",
+              "url": "/d/casdk-reliability",
               "targetBlank": false
             }
           ]
@@ -889,7 +880,7 @@
       "description": "Per-model spend rate. Inspect for mid-session model switches.",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
         "y": 11
       },
@@ -908,7 +899,8 @@
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": true,
+          "width": 260
         },
         "tooltip": {
           "mode": "multi",
@@ -926,7 +918,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -947,13 +939,13 @@
     {
       "id": 320,
       "type": "timeseries",
-      "title": "Cache Hit Rate \u2014 Over Time",
-      "description": "Threshold-banded \u226590% green / 60\u201380% amber / <60% red.",
+      "title": "Cache Hit Rate — Over Time",
+      "description": "Threshold-banded ≥90% green / 60–80% amber / <60% red.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 11
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 19
       },
       "datasource": {
         "type": "prometheus",
@@ -968,9 +960,10 @@
       ],
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "width": 260
         },
         "tooltip": {
           "mode": "multi",
@@ -988,7 +981,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -1009,190 +1002,243 @@
     {
       "id": 900,
       "type": "row",
-      "title": "If optimize: Phase progression + iteration (deep-link to D70)",
-      "collapsed": true,
+      "title": "Optimize mode — Phase progression + iteration (deep-link to D7). Populated only when an optimize run is active.",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 23
+      }
+    },
+    {
+      "id": 910,
+      "type": "state-timeline",
+      "title": "Phase Progression (multi-resource pipeline)",
+      "description": "Compact view of the multi-resource pipeline phases in chronological order. State-timeline row order = refId order (A→J), per the gotcha documented in config/monitoring/CLAUDE.md. For single-resource path (research → optimize → finalize), see D7's dedicated panel.",
+      "gridPos": {
+        "h": 6,
+        "w": 18,
+        "x": 0,
+        "y": 24
       },
-      "panels": [
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
         {
-          "id": 910,
-          "type": "state-timeline",
-          "title": "Phase Progression",
-          "description": "Same as D70 but compact. Click panel link below to drill in.",
-          "gridPos": {
-            "h": 6,
-            "w": 18,
-            "x": 0,
-            "y": 16
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "harness_run_phase_info{resource=~\"$resource\"}",
-              "legendFormat": "{{phase}}",
-              "refId": "A"
-            }
-          ],
-          "options": {
-            "mergeValues": true,
-            "showValue": "never",
-            "alignValue": "left",
-            "rowHeight": 0.9,
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": false
-            }
-          },
-          "fieldConfig": {
-            "defaults": {
-              "custom": {
-                "lineWidth": 0,
-                "fillOpacity": 70
-              },
-              "mappings": [
-                {
-                  "type": "value",
-                  "options": {
-                    "0": {
-                      "text": " ",
-                      "color": "text-secondary",
-                      "index": 0
-                    }
-                  }
-                },
-                {
-                  "type": "value",
-                  "options": {
-                    "1": {
-                      "text": "active",
-                      "color": "green",
-                      "index": 1
-                    }
-                  }
-                }
-              ],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "text-secondary",
-                    "value": null
-                  }
-                ]
-              },
-              "links": [
-                {
-                  "title": "Open CGF Optimization (D70)",
-                  "url": "/d/casdk-cgf",
-                  "targetBlank": false
-                }
-              ]
-            },
-            "overrides": []
-          }
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"research\"}[2m]))",
+          "legendFormat": "research",
+          "interval": "30s",
+          "refId": "A"
         },
         {
-          "id": 920,
-          "type": "stat",
-          "title": "Iteration",
-          "description": "Current iteration. See D70 for full pipeline.",
-          "gridPos": {
-            "h": 6,
-            "w": 6,
-            "x": 18,
-            "y": 16
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"design\"}[2m]))",
+          "legendFormat": "design",
+          "interval": "30s",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"qa\"}[2m]))",
+          "legendFormat": "qa",
+          "interval": "30s",
+          "refId": "C"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"generate\"}[2m]))",
+          "legendFormat": "generate",
+          "interval": "30s",
+          "refId": "D"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"eval_design\"}[2m]))",
+          "legendFormat": "eval_design",
+          "interval": "30s",
+          "refId": "E"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"iterate\"}[2m]))",
+          "legendFormat": "iterate",
+          "interval": "30s",
+          "refId": "F"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"execution_eval\"}[2m]))",
+          "legendFormat": "execution_eval",
+          "interval": "30s",
+          "refId": "G"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"validate\"}[2m]))",
+          "legendFormat": "validate",
+          "interval": "30s",
+          "refId": "H"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"complete\"}[2m]))",
+          "legendFormat": "complete",
+          "interval": "30s",
+          "refId": "I"
+        },
+        {
+          "expr": "max by (phase) (last_over_time(harness_run_phase_info{resource=~\"$resource\",phase=\"failed\"}[2m]))",
+          "legendFormat": "failed",
+          "interval": "30s",
+          "refId": "J"
+        }
+      ],
+      "options": {
+        "mergeValues": true,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 70
           },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
+          "mappings": [
             {
-              "expr": "max(harness_run_iteration{resource=~\"$resource\"})",
-              "refId": "A",
-              "instant": false
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": " ",
+                  "color": "text-secondary",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "active",
+                  "color": "green",
+                  "index": 1
+                }
+              }
             }
           ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text-secondary",
+                "value": null
+              }
+            ]
           },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "none",
-              "decimals": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 3
-                  },
-                  {
-                    "color": "red",
-                    "value": 8
-                  }
-                ]
-              },
-              "links": [
-                {
-                  "title": "Open CGF Optimization (D70)",
-                  "url": "/d/casdk-cgf",
-                  "targetBlank": false
-                }
-              ]
-            },
-            "overrides": []
-          }
+          "links": [
+            {
+              "title": "Open CGF Optimization (D7)",
+              "url": "/d/casdk-cgf",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 920,
+      "type": "stat",
+      "title": "Iteration",
+      "description": "Current iteration. See D7 for full pipeline.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "max(harness_run_iteration{resource=~\"$resource\"})",
+          "refId": "A",
+          "instant": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          },
+          "links": [
+            {
+              "title": "Open CGF Optimization (D7)",
+              "url": "/d/casdk-cgf",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
     },
     {
       "id": 930,
       "type": "row",
-      "title": "If interactive: prompts + tool calls + cost (deep-link to D60)",
+      "title": "Interactive mode — prompts + tool calls + cost (deep-link to D5). Populated only when an interactive session is active.",
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 30
       },
       "panels": [
         {
@@ -1204,7 +1250,7 @@
             "h": 4,
             "w": 6,
             "x": 0,
-            "y": 17
+            "y": 31
           },
           "datasource": {
             "type": "prometheus",
@@ -1242,7 +1288,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1252,7 +1298,7 @@
               "decimals": 0,
               "links": [
                 {
-                  "title": "Open Interactive (D60)",
+                  "title": "Open Interactive (D5)",
                   "url": "/d/casdk-mode-interactive",
                   "targetBlank": false
                 }
@@ -1270,7 +1316,7 @@
             "h": 4,
             "w": 6,
             "x": 6,
-            "y": 17
+            "y": 31
           },
           "datasource": {
             "type": "prometheus",
@@ -1308,7 +1354,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1318,7 +1364,7 @@
               "decimals": 0,
               "links": [
                 {
-                  "title": "Open Interactive (D60)",
+                  "title": "Open Interactive (D5)",
                   "url": "/d/casdk-mode-interactive",
                   "targetBlank": false
                 }
@@ -1336,7 +1382,7 @@
             "h": 4,
             "w": 6,
             "x": 12,
-            "y": 17
+            "y": 31
           },
           "datasource": {
             "type": "prometheus",
@@ -1374,7 +1420,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1395,7 +1441,7 @@
             "h": 4,
             "w": 6,
             "x": 18,
-            "y": 17
+            "y": 31
           },
           "datasource": {
             "type": "prometheus",
@@ -1433,7 +1479,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1450,13 +1496,13 @@
     {
       "id": 950,
       "type": "row",
-      "title": "If autonomous: task progress + commits (deep-link to D65)",
+      "title": "Autonomous mode — task progress + commits (deep-link to D6). Populated only when an autonomous run is active.",
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 31
       },
       "panels": [
         {
@@ -1468,7 +1514,7 @@
             "h": 4,
             "w": 6,
             "x": 0,
-            "y": 18
+            "y": 32
           },
           "datasource": {
             "type": "prometheus",
@@ -1506,7 +1552,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1516,7 +1562,7 @@
               "decimals": 0,
               "links": [
                 {
-                  "title": "Open Autonomous (D65)",
+                  "title": "Open Autonomous (D6)",
                   "url": "/d/casdk-mode-autonomous",
                   "targetBlank": false
                 }
@@ -1534,7 +1580,7 @@
             "h": 4,
             "w": 6,
             "x": 6,
-            "y": 18
+            "y": 32
           },
           "datasource": {
             "type": "prometheus",
@@ -1572,7 +1618,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1593,7 +1639,7 @@
             "h": 4,
             "w": 6,
             "x": 12,
-            "y": 18
+            "y": 32
           },
           "datasource": {
             "type": "prometheus",
@@ -1630,7 +1676,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1659,12 +1705,12 @@
           "id": 954,
           "type": "stat",
           "title": "Commits (range)",
-          "description": "See OBSERVABILITY.md \u00a7 6 item 7 \u2014 typically empty for CGF workloads.",
+          "description": "See OBSERVABILITY.md § 6 item 7 — typically empty for CGF workloads.",
           "gridPos": {
             "h": 4,
             "w": 6,
             "x": 18,
-            "y": 18
+            "y": 32
           },
           "datasource": {
             "type": "prometheus",
@@ -1702,7 +1748,7 @@
                   "options": {
                     "match": "null+nan",
                     "result": {
-                      "text": "\u2014",
+                      "text": "—",
                       "color": "text-secondary"
                     }
                   }
@@ -1720,208 +1766,206 @@
       "id": 970,
       "type": "row",
       "title": "System Health (workspace + checkpoint + memory)",
-      "collapsed": true,
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 32
+      }
+    },
+    {
+      "id": 971,
+      "type": "stat",
+      "title": "Workspace Files (Python)",
+      "description": "harness_workspace_files_total — count of .py files in workspace.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 33
       },
-      "panels": [
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
         {
-          "id": 971,
-          "type": "stat",
-          "title": "Workspace Files (Python)",
-          "description": "harness_workspace_files_total \u2014 count of .py files in workspace.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 0,
-            "y": 19
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "harness_workspace_files_total",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "fixed",
-                "fixedColor": "#A0A0A0"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "none",
-              "decimals": 0
-            },
-            "overrides": []
-          }
-        },
-        {
-          "id": 972,
-          "type": "stat",
-          "title": "Checkpoint Size",
-          "description": "harness_checkpoint_size_bytes \u2014 total bytes of checkpoint files.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 8,
-            "y": 19
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "harness_checkpoint_size_bytes",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "fixed",
-                "fixedColor": "#A0A0A0"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "bytes",
-              "decimals": 0
-            },
-            "overrides": []
-          }
-        },
-        {
-          "id": 973,
-          "type": "stat",
-          "title": "Agent RSS",
-          "description": "harness_memory_usage_bytes{component=\"agent_rss\"} \u2014 process RSS from /proc.",
-          "gridPos": {
-            "h": 4,
-            "w": 8,
-            "x": 16,
-            "y": 19
-          },
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "targets": [
-            {
-              "expr": "harness_memory_usage_bytes{component=\"agent_rss\"}",
-              "refId": "A",
-              "instant": false
-            }
-          ],
-          "options": {
-            "reduceOptions": {
-              "values": false,
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": ""
-            },
-            "graphMode": "area",
-            "colorMode": "value",
-            "textMode": "auto",
-            "orientation": "auto"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [
-                {
-                  "type": "special",
-                  "options": {
-                    "match": "null+nan",
-                    "result": {
-                      "text": "\u2014",
-                      "color": "text-secondary"
-                    }
-                  }
-                }
-              ],
-              "unit": "bytes",
-              "decimals": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "yellow",
-                    "value": 536870912
-                  },
-                  {
-                    "color": "red",
-                    "value": 2147483648
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          }
+          "expr": "harness_workspace_files_total",
+          "refId": "A",
+          "instant": false
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 972,
+      "type": "stat",
+      "title": "Checkpoint Size",
+      "description": "harness_checkpoint_size_bytes — total bytes of checkpoint files.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "harness_checkpoint_size_bytes",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "bytes",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 973,
+      "type": "stat",
+      "title": "Agent RSS",
+      "description": "harness_memory_usage_bytes{component=\"agent_rss\"} — process RSS from /proc.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 33
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "harness_memory_usage_bytes{component=\"agent_rss\"}",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "bytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 536870912
+              },
+              {
+                "color": "red",
+                "value": 2147483648
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "type": "stat",
@@ -1953,7 +1997,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -1981,7 +2025,7 @@
           "links": [
             {
               "title": "Open Cost & Spend dashboard",
-              "url": "/d/casdk-sdk-cost",
+              "url": "/d/casdk-cost",
               "targetBlank": false
             }
           ]
@@ -2036,7 +2080,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -2095,7 +2139,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
