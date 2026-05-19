@@ -286,11 +286,114 @@ Several "tie at zero" or "saturate at 0.67" outcomes in run #6 are scenario-desi
 
 ---
 
+## 3.5 Run #8 systemic findings — what the data actually shows
+
+Run #8 was the first end-to-end run with the full 3-stage gate (floor + incumbent + cost) and verdict-branched cost-aware feedback (I15). The headline outcome — 16 of 18 promoted, 7 of 7 cost-rejected candidates recovered on r2, ITERATE r2 3.5× faster than run #7 — is a clean validation of the polish work. But the run also surfaced three systemic issues that data from earlier runs couldn't show because the gate was never strict enough to expose them. They are listed here in priority order; § 3.6 below maps each to a concrete fix.
+
+### 3.5.1 The cost gate operates against a noisy baseline
+
+The same v0 file evaluated twice produces materially different `baseline_cost_per_success` values, because (a) scenarios run real LLM calls and (b) the bare-arm/candidate-arm pairing isn't cached across rounds. `skills/helm-charts/SKILL.md` is the canonical case:
+
+| Round | Baseline CPS | Candidate CPS | Δ | Verdict |
+|---|---|---|---|---|
+| r1 (v1 candidate) | $0.15 | $0.19 | +32 % | Refine (quality bonus saved it: pass 0.67→1.00) |
+| r2 (v2 candidate) | **$0.32** | $0.44 | +36 % | Reject cost |
+| r3 (v3 candidate) | **$0.19** | $0.23 | +20 % | Reject cost |
+
+The baseline CPS varied **$0.15 → $0.32 → $0.19** for the same v0 file across three rounds — a **2.1× swing**. A 10 % τ on a baseline with ~110 % round-to-round variance is statistical noise; the gate is testing a candidate against random draws of the baseline distribution rather than a stable reference. helm-charts was rejected three times running while every candidate scored quality 0.97–1.00.
+
+This is the canonical "Phase A's cost gate is brittle, Phase B's bootstrap-CI fixes win rate but not cost" gap. The fix is either (i) cache the floor-CPS once per `(resource, eval_suite_hash)` and reuse it, or (ii) add an absolute τ floor (`max(baseline × 1.10, baseline + $0.05)`) so small absolute differences don't trigger relative-percentage gates. Both are ~30 LoC in `gating.py`. § 3.6 lists them as the highest-leverage low-hanging fixes.
+
+### 3.5.2 Tied-at-1.00 still dominates the pass-rate distribution
+
+Final r2+ promotion outcomes (17 resources, 1 unwinnable excluded):
+
+| Pass rate | Count | Resources |
+|---|---|---|
+| 1.00 / 1.00 | **11** | aws-cli, aws-eks, container-analysis, github-actions, gitlab-ci, gitops-argocd, gitops-flux, kubernetes-native, security-validation, terraform-modules, (helm-charts rejected) |
+| 0.67 / 0.67 | 4 | crossplane, iac-analyzer, pulumi-cdk, repo-analysis |
+| 0.33 / 0.33 | 2 | commands/iac, iac-validator |
+
+Eleven of 17 resources are tied at 1.00 — the candidate and baseline both pass everything. This is **better than Run #6's mostly-0.67 distribution**, but the dominant failure mode is now "scenario passes regardless of which arm runs it." The cost gate is currently doing all the discrimination work (it's the only gate that can reject a tied-at-1.00 outcome), which is exactly the wrong way around — we want quality signal first, cost as a guardrail.
+
+This is the canonical § 3.2 problem (eval-design discrimination), upgraded from "biggest signal-quality lever" to "**the** outstanding Phase B prerequisite." A bootstrap-CI on win rate over scenarios where both arms pass 100 % of the time has nothing to bite into.
+
+### 3.5.3 Trajectory graders on content-only agents are structurally unwinnable
+
+`agents/iac-generator.md` was marked unwinnable (0/0 on both arms, all 3 scenarios). Inspection of the eval suite shows why: its scenarios use trajectory graders asserting `tool_called: Write` (and `min_count: 3` on the K8s stack scenario). But agent-definition files are loaded as system prompts by Claude Code's Task tool — they don't actually invoke tools themselves during eval, because the eval harness runs the prompt as content, not as a sub-agent.
+
+```yaml
+- id: easy-generator-dockerfile-01
+  target_resource: "agents/iac-generator.md"
+  level: trajectory
+  graders:
+    - type: trajectory
+      assertions:
+        - kind: tool_called
+          tool: Write          # ← always fails: the eval harness can't actually invoke Task
+```
+
+The pattern: **trajectory graders only make sense for resources that ARE themselves executable tool-calling units (skills with tools, commands that run subprocesses)**, not for agent system prompts. Run #8's eval suite has 8 trajectory graders out of 98 total; iac-generator gets 6 of those 8 (the other 2 are correctly applied to iac-validator and iac-analyzer scenarios). F20 in [PHASEA_SUMMARY § 3.3](./PHASEA_SUMMARY.md#33-queued-f-series-defects) noted this for `commands/*` and is mitigated for commands; the same pattern applies to generator-style agents and isn't yet caught.
+
+The architect prompt needs an explicit routing rule: `resource_type=agent AND content-mode (no executable tools listed)` → use llm_judge graders, not trajectory.
+
+### 3.5.4 Where ITERATE wall time actually goes
+
+ITERATE dominates the pipeline at **1h 22m of 2h 09m (63 %)**. Breakdown:
+
+| Round | Resources iterated | Wall time | Notes |
+|---|---|---|---|
+| r1 | 18 (all) | ~29 m | At concurrency=4; 4 batches of ~5 resources |
+| r2 | 11 (cost rejections + 2 refines) | ~17 m | Down from 57 m in run #7 — I15 verdict-branched feedback let the optimizer trim correctly first try |
+| r3 | 1 (helm-charts) | ~36 m | Helm-charts went deep; v3 still rejected |
+
+The r3 helm-charts iteration alone burned ~36 minutes — half of r2's total. Two reads on this: (a) helm-charts is genuinely hard (see § 3.5.1), and (b) when the gate is wrong, the iteration cost is unbounded. Capping r3 cost or auto-skipping a resource after 2 cost-rejections in a row would save ~30 min on similar pathological cases.
+
+`ITERATE_CONCURRENCY=4` could plausibly move to 6 — GENERATE already runs 8-way successfully (F18), and ITERATE uses the same model rate window. Test in next smoke run.
+
+### 3.5.5 EVAL_DESIGN cost has roughly doubled
+
+`EVAL_DESIGN` took 14m 43s in run #8 vs 6m 27s in run #6. The eval-architect now runs in an isolated SDK session (refinement 4.1) and the architect prompt has grown to include the held-out reservation logic, suite-hash invariants, and cost-gate exemption guidance. The trade is intentional — isolation buys reproducibility — but worth knowing: if EVAL_DESIGN regresses past ~20 m the architect prompt has likely accumulated cruft and needs a pruning pass.
+
+---
+
+## 3.6 Low-hanging perf wins (do these before Phase B)
+
+Ranked by **(impact, effort)**. The first three would have meaningfully changed Run #8's outcome.
+
+| # | Fix | Impact | Effort | What it changes |
+|---|---|---|---|---|
+| 1 | **Cache `baseline_cost_per_success` per `(resource, eval_suite_hash)`** | HIGH | LOW (~30 LoC in `gating.py` + 2 tests) | Eliminates the 2.1× round-to-round baseline-CPS variance (§ 3.5.1). helm-charts would have promoted on r3 (candidate $0.23 vs cached r1 baseline $0.15 → +53 %, still reject — but at least deterministic). Combine with #2 for the full effect. |
+| 2 | **Absolute τ floor: `cost ≤ max(baseline × 1.10, baseline + $0.05)`** | HIGH | LOW (~10 LoC in `gating.py` + 3 tests) | Small absolute differences (a few cents) shouldn't trigger relative-percent rejections. helm-charts r3 would promote ($0.23 − $0.19 = $0.04 < $0.05). Doesn't help the noise problem on its own; pair with #1. |
+| 3 | **Architect grader-routing rule by resource type** | HIGH | MED (~60 LoC in `cgf-eval-architect.md` + new tests in `test_eval_suite_schema.py`) | Generator-style agents get `llm_judge` not `trajectory`. iac-generator stops being unwinnable. Catches the F20 pattern for the agent class. |
+| 4 | **Scenario discrimination instructions in architect prompt (§ 3.2)** | HIGH | MED (~80 LoC in `cgf-eval-architect.md` + 2 prompt-eval scenarios) | The architect must mentally run v0 against each scenario and confirm a regressed version would actually fail differently. Cuts tied-at-1.00 dominance. **The outstanding Phase B prerequisite.** |
+| 5 | **GENERATE target word-count guidance in `context-engineer.md`** | MED | LOW (~20 lines of prompt) | Run #8 average word count: 8,400 (median 7,500). Optimizer trims ~50 % in r2. Telling context-engineer "target 4,000–5,000 words for SKILL.md unless complexity justifies more" front-loads the trim. Reduces r1 cost rejections directly. |
+| 6 | **Auto-skip resource after 2 consecutive cost rejections** | MED | LOW (~15 LoC in `_orchestrator_phases/execution_eval.py`) | helm-charts burned ~36 min on r3 ITERATE for a candidate that still failed. After 2 cost rejections, mark `cost_unwinnable` (parallel to `unwinnable` for pass=0) and stop. Operator can rerun with relaxed τ if desired. |
+| 7 | **Raise `CGF_ITERATE_CONCURRENCY` 4 → 6** | LOW | LOW (env knob) | Same model + rate window as GENERATE at 8-way. ~15–20 % wall-time win on ITERATE r1. Test in next smoke. |
+| 8 | **Pre-flight architect dry-run after GENERATE** (I9 prerequisite) | MED | MED (~80 LoC) | Before ITERATE r1, run a cheap architect call: "given these 18 resources, which look unwinnable for the scenarios you'd write?" Pre-flag unwinnable resources and skip the ITERATE work. Pairs naturally with I9's GENERATE-output persistence in Phase D. |
+| 9 | **Per-resource-type τ profile in `eval_profile.yaml`** | MED | MED (~40 LoC + schema) | Some resource types (large reference skills like `aws-eks`) genuinely need more content. A per-type τ override sidesteps the "every type uses 10 %" pathology. **But** waits on I16 empirical tuning data; doing this without data risks gold-plating. |
+| 10 | **`trials=2` default for production cadence** | LOW | LOW (env knob) | Smooths pass-rate distribution mildly without the 3× cost of `trials=3`. Run #8 used `trials=1`; ties at 1.00 may partially be artefacts of single-trial noise. |
+
+**Fixes 1, 2, 3, 5, 7** are ~3 hours of work and would meaningfully change the next smoke run's outcome. Fix 4 is half-to-full-day prompt engineering and is the Phase B prerequisite. Fixes 6, 8, 9, 10 are nice-to-haves that can land alongside Phase B work.
+
+---
+
 ## 4. Phase B — Statistical promotion gating
 
 End-state: the simple threshold from Phase A is replaced by a multi-signal statistical gate. Same data shape as Phase A — this is gating logic only.
 
-**Refresh note (post Phase A, post Run #8 — 2026-05-19):** Phase B's value depends on signal quality. Bootstrap CIs on tied-at-zero scenarios don't help. § 3.1 (eval-as-Opus-agent) is shipped (refinement 4.1). § 3.2 (discriminating scenarios) is **still the outstanding prerequisite** — Run #8's 16/18 promote rate is partly an artefact of non-discriminating scenarios, and a tighter statistical gate has less to bite into until the architect prompt produces scenarios that genuinely separate baseline from candidate. Phase B kickoff should decide: invest in architect-prompt work first, or accept that Phase B will tighten an already-flat signal.
+### 4.0 Decisions facing Phase B kickoff
+
+Four open decisions, each with the data from § 3.5 informing the recommendation. None are unilaterally blocking — the recommendation is to land § 3.6 fixes 1–5 in a short "Phase A.5" branch first, then open Phase B with cleaner signal.
+
+| # | Decision | Options | Recommendation |
+|---|---|---|---|
+| A | **Invest in § 3.2 architect prompt OR proceed with flat signal?** | (a) Spend half-to-full day on scenario-discrimination prompt before Phase B. (b) Skip and let bootstrap-CI tighten the existing tied-at-1.00 signal. | **(a).** A bootstrap CI lower-bound > 0.5 on 11 of 17 resources where both arms pass 100 % is wasted statistical power. The architect-prompt work is the cheapest signal-quality lever in the project and is the prerequisite the roadmap has named for two months. |
+| B | **Tune τ empirically (Phase D, I16) OR architecturally (cache + absolute floor) NOW?** | (a) Defer all τ work to I16's data collection in Phase D. (b) Land § 3.6 fixes #1 + #2 now (architectural), defer empirical tuning to I16. | **(b).** The cache + absolute floor fix the failure mode shown by helm-charts × 3 in Run #8 — that's a structural correction, not parameter tuning. I16 still has work to do (finding the right relative τ on top of these fixes), but doing nothing while waiting on I16 ships another smoke with the same noise. |
+| C | **`agents/iac-generator` unwinnable — redesign / drop / accept?** | (a) Architect grader-routing fix (§ 3.6 #3) — generator agents get llm_judge. (b) Manually rewrite iac-generator's 3 scenarios. (c) Drop the resource from the suite. (d) Accept "unwinnable" and move on. | **(a).** The grader-routing fix solves the entire generator-agent class, not just iac-generator. ~60 LoC and a prompt-eval. The other options leave the architectural bug in place. |
+| D | **Re-run smoke before opening Phase B?** | (a) Land § 3.6 #1–#5, run smoke #9, then decide. (b) Open Phase B in parallel with a smoke run. (c) Skip smoke and go straight to Phase B. | **(a).** A clean smoke run with the architectural fixes lands the dataset Phase B's bootstrap-CI tests against. Going straight to Phase B means debugging the gate and the dataset noise simultaneously. |
+
+**Refresh note (post Phase A, post Run #8 — 2026-05-19):** Phase B's value depends on signal quality. Bootstrap CIs on tied-at-zero (or tied-at-one) scenarios don't help. § 3.1 (eval-as-Opus-agent) is shipped (refinement 4.1). § 3.2 (discriminating scenarios) and § 3.5.1 (cost-gate baseline noise) are the outstanding prerequisites — both addressable in 1–2 days of work per § 3.6, before opening Phase B.
 
 **Tasks:**
 
