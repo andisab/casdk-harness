@@ -5,9 +5,9 @@ This doc has four objectives:
 1. **Current state** — what works today, what's shipped, where the code lives. (§ 1)
 2. **Architecture & technical decisions** — what was built and *why*, including a per-phase walkthrough. (§ 2)
 3. **Key learnings from test runs** — what we observed under real load. (§ 3)
-4. **Phase A refinement plan** — the four refinements (eval-agent isolation, dual baseline, token-efficiency gating, pipeline tightening) that landed on branch `cgf-eval-ab` before opening Phase B, plus the post-review polish that followed. Each refinement is grounded in Anthropic canonical guidance + 2024–2025 LLM-as-judge literature. (§ 4)
+4. **Phase A refinement plan** — the four refinements (eval-agent isolation, dual baseline, token-efficiency gating, pipeline tightening) that landed on branch `cgf-eval-ab` before opening Phase B, plus the post-review polish, the Run #7 I-series fixes, and the Run #8 validation that followed. Each refinement is grounded in Anthropic canonical guidance + 2024–2025 LLM-as-judge literature. (§ 4, especially §§ 4.8–4.10)
 
-This is the retrospective companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md), which carries the *longer*-term forward plan (Phases B/C/D, Stage 4, cross-cutting harness work). § 4.8–4.9 capture what landed; per-step engineering details live in the individual commit messages on `cgf-eval-ab`. For per-defect fix histories on the earlier rounds see `git log` on `phase-a-fixes` / `phase-a-perf`. For day-to-day operational reference (env vars, how to run, resume from existing state) see [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
+This is the retrospective companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md), which carries the *longer*-term forward plan (Phases B/C/D, Stage 4, cross-cutting harness work). §§ 4.8–4.10 capture what landed on `cgf-eval-ab` (merged to `main` via `29456bd` on 2026-05-19); per-step engineering details live in the individual commit messages. For per-defect fix histories on the earlier rounds see `git log` on `phase-a-fixes` / `phase-a-perf`. For day-to-day operational reference (env vars, how to run, resume from existing state) see [CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md).
 
 ---
 
@@ -19,9 +19,9 @@ This is the retrospective companion to [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.
 |---|---|---|
 | `contextgrad-eval` | Stages 1+2 + Phase A.1–A.7 (eval framework end-to-end) + `phase-a-fixes` (F3–F16) + `phase-a-perf` (F17–F22) | **Merged to `main`** via `2e762c5` (2026-05-14) |
 | `grafana-refactor` | 10-dashboard architecture + 13 alert rules + OBSERVABILITY.md | Merged to `main` via `cca6fe7` |
-| `cgf-eval-ab` *(current)* | Phase A refinement work (eval-agent isolation, dual-baseline, token-efficiency gating, pipeline tightening) — see § 4 | In progress, branched from `main` |
+| `cgf-eval-ab` | Phase A refinement work (eval-agent isolation, dual-baseline, token-efficiency gating, pipeline tightening) + pre-smoke polish + Run #7 I-series fixes + Run #8 validation + J1/J2 + Grafana dashboard reorg — see §§ 4.8–4.10 | **Merged to `main`** via `29456bd` (2026-05-19) |
 
-**Unit suite:** 1863 passing, 0 failing on the merge commit. Pre-existing path-issue errors in `test_eval_telemetry.py::TestEnvVarsExposed` are unrelated.
+**Unit suite:** 2082 passing (was 1986 after § 4.8, 2035 after § 4.9; +47 across the I-series and J-series in § 4.10). 111 integration tests collected.
 
 ### What works end-to-end (validated under real load, run #6 — first full pipeline to COMPLETE)
 
@@ -384,9 +384,92 @@ as separate commits on `cgf-eval-ab`.
 
 **Unit suite:** 2035 passing (was 1986 after § 4.8; +49 new tests from this polish).
 
-**Smoke status:** still unverified under load. Run #7 is the next checkpoint.
+**Smoke status (at § 4.9 cutoff):** unverified under load; Run #7 was the next checkpoint. See § 4.10 for what Run #7 and Run #8 actually surfaced.
 
-### 4.10 Canonical references used in this plan
+### 4.10 Run #7 + I-series + Run #8 validation (the actual smoke arc)
+
+Run #7 was the first end-to-end smoke after the §§ 4.8–4.9 polish landed.
+It reached `COMPLETE` but surfaced fourteen issues — the **I-series** —
+ranging from grader-probe path bugs to a systemic finding that the
+cost gate was rejecting candidates the optimizer couldn't recover from
+because the feedback prompt didn't tell it to trim tokens. Most of
+the I-series shipped as small fixes; I15 was the substantial one, and
+Run #8 then validated it in production.
+
+#### Run #7 — surfaced 14 issues, all addressed
+
+| # | Commit | Fix | Severity |
+|---|---|---|---|
+| I1 | `14d1c24` | `setup.sh` probes IaC grader CLIs (`kubectl`, `helm`, `terraform`, `trivy`, `kubeconform`) inside the container, not on the host — eliminates false-positive WARN that masked real issues | smoke blocker |
+| I2 | `a31c311` | `python -u` for unbuffered smoke logs (per-line vs 5–30 min freezes) | observability |
+| I4 / I7 | `a31c311` | Doc sync + floor-naming gotcha clarifications | doc |
+| I6 | `0fc0afd` | Drop architect's hardcoded `eval_model`; loader defaults to `None` so `CGF_JUDGE_MODEL` actually applies | correctness |
+| I8 | `ca7a001` | Defensive cleanup of stray agent-written `summary.json` files (Python owns it, agent owns narrative blocks) | correctness |
+| I10 | `7a01116` | Persist gate verdict in per-resource `eval-results.json` (was only in aggregate) | observability |
+| I11 | `a31c311` | `floor_pass_rate` field naming gotcha noted in code + doc | clarity |
+| I14 | `b15eaf9` | Single-source model aliases; drop stale `claude-sonnet-4-may-2025-…` references | hygiene |
+| **I15** | `6e44f6d` | **Cost-aware feedback + quality-scaled τ + verdict-branched optimizer prompt.** The big one: `reject_cost` → TRIM TOKENS, `reject_floor` → TRIM AGGRESSIVELY, `refine` → ADD COVERAGE. Quality bonus `(1 + bonus_factor·Δpass_rate)` softens τ when the candidate is materially better. Plus surfacing rejection subtype in `RUN_REPORT.md`. | **HIGH — gate behavior** |
+| (RUN_REPORT) | `f83e581`, `4cbc1b1` | Rendering fixes + merged results section; clean Python/agent ownership split | observability |
+| I9 | (queued) | Persist GENERATE-only artifact for replay — calibration coverage gap. **Deferred to Phase D** (`CGF-EVAL-ROADMAP.md § 6`) so writer and consumer (`make eval-calibrate`) ship together. | Phase D |
+| I16 | (queued) | Empirically tune `CGF_TOKEN_REGRESSION_TOLERANCE` + `CGF_COST_QUALITY_BONUS`. Run #7's 8/18 cost rejections are seed data. **Deferred to Phase D** as calibration consumer #2. | Phase D |
+
+Run #7 raw issue log: `logs/smoke/run7-issues.md`.
+
+#### Run #8 — validated I15 in production
+
+I15 made specific predictions: ≥5 of run #7's 8 r1 cost-rejected
+candidates should recover in r2; ITERATE r2 wall time should drop back
+toward run #6's ~7 min (from run #7's 57 min); RUN_REPORT should show
+verdict-branched recovery messaging in optimizer transcripts.
+
+Run #8 outcomes (all from `logs/smoke/run8-issues.md` + the merge
+commit body):
+
+| Metric | Run #7 | Run #8 | Δ |
+|---|---|---|---|
+| Cost-rejected candidates recovered on r2 | 0 of 8 | **7 of 7** | from 0% → 100% |
+| ITERATE r2 wall time | 57 min | **~16.5 min** | **3.5× faster** |
+| Final promote rate | 10 of 18 | **16 of 18** | +33 % |
+| Verdict-branched optimizer behavior | n/a | **Observable in subagent transcripts** | new |
+
+Two low-severity reporting bugs surfaced (J-series) and shipped:
+
+| # | Commit | Fix |
+|---|---|---|
+| J1 | `8e088f0` | `agent_progress` renderer no longer truncates lines that contain CGF signal markers (`[*_COMPLETE:`, `[*_ISSUES:`) — Run #8 had ~half the GENERATE markers clipped from the host log preview only (orchestrator state was always authoritative) |
+| J2 | `8e088f0` | `run_report.py::_render_summary` counts resources whose final verdict is `promote` AND `iterations > 0` for the "Refined (recovered via feedback)" counter — was stuck at 0 despite Run #8 actually showing 9 recoveries in the per-resource view |
+
+Run #8 was the first run where the cost-aware feedback loop closed
+end-to-end. The 3.5× ITERATE r2 speedup matters because cost-rejection
+recovery was previously the dominant failure mode of the two-gate
+design; Phase B's bootstrap-CI gate would have amplified that failure,
+not fixed it.
+
+#### Grafana dashboard reorganization (`01cd8b2`)
+
+Twelve dashboards collapsed to ten by merging the standalone "tools"
+row into the "productivity" dashboard; renumbered for stable ordering;
+dropped the `sdk-` UID prefix. No metric changes; pure operator-UX. See
+`docs/OBSERVABILITY.md` for the current 10-dashboard inventory.
+
+#### What's actually queued for Phase B
+
+The roadmap (`CGF-EVAL-ROADMAP.md § 3`) named two architectural
+prerequisites for Phase B: § 3.1 eval-as-Opus-agent isolation, and
+§ 3.2 scenario discrimination quality. **§ 3.1 is shipped as Phase A
+refinement 4.1 (commit `de3a21e`).** § 3.2 (scenario discrimination)
+remains the outstanding signal-quality lever: Run #8's 16/18 promote
+rate is high partly because many scenarios still don't discriminate
+between baseline and candidate, so a tighter statistical gate has less
+to bite into. The Phase B kickoff conversation should decide whether
+to invest in architect-prompt work on scenario discrimination first
+or accept that Phase B will tighten an already-flat signal.
+
+Queued F-series defects (`CGF-EVAL-ROADMAP.md § 3.3`) — F23
+multi-grader, F24 shared-generation, F25 GENERATE-timeout
+investigation — remain not-blockers for Phase B.
+
+### 4.11 Canonical references used in this plan
 
 - [Three-Agent Harness for Long-Running Apps — Anthropic](https://www.anthropic.com/engineering/harness-design-long-running-apps) — separation-of-concerns rationale (4.1)
 - [Building Effective Agents — Anthropic](https://www.anthropic.com/engineering/building-effective-agents) — evaluator-optimizer pattern (4.4)

@@ -12,7 +12,7 @@ Companion docs:
 - **[CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md)** — day-to-day CGF usage, environment variables, how to run.
 - **[CLAUDE.md](../CLAUDE.md)** — repo overview, current status snapshot, "Completed Recently" log, SDK loading behavior.
 
-**Branch:** `contextgrad-eval` (currently ahead of `main` with Phase A + the F3–F22 fix series).
+**Branch:** `main` (Phase A end-to-end + F3–F22 fix series + Phase A refinement Steps 1–5 + pre-smoke polish + Run #7 I-series + Run #8 validation + J1/J2 + Grafana reorg all merged via `29456bd` on 2026-05-19). Phase B work will branch from `main`.
 **Owner:** @andisab
 
 ---
@@ -35,23 +35,24 @@ The codebase has several overlapping "phase"-like concepts. To keep cross-refere
 
 ## 1. Status snapshot
 
-**As of 2026-05-14:**
+**As of 2026-05-19:**
 
 - All four reorganization blocks (1, 2, 3, 4) merged to `main`.
-- Branch `contextgrad-eval` carries **CGF Stage 3 Phase A shipped end-to-end** plus the `phase-a-fixes` (F3–F16) and `phase-a-perf` (F17–F22) follow-ups, both smoke-validated. The first full pipeline reached `COMPLETE` in run #6 (85m 06s, exit 0). See [PHASEA_SUMMARY.md § 1](./PHASEA_SUMMARY.md#1-current-state).
-- **Tests:** 1863 unit passing (was 1534 pre-Phase-A), 41 integration tests across 21 files, 82 e2e tests across 5 files.
+- **CGF Stage 3 Phase A shipped end-to-end** plus `phase-a-fixes` (F3–F16), `phase-a-perf` (F17–F22), Phase A refinement Steps 1–5 (eval-agent isolation, dual baseline, cost-per-success gate, pipeline tightening, release notes), pre-smoke polish (A–E), Run #7 I-series (I1, I2, I4, I6, I7, I8, I10, I11, I14, I15), Run #8 validation, J1/J2 reporting fixes, and Grafana dashboard reorganization — **all merged to `main` via `29456bd` (2026-05-19)**. First full pipeline reached `COMPLETE` in run #6 (85m 06s); cost-aware feedback validated in production via run #8 (16/18 promote rate, ITERATE r2 3.5× faster than run #7). See [PHASEA_SUMMARY.md §§ 1, 4.10](./PHASEA_SUMMARY.md#1-current-state).
+- **Tests:** 2082 unit passing (was 1863 at Phase A baseline; +219 across refinements + polish + I-series + J-series), 111 integration tests collected.
 - **Pipeline:** 9 phases working end-to-end — `RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE`, with `EXECUTION_EVAL → ITERATE` feedback loop bounded at 2 rounds.
-- **Observability stack live:** OTel Collector → Prometheus, 10 pre-provisioned Grafana dashboards, AlertManager + 13 active alert rules. Canonical reference: [OBSERVABILITY.md](./OBSERVABILITY.md).
+- **Gate:** 3-stage `Gate.decide()` — floor (one-shot bare-model arm at first promotion) + incumbent (`pass_rate ≥ baseline + ε`) + cost (`cost_per_success ≤ baseline × (1 + τ)` with quality-bonus relief). Verdict-branched optimizer feedback (`reject_cost` / `reject_floor` / `refine`).
+- **Observability stack live:** OTel Collector → Prometheus, 10 pre-provisioned Grafana dashboards (reorganized 2026-05-19), AlertManager + 13 active alert rules. Canonical reference: [OBSERVABILITY.md](./OBSERVABILITY.md).
 
 | Stage | Status | Where |
 |---|---|---|
 | **Stage 1 — Protocol layer + resource architect + DESIGN phase** | shipped | `main`, via Block 1 |
 | **Stage 2 — MCP tool/server creation skills + Python/TypeScript scaffolds** | shipped | `main`, via Block 1 |
-| **Stage 3 Phase A — Comparison-aware eval harness** | **shipped** | `contextgrad-eval` |
-| **Stage 3 Phase A polish (near-term, this doc § 3)** | in-flight | `contextgrad-eval` |
-| **Stage 3 Phase B — Statistical promotion gating** | not started | future |
+| **Stage 3 Phase A — Comparison-aware eval harness** | **shipped** | `main` |
+| **Stage 3 Phase A polish + Run #7/#8 (this doc § 3, §§ 4.8–4.10 of PHASEA_SUMMARY)** | **shipped** | `main` via `29456bd` |
+| **Stage 3 Phase B — Statistical promotion gating** | not started | next |
 | **Stage 3 Phase C — Ephemeral runtime** | not started | future |
-| **Stage 3 Phase D — Calibration & CI** | not started | future |
+| **Stage 3 Phase D — Calibration & CI** | not started; queues I9 + I16 | future |
 | **Stage 4 — Integration & hardening** | not started; depends on Phase D | future |
 
 ---
@@ -249,20 +250,15 @@ Phase A.4 chose in-process for speed of iteration. Phase C will swap to `docker 
 
 ---
 
-## 3. Near-term — Phase A polish (in-flight)
+## 3. Near-term — Phase A polish (shipped 2026-05-19)
 
-The most consequential improvement is § 3.1; § 3.2 is the biggest signal-quality lever; § 3.3/§ 3.4 are queued defects and validation gaps. Source: [PHASEA_SUMMARY § 4](./PHASEA_SUMMARY.md#4-open-issues--future-work).
+§§ 3.1, 3.3 token-regression check, and most of the validation gaps shipped on `cgf-eval-ab` and merged via `29456bd`. § 3.2 (scenario discrimination) is the **outstanding signal-quality lever before Phase B**; § 3.3 F23/F24/F25 remain queued. Source: [PHASEA_SUMMARY §§ 4.8–4.10](./PHASEA_SUMMARY.md#48-what-landed-on-cgf-eval-ab).
 
-### 3.1 Eval as a distinct Opus agent with isolated context
+### 3.1 Eval as a distinct Opus agent with isolated context — **SHIPPED**
 
-The eval pipeline currently runs as part of the same conversation/context as the orchestrator; the architect agent is bounded by the orchestrator's overall turn budget. A separate eval-only agent with its own context window, model selection (Opus for rubric authoring quality), and isolated tool access would:
+Shipped as Phase A refinement 4.1 (commit `de3a21e`, branch `cgf-eval-ab`, merged via `29456bd`). EVAL_DESIGN and the in-EXECUTION_EVAL judge calls now run in fully isolated SDK sessions with fresh `ClaudeAgentOptions`, no parent conversation, and no shared message history. The optimizer's diff/rationale never reaches a judge call. Opus is the default for the judge via `CGF_JUDGE_MODEL=opus`; communication is JSON-artifact only (`eval-suite.yaml` + `eval-results.json`).
 
-- Free up the orchestrator's context.
-- Let the architect think harder about discriminating scenarios.
-- Make eval reproducibility easier (separate inputs, separate logs).
-- Set up cleanly for Phase B — bootstrap-CI on a noisy gate is wasted; signal quality has to come first.
-
-This is the architectural blocker for Phase B's value to land.
+What this unblocked: Phase B's bootstrap-CI gate now has a clean separation to operate on. The original framing — "this is the architectural blocker for Phase B's value to land" — is no longer outstanding.
 
 ### 3.2 Eval-design quality (biggest signal-quality lever)
 
@@ -279,14 +275,14 @@ Several "tie at zero" or "saturate at 0.67" outcomes in run #6 are scenario-desi
 - **F25 — GENERATE timeout under 8-way concurrency.** Run #6: `skills/aws-eks/SKILL.md` GENERATE timed out at 905s (5s over `CGF_GENERATE_TIMEOUT=900`). The `context-engineer` subagent ran 27 turns with **0 tool_calls** — a planning loop without writing. Pre-fix run #5 finished this resource in 611s at concurrency=4. Three working theories: (a) rate-limit tail-latency under 8-way fan-out pushes some resources past the cap; (b) the architect prompt for aws-eks induces a planning loop under contention; (c) random SDK hang. Next steps: instrument context-engineer to log when it spends >60s without a tool call; consider raising GENERATE timeout to 1200s OR lowering `CGF_GENERATE_CONCURRENCY` to 6; investigate aws-eks prompt for ambiguity.
 - **F23 — Multi-grader scenarios.** Schema + runner + architect changes so one model call can be scored by N graders. Targets 4× signal-per-dollar for content-evaluation skills.
 - **F24 — Shared-generation graph.** Bipartite scenarios ↔ grader-pools for cross-scenario grader reuse. Discussion item; design after F23 validates the multi-grader model.
-- **F1 (cosmetic, deferred).** `setup.sh` host-side tooling probe false-positives.
+- ~~**F1 (cosmetic, deferred).**~~ **Shipped as I1** (`14d1c24`) — `setup.sh` now probes IaC grader CLIs inside the container, not on the host.
 - **F5 (mitigated, deferred).** Hard-abort path on EVAL_DESIGN architect timeout; currently bandaided by raised budget.
 
 ### 3.4 Validation gaps
 
 - **Full 54-scenario suite at `trials=3`.** Smoke uses `trials=1` for speed; production cadence is `trials=3`. Not yet run end-to-end — would 3× per-trial cost but smooth the pass-rate distribution.
-- **F25 reproducibility.** Single observation in run #6; need a follow-up run to determine if it's deterministic or rate-limit roulette.
-- **VALIDATE refinement loop never exercised.** Coherence passed cleanly in run #6; the `VALIDATE → ITERATE` retry path (gated by `max_validate_refinements = 2`) has not yet fired under load.
+- **F25 reproducibility.** Single observation in run #6; runs #7 and #8 did not reproduce it. More smoke runs needed to decide deterministic vs rate-limit roulette.
+- **VALIDATE refinement loop never exercised.** Coherence passed cleanly in runs #6, #7, #8; the `VALIDATE → ITERATE` retry path (gated by `max_validate_refinements = 2`) has not yet fired under load.
 
 ---
 
@@ -294,7 +290,7 @@ Several "tie at zero" or "saturate at 0.67" outcomes in run #6 are scenario-desi
 
 End-state: the simple threshold from Phase A is replaced by a multi-signal statistical gate. Same data shape as Phase A — this is gating logic only.
 
-**Refresh note (post Phase A):** Phase B's value depends on signal quality. Bootstrap CIs on tied-at-zero scenarios don't help. Order Phase B *after* § 3.1 (eval-as-Opus-agent) and § 3.2 (discriminating scenarios).
+**Refresh note (post Phase A, post Run #8 — 2026-05-19):** Phase B's value depends on signal quality. Bootstrap CIs on tied-at-zero scenarios don't help. § 3.1 (eval-as-Opus-agent) is shipped (refinement 4.1). § 3.2 (discriminating scenarios) is **still the outstanding prerequisite** — Run #8's 16/18 promote rate is partly an artefact of non-discriminating scenarios, and a tighter statistical gate has less to bite into until the architect prompt produces scenarios that genuinely separate baseline from candidate. Phase B kickoff should decide: invest in architect-prompt work first, or accept that Phase B will tighten an already-flat signal.
 
 **Tasks:**
 
@@ -719,6 +715,7 @@ Execution happened in four "Blocks." Phase-level detail lives in the no-squash c
 | **Block 3** | 2026-05-04/05 | Plugin pipeline modernization: marketplace adoption (research-team, context-engineering); `plugin_manager.py` collapsed 637 → 182 LoC; `commands.py` and `hooks.py` deleted; SDK upstream investigation closed (no issues filed). | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
 | **Block 4** | 2026-05-05 | Observability: OTel Collector sidecar bridging SDK telemetry into Prometheus; harness metrics renamed `harness_*`; SDK-duplicate counters dropped; two pre-provisioned Grafana dashboards; AlertManager + alert rules wired (rules had been dead since project start). Later (2026-05-14) refactored to 10 dashboards + 13 alerts on the `grafana-refactor` branch — see [OBSERVABILITY.md](./OBSERVABILITY.md). | [PR #3](https://github.com/andisab/casdk-harness/pull/3) |
 | **Phase A (Stage 3)** | 2026-05-08 → 2026-05-14 | Eval framework end-to-end: schema, eval-architect agent, graders, EvalHarness, EVAL_DESIGN + EXECUTION_EVAL wiring, telemetry, tracer spans, smoke fixtures. Plus `phase-a-fixes` (F3–F16) and `phase-a-perf` (F17–F22) follow-ups. First full pipeline reached COMPLETE in run #6 (85m 06s). | PRs #7, #8, #9, #11, #12, #13, A.7, + follow-up branches |
+| **Phase A refinement + Run #7/#8 + Grafana reorg** | 2026-05-15 → 2026-05-19 | Phase A refinement Steps 1–5 (eval-agent isolation, dual-baseline, cost-per-success gate, pipeline tightening), pre-smoke polish A–E, Run #7 I-series fixes (I1–I15 minus I9/I16 which are queued under Phase D), Run #8 validation (16/18 promote, 7/7 cost recoveries on r2, ITERATE r2 3.5× faster), J1/J2 reporting fixes, Grafana 12→10 dashboard reorg. See [PHASEA_SUMMARY.md §§ 4.8–4.10](./PHASEA_SUMMARY.md#48-what-landed-on-cgf-eval-ab). | merge commit `29456bd` |
 
 Block 3 and Block 4 shipped together in PR #3 because both were authored on `contextgrad-framework` after Block 2's promotion. Two follow-up doc-only PRs (#4, #5) refreshed status docs and `CLAUDE.md` to match the new state.
 

@@ -19,19 +19,28 @@ Technical reference for developers working on this repository and for Claude's o
 - Plugin system with agents + skills (commands and hooks delegated to SDK-native loading; `commands.py` and `hooks.py` modules deleted in Block 3)
 - Plugin sources: in-tree (`src/harness/plugins/cgf-agents/`) + swe-marketplace clone (`/opt/plugins/swe-marketplace`, cloned at Docker build time)
 - 14 harness agents (in `.claude/agents/`) + plugin agents reachable via `Task(subagent_type="plugin:agent")` or `harness.subagent.call_agent()` for standalone Python invocation
-- **CGF Optimization Framework** (1,702 unit tests + 16 integration tests passing as of 2026-05-08):
+- **CGF Optimization Framework** (2082 unit tests + 111 integration tests collected as of 2026-05-19):
   - Stage 1: Protocol layer, resource architect agent, DESIGN phase — **shipped**
   - Stage 2: MCP tool/server creation skills + Python/TypeScript scaffolds — **shipped**
   - **Stage 3 Phase A: Eval Harness — shipped 2026-05-08**, six PRs (#7-#13 + A.7).
     - A.1 schema, A.2 cgf-eval-architect agent, A.3 graders package, A.4 EvalHarness runner, A.5 EVAL_DESIGN+EXECUTION_EVAL orchestrator wiring, A.6 telemetry+Grafana, A.7 tracer spans + E2E integration test + smoke fixture.
     - Pipeline: RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE (9 phases).
-    - Two-arm baseline-vs-candidate eval; simple-threshold gate (`candidate.pass_rate ≥ baseline.pass_rate + ε`); loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
+    - Two-arm baseline-vs-candidate eval; loop-back to ITERATE with feedback (max 2 rounds); held-out scenarios stripped from optimizer feedback.
     - Five Prometheus instruments + OTel tracer spans with `harness.eval.{task_id,phase,resource_path,resource_type,outcome,...}` attributes.
     - Smoke fixtures at `tests/smoke/` (replaced the prior single-fixture `docs/examples/cgf-eval-smoke/` 2026-05-11). Run with `make smoke FIXTURE=<name>`; current fixtures: `python-expert` (single-resource), `iac-team` (multi-resource, AWS+K8s).
-  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-ROADMAP.md`.
-  - Stage 4: Integration & hardening — not started, depends on Phase D completion.
+  - **Stage 3 Phase A polish — shipped 2026-05-19** via merge commit `29456bd` from branch `cgf-eval-ab`. Three workstreams: Phase A refinement Steps 1–5 (eval-agent isolation `de3a21e`, dual-baseline gate `bb48f32`, cost-per-success two-gate `c02db21`, pipeline tightening `fe85e96`, release notes `fac1845`), pre-smoke polish A–E (manifest/aggregate/empty-scenario/judge-hash/Makefile fixes), Run #7 I-series (I1, I2, I4, I6, I7, I8, I10, I11, I14, I15 — verdict-branched cost-aware feedback `6e44f6d` was the substantive one), Run #8 validation (16/18 promote rate, 7/7 cost-rejected candidates recovered on r2, ITERATE r2 wall time 57m → 16.5m), J1+J2 reporting fixes (`8e088f0`), Grafana 12→10 dashboard reorg (`01cd8b2`). Gate is now 3-stage: floor + incumbent + cost (`Gate.decide()` in `src/harness/optimization/gating.py`). See [PHASEA_SUMMARY.md §§ 4.8–4.10](./docs/PHASEA_SUMMARY.md#48-what-landed-on-cgf-eval-ab).
+  - Stage 3 Phase B (statistical promotion gating, bootstrap CI) — not started, planned in `docs/CGF-EVAL-ROADMAP.md § 4`. **§ 3.1 (eval-as-Opus-agent isolation) is shipped**; § 3.2 (scenario discrimination quality) is the outstanding prerequisite.
+  - Stage 3 Phases C/D + Stage 4 — not started; I9 + I16 queued under Phase D.
 
 ### Completed Recently
+- **Phase A polish + Run #7/#8 validation + Grafana reorg (2026-05-19, merge `29456bd`)** — Branch `cgf-eval-ab` merged to `main` carrying three workstreams:
+  - **Phase A refinement Steps 1–5** (commits `de3a21e`, `bb48f32`, `c02db21`, `fe85e96`, `fac1845`): eval-agent isolation (refinement 4.1 — addresses the architectural blocker for Phase B value; EVAL_DESIGN + judge calls in isolated SDK sessions, no shared conversation, Opus default for judge via `CGF_JUDGE_MODEL`), dual-baseline gate (4.2 — floor arm runs once per resource at first promotion + incumbent), cost-per-success two-gate (4.3 — `Gate.decide()` enforces `cost_per_success ≤ baseline × (1 + τ)`, `CGF_TOKEN_REGRESSION_TOLERANCE=0.10`), pipeline tightening (4.4 — `eval_suite_hash` guard, stagnation early-stop via `CGF_MIN_GAIN_PER_ROUND=0.02`, held-out usage sidecar), release notes (4.5).
+  - **Pre-smoke polish A–E** (commits `ecabe97`, `6cae9d6`, `9bc2bb0`, `5f224a0`, `5f047e1`): YAML-list `tools:` parser (smoke blocker), aggregate JSON verdict + cost-gate counter scope, empty-scenario fail-closed + `last_promoted_version` migration, `judge_rubric_hash` stability across runs, Makefile cosmetic.
+  - **Run #7 I-series** (`14d1c24`, `a31c311`, `0fc0afd`, `ca7a001`, `7a01116`, `b15eaf9`, `f83e581`, `4cbc1b1`, `6e44f6d`): container-side grader CLI probe (I1), unbuffered smoke logs (I2), doc-sync + floor naming gotcha (I4/I7/I11), loader default for `eval_model` (I6), stray `summary.json` cleanup (I8), per-resource verdict persistence (I10), model-alias source-of-truth (I14), Python/agent ownership split for `summary.json`, RUN_REPORT rendering fixes, and **I15 — verdict-branched cost-aware feedback** (the substantive one: `reject_cost` → TRIM TOKENS, `reject_floor` → TRIM AGGRESSIVELY, `refine` → ADD COVERAGE, with quality-bonus relief). I9 + I16 queued under Phase D.
+  - **Run #8 validation**: confirmed I15 in production. 7 of 7 cost-rejected candidates recovered on r2 (was 0 of 8 in run #7); 16 of 18 final promote rate (was 10 of 18); ITERATE r2 wall time 57 min → 16.5 min (3.5× faster). Verdict-branched feedback observable in optimizer subagent transcripts. See `logs/smoke/run8-issues.md`.
+  - **J1 + J2** (`8e088f0`): signal-aware progress preview (markers no longer truncated) and run-report Refined counter (counts `promote && iterations > 0`).
+  - **Grafana dashboard reorg** (`01cd8b2`): 12 → 10 dashboards by merging tools into productivity, renumbering for stable ordering, dropping `sdk-` UID prefix. No metric changes; pure operator-UX.
+  - **Tests:** 2082 unit + 111 integration (was 1986 after Step 4; +96 for polish + I-series + J-series).
 - **Phase-1 smoke hardening (2026-05-11, `phase-a-fixes` branch)** — Surfaced + fixed five defects after the python-expert smoke run revealed the orchestrator agent was skipping intermediate phase signals (state machine, dashboard, iteration counter, summary.json, and CHANGELOG all reported different numbers). Shipped:
   - **`cgf_session.py --non-interactive` flag** — auto-continue at every phase checkpoint (was blocking `make smoke` because `docker compose exec -T` has no TTY → EOF → "Interrupted"). Wired into Makefile.
   - **Grafana "Active Run Status" row** — Phase Progression bargauge (14 phases incl. `failed`), Active Resource, Iteration, Cost / Tokens (15min). Path-specific phases (single-only, multi-only) dimmed gray; `failed` terminal red.
@@ -931,7 +940,7 @@ uv run python -m harness.optimization.cli.section_optimize \
 
 ### Test Coverage
 
-**Current total: 1534 unit tests passing as of 2026-05-05** (1548 baseline post-Block-3, minus 14 dropped in Block 4 Phase 3B for SDK-duplicate metrics).
+**Current total: 2082 unit tests + 111 integration tests collected as of 2026-05-19** (1534 post-Block-4 baseline → 1863 post-Phase-A → 2082 post-Phase-A-polish via `29456bd`).
 
 CGF-specific test areas (in `tests/unit/test_optimization/`):
 - OpenTelemetry tracing, optimization store, resource registry, adapter framework, reward system
