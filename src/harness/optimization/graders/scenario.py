@@ -52,3 +52,10 @@ class EvalScenario:
     tags: list[str] = field(default_factory=list)
     held_out: bool = False
     difficulty: Difficulty | None = None
+    # Phase A refinement 4.3: per-scenario opt-out from the cost gate.
+    # The scenario still counts for the quality gate; only its cost is
+    # excluded from the per-arm ``cost_per_success`` aggregate.  Intended
+    # for scenarios where verbose chain-of-thought / tool-trace logging
+    # is intentional (resource-type-level fallback was rejected as an
+    # anti-pattern; opt in per-scenario only).
+    cost_gate_exempt: bool = False

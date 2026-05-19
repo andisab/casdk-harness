@@ -54,8 +54,7 @@
         },
         "eval_model": {
           "type": "string",
-          "description": "Default LLM-judge model identifier (e.g., 'claude-opus-4-5-20250929'). Overridable per llm_judge grader.",
-          "default": "claude-opus-4-5-20250929"
+          "description": "OPTIONAL — leave unset to use the CGF_JUDGE_MODEL env var (default opus per Phase A.4.1). Setting this here overrides every operator's env choice; only do that when you need a fixed judge identity for replay/calibration. Accepts short names (haiku/sonnet/opus) or full model IDs; short names resolve via MODEL_SHORTHAND_MAP. Overridable per llm_judge grader."
         },
         "token_budget": {
           "type": "integer",
@@ -155,6 +154,11 @@
           "type": "string",
           "description": "Eval-architect's difficulty estimate (40/40/20 split target)",
           "enum": ["easy", "medium", "hard"]
+        },
+        "cost_gate_exempt": {
+          "type": "boolean",
+          "description": "Phase A refinement 4.3: opt this scenario out of the per-arm cost-per-success gate. Quality gate still counts the scenario; only the cost aggregate excludes it. Use for scenarios where verbose chain-of-thought / tool-trace logging is intentional. Per-scenario opt-in only; no resource-type-level fallback.",
+          "default": false
         }
       }
     },

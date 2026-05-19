@@ -74,6 +74,7 @@ help: ## Show available targets
 	@echo "  optimize-dryrun      Validate optimization setup"
 	@echo "  cgf-status           Show optimization run status"
 	@echo "  cgf-clean            Remove session state files"
+	@echo "  report               Regenerate sessions/RUN_REPORT.md (SPEC=path optional)"
 	@echo ""
 	@echo "$(YELLOW)Testing:$(NC)"
 	@echo "  test                 Run full test suite"
@@ -575,6 +576,20 @@ optimize-dryrun: ## Validate optimization setup
 	@echo "$(GREEN)Ready to optimize. Run:$(NC)"
 	@echo "  make optimize"
 
+.PHONY: report
+report: ## Regenerate sessions/RUN_REPORT.md (usage: make report [SPEC=workspace/...])
+	@if [ -n "$(SPEC)" ]; then \
+		WORKSPACE_DIR="$(SPEC)"; \
+		if [ -f "$(SPEC)" ]; then WORKSPACE_DIR=$$(dirname "$(SPEC)"); fi; \
+		echo "$(GREEN)Rendering run report for $$WORKSPACE_DIR$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent \
+			python -m harness.optimization.cli.run_report --workspace "$$WORKSPACE_DIR"; \
+	else \
+		echo "$(GREEN)Auto-discovering SPEC.md in workspace/...$(NC)"; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent \
+			python -m harness.optimization.cli.run_report; \
+	fi
+
 # =============================================================================
 # Smoke tests (real-LLM end-to-end optimization runs)
 # =============================================================================
@@ -628,7 +643,7 @@ smoke: ## Run a smoke fixture (FIXTURE=<name>, e.g. python-expert | iac-team)
 	echo "$(CYAN)==> Running optimization$(NC)"; \
 	if grep -q "## Capabilities" "$$WORKSPACE_DIR/SPEC.md" 2>/dev/null; then \
 		echo "$(CYAN)    (multi-resource path)$(NC)"; \
-		docker compose $(COMPOSE_FILES) exec -T main-agent python -c "\
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -u -c "\
 from harness.optimization.multi_resource_orchestrator import run_multi_resource_optimization; \
 import asyncio; \
 result = asyncio.run(run_multi_resource_optimization('/workspace/$(FIXTURE)', verbose=True)); \
@@ -636,7 +651,7 @@ print('Success!' if result.success else f'Failed: {result.error}')"; \
 		OPT_EXIT=$$?; \
 	else \
 		echo "$(CYAN)    (single-resource path)$(NC)"; \
-		docker compose $(COMPOSE_FILES) exec -T main-agent python -m harness.cgf_session --path "/workspace/$(FIXTURE)" --non-interactive; \
+		docker compose $(COMPOSE_FILES) exec -T main-agent python -u -m harness.cgf_session --path "/workspace/$(FIXTURE)" --non-interactive; \
 		OPT_EXIT=$$?; \
 	fi; \
 	echo ""; \

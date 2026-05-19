@@ -657,6 +657,13 @@ class ResourceStatus:
             scored by EXECUTION_EVAL (F17). EXECUTION_EVAL skips
             resources whose ``version`` has not advanced past this number,
             avoiding redundant re-evals during feedback rounds.
+        last_promoted_version: Most recent version that cleared the
+            promotion gate (Phase A refinement 4.2). 0 means no version
+            has ever promoted; the gate uses this to detect the
+            "first-time promotion" regime where the floor arm runs
+            (bare-model sanity check). Once any version promotes, the
+            floor arm is never run again within this branch — the model
+            is the experimental control and does not change mid-branch.
         quality: Quality scores (None if not yet evaluated)
         iterations: Number of optimization iterations completed
         refinement_count: Number of targeted refinement loops
@@ -678,6 +685,7 @@ class ResourceStatus:
     ] = "pending"
     version: int = 0
     last_evaluated_version: int = 0
+    last_promoted_version: int = 0
     quality: ResourceQuality | None = None
     iterations: int = 0
     refinement_count: int = 0
@@ -693,6 +701,7 @@ class ResourceStatus:
             "status": self.status,
             "version": self.version,
             "last_evaluated_version": self.last_evaluated_version,
+            "last_promoted_version": self.last_promoted_version,
             "quality": self.quality.to_dict() if self.quality else None,
             "iterations": self.iterations,
             "refinement_count": self.refinement_count,
@@ -703,17 +712,43 @@ class ResourceStatus:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ResourceStatus":
-        """Create from dictionary."""
+        """Create from dictionary.
+
+        Migration for ``last_promoted_version`` (added Phase A
+        refinement 4.2): state files written before this field existed
+        don't carry it.  When the resource is already ``optimized`` with
+        a non-zero version, infer ``last_promoted_version = version`` —
+        that's the only consistent interpretation of "this resource
+        already promoted to v{N}".  Without the migration, a resume
+        would see ``last_promoted_version == 0`` and re-run the
+        first-time-promotion floor arm unnecessarily.
+
+        Explicit values in the state file always win, so newer state
+        files override the inference.
+        """
         quality = None
         if data.get("quality"):
             quality = ResourceQuality.from_dict(data["quality"])
 
+        version = data.get("version", 0)
+        status = data.get("status", "pending")
+        # Migration: infer last_promoted_version when missing on an
+        # already-optimized resource.  Distinguish "key not present"
+        # from "explicit 0" by using sentinel rather than .get default.
+        if "last_promoted_version" in data:
+            last_promoted_version = data["last_promoted_version"]
+        elif status == "optimized" and version >= 1:
+            last_promoted_version = version
+        else:
+            last_promoted_version = 0
+
         return cls(
             path=data["path"],
             resource_type=data["resource_type"],
-            status=data.get("status", "pending"),
-            version=data.get("version", 0),
+            status=status,
+            version=version,
             last_evaluated_version=data.get("last_evaluated_version", 0),
+            last_promoted_version=last_promoted_version,
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),
@@ -761,6 +796,12 @@ class MultiResourceState:
     user_decisions_path: str = ""
     resource_plan_path: str = ""
     eval_suite_path: str = ""
+    # Phase A refinement 4.4.a: SHA-256 of eval-suite.yaml bytes captured
+    # at EVAL_DESIGN exit.  EXECUTION_EVAL refuses to run if the live
+    # suite hash differs — guards against mid-loop scenario rewrites
+    # (intentional or accidental) leaking optimizer-side reasoning into
+    # the gate.  Empty string = no hash recorded yet.
+    eval_suite_hash: str = ""
     eval_results_path: str = ""
     feedback_history: list[dict[str, Any]] = field(default_factory=list)
     quality_threshold: float = 0.85
@@ -772,6 +813,12 @@ class MultiResourceState:
     validate_refinement_count: int = 0
     started_at: str = ""
     updated_at: str = ""
+    # Per-phase wall-clock timings keyed by phase name (RESEARCH, DESIGN,
+    # ...).  Drives RUN_REPORT.md's Mermaid gantt + per-phase table.
+    # Backward-compatible: missing field on disk → empty dict on load.
+    # Multi-round phases (ITERATE, EXECUTION_EVAL) overwrite each round;
+    # cross-round detail is reconstructed from feedback_history.
+    phase_timings: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Set timestamps if not provided."""
@@ -780,6 +827,16 @@ class MultiResourceState:
             self.started_at = now
         if not self.updated_at:
             self.updated_at = now
+        # Seed phase_timings for the initial phase so the run-report
+        # renderer has a started_at to show even before the first
+        # advance_phase() call.
+        phase_name = self.current_phase.name
+        if phase_name not in self.phase_timings:
+            self.phase_timings[phase_name] = {
+                "started_at": now,
+                "completed_at": None,
+                "duration_s": None,
+            }
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -794,6 +851,7 @@ class MultiResourceState:
             "user_decisions_path": self.user_decisions_path,
             "resource_plan_path": self.resource_plan_path,
             "eval_suite_path": self.eval_suite_path,
+            "eval_suite_hash": self.eval_suite_hash,
             "eval_results_path": self.eval_results_path,
             "feedback_history": self.feedback_history,
             "quality_threshold": self.quality_threshold,
@@ -801,6 +859,7 @@ class MultiResourceState:
             "validate_refinement_count": self.validate_refinement_count,
             "started_at": self.started_at,
             "updated_at": self.updated_at,
+            "phase_timings": self.phase_timings,
         }
 
     @classmethod
@@ -820,6 +879,7 @@ class MultiResourceState:
             user_decisions_path=data.get("user_decisions_path", ""),
             resource_plan_path=data.get("resource_plan_path", ""),
             eval_suite_path=data.get("eval_suite_path", ""),
+            eval_suite_hash=data.get("eval_suite_hash", ""),
             eval_results_path=data.get("eval_results_path", ""),
             feedback_history=data.get("feedback_history", []),
             quality_threshold=data.get("quality_threshold", 0.85),
@@ -827,6 +887,7 @@ class MultiResourceState:
             validate_refinement_count=data.get("validate_refinement_count", 0),
             started_at=data.get("started_at", ""),
             updated_at=data.get("updated_at", ""),
+            phase_timings=data.get("phase_timings", {}),
         )
 
     def advance_phase(self, next_phase: OptimizationPhase) -> None:
@@ -835,10 +896,44 @@ class MultiResourceState:
         Args:
             next_phase: Phase to advance to.
         """
+        now_iso = datetime.now(UTC).isoformat()
+        now_dt = datetime.now(UTC)
+
+        # Close out the current phase's timing entry.
+        current_name = self.current_phase.name
+        current_entry = self.phase_timings.get(current_name)
+        if current_entry and current_entry.get("started_at"):
+            current_entry["completed_at"] = now_iso
+            try:
+                started = datetime.fromisoformat(current_entry["started_at"])
+                current_entry["duration_s"] = (now_dt - started).total_seconds()
+            except (TypeError, ValueError):
+                current_entry["duration_s"] = None
+        else:
+            # Phase entry never opened (e.g. resumed state w/o seed) —
+            # record a zero-duration placeholder so the renderer still
+            # has something to show.
+            self.phase_timings[current_name] = {
+                "started_at": now_iso,
+                "completed_at": now_iso,
+                "duration_s": 0.0,
+            }
+
         if self.current_phase not in self.phases_completed:
             self.phases_completed.append(self.current_phase)
         self.current_phase = next_phase
-        self.updated_at = datetime.now(UTC).isoformat()
+        self.updated_at = now_iso
+
+        # Open a timing entry for the new phase.  Backward transitions
+        # (EXECUTION_EVAL → ITERATE, VALIDATE → ITERATE) overwrite the
+        # previous round's timing for that phase; the renderer
+        # reconstructs round-1 vs round-2 history from feedback_history
+        # rather than from this dict.
+        self.phase_timings[next_phase.name] = {
+            "started_at": now_iso,
+            "completed_at": None,
+            "duration_s": None,
+        }
 
     def add_resource(
         self,
@@ -874,6 +969,7 @@ class MultiResourceState:
         | None = None,
         version: int | None = None,
         last_evaluated_version: int | None = None,
+        last_promoted_version: int | None = None,
         quality: ResourceQuality | None = None,
         iterations: int | None = None,
         refinement_count: int | None = None,
@@ -911,6 +1007,8 @@ class MultiResourceState:
             resource.version = version
         if last_evaluated_version is not None:
             resource.last_evaluated_version = last_evaluated_version
+        if last_promoted_version is not None:
+            resource.last_promoted_version = last_promoted_version
         if quality is not None:
             resource.quality = quality
         if iterations is not None:

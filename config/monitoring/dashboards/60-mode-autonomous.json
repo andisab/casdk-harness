@@ -1,6 +1,6 @@
 {
-  "title": "Claude Agent Harness \u2014 SDK: Session & Productivity",
-  "uid": "casdk-sdk-productivity",
+  "title": "6: Mode: Autonomous",
+  "uid": "casdk-mode-autonomous",
   "tags": [
     "claude",
     "harness"
@@ -172,7 +172,7 @@
       "icon": "external link"
     },
     {
-      "title": "00 \u2014 Overview",
+      "title": "0: Main",
       "type": "link",
       "url": "/d/casdk-overview",
       "icon": "dashboard",
@@ -181,43 +181,43 @@
       "targetBlank": false
     },
     {
-      "title": "10 \u2014 SDK: Cost & Spend",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-cost",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "2: Cache & Token Efficiency",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-cache",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
+      "title": "3: Productivity & Tools",
       "type": "link",
-      "url": "/d/casdk-sdk-tools",
+      "url": "/d/casdk-productivity",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "50 \u2014 SDK: Reliability",
+      "title": "4: Errors & Reliability",
       "type": "link",
-      "url": "/d/casdk-sdk-reliability",
+      "url": "/d/casdk-reliability",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "60 \u2014 Mode: Interactive",
+      "title": "5: Mode: Interactive",
       "type": "link",
       "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
@@ -226,16 +226,7 @@
       "targetBlank": false
     },
     {
-      "title": "65 \u2014 Mode: Autonomous",
-      "type": "link",
-      "url": "/d/casdk-mode-autonomous",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -244,7 +235,7 @@
       "targetBlank": false
     },
     {
-      "title": "99 \u2014 Raw Events",
+      "title": "9: TBD: Raw Events",
       "type": "link",
       "url": "/d/casdk-raw-events",
       "icon": "dashboard",
@@ -255,10 +246,10 @@
   ],
   "panels": [
     {
-      "id": 20100,
+      "id": 65100,
       "type": "stat",
-      "title": "Active Sessions",
-      "description": "Currently active sessions across all agents (harness-side gauge).",
+      "title": "Tasks Completed",
+      "description": "Count of tasks with status=PASS in the current task_list.json. Populated by harness_task_progress (Phase 1 instrument, emitted on every save_task_list call from autonomous mode).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -271,7 +262,7 @@
       },
       "targets": [
         {
-          "expr": "sum(harness_agent_active_sessions)",
+          "expr": "sum(harness_task_progress{status=\"completed\"})",
           "refId": "A",
           "instant": false
         }
@@ -292,8 +283,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
+            "mode": "thresholds"
           },
           "mappings": [
             {
@@ -301,23 +291,36 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
           "unit": "none",
-          "decimals": 0
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 20110,
+      "id": 65110,
       "type": "stat",
-      "title": "Sessions Started (selected range)",
-      "description": "Total session-start events in the dashboard time window.",
+      "title": "Tasks Pending",
+      "description": "Tasks with status=None (not yet attempted).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -330,7 +333,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(claude_code_session_count_total[$__range]))",
+          "expr": "sum(harness_task_progress{status=\"pending\"})",
           "refId": "A",
           "instant": false
         }
@@ -351,8 +354,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
+            "mode": "thresholds"
           },
           "mappings": [
             {
@@ -360,23 +362,36 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
           "unit": "none",
-          "decimals": 0
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text-secondary",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 20120,
+      "id": 65120,
       "type": "stat",
-      "title": "Net Lines of Code (selected range)",
-      "description": "Added \u2212 Removed lines via `sum_over_time` (NOT `increase` \u2014 these are delta-style counters; `increase` extrapolates them to nonsense values, per spec \u00a7 2 gotcha #3).",
+      "title": "Tasks Failed",
+      "description": "Tasks with status=FAIL (agent gave up). Non-zero is a signal that the workspace state needs human review.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -389,7 +404,7 @@
       },
       "targets": [
         {
-          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[$__range])) - sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[$__range]))",
+          "expr": "sum(harness_task_progress{status=\"failed\"})",
           "refId": "A",
           "instant": false
         }
@@ -410,8 +425,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
+            "mode": "thresholds"
           },
           "mappings": [
             {
@@ -419,23 +433,36 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
           "unit": "none",
-          "decimals": 0
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 20130,
+      "id": 65130,
       "type": "stat",
-      "title": "Productivity Multiplier (cli / user)",
-      "description": "CAVEAT: active_time{type=\"user\"} was never observed in 24h on harness workloads \u2014 likely interactive-only. This stat will show as Inf or '\u2014' until interactive sessions populate the denominator. See OBSERVABILITY.md \u00a7 6 item 8. Treat as directional, never a performance KPI \u2014 Mike Lane reports >10,000\u00d7 ratios with parallel agents.",
+      "title": "Completion %",
+      "description": "Completed / total. Denominator includes pending + failed. Reaches 100% when every task is either PASS or FAIL.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -448,7 +475,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(claude_code_active_time_seconds_total{type=\"cli\"}[$__range])) / sum(rate(claude_code_active_time_seconds_total{type=\"user\"}[$__range]))",
+          "expr": "sum(harness_task_progress{status=\"completed\"}) / clamp_min(sum(harness_task_progress), 1)",
           "refId": "A",
           "instant": false
         }
@@ -469,8 +496,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "text-primary"
+            "mode": "thresholds"
           },
           "mappings": [
             {
@@ -478,23 +504,40 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "none",
-          "decimals": 1
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.9
+              }
+            ]
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 20200,
+      "id": 65200,
       "type": "timeseries",
-      "title": "Sessions Started by start_type",
-      "description": "fresh / resume / continue. Time-series per session-start kind.",
+      "title": "Commits Over Time",
+      "description": "Per-5min commit count via sum_over_time (NOT increase — spec § 2 gotcha #3). CAVEAT: claude_code_commit_count_total was empty in 24h on typical CGF-optimization workloads (see OBSERVABILITY.md § 6 item 7). Will populate when Claude commits in-session during autonomous mode.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -507,15 +550,15 @@
       },
       "targets": [
         {
-          "expr": "sum by (start_type) (rate(claude_code_session_count_total[5m])) * 300",
-          "legendFormat": "{{start_type}}",
+          "expr": "sum(sum_over_time(claude_code_commit_count_total[5m]))",
+          "legendFormat": "commits / 5min",
           "refId": "A"
         }
       ],
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
@@ -534,7 +577,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -552,10 +595,10 @@
       }
     },
     {
-      "id": 20210,
+      "id": 65210,
       "type": "timeseries",
-      "title": "Lines of Code Added / Removed",
-      "description": "Using `sum_over_time` not `increase` \u2014 these are delta counters. Mike Lane's gist explicitly warns about the `increase()` extrapolation pitfall.",
+      "title": "Lines of Code (added vs removed, 5m windows)",
+      "description": "Per-5min LoC delta. Uses sum_over_time per the delta-counter gotcha. Removed shown as negative for visual stacking.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -580,8 +623,8 @@
       ],
       "options": {
         "legend": {
-          "displayMode": "table",
-          "placement": "right",
+          "displayMode": "list",
+          "placement": "bottom",
           "showLegend": true
         },
         "tooltip": {
@@ -600,7 +643,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -618,137 +661,15 @@
       }
     },
     {
-      "id": 20300,
+      "id": 65300,
       "type": "timeseries",
-      "title": "Active Time \u2014 CLI vs User",
-      "description": "CAVEAT: type=\"user\" is interactive-only on current harness workloads; the line will sit at zero for non-interactive runs.",
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by (type) (rate(claude_code_active_time_seconds_total[5m]))",
-          "legendFormat": "{{type}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "s",
-          "custom": {
-            "fillOpacity": 5,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 20310,
-      "type": "timeseries",
-      "title": "Tool Calls (harness-side, by tool_name)",
-      "description": "From harness_tool_calls_total \u2014 populated by interactive.py. Autonomous + CGF runs don't currently emit harness-side tool metrics, so multi-mode coverage relies on the SDK-side code_edit_tool_decision (Dashboard 40).",
-      "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum by (tool_name) (rate(harness_tool_calls_total[5m])) * 60",
-          "legendFormat": "{{tool_name}}",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "none",
-          "custom": {
-            "fillOpacity": 5,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 20400,
-      "type": "timeseries",
-      "title": "Harness Session Duration (P50 / P95)",
-      "description": "Histogram from harness_session_duration_seconds_bucket \u2014 interactive mode only.",
+      "title": "Agent Duration P50 / P95 by Agent",
+      "description": "Per-cycle agent execution duration from harness_agent_duration_seconds_bucket. Autonomous mode runs the main agent in a loop; this surfaces cycle-by-cycle latency.",
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 24,
         "x": 0,
-        "y": 18
+        "y": 12
       },
       "datasource": {
         "type": "prometheus",
@@ -756,13 +677,13 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
-          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.50, sum by (agent, le) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{agent}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum by (agent, le) (rate(harness_agent_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{agent}}",
           "refId": "B"
         }
       ],
@@ -788,7 +709,7 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
@@ -806,15 +727,15 @@
       }
     },
     {
-      "id": 20410,
-      "type": "barchart",
-      "title": "Sessions by terminal_type (selected range)",
-      "description": "Where sessions are being run from.",
+      "id": 65400,
+      "type": "timeseries",
+      "title": "Task Progress Over Time",
+      "description": "Task counts by status as time series. Watch the curves: completed should climb, pending should fall, failed should stay flat at zero.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 18
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 20
       },
       "datasource": {
         "type": "prometheus",
@@ -822,33 +743,26 @@
       },
       "targets": [
         {
-          "expr": "sum by (terminal_type) (increase(claude_code_session_count_total[$__range]))",
-          "legendFormat": "{{terminal_type}}",
-          "instant": true,
+          "expr": "harness_task_progress",
+          "legendFormat": "{{status}}",
           "refId": "A"
         }
       ],
       "options": {
-        "orientation": "horizontal",
-        "showValue": "auto",
-        "stacking": "none",
-        "xTickLabelRotation": 0,
-        "xTickLabelSpacing": 0,
         "legend": {
-          "showLegend": false,
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "multi",
+          "sort": "desc"
         }
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
+            "mode": "palette-classic"
           },
           "mappings": [
             {
@@ -856,23 +770,229 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
           "unit": "none",
-          "decimals": 0,
           "custom": {
-            "axisPlacement": "auto",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "lineWidth": 1
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
           }
         },
         "overrides": []
       }
+    },
+    {
+      "id": 65900,
+      "type": "row",
+      "title": "SDK Economics — see Dashboards 10 (Cost) and 30 (Cache)",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": [
+        {
+          "id": 65910,
+          "type": "stat",
+          "title": "Cost (selected range)",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 0,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#A0A0A0"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "—",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "currencyUSD",
+              "decimals": 2
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 65920,
+          "type": "stat",
+          "title": "Tokens (selected range)",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 8,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(increase(claude_code_token_usage_tokens_total[$__range]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#A0A0A0"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "—",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "short",
+              "decimals": 0
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 65930,
+          "type": "stat",
+          "title": "Cache Hit Rate",
+          "description": "",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 16,
+            "y": 27
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__rate_interval])) / sum(rate(claude_code_token_usage_tokens_total{type=~\"cacheRead|cacheCreation|input\"}[$__rate_interval]))",
+              "refId": "A",
+              "instant": false
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": false,
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": ""
+            },
+            "graphMode": "area",
+            "colorMode": "value",
+            "textMode": "auto",
+            "orientation": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "type": "special",
+                  "options": {
+                    "match": "null+nan",
+                    "result": {
+                      "text": "—",
+                      "color": "text-secondary"
+                    }
+                  }
+                }
+              ],
+              "unit": "percentunit",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "yellow",
+                    "value": 0.6
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.9
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
     }
   ]
 }

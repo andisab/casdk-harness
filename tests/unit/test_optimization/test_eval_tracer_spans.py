@@ -106,6 +106,9 @@ def _make_orchestrator(
     orch._progress = progress
     state = MagicMock()
     state.eval_suite_path = "eval/eval-suite.yaml"
+    # Phase A refinement 4.4.a: empty string disables the mid-loop
+    # suite-hash guard for tests that don't exercise it.
+    state.eval_suite_hash = ""
     state.eval_results_path = ""
     state.feedback_history = []
     state.current_phase = OptimizationPhase.EXECUTION_EVAL

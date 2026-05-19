@@ -195,6 +195,165 @@ class TestLoader:
         assert isinstance(suite.scenarios[0], ScenarioWithGraders)
         assert suite.config.trials_per_scenario == 1
 
+    def test_eval_model_unset_defaults_to_none(
+        self, tmp_path: Path, minimal_suite_doc: dict
+    ) -> None:
+        """I6 regression guard: a suite that omits ``eval_model`` must
+        load with ``config.eval_model = None`` so the runner falls
+        through to ``CGF_JUDGE_MODEL`` env (default opus per Phase A.4.1).
+
+        The pre-I6 loader synthesized a hardcoded sonnet/opus string here,
+        which then bypassed the env path at ``runner.py:848`` —
+        ``_resolve_judge_model(suite.config.eval_model)`` — because the
+        explicit-param branch fired with the synthesized value.
+        """
+        # minimal_suite_doc has no `config` block; loader returns defaults.
+        path = _write_yaml(tmp_path, minimal_suite_doc)
+        suite = load_eval_suite(path)
+        assert suite.config.eval_model is None
+
+    def test_eval_model_explicit_override_preserved(
+        self, tmp_path: Path, minimal_suite_doc: dict
+    ) -> None:
+        """An explicit ``eval_model`` set in the suite still propagates.
+
+        I6 only removes the loader's hardcoded default — operators who
+        deliberately pin a judge model (e.g. for replay/calibration) are
+        unaffected.
+        """
+        minimal_suite_doc["config"] = {"eval_model": "claude-opus-4-7"}
+        path = _write_yaml(tmp_path, minimal_suite_doc)
+        suite = load_eval_suite(path)
+        assert suite.config.eval_model == "claude-opus-4-7"
+
+    def test_eval_results_to_dict_includes_verdict_field(self) -> None:
+        """I10: ``EvalResults.to_dict()`` must include ``verdict`` so the
+        on-disk ``eval-results.json`` carries the gate decision.
+
+        ``EvalHarness.run`` writes the file before the gate fires, so
+        the field starts as ``None``; ``execution_eval`` re-stamps it
+        post-gate via ``_stamp_verdict_on_disk``.  Either way the key
+        is present.
+        """
+        from harness.optimization.eval_harness.models import EvalResults
+
+        empty = EvalResults(
+            suite_path="x.yaml",
+            baseline_resource="b.md",
+            candidate_resource="c.md",
+            timestamp="2026-05-18T00:00:00+00:00",
+            scenarios=[],
+            win_rate=0.0,
+            baseline_pass_rate=0.0,
+            candidate_pass_rate=0.0,
+            no_decision_rate=0.0,
+            held_out=None,
+            by_level={},
+            by_tag={},
+            total_tokens=0,
+        )
+        d = empty.to_dict()
+        assert "verdict" in d
+        assert d["verdict"] is None  # default, pre-stamp
+
+        # After stamping, the field round-trips through to_dict.
+        empty.verdict = "reject_cost"
+        assert empty.to_dict()["verdict"] == "reject_cost"
+
+    def test_stamp_verdict_on_disk_rewrites_eval_results_json(
+        self, tmp_path: Path
+    ) -> None:
+        """I10: ``_stamp_verdict_on_disk`` rewrites the on-disk JSON
+        with the stamped verdict; subsequent readers see the gate
+        decision rather than ``null``.
+        """
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _stamp_verdict_on_disk,
+        )
+        from harness.optimization.eval_harness.models import EvalResults
+
+        results = EvalResults(
+            suite_path="x.yaml",
+            baseline_resource="b.md",
+            candidate_resource="c.md",
+            timestamp="2026-05-18T00:00:00+00:00",
+            scenarios=[],
+            win_rate=0.0,
+            baseline_pass_rate=0.5,
+            candidate_pass_rate=0.5,
+            no_decision_rate=0.0,
+            held_out=None,
+            by_level={},
+            by_tag={},
+            total_tokens=0,
+        )
+        # Simulate EvalHarness writing the file first (no verdict yet).
+        results_dir = tmp_path / "eval" / "results" / "x"
+        results_dir.mkdir(parents=True)
+        out = results_dir / "eval-results.json"
+        out.write_text(json.dumps(results.to_dict(), indent=2))
+        # Sanity: initial file has verdict=null.
+        loaded = json.loads(out.read_text())
+        assert loaded["verdict"] is None
+
+        # Stamp + re-read.
+        results.verdict = "promote"
+        _stamp_verdict_on_disk(results_dir, results)
+
+        loaded = json.loads(out.read_text())
+        assert loaded["verdict"] == "promote"
+        # Other fields preserved.
+        assert loaded["candidate_pass_rate"] == 0.5
+
+    def test_architect_prompt_does_not_hardcode_eval_model(self) -> None:
+        """I6 regression guard: the cgf-eval-architect agent's prompt
+        must not emit a literal ``eval_model:`` line in its output-schema
+        example.
+
+        Run #7 surfaced this — the prompt's example schema had
+        ``eval_model: "claude-sonnet-4-5-20250929"`` which the architect
+        faithfully copied into every generated eval-suite.yaml, silently
+        overriding ``CGF_JUDGE_MODEL=opus`` env at the gate.
+
+        We allow the substring to appear in comments / prose explaining
+        why the field is omitted; what we forbid is a real YAML key on
+        a non-comment line.
+        """
+        from pathlib import Path as _Path
+
+        prompt_path = (
+            _Path(__file__).resolve().parents[3]
+            / "src"
+            / "harness"
+            / "plugins"
+            / "cgf-agents"
+            / "agents"
+            / "eval"
+            / "cgf-eval-architect.md"
+        )
+        assert prompt_path.exists(), (
+            f"architect prompt missing at {prompt_path}"
+        )
+        for lineno, raw in enumerate(
+            prompt_path.read_text().splitlines(), start=1
+        ):
+            stripped = raw.lstrip()
+            # Skip prose, comments, and the markdown headings.
+            if stripped.startswith("#") or stripped.startswith("//"):
+                continue
+            # The forbidden form is a YAML key assignment, not the bare
+            # substring (which appears in field-name references throughout
+            # the doc).  We catch a leading ``eval_model:`` token followed
+            # by a non-empty value.
+            if stripped.startswith("eval_model:"):
+                value = stripped.split(":", 1)[1].strip()
+                if value:  # actual value, not just `eval_model:` alone
+                    raise AssertionError(
+                        f"{prompt_path}:{lineno}: architect prompt hardcodes "
+                        f"eval_model — found {raw!r}.  I6 requires omitting "
+                        f"this field so CGF_JUDGE_MODEL env wins."
+                    )
+
     def test_loads_with_full_config(
         self, tmp_path: Path, minimal_suite_doc: dict
     ) -> None:

@@ -38,17 +38,17 @@ typically span both directories.
 |---|---|---|
 | `monitoring.py` | All harness-side instruments + helpers (`record_run_*`, `init_run_phases`, `record_task_progress`, etc.) | Singleton helpers call `.clear()` before set. Add unit tests in `tests/unit/test_monitoring.py` whenever you change. |
 | `agent.py` | `harness_agent_requests_total`, `harness_agent_duration_seconds`, `harness_agent_active_sessions` via `MetricsCollector` methods. Also pins `HOME=/home/claude` and `PYTHONUNBUFFERED=1` on SDK subprocess env. | Bind-mounted in dev compose; restart picks up changes. |
-| `interactive.py` | `harness_session_*` family, `harness_tool_calls_total`, `harness_message_types_total`. | Only emits during `make interactive` — D60 dashboard. |
-| `progress.py` | `harness_task_progress{status}` on every `save_task_list` (autonomous mode). | Powers D65. |
+| `interactive.py` | `harness_session_*` family, `harness_tool_calls_total`, `harness_message_types_total`. | Only emits during `make interactive` — D5 dashboard. |
+| `progress.py` | `harness_task_progress{status}` on every `save_task_list` (autonomous mode). | Powers D6. |
 | `cgf_session.py` | Single-resource CGF path: `record_run_config / record_run_path / record_run_start / init_run_phases / record_phase_entry / record_iteration`. | Emits 5 phases: research, optimize, finalize, complete, failed. See `SINGLE_PATH_PHASES` in monitoring.py. |
 | `optimization/multi_resource_orchestrator.py` + `_orchestrator_phases/` | Multi-resource CGF path: same setup as single + per-resource iteration in `iterate.py:185`. | Emits 10 phases. See `MULTI_PATH_PHASES`. |
-| `optimization/_orchestrator_phases/eval_design.py` + `execution_eval.py` + `optimization/graders/llm_judge.py` | `harness_eval_*` family (Phase A telemetry). | D70 Eval Framework collapsed row. |
+| `optimization/_orchestrator_phases/eval_design.py` + `execution_eval.py` + `optimization/graders/llm_judge.py` | `harness_eval_*` family (Phase A telemetry). | D7 Eval Framework collapsed row. |
 
 ## Rules of thumb when editing
 
 1. **Adding a new metric** — define in `monitoring.py`, add a helper if cardinality control is needed, add a call site, add a unit test, add a row to `docs/OBSERVABILITY.md` § 3, and if you want it on a dashboard, add a panel in `config/monitoring/dashboards/` and a row to § 4.
-2. **Adding a new phase name** to either path's state machine — update `SINGLE_PATH_PHASES` or `MULTI_PATH_PHASES` in `monitoring.py` (the union is auto-derived as `KNOWN_RUN_PHASES`). Then update the two State Timeline regex filters in `config/monitoring/dashboards/70-mode-cgf.json`. Without both, D70 won't show the new phase.
-3. **Changing a singleton helper** — `.clear()`-on-set semantic is load-bearing for D00/D70 Run Config table dedup. Regression tests are in `tests/unit/test_monitoring.py::test_singleton_semantic_*`.
+2. **Adding a new phase name** to either path's state machine — update `SINGLE_PATH_PHASES` or `MULTI_PATH_PHASES` in `monitoring.py` (the union is auto-derived as `KNOWN_RUN_PHASES`). Then update the two State Timeline regex filters in `config/monitoring/dashboards/70-mode-cgf.json`. Without both, D7 won't show the new phase.
+3. **Changing a singleton helper** — `.clear()`-on-set semantic is load-bearing for D0/D7 Run Config table dedup. Regression tests are in `tests/unit/test_monitoring.py::test_singleton_semantic_*`.
 4. **Operations that never raise** — observability helpers wrap their body in `try/except`. `# pragma: no cover` on the except branch. Observability code never breaks the pipeline.
 
 ## When you're working in a sub-package

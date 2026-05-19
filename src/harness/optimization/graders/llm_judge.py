@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from harness.config import MODEL_SHORTHAND_MAP
 from harness.optimization.graders.base import BaseGrader, GraderResult
 from harness.optimization.graders.scenario import EvalScenario
 from harness.optimization.graders.transcript import AgentTranscript
@@ -31,24 +32,46 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# Maps short model names to full model IDs.  Mirrors the table in
-# ``harness.optimization.testcases.validators`` for consistency.
-_MODEL_ALIAS = {
-    "haiku": "claude-3-5-haiku-20241022",
-    "sonnet": "claude-sonnet-4-20250514",
-    "opus": "claude-opus-4-5-20250929",
-}
-
-_DEFAULT_JUDGE_MODEL = "claude-opus-4-5-20250929"
+# Short-name → full model ID resolution is centralized in
+# ``harness.config.MODEL_SHORTHAND_MAP`` (the single source of truth for
+# both the harness and the CGF graders).  We expose ``_DEFAULT_JUDGE_MODEL``
+# as a derived constant so callers that want "the canonical judge model"
+# get it via one import, but ``MODEL_SHORTHAND_MAP`` is the only place
+# the IDs live.
+_DEFAULT_JUDGE_MODEL = MODEL_SHORTHAND_MAP["opus"]
 
 
 def _resolve_judge_model(model: str | None) -> str:
     """Apply the precedence: explicit param > env var > default opus.
 
-    Short names (haiku/sonnet/opus) are expanded to full model IDs.
+    Short names (haiku/sonnet/opus) are expanded to full model IDs via
+    :data:`harness.config.MODEL_SHORTHAND_MAP` — same table the rest of
+    the harness uses, so a single edit there picks up every consumer.
+
+    Phase A refinement 4.1: WARN when the resolved judge model matches
+    ``CGF_DESIGN_MODEL`` (self-preference bias — judges prefer text from
+    their own model family; see Panickssery et al. 2024, arXiv 2410.21819).
+    Anthropic's *Three-Agent Harness* guidance is explicit: the agent
+    judging must differ from the agent producing.
     """
     candidate = model or os.environ.get("CGF_JUDGE_MODEL") or _DEFAULT_JUDGE_MODEL
-    return _MODEL_ALIAS.get(candidate, candidate)
+    resolved = MODEL_SHORTHAND_MAP.get(candidate, candidate)
+
+    design_raw = os.environ.get("CGF_DESIGN_MODEL")
+    if design_raw:
+        design_resolved = MODEL_SHORTHAND_MAP.get(design_raw, design_raw)
+        if design_resolved == resolved:
+            logger.warning(
+                "judge model matches design/optimizer model — "
+                "self-preference bias risk",
+                model=resolved,
+                hint=(
+                    "set CGF_JUDGE_MODEL and CGF_DESIGN_MODEL to different "
+                    "models (e.g. opus / sonnet) so the judge cannot favor "
+                    "text in its own family"
+                ),
+            )
+    return resolved
 
 
 # Lazily-initialized shared client.  We do NOT reuse the singleton from
@@ -79,7 +102,19 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _build_user_prompt(rubric: str, transcript: AgentTranscript) -> str:
+def build_user_prompt(rubric: str, transcript: AgentTranscript) -> str:
+    """Build the judge's user prompt from rubric + transcript only.
+
+    Phase A refinement 4.1 — strict isolation contract: the judge sees
+    only the **rubric** and the **agent transcript surface**.  It MUST
+    NOT see any orchestrator state: no optimizer rationale, no version
+    number, no diff vs baseline, no iteration count, no feedback
+    history, no other-resource scores.  This function is the single
+    chokepoint; tests assert it.
+
+    Adding anything else here would let the optimizer's narrative leak
+    into the gate.  Don't.
+    """
     return (
         f"## Rubric\n{rubric.strip()}\n\n"
         f"## Agent transcript\n"
@@ -88,6 +123,61 @@ def _build_user_prompt(rubric: str, transcript: AgentTranscript) -> str:
         f"Tool calls: {len(transcript.tool_calls)}\n\n"
         f"## Your score (1–5):"
     )
+
+
+# Backwards-compatible private alias — pre-refinement code referenced
+# the underscore form.  Renamed to ``build_user_prompt`` so the runner
+# can compute a hash for ``EvalResults.judge_prompt_hash``.
+_build_user_prompt = build_user_prompt
+
+
+def judge_prompt_hash(rubric: str, transcript: AgentTranscript) -> str:
+    """SHA-256 of the *user prompt* that would be sent for this (rubric,
+    transcript) pair.
+
+    Intended for per-trial debugging / replay — the hash IS transcript-
+    sensitive so two trials of the same scenario produce different
+    hashes.  Not suitable as a calibration key (see
+    :func:`judge_rubric_hash` for that — recorded on EvalResults).
+
+    Kept stable so existing tests that pin (rubric, transcript) →
+    deterministic hash continue to pass.
+    """
+    import hashlib
+
+    body = build_user_prompt(rubric, transcript)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+
+def judge_rubric_hash(rubric: str, judge_model_id: str = "") -> str:
+    """SHA-256 of the *judge identity* for this rubric — stable across
+    runs of the same suite.
+
+    Hashes ``(rubric_text, judge_system_prompt, judge_model_id)``.
+    Excludes the agent transcript intentionally: transcripts vary
+    run-to-run from LLM stochasticity, so transcript-mixed hashes are
+    unique per run and useless as Phase D's Cohen's-κ calibration key
+    (which needs to compare grader behaviour across runs of the same
+    suite/rubric).
+
+    Recorded on :class:`EvalResults.judge_prompt_hash` so the
+    calibration check can group judgments by
+    ``(judge_model_id, rubric_version)`` and compute kappa per group.
+
+    Args:
+        rubric: The rubric text that anchors the judge.
+        judge_model_id: Resolved judge model identifier (e.g.
+            ``claude-opus-4-5-20250929``).  When empty, hash captures
+            rubric + system-prompt identity only.
+    """
+    import hashlib
+
+    payload = (
+        f"rubric:\n{rubric.strip()}\n"
+        f"system:\n{_SYSTEM_PROMPT}\n"
+        f"model:\n{judge_model_id.strip()}\n"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 _INTEGER_RE = re.compile(r"\b([1-5])\b")
@@ -120,7 +210,7 @@ class LLMJudgeGrader(BaseGrader):
         scenario: EvalScenario,
     ) -> GraderResult:
         model = _resolve_judge_model(self.eval_model)
-        user_prompt = _build_user_prompt(self.rubric, transcript)
+        user_prompt = build_user_prompt(self.rubric, transcript)
 
         # Retry once; if the second attempt also fails to produce a
         # parseable score, return a no_decision result.

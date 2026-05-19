@@ -189,7 +189,9 @@ by `docker compose`) or override per-run on the command line.
 
 | Var | Default | Purpose |
 |---|---|---|
-| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Promotion threshold; raise to require clearer wins |
+| `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | Quality-gate margin; raise to require clearer wins |
+| `CGF_TOKEN_REGRESSION_TOLERANCE` | 0.10 | Cost-gate tolerance: candidate `cost_per_success` may exceed baseline by this fraction (10%). Set 0 to forbid any cost regression. Auto-passes when either side has zero successful completions |
+| `CGF_MIN_GAIN_PER_ROUND` | 0.02 | Stagnation early-stop: between feedback rounds, escalate to VALIDATE when Δmean_candidate_pass_rate < this. Set 0 to disable |
 | `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Observability + cost-warn; not a hard cutoff yet |
 | `CGF_GENERATE_CONCURRENCY` | 8 | In-flight resource generation. Drop if you hit 429s |
 | `CGF_ITERATE_CONCURRENCY` | 4 | In-flight per-resource iteration |
@@ -233,27 +235,27 @@ The dashboard built for this pipeline. Look here first.
 - **State Timeline** — phase transitions over time. Useful for seeing
   loop-backs (`EXECUTION_EVAL → ITERATE`) and stuck phases.
 
-### `/d/casdk-overview` — Harness Overview
+### `/d/casdk-overview` — Main
 
 Top-level health: services up, agent activity, recent errors. Start
 here if something feels off and you're not sure where to look.
 
-### `/d/casdk-sdk-cost` — Cost & Spend
+### `/d/casdk-cost` — Cost & Spend
 
 Token spend segmented by `model` (sonnet/opus/haiku) and `query_source`
 (main agent vs. subagent invocations). Useful after a run for the
 "what did this cost me" question.
 
-### `/d/casdk-sdk-reliability` — Reliability & Errors
+### `/d/casdk-reliability` — Errors & Reliability
 
 API errors, retries, transient failures. Check after a failed run to
 distinguish "network blip the harness should have retried" from
 "genuine config or agent error."
 
-Other dashboards (`sdk-productivity`, `sdk-cache`, `sdk-tools`,
-`mode-interactive`, `mode-autonomous`, `raw-events`) are less relevant
-during optimization runs. See `docs/OBSERVABILITY.md` for the full
-tour, alert rules, and metric inventory.
+Other dashboards (`casdk-cache`, `casdk-productivity`,
+`casdk-mode-interactive`, `casdk-mode-autonomous`, `casdk-raw-events`)
+are less relevant during optimization runs. See `docs/OBSERVABILITY.md`
+for the full tour, alert rules, and metric inventory.
 
 ## Troubleshooting
 

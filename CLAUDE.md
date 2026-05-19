@@ -778,9 +778,10 @@ make optimize-dryrun
 {workspace_root}/                  # Directory containing SPEC.md
 ├── SPEC.md                        # Optimization spec (user OR Q&A-generated)
 ├── CHANGELOG.md                   # Human-readable optimization history (accumulates)
-├── {resource}.md                  # Original resource (NEVER modified)
-├── {resource}-v1.md               # First optimization
-├── {resource}-v2.md               # Second optimization (if REFINE)
+├── {resource}.md                  # Canonical name — always mirrors the latest candidate's content
+├── {resource}-v0.md               # Original content (preserved before GENERATE first overwrites canonical)
+├── {resource}-v1.md               # ITERATE round 1 audit copy
+├── {resource}-v2.md               # ITERATE round 2 audit copy (if REFINE)
 ├── resource-plan.yaml             # Resource plan (created during DESIGN phase)
 ├── tools/                         # MCP tool definitions (multi-resource)
 ├── mcp-servers/                   # MCP server definitions (multi-resource)
@@ -798,13 +799,26 @@ make optimize-dryrun
 ```
 
 **File Naming:**
-| Resource Type | Original | Optimized Versions |
-|---------------|----------|-------------------|
-| Agent | `{name}.md` | `{name}-v1.md`, `{name}-v2.md` |
-| Skill | `SKILL.md` | `SKILL-v1.md`, `SKILL-v2.md` |
-| Command | `{name}.md` | `{name}-v1.md`, `{name}-v2.md` |
+| Resource Type | Canonical (= latest content) | Original baseline | Audit versions |
+|---------------|------------------------------|-------------------|----------------|
+| Agent | `{name}.md` | `{name}-v0.md` | `{name}-v1.md`, `{name}-v2.md` |
+| Skill | `SKILL.md` | `SKILL-v0.md` | `SKILL-v1.md`, `SKILL-v2.md` |
+| Command | `{name}.md` | `{name}-v0.md` | `{name}-v1.md`, `{name}-v2.md` |
 
-**The original file is NEVER modified.** Delete `sessions/` to reset state without losing artifacts.
+**Versioning convention** (verified in run #7):
+- The original fixture/user content is preserved verbatim as `{resource}-v0.md` by
+  `_backup_original_resource` on first GENERATE run.
+- The canonical filename `{resource}.md` (no suffix) is OVERWRITTEN every phase to
+  carry the latest candidate content. SDK skill auto-discovery requires this exact
+  name, so we can't suffix-version it without breaking plugin loading.
+- ITERATE round N writes `{resource}-v{N}.md` as a versioned audit copy, then
+  `_finalize_single_resource` copies that file's content into `{resource}.md`.
+- GENERATE does NOT write a `-v1.md` audit copy — the first versioned audit file
+  is `-v1.md` from ITERATE round 1.
+
+**Original baseline content is NEVER lost** (preserved as `-v0.md`), but the
+canonical filename does get rewritten. Delete `sessions/` to reset run state
+without losing artifacts.
 
 **Configuration** (`.env` or command line):
 ```bash

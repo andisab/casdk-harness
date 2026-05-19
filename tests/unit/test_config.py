@@ -13,13 +13,24 @@ from harness.config import (
 )
 
 
-def test_config_defaults() -> None:
-    """Test default configuration values."""
-    # Act
-    config = HarnessConfig(anthropic_api_key="test-key")
+def test_config_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test default configuration values.
+
+    Hermetic — clears env vars that BaseSettings would otherwise pull in
+    from the container's ``.env`` file (e.g. local ``CLAUDE_MODEL``
+    overrides).
+    """
+    monkeypatch.delenv("CLAUDE_MODEL", raising=False)
+    monkeypatch.delenv("CLAUDE_PERMISSION_MODE", raising=False)
+    monkeypatch.delenv("CLAUDE_MAX_TURNS", raising=False)
+    monkeypatch.delenv("LOG_LEVEL", raising=False)
+
+    # _env_file=None disables loading from .env on disk, so the test
+    # checks the actual dataclass defaults rather than .env contents.
+    config = HarnessConfig(anthropic_api_key="test-key", _env_file=None)
 
     # Assert
-    assert config.claude_model == "claude-sonnet-4-5-20250929"
+    assert config.claude_model == "claude-sonnet-4-6"
     assert config.interactive_permission_mode == "acceptEdits"
     assert config.claude_max_turns == 1000
     assert config.log_level == "INFO"
@@ -151,8 +162,14 @@ def test_get_context_window_unknown_model() -> None:
 
 def test_model_context_windows_mapping() -> None:
     """Test MODEL_CONTEXT_WINDOWS mapping contains expected models."""
-    # Verify mapping contains all expected Claude models
+    # Verify mapping contains all expected Claude models — both the
+    # current unversioned aliases and the historical pinned builds.
     expected_models = [
+        # Current unversioned aliases (4.7 / 4.6 / 4.5 era)
+        "claude-opus-4-7",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        # Pinned historical builds (kept for backcompat)
         "claude-sonnet-4-5-20250929",
         "claude-opus-4-5-20251101",
         "claude-3-5-sonnet-20241022",
@@ -201,15 +218,20 @@ def test_model_shorthand_map() -> None:
 
 
 def test_resolve_model_name_shorthand() -> None:
-    """Test resolve_model_name with shorthand names."""
-    assert resolve_model_name("sonnet") == "claude-sonnet-4-5-20250929"
-    assert resolve_model_name("opus") == "claude-opus-4-5-20251101"
-    assert resolve_model_name("haiku") == "claude-3-5-haiku-20241022"
+    """Test resolve_model_name with shorthand names.
+
+    Bump these when ``MODEL_SHORTHAND_MAP`` moves forward by a minor
+    Anthropic version.  This test guards I14 — a stale local alias map
+    inside ``llm_judge.py`` that drifts from the canonical map here.
+    """
+    assert resolve_model_name("sonnet") == "claude-sonnet-4-6"
+    assert resolve_model_name("opus") == "claude-opus-4-7"
+    assert resolve_model_name("haiku") == "claude-haiku-4-5"
 
 
 def test_resolve_model_name_full() -> None:
     """Test resolve_model_name with full model names."""
-    assert resolve_model_name("claude-sonnet-4-5-20250929") == "claude-sonnet-4-5-20250929"
+    assert resolve_model_name("claude-sonnet-4-6") == "claude-sonnet-4-6"
     assert resolve_model_name("claude-custom-model") == "claude-custom-model"
 
 

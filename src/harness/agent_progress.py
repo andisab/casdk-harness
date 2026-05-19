@@ -10,10 +10,19 @@ REFACTOR.md Phase 3 Step 4.
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+
+# J1: signal markers we always want to surface in the preview even
+# when prose preamble would push them past the truncation cap.
+# Matches `[TAG_COMPLETE]`, `[TAG_COMPLETE:arg]`, `[TAG_ISSUES:arg]`
+# for any UPPER_SNAKE TAG (RESEARCH, DESIGN, GENERATE, EVAL_DESIGN,
+# ITERATE, EVAL, VALIDATE, OPTIMIZATION, ITERATION, EVALUATE, ...).
+_SIGNAL_MARKER_RE = re.compile(r"\[[A-Z_]+_(?:COMPLETE|ISSUES)(?::[^\]]*)?\]")
 
 
 # ANSI color codes for terminal output
@@ -213,6 +222,18 @@ def extract_text_preview(message: Any, max_len: int = 150) -> str:
 
     # Clean and truncate
     text = " ".join(text.split())  # Normalize whitespace
-    if len(text) > max_len:
-        text = text[:max_len] + "..."
-    return text
+    if len(text) <= max_len:
+        return text
+
+    # J1: prefer a slice that ends with a CGF signal marker over a
+    # plain head-of-text truncation.  Agent messages often have prose
+    # preamble before `[*_COMPLETE:...]`, and a fixed-head slice clips
+    # the very signal the operator is watching for in logs.
+    match = _SIGNAL_MARKER_RE.search(text)
+    if match is not None and match.end() > max_len:
+        end = match.end()
+        start = max(0, end - max_len)
+        prefix = "..." if start > 0 else ""
+        return prefix + text[start:end]
+
+    return text[:max_len] + "..."

@@ -22,17 +22,24 @@ from harness.optimization.graders import (
     GraderResult,
 )
 
-Arm = Literal["baseline", "candidate"]
+Arm = Literal["baseline", "candidate", "floor"]
 ScenarioOutcome = Literal["baseline_win", "candidate_win", "tie", "no_decision"]
 
 
 @dataclass
 class EvalConfig:
-    """Suite-level run configuration (mirrors ``config`` in the schema)."""
+    """Suite-level run configuration (mirrors ``config`` in the schema).
+
+    ``eval_model`` is optional (I6): when ``None``, the runner resolves
+    the judge model via ``CGF_JUDGE_MODEL`` env (default opus per Phase
+    A.4.1).  Suites that hardcode a value here override every operator's
+    env choice silently — the architect template no longer emits this
+    field for that reason.
+    """
 
     trials_per_scenario: int = 3
     timeout_seconds: int = 300
-    eval_model: str = "claude-opus-4-5-20250929"
+    eval_model: str | None = None
     token_budget: int | None = None
     held_out_fraction: float = 0.25
 
@@ -105,6 +112,7 @@ class TrialResult:
             "final_output": self.transcript.final_output[:2000],
             "total_turns": self.transcript.total_turns,
             "total_tokens": self.transcript.total_tokens,
+            "total_cost_usd": self.transcript.total_cost_usd,
             "tool_calls": [
                 {"tool": t.tool_name, "args": t.arguments, "turn": t.turn_number}
                 for t in self.transcript.tool_calls
@@ -166,6 +174,12 @@ class ScenarioResult:
     baseline: ArmResults
     candidate: ArmResults
     outcome: ScenarioOutcome
+    # Phase A refinement 4.2: optional third arm.  Populated only on
+    # first-time-promotion eval runs, where the bare-model floor must
+    # be beaten before the candidate becomes the first incumbent.  Once
+    # any version has promoted, this stays None for the rest of the
+    # branch.
+    floor: ArmResults | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -177,6 +191,7 @@ class ScenarioResult:
             "outcome": self.outcome,
             "baseline": self.baseline.to_dict(),
             "candidate": self.candidate.to_dict(),
+            "floor": self.floor.to_dict() if self.floor is not None else None,
         }
 
 
@@ -216,6 +231,49 @@ class EvalResults:
     by_level: dict[str, SubsetStats]
     by_tag: dict[str, SubsetStats]
     total_tokens: int
+    # Phase A refinement 4.2: floor arm aggregate, populated only on
+    # first-time-promotion runs.  ``floor_pass_rate`` is the mean
+    # per-scenario floor arm pass-rate (i.e. how the bare-model arm
+    # scored) — this is the value the gate compares against.
+    #
+    # I11 — naming gotcha: ``floor`` is a ``SubsetStats`` whose
+    # ``candidate_pass_rate`` field carries ``floor_pass_rate`` (the
+    # bare-model score), and whose ``baseline_pass_rate`` field is
+    # always 0.0.  The reuse of the SubsetStats shape is structural
+    # vestige; nothing currently reads the nested ``floor`` block.
+    # **Always read ``EvalResults.floor_pass_rate`` for the
+    # bare-model score** — never trust the nested SubsetStats fields,
+    # which were repurposed in a way that doesn't match the surrounding
+    # ``held_out`` / ``by_level`` / ``by_tag`` semantics.
+    floor: SubsetStats | None = None
+    floor_pass_rate: float | None = None
+    # Phase A refinement 4.3: cost-per-success gate inputs.  ``None``
+    # means the arm had zero successful completions, in which case the
+    # cost gate auto-passes (no signal to regress against).  Cost is in
+    # USD, summed from SDK ResultMessage.total_cost_usd across all
+    # decisive trials.  Exempt scenarios (cost_gate_exempt: true) are
+    # excluded from both cost and successes.
+    baseline_cost_per_success: float | None = None
+    candidate_cost_per_success: float | None = None
+    # Phase A refinement 4.3: cost gate input.  Sum of every trial's
+    # ``transcript.total_cost_usd`` across both arms — same value family
+    # the SDK feeds to ``claude_code_cost_usage_USD_total`` in Prom, so
+    # the gate's view and the operator dashboard agree.
+    total_cost_usd: float = 0.0
+    # Phase A refinement 4.1: pin the judge identity and prompt shape used
+    # for this run so Phase D's Cohen's-κ calibration check has a stable
+    # key per (judge_model_id, judge_prompt_hash, rubric).  Empty string
+    # means no LLM-judge graders fired (deterministic-only suite).
+    judge_model_id: str = ""
+    judge_prompt_hash: str = ""
+    # I10: gate verdict stamped after ``execution_eval`` decides
+    # ``promote`` / ``refine`` / ``reject_floor`` / ``reject_cost`` /
+    # ``unwinnable``.  ``None`` while ``EvalHarness`` writes the file
+    # for the first time (pre-gate); execution_eval rewrites the JSON
+    # with the verdict populated once the gate has run, so on-disk
+    # readers see the authoritative decision.  Phase D calibration
+    # joins on this field.
+    verdict: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,8 +286,16 @@ class EvalResults:
             "candidate_pass_rate": self.candidate_pass_rate,
             "no_decision_rate": self.no_decision_rate,
             "total_tokens": self.total_tokens,
+            "total_cost_usd": self.total_cost_usd,
+            "judge_model_id": self.judge_model_id,
+            "judge_prompt_hash": self.judge_prompt_hash,
+            "verdict": self.verdict,
             "held_out": self.held_out.to_dict() if self.held_out is not None else None,
             "by_level": {k: v.to_dict() for k, v in self.by_level.items()},
             "by_tag": {k: v.to_dict() for k, v in self.by_tag.items()},
             "scenarios": [s.to_dict() for s in self.scenarios],
+            "floor": self.floor.to_dict() if self.floor is not None else None,
+            "floor_pass_rate": self.floor_pass_rate,
+            "baseline_cost_per_success": self.baseline_cost_per_success,
+            "candidate_cost_per_success": self.candidate_cost_per_success,
         }

@@ -108,6 +108,7 @@ from harness.progress import (
     ResourceStatus,
 )
 
+from . import run_report
 from .multi_resource_spec import (
     MultiResourceSpec,
     is_multi_resource_spec,
@@ -471,6 +472,15 @@ class MultiResourceOrchestrator:
         if self._progress:
             self._progress.save_optimization_state(state)
 
+        # Emit a first run-report so the file exists from t=0.  Done
+        # here (not via _update_run_report) because self._state isn't
+        # bound yet at this point.
+        if os.environ.get("CGF_RUN_REPORT", "1") != "0":
+            try:
+                run_report.write(self.config.workspace_dir)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("initial run-report write failed", error=str(exc))
+
         # Seed run-phase gauge for Grafana from the very first phase
         try:
             ws = self.config.workspace_dir
@@ -584,6 +594,7 @@ class MultiResourceOrchestrator:
 
         self._state.advance_phase(next_phase)
         self._progress.save_optimization_state(self._state)
+        self._update_run_report()
 
         # Update Prometheus gauge for Grafana run-status panel
         try:
@@ -604,6 +615,20 @@ class MultiResourceOrchestrator:
         if self._state and self._progress:
             self._state.updated_at = datetime.now(UTC).isoformat()
             self._progress.save_optimization_state(self._state)
+            self._update_run_report()
+
+    def _update_run_report(self) -> None:
+        """Regenerate ``sessions/RUN_REPORT.md`` from current state.
+
+        Pure derived view; safe to no-op on any failure.  Gated by
+        ``CGF_RUN_REPORT`` (default on; set to ``0`` to disable).
+        """
+        if os.environ.get("CGF_RUN_REPORT", "1") == "0":
+            return
+        try:
+            run_report.write(self.config.workspace_dir)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("run-report update failed", error=str(exc))
 
     # ----- cross-phase helpers -----
 
@@ -795,6 +820,7 @@ class MultiResourceOrchestrator:
     _insert_changelog_entry = _iterate_phase.insert_changelog_entry
     _update_changelog = _iterate_phase.update_changelog
     _get_word_count = _iterate_phase.get_word_count
+    _write_summary_json = _iterate_phase.write_summary_json
     _run_execution_eval = _execution_eval_phase.run_phase
     _delegate_validation = _validate_phase.delegate
 

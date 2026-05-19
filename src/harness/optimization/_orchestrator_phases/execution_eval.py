@@ -33,12 +33,14 @@ import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import structlog
 
 from harness.monitoring import (
     harness_eval_arm_score,
+    harness_eval_cost_gate_total,
+    harness_eval_cost_per_success_usd,
     harness_eval_phase_duration_seconds,
     harness_eval_scenarios_total,
     harness_eval_tokens_to_goal,
@@ -46,11 +48,25 @@ from harness.monitoring import (
 from harness.optimization._orchestrator_helpers import (
     DEFAULT_EVAL_PROMOTION_EPSILON,
     DEFAULT_MAX_FEEDBACK_ITERATIONS,
+    DEFAULT_MIN_GAIN_PER_ROUND,
     eval_phase_span,
+    eval_suite_sha256,
     new_eval_task_id,
     versioned_path,
 )
+from harness.optimization._orchestrator_phases._baseline_floor import (
+    build_floor_resource,
+)
 from harness.optimization.eval_harness import EvalHarness, EvalResults
+from harness.optimization.eval_harness.runner import _resource_target_key
+from harness.optimization.gating import (
+    GateInputs,
+    _resolve_cost_quality_bonus,
+    effective_cost_tolerance,
+    is_first_promotion,
+)
+from harness.optimization.gating import Verdict as GateVerdict
+from harness.optimization.gating import decide as gate_decide
 from harness.progress import OptimizationPhase, ResourceStatus
 
 if TYPE_CHECKING:
@@ -61,6 +77,14 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 DEFAULT_EXECUTION_EVAL_CONCURRENCY = 4  # F18: bumped from 2; eval is I/O-bound on judge API
+
+# Per-resource verdict surfaced into the aggregate JSON.  Superset of
+# ``gating.Verdict`` (adds ``"unwinnable"`` for the F21 short-circuit
+# branch where the gate is never consulted).  Operators reading
+# ``execution-eval-round-N.json`` see the same vocabulary the gate uses.
+AggregateVerdict = Literal[
+    "promote", "refine", "reject_floor", "reject_cost", "unwinnable"
+]
 
 
 def _is_unwinnable(results: EvalResults) -> bool:
@@ -163,6 +187,38 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         )
         return
 
+    # Phase A refinement 4.4.a: refuse to run if the live suite hash
+    # differs from what EVAL_DESIGN recorded.  Guards against mid-loop
+    # scenario rewrites (intentional or accidental) leaking optimizer
+    # reasoning into the gate.  Hard abort — looping back wouldn't fix
+    # the violation, and continuing would invalidate the comparison.
+    expected_hash = self._state.eval_suite_hash
+    if expected_hash:
+        live_hash = eval_suite_sha256(suite_path)
+        if live_hash != expected_hash:
+            logger.error(
+                "EXECUTION_EVAL: eval-suite.yaml hash changed mid-loop — "
+                "aborting",
+                expected=expected_hash[:16] + "...",
+                live=live_hash[:16] + "...",
+                hint=(
+                    "The eval suite was modified after EVAL_DESIGN. "
+                    "Refusing to run because the gate would no longer "
+                    "be comparing against the suite the candidate was "
+                    "iterated against.  Reset sessions/ and re-run if "
+                    "the modification was intentional."
+                ),
+            )
+            self._emit_progress(
+                "EXECUTION_EVAL", "all",
+                "aborted: eval-suite hash mismatch",
+            )
+            raise RuntimeError(
+                "EXECUTION_EVAL aborted: eval-suite.yaml hash "
+                f"{live_hash[:16]} differs from EVAL_DESIGN hash "
+                f"{expected_hash[:16]}"
+            )
+
     iterated_resources = _resources_to_evaluate(self)
     if not iterated_resources:
         logger.info(
@@ -197,7 +253,7 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
 
     async def _eval_one(
         resource: ResourceStatus,
-    ) -> tuple[ResourceStatus, EvalResults] | None:
+    ) -> tuple[ResourceStatus, EvalResults, AggregateVerdict] | None:
         async with semaphore:
             return await _eval_single_resource(
                 self,
@@ -213,8 +269,18 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         return_exceptions=True,
     )
 
-    per_resource_results: list[tuple[ResourceStatus, EvalResults]] = []
-    regressions: list[tuple[ResourceStatus, EvalResults]] = []
+    # Per-resource results carry the gate verdict (or "unwinnable") so
+    # _write_aggregate_results can record the actual decision instead
+    # of re-deriving an approximation from pass-rate deltas.
+    per_resource_results: list[
+        tuple[ResourceStatus, EvalResults, AggregateVerdict]
+    ] = []
+    # I15: include verdict in regression tuples so ``_build_feedback_entry``
+    # can surface the failure-mode (reject_floor / refine / reject_cost) to
+    # the optimizer's per-call prompt.  ``unwinnable`` is filtered out
+    # earlier via the post-helper status check, so the type here uses
+    # ``gating.Verdict`` (no "unwinnable") rather than ``AggregateVerdict``.
+    regressions: list[tuple[ResourceStatus, EvalResults, GateVerdict]] = []
     promotions: list[ResourceStatus] = []
     # F21: unwinnable resources (both arms scored 0 across all scenarios)
     # are tracked separately — they're neither promotions (no signal of
@@ -265,18 +331,32 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             )
             harness_errors.append((resource, err_reason))
             continue
-        res, results = outcome
-        per_resource_results.append((res, results))
-        # F21: bucket unwinnable separately.  Reading the post-helper state
-        # is the authoritative source of truth — the helper already set
-        # status="unwinnable" if applicable.
+        res, results, verdict = outcome
+        per_resource_results.append((res, results, verdict))
+        # F21 + Phase A refinement 4.2: bucket from post-helper state.
+        # ``_eval_single_resource`` already wrote the authoritative
+        # status (optimized / unwinnable / needs_refinement) under the
+        # state lock; reading it here keeps the bucketing in lockstep
+        # with the gate verdict (incl. reject_floor → needs_refinement).
         post_state = self._state.resources.get(resource.path)
-        if post_state is not None and post_state.status == "unwinnable":
+        post_status = post_state.status if post_state is not None else None
+        if post_status == "unwinnable":
             unwinnable.append(res)
-        elif _should_promote(results, epsilon):
+        elif post_status == "optimized":
             promotions.append(res)
         else:
-            regressions.append((res, results))
+            # needs_refinement covers both Phase A regressions and the
+            # new reject_floor verdict.  Treated identically by the
+            # downstream feedback-loop logic, but the verdict carries
+            # through so the optimizer's per-call prompt can branch
+            # by failure-mode (I15).
+            #
+            # ``verdict`` is one of ``promote|refine|reject_floor|reject_cost``
+            # here — ``unwinnable`` already went into ``unwinnable`` above
+            # via the ``post_status == "unwinnable"`` branch.  A
+            # defensive narrow keeps the type stable.
+            assert verdict != "unwinnable"
+            regressions.append((res, results, verdict))
 
     # --- aggregate write ---
     aggregate_path = _write_aggregate_results(
@@ -289,6 +369,12 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         self._state.eval_results_path = str(
             aggregate_path.relative_to(workspace)
         )
+
+    # Phase A refinement 4.4.c: held-out scenario usage bookkeeping.
+    # Best-effort sidecar write — separate file so it doesn't trip the
+    # 4.4.a suite-hash check.  Phase D will rotate held-out on contact
+    # using this data.
+    _record_held_out_usage(workspace, per_resource_results)
 
     # --- decision: forward, loop, or escalate ---
     # F8: the gate must NEVER advance to VALIDATE with zero successful
@@ -363,9 +449,45 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         self._advance_phase(OptimizationPhase.VALIDATE)
         return
 
+    # Phase A refinement 4.4.b: stagnation early-stop.  Compute this
+    # round's mean candidate pass-rate across all per-resource results
+    # and compare against the previous round (if any).  When the gain
+    # is below the threshold, escalate to VALIDATE rather than burn
+    # another round on lateral drift.
+    round_mean_cpr = _round_mean_candidate_pass_rate(per_resource_results)
+    min_gain = _resolve_min_gain()
+    if feedback_count > 0 and self._state.feedback_history:
+        prev_round_mean = self._state.feedback_history[-1].get(
+            "round_mean_candidate_pass_rate"
+        )
+        if prev_round_mean is not None:
+            delta = round_mean_cpr - prev_round_mean
+            if delta < min_gain:
+                logger.warning(
+                    "EXECUTION_EVAL: Stagnation early-stop — escalating "
+                    "to VALIDATE without further ITERATE",
+                    round_mean_candidate_pass_rate=f"{round_mean_cpr:.3f}",
+                    previous_round_mean=f"{prev_round_mean:.3f}",
+                    delta=f"{delta:.3f}",
+                    min_gain=f"{min_gain:.3f}",
+                    hint=(
+                        "iteration is no longer improving meaningfully. "
+                        "Raise CGF_MIN_GAIN_PER_ROUND if you want more "
+                        "rounds, or lower it to let smaller gains through."
+                    ),
+                )
+                self._emit_progress(
+                    "EXECUTION_EVAL", "all",
+                    f"stagnation early-stop (Δ={delta:.3f}<{min_gain})",
+                )
+                self._advance_phase(OptimizationPhase.VALIDATE)
+                return
+
     # Loop back to ITERATE with feedback in state.
     feedback_entry = _build_feedback_entry(
-        regressions, feedback_iteration=feedback_count + 1
+        regressions,
+        feedback_iteration=feedback_count + 1,
+        round_mean_candidate_pass_rate=round_mean_cpr,
     )
     self._state.feedback_history.append(feedback_entry)
     self._state.current_phase = OptimizationPhase.ITERATE
@@ -395,13 +517,19 @@ async def _eval_single_resource(
     suite_path: Path,
     harness: EvalHarness,
     epsilon: float,
-) -> tuple[ResourceStatus, EvalResults] | None:
+) -> tuple[ResourceStatus, EvalResults, AggregateVerdict] | None:
     """Run EvalHarness for one resource and apply the promotion decision.
 
-    Returns ``(resource, results)`` so the caller can build aggregate
-    output, or ``None`` when the resource was skipped (candidate file
-    missing).  State updates (``status``, promotion finalization,
-    refinement count) happen inside ``self._state_lock``.
+    Returns ``(resource, results, verdict)`` so the caller can build
+    aggregate output that records the *actual* gate decision, or
+    ``None`` when the resource was skipped (candidate file missing) or
+    the harness errored.  State updates (``status``, promotion
+    finalization, refinement count) happen inside ``self._state_lock``.
+
+    ``verdict`` is one of ``{"promote", "refine", "reject_floor",
+    "reject_cost", "unwinnable"}`` — superset of ``gating.Verdict`` to
+    cover the F21 short-circuit branch where the gate is never
+    consulted.
     """
     baseline_path = _resolve_baseline_path(workspace, resource)
     candidate_path = workspace / versioned_path(
@@ -415,6 +543,19 @@ async def _eval_single_resource(
             expected=str(candidate_path),
         )
         return None
+
+    # Phase A refinement 4.2: build floor arm exactly once per resource,
+    # only on the first-time-promotion path.  Once a resource has any
+    # promoted version (``last_promoted_version > 0``), the floor is
+    # never re-evaluated within this branch — the model is the
+    # experimental control and does not change mid-branch.
+    floor_path: Path | None = None
+    if is_first_promotion(resource.last_promoted_version):
+        floor_dir = workspace / "eval" / "floor" / Path(resource.path).parent
+        floor_path = build_floor_resource(
+            candidate_path=candidate_path,
+            output_dir=floor_dir,
+        )
 
     results_dir = workspace / "eval" / "results" / f"{resource.path}-v{resource.version}"
 
@@ -438,6 +579,7 @@ async def _eval_single_resource(
                 baseline_resource=baseline_path,
                 candidate_resource=candidate_path,
                 results_dir=results_dir,
+                baseline_floor=floor_path,
             )
         except Exception as exc:  # noqa: BLE001 — surface but don't crash phase
             logger.error(
@@ -471,13 +613,58 @@ async def _eval_single_resource(
         )
         resource_span.set_attribute("harness.eval.win_rate", results.win_rate)
 
+        # No applicable scenarios → fail closed.  This happens when the
+        # eval-architect didn't author scenarios for this resource's
+        # ``target_resource`` key, or when the architect's
+        # ``target_resource`` field doesn't match the resource path
+        # produced by GENERATE.  Pre-fix the gate would silently
+        # promote on (0 ≥ 0) — a false success with no eval signal.
+        # Returning None here joins the F8 ``harness_errors`` path so
+        # the run hard-aborts when ALL resources hit this condition
+        # (typically a broken eval-suite.yaml).
+        if not results.scenarios:
+            target_key = _resource_target_key(candidate_path)
+            err_msg = (
+                "no scenarios applicable to this resource"
+                f" (target_key={target_key})"
+            )
+            logger.error(
+                "EXECUTION_EVAL: No scenarios applicable to resource — "
+                "refusing to gate",
+                path=resource.path,
+                target_key=target_key,
+                suite_path=str(suite_path),
+                hint=(
+                    "eval-architect didn't author scenarios for this "
+                    "target_resource, or the architect's target_resource "
+                    "key doesn't match the GENERATE-produced path. "
+                    "Inspect eval/eval-suite.yaml for matching "
+                    "target_resource entries."
+                ),
+            )
+            async with self._state_lock:
+                self._state.update_resource(
+                    resource.path,
+                    status="needs_refinement",
+                    error=err_msg,
+                )
+            resource_span.set_attribute(
+                "harness.eval.outcome", "no_scenarios"
+            )
+            self._emit_progress(
+                "EXECUTION_EVAL", resource.path, err_msg,
+            )
+            return None  # joins harness_errors via the outer collector
+
         # F21: detect resources where feedback iteration cannot help.
         # Both arms scoring 0 across every scenario means either the
         # scenarios are unwinnable for this resource type, or the rubric
         # is mis-calibrated.  Either way, looping back to ITERATE will
         # produce another generation that scores the same 0/0 — burning
         # ~70k more tokens for guaranteed null result.  Mark and skip.
+        verdict_for_aggregate: AggregateVerdict
         if _is_unwinnable(results):
+            verdict_for_aggregate = "unwinnable"
             async with self._state_lock:
                 self._state.update_resource(
                     resource.path,
@@ -502,54 +689,189 @@ async def _eval_single_resource(
                     "scenarios or rubric need redesign"
                 ),
             )
-        elif _should_promote(results, epsilon):
-            async with self._state_lock:
-                self._state.update_resource(
-                    resource.path,
-                    status="optimized",
-                    last_evaluated_version=resource.version,
-                )
-                self._finalize_single_resource(resource.path)
-            # Tokens-to-goal: at promotion, observe the cumulative tokens
-            # for this resource.  Phase A approximation: per-run total only;
-            # cumulative across feedback iterations is a Phase B refinement.
-            harness_eval_tokens_to_goal.labels(
-                resource_type=resource.resource_type
-            ).observe(results.total_tokens)
-            resource_span.set_attribute("harness.eval.outcome", "promoted")
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "promoted",
-                results.candidate_pass_rate,
-            )
-            logger.info(
-                "EXECUTION_EVAL: Promoted",
-                path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
-            )
         else:
-            async with self._state_lock:
-                self._state.update_resource(
-                    resource.path,
-                    status="needs_refinement",
-                    last_evaluated_version=resource.version,
-                    refinement_count=resource.refinement_count + 1,
+            # Phase A refinement 4.2 + 4.3: dual-baseline quality gate
+            # plus cost-per-success gate.  Verdict is one of
+            # {"promote", "refine", "reject_floor", "reject_cost"}.
+            tau = _resolve_cost_tolerance()
+            verdict = gate_decide(
+                GateInputs(
+                    candidate_pass_rate=results.candidate_pass_rate,
+                    incumbent_pass_rate=results.baseline_pass_rate,
+                    floor_pass_rate=results.floor_pass_rate,
+                    is_first_promotion=is_first_promotion(
+                        resource.last_promoted_version
+                    ),
+                    epsilon=epsilon,
+                    candidate_cost_per_success=results.candidate_cost_per_success,
+                    incumbent_cost_per_success=results.baseline_cost_per_success,
+                    tau=tau,
                 )
-            resource_span.set_attribute("harness.eval.outcome", "regressed")
-            self._emit_progress(
-                "EXECUTION_EVAL", resource.path, "regression",
-                results.candidate_pass_rate,
             )
+            verdict_for_aggregate = verdict
+            resource_span.set_attribute(
+                "harness.eval.floor_pass_rate",
+                results.floor_pass_rate if results.floor_pass_rate is not None else -1.0,
+            )
+            # Phase A refinement 4.3: cost telemetry.
+            #
+            # Histogram observations are emitted on every verdict where
+            # cost data is present — they're an arm-cost observability
+            # signal independent of the gate decision.
+            if results.candidate_cost_per_success is not None:
+                harness_eval_cost_per_success_usd.labels(
+                    resource_type=resource.resource_type, arm="candidate"
+                ).observe(results.candidate_cost_per_success)
+            if results.baseline_cost_per_success is not None:
+                harness_eval_cost_per_success_usd.labels(
+                    resource_type=resource.resource_type, arm="baseline"
+                ).observe(results.baseline_cost_per_success)
+            # The cost-gate counter only fires when the cost stage was
+            # actually consulted.  ``gate_decide`` short-circuits inside
+            # the quality stages: ``reject_floor`` and ``refine`` exit
+            # before the cost stage runs.  Counting those as "promote"
+            # or "auto_pass" would mislabel quality-rejected outcomes as
+            # cost-gate successes.
+            if verdict in ("promote", "reject_cost"):
+                if verdict == "reject_cost":
+                    harness_eval_cost_gate_total.labels(
+                        outcome="reject_cost"
+                    ).inc()
+                elif (
+                    results.candidate_cost_per_success is None
+                    or results.baseline_cost_per_success is None
+                ):
+                    # Cost stage auto-passed because one side had no signal.
+                    harness_eval_cost_gate_total.labels(
+                        outcome="auto_pass"
+                    ).inc()
+                else:
+                    harness_eval_cost_gate_total.labels(
+                        outcome="promote"
+                    ).inc()
+
+            if verdict == "promote":
+                async with self._state_lock:
+                    self._state.update_resource(
+                        resource.path,
+                        status="optimized",
+                        last_evaluated_version=resource.version,
+                        last_promoted_version=resource.version,
+                    )
+                    self._finalize_single_resource(resource.path)
+                # Tokens-to-goal: at promotion, observe the cumulative tokens
+                # for this resource.  Phase A approximation: per-run total only;
+                # cumulative across feedback iterations is a Phase B refinement.
+                harness_eval_tokens_to_goal.labels(
+                    resource_type=resource.resource_type
+                ).observe(results.total_tokens)
+                resource_span.set_attribute("harness.eval.outcome", "promoted")
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, "promoted",
+                    results.candidate_pass_rate,
+                )
+                logger.info(
+                    "EXECUTION_EVAL: Promoted",
+                    path=resource.path,
+                    candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                    baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                    floor_pass_rate=(
+                        f"{results.floor_pass_rate:.2f}"
+                        if results.floor_pass_rate is not None
+                        else "n/a"
+                    ),
+                    win_rate=f"{results.win_rate:.2f}",
+                )
+            else:
+                # "refine", "reject_floor", and "reject_cost" all share
+                # the needs_refinement transition — downstream
+                # feedback-loop logic handles them identically.  The
+                # distinction surfaces in span.outcome + the structured
+                # log line for operator diagnosis.
+                outcome_label = {
+                    "refine": "regressed",
+                    "reject_floor": "rejected_floor",
+                    "reject_cost": "rejected_cost",
+                }[verdict]
+                async with self._state_lock:
+                    self._state.update_resource(
+                        resource.path,
+                        status="needs_refinement",
+                        last_evaluated_version=resource.version,
+                        refinement_count=resource.refinement_count + 1,
+                    )
+                resource_span.set_attribute(
+                    "harness.eval.outcome", outcome_label
+                )
+                progress_msg = {
+                    "refine": "regression",
+                    "reject_floor": "rejected (below floor)",
+                    "reject_cost": "rejected (cost regression)",
+                }[verdict]
+                self._emit_progress(
+                    "EXECUTION_EVAL", resource.path, progress_msg,
+                    results.candidate_pass_rate,
+                )
+                if verdict == "reject_floor":
+                    logger.warning(
+                        "EXECUTION_EVAL: Below floor — prompt engineering "
+                        "is net-negative vs bare model",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        floor_pass_rate=(
+                            f"{results.floor_pass_rate:.2f}"
+                            if results.floor_pass_rate is not None
+                            else "n/a"
+                        ),
+                    )
+                elif verdict == "reject_cost":
+                    logger.warning(
+                        "EXECUTION_EVAL: Quality passed but cost regressed "
+                        "beyond τ",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                        candidate_cps=(
+                            f"${results.candidate_cost_per_success:.4f}"
+                            if results.candidate_cost_per_success is not None
+                            else "n/a"
+                        ),
+                        baseline_cps=(
+                            f"${results.baseline_cost_per_success:.4f}"
+                            if results.baseline_cost_per_success is not None
+                            else "n/a"
+                        ),
+                        tau=f"{tau:.2f}",
+                    )
+                else:
+                    logger.warning(
+                        "EXECUTION_EVAL: Regression",
+                        path=resource.path,
+                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                        win_rate=f"{results.win_rate:.2f}",
+                    )
+
+        # I10: stamp the authoritative verdict back into the per-resource
+        # ``eval-results.json``.  ``EvalHarness.run`` already wrote the
+        # file pre-gate (the harness doesn't know about ``last_promoted_version``
+        # or env-driven τ); we rewrite it now so on-disk readers see
+        # promote / refine / reject_floor / reject_cost / unwinnable
+        # rather than having to derive it from the aggregate JSON.
+        # Failure here must not crash the phase — observability bug
+        # shouldn't bring down the pipeline.
+        results.verdict = verdict_for_aggregate
+        try:
+            _stamp_verdict_on_disk(results_dir, results)
+        except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "EXECUTION_EVAL: Regression",
+                "EXECUTION_EVAL: could not stamp verdict on eval-results.json",
                 path=resource.path,
-                candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                win_rate=f"{results.win_rate:.2f}",
+                results_dir=str(results_dir),
+                error=str(exc)[:200],
             )
 
-    return (resource, results)
+    return (resource, results, verdict_for_aggregate)
 
 
 def _resources_to_evaluate(
@@ -631,19 +953,173 @@ def _resolve_max_feedback(self: MultiResourceOrchestrator) -> int:
     return DEFAULT_MAX_FEEDBACK_ITERATIONS
 
 
-def _should_promote(results: EvalResults, epsilon: float) -> bool:
-    """Phase A simple-threshold gate.
+# Phase A refinement 4.3: cost-gate tolerance.  ``τ`` is the fractional
+# headroom the candidate has above the incumbent's cost_per_success;
+# 0.10 = candidate may cost up to 10% more per success than incumbent.
+# Tighten over time as the gate matures.
+DEFAULT_TOKEN_REGRESSION_TOLERANCE = 0.10
 
-    Promote when candidate.pass_rate strictly exceeds baseline by ε.
-    Equality is treated as failure to promote — we want a clear signal
-    of improvement, not a coin-flip tie.
+
+def _stamp_verdict_on_disk(results_dir: Path, results: EvalResults) -> None:
+    """I10 — rewrite ``eval-results.json`` with the gate verdict populated.
+
+    ``EvalHarness.run`` writes the JSON pre-gate (it can't know
+    ``last_promoted_version`` or env-driven τ), so the on-disk
+    artifact would otherwise carry ``verdict: null`` for the rest of
+    its life.  Mutating ``results.verdict`` and re-serialising closes
+    that observability gap.
+
+    Best-effort: callers wrap the invocation in their own try/except so
+    a permissions / disk-full error here can't sink the eval phase.
     """
-    return results.candidate_pass_rate >= results.baseline_pass_rate + epsilon
+    out = results_dir / "eval-results.json"
+    out.write_text(
+        json.dumps(results.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _resolve_cost_tolerance() -> float:
+    """Read ``CGF_TOKEN_REGRESSION_TOLERANCE`` from the environment.
+
+    Invalid / non-positive values fall back to ``0.10``.  Operators can
+    set ``0.0`` for "no cost regression allowed" or e.g. ``0.5`` for a
+    looser gate during early calibration.
+    """
+    raw = os.environ.get("CGF_TOKEN_REGRESSION_TOLERANCE")
+    if not raw:
+        return DEFAULT_TOKEN_REGRESSION_TOLERANCE
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_TOKEN_REGRESSION_TOLERANCE
+    return max(0.0, value)
+
+
+def _should_promote(results: EvalResults, epsilon: float) -> bool:
+    """Backwards-compat shim — delegates to :mod:`gating`.
+
+    Pre-refinement-4.2 callers (and the existing unit tests) expect a
+    boolean.  Internally we route through :func:`gate_decide` so that
+    the floor stage is honoured whenever floor_pass_rate is recorded
+    on the results.  Callers that need the richer 3-way verdict
+    should use :func:`gate_decide` directly.
+
+    ``is_first_promotion=True`` is assumed when floor data exists —
+    EvalHarness only emits ``floor_pass_rate`` on first-promotion runs
+    by construction, so this is exact, not heuristic.
+    """
+    verdict = gate_decide(
+        GateInputs(
+            candidate_pass_rate=results.candidate_pass_rate,
+            incumbent_pass_rate=results.baseline_pass_rate,
+            floor_pass_rate=results.floor_pass_rate,
+            is_first_promotion=results.floor_pass_rate is not None,
+            epsilon=epsilon,
+        )
+    )
+    return verdict == "promote"
+
+
+def _record_held_out_usage(
+    workspace: Path,
+    per_resource_results: list[
+        tuple[ResourceStatus, EvalResults, AggregateVerdict]
+    ],
+) -> None:
+    """Phase A refinement 4.4.c: held-out scenario usage bookkeeping.
+
+    For every held-out scenario that was decisive (baseline+candidate
+    each had ≥1 decisive trial), increment its ``uses`` counter and
+    set ``first_used_at`` if still null.  Written to
+    ``eval/held-out-usage.json`` as a sidecar — NOT back to
+    eval-suite.yaml, which would trip 4.4.a's hash check.
+
+    Phase A is bookkeeping only.  Phase D will read this file to
+    rotate held-out scenarios on contact.
+
+    Best-effort: file IO failures are logged but never break the
+    pipeline (this is observability, not a gate).
+    """
+    if not per_resource_results:
+        return
+    usage_path = workspace / "eval" / "held-out-usage.json"
+    try:
+        existing: dict[str, dict[str, Any]] = {}
+        if usage_path.exists():
+            existing = json.loads(usage_path.read_text(encoding="utf-8"))
+        now = datetime.now(UTC).isoformat()
+        for _, results, _verdict in per_resource_results:
+            for sr in results.scenarios:
+                if not sr.held_out:
+                    continue
+                # "Decisive" = both arms produced at least one decisive
+                # trial.  Matches compare_arms' no_decision detection.
+                if sr.baseline.decisive == 0 or sr.candidate.decisive == 0:
+                    continue
+                entry = existing.get(sr.scenario_id, {"uses": 0, "first_used_at": None})
+                entry["uses"] = int(entry.get("uses", 0)) + 1
+                if entry.get("first_used_at") is None:
+                    entry["first_used_at"] = now
+                existing[sr.scenario_id] = entry
+        usage_path.parent.mkdir(parents=True, exist_ok=True)
+        usage_path.write_text(
+            json.dumps(existing, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info(
+            "EXECUTION_EVAL: held-out usage updated",
+            path=str(usage_path),
+            tracked_scenarios=len(existing),
+        )
+    except Exception as exc:  # noqa: BLE001 — bookkeeping must not break gate
+        logger.warning(
+            "EXECUTION_EVAL: held-out usage bookkeeping failed (non-fatal)",
+            error=str(exc)[:200],
+        )
+
+
+def _round_mean_candidate_pass_rate(
+    per_resource_results: list[
+        tuple[ResourceStatus, EvalResults, AggregateVerdict]
+    ],
+) -> float:
+    """Phase A refinement 4.4.b: mean candidate pass-rate across all
+    resources in this round.
+
+    Used by the stagnation early-stop check.  Computed over the FULL
+    per-resource set (not just regressions) so the signal is stable
+    across rounds even as different resources move in and out of
+    refinement.  Empty list → 0.0 (safe default; the caller short-
+    circuits before computing if there's nothing to evaluate).
+    """
+    if not per_resource_results:
+        return 0.0
+    return sum(
+        r.candidate_pass_rate for _, r, _v in per_resource_results
+    ) / len(per_resource_results)
+
+
+def _resolve_min_gain() -> float:
+    """Phase A refinement 4.4.b: parse ``CGF_MIN_GAIN_PER_ROUND``.
+
+    Default 0.02 (2pp).  Negative values are clamped to 0 (= "any
+    non-regression survives").  Invalid → default.
+    """
+    raw = os.environ.get("CGF_MIN_GAIN_PER_ROUND")
+    if not raw:
+        return DEFAULT_MIN_GAIN_PER_ROUND
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_MIN_GAIN_PER_ROUND
+    return max(0.0, value)
 
 
 def _build_feedback_entry(
-    regressions: list[tuple[ResourceStatus, EvalResults]],
+    regressions: list[tuple[ResourceStatus, EvalResults, GateVerdict]],
     feedback_iteration: int,
+    round_mean_candidate_pass_rate: float | None = None,
 ) -> dict[str, Any]:
     """Assemble a feedback record for ``state.feedback_history``.
 
@@ -651,9 +1127,34 @@ def _build_feedback_entry(
     show the optimizer which scenarios it failed and what the baseline
     handled correctly.  Held-out scenarios are explicitly stripped so
     the optimizer never sees them.
+
+    Phase A refinement 4.4.b: ``round_mean_candidate_pass_rate`` is
+    recorded so the next round's stagnation check can compare against
+    it cheaply (no recomputation needed).
+
+    I15: each regression entry now carries the gate verdict and the
+    full cost-gate inputs so the optimizer's per-call refinement prompt
+    can branch by failure-mode:
+
+      - ``verdict``: ``"refine"`` / ``"reject_floor"`` / ``"reject_cost"``
+      - ``baseline_cost_per_success`` / ``candidate_cost_per_success``
+      - ``floor_pass_rate``: populated on first-time-promotion rounds
+      - ``cost_tolerance``: the base τ at gate time
+      - ``effective_cost_tolerance``: τ_eff after quality-scaled bonus
+      - ``cost_per_success_delta_pct``: candidate cps minus incumbent
+        cps as a fraction of incumbent (positive = regressed)
+
+    Without these the optimizer can't tell whether to TRIM (cost
+    rejection) vs ADD-COVERAGE (quality rejection) vs DROP-STRUCTURE
+    (floor rejection).  Run #7 demonstrated the failure mode: cost-
+    rejected candidates got re-bloated in r2 because the optimizer
+    saw only pass-rate equality and concluded "quality is fine."
     """
+    base_tau = _resolve_cost_tolerance()
+    bonus_factor = _resolve_cost_quality_bonus()
+
     resources_data: list[dict[str, Any]] = []
-    for resource, results in regressions:
+    for resource, results, verdict in regressions:
         failing = []
         for sr in results.scenarios:
             if sr.held_out:
@@ -671,12 +1172,41 @@ def _build_feedback_entry(
                         "tags": list(sr.tags),
                     }
                 )
+
+        # I15: compute effective τ at feedback-write time so the
+        # optimizer sees the same number the gate used.  ``decide``
+        # recomputes it during evaluation; we mirror that here rather
+        # than threading the value through the helper signature.
+        quality_delta = (
+            results.candidate_pass_rate - results.baseline_pass_rate
+        )
+        eff_tau = effective_cost_tolerance(
+            base_tau=base_tau,
+            quality_delta=quality_delta,
+            bonus_factor=bonus_factor,
+        )
+
+        # cps delta — only meaningful when both sides have signal.
+        b_cps = results.baseline_cost_per_success
+        c_cps = results.candidate_cost_per_success
+        if b_cps is not None and c_cps is not None and b_cps > 0:
+            cps_delta_pct = (c_cps - b_cps) / b_cps
+        else:
+            cps_delta_pct = None
+
         resources_data.append(
             {
                 "path": resource.path,
+                "verdict": verdict,
                 "candidate_pass_rate": results.candidate_pass_rate,
                 "baseline_pass_rate": results.baseline_pass_rate,
+                "floor_pass_rate": results.floor_pass_rate,
                 "win_rate": results.win_rate,
+                "baseline_cost_per_success": b_cps,
+                "candidate_cost_per_success": c_cps,
+                "cost_per_success_delta_pct": cps_delta_pct,
+                "cost_tolerance": base_tau,
+                "effective_cost_tolerance": eff_tau,
                 "failing_scenarios": failing,
             }
         )
@@ -685,13 +1215,16 @@ def _build_feedback_entry(
         "feedback_iteration": feedback_iteration,
         "timestamp": datetime.now(UTC).isoformat(),
         "regressions": resources_data,
+        "round_mean_candidate_pass_rate": round_mean_candidate_pass_rate,
     }
 
 
 def _write_aggregate_results(
     *,
     workspace: Path,
-    per_resource_results: list[tuple[ResourceStatus, EvalResults]],
+    per_resource_results: list[
+        tuple[ResourceStatus, EvalResults, AggregateVerdict]
+    ],
     feedback_iteration: int,
 ) -> Path | None:
     """Write a top-level summary of this EXECUTION_EVAL run.
@@ -701,6 +1234,14 @@ def _write_aggregate_results(
     ``eval/results/{resource_path}-v{N}/eval-results.json`` (written by
     each :class:`EvalHarness` invocation).  This summary file is the
     one-glance view across all resources.
+
+    Records the actual gate verdict (``"promote"``, ``"refine"``,
+    ``"reject_floor"``, ``"reject_cost"``, ``"unwinnable"``) per
+    resource.  ``promoted`` is preserved as a back-compat boolean
+    derived strictly from the verdict — old readers (``run_report``,
+    pre-refinement post-mortem scripts) keep working; new readers can
+    inspect ``verdict`` for the full distinction (e.g. floor vs cost
+    rejection).
     """
     if not per_resource_results:
         return None
@@ -715,12 +1256,26 @@ def _write_aggregate_results(
                 "win_rate": results.win_rate,
                 "baseline_pass_rate": results.baseline_pass_rate,
                 "candidate_pass_rate": results.candidate_pass_rate,
+                "floor_pass_rate": results.floor_pass_rate,
                 "no_decision_rate": results.no_decision_rate,
                 "scenarios": len(results.scenarios),
-                "promoted": results.candidate_pass_rate
-                >= results.baseline_pass_rate,
+                # Phase A refinement 4.3: surface cost-per-success +
+                # gate inputs so post-mortem analysis doesn't need to
+                # re-derive them from per-resource eval-results.json.
+                "baseline_cost_per_success": results.baseline_cost_per_success,
+                "candidate_cost_per_success": results.candidate_cost_per_success,
+                "total_cost_usd": results.total_cost_usd,
+                # Authoritative gate verdict — agrees with
+                # ``optimization-state.json``'s per-resource ``status``
+                # (promote↔optimized, refine/reject_*↔needs_refinement,
+                # unwinnable↔unwinnable). Set even when status was
+                # written by a different code path.
+                "verdict": verdict,
+                # Back-compat boolean for older readers; derived strictly
+                # from verdict so it can never disagree with status.
+                "promoted": verdict == "promote",
             }
-            for resource, results in per_resource_results
+            for resource, results, verdict in per_resource_results
         ],
     }
 

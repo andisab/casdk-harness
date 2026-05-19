@@ -77,8 +77,24 @@ Benefits:
 
 **Phase R3: OUTPUT**
 1. Merge improved sections preserving template structure
-2. Write to workspace/{resource_id}/{resource_id}-v{N}.md (same directory as original!)
-3. Generate improvement summary JSON: sessions/{resource_id}-v{N}.summary.json (machine consumption)
+2. Write the optimized version to the **versioned audit path** —
+   the orchestrator gives you this path in the per-call prompt.  In
+   general it is `{parent_dir_of_original}/{stem}-v{N}.{ext}`:
+   - Single-resource mode: e.g. `workspace/python-expert/python-expert-v1.md`
+   - Multi-resource agent: e.g. `workspace/iac-team/agents/iac-analyzer-v1.md`
+   - Multi-resource skill: e.g. `workspace/iac-team/skills/aws-cli/SKILL-v1.md`
+   The canonical filename (no `-vN` suffix) is owned by the orchestrator
+   — Python copies your versioned audit file into it after each round.
+   Do NOT write to the canonical filename yourself.
+3. **NEVER write any `*.summary.json` file.**  This applies to BOTH
+   single-resource and multi-resource modes.  Python writes the
+   canonical summary from the signals below at
+   `{parent_dir_of_original}/sessions/{stem}-v{N}.summary.json` —
+   if you also write one (even with a different name like
+   `aws-cli-v1.summary.json`), you introduce naming inconsistency that
+   trips the run-report renderer and breaks `sessions/` cleanup
+   semantics.  Your job is the resource file plus the signals; the
+   JSON is generated for you.
 4. **Emit completion signals** (for orchestrator to parse):
    ```
    [ITERATE_COMPLETE:{resource_path}]
@@ -89,9 +105,17 @@ Benefits:
    quality_clarity: {0.0-1.0}
    word_count: {count}
    [SUMMARY]
-   {1-2 sentence summary of key improvements}
+   {1-2 sentence prose summary of what changed and why}
    [/SUMMARY]
+   [KEY_IMPROVEMENTS]
+   - one concrete improvement
+   - another improvement
+   - ...up to ~7 brief bullets — these surface in the per-resource report
+   [/KEY_IMPROVEMENTS]
    ```
+   The `[SUMMARY]` block is freeform narrative; `[KEY_IMPROVEMENTS]` must be
+   a bullet list (one `-` per line).  Python parses both and embeds them in
+   the canonical summary JSON.
 5. **CHANGELOG management** - depends on context:
    - **Multi-resource mode** (orchestrator manages CHANGELOG): Skip direct CHANGELOG writes.
      Detect by checking: `task_list.json` exists with multiple resources OR
@@ -170,6 +194,100 @@ Self-check:
 ```
 
 **Output:** Improved section text with change log
+
+## Verdict-Branched Refinement (read the feedback's `verdict` field)
+
+When the orchestrator dispatches you to ITERATE round 2+, the per-call
+prompt includes a regression entry from `feedback_history`. The
+**`verdict`** field tells you WHY the candidate was rejected. Apply
+the matching strategy — do not blindly add more content in every case.
+
+The shape of the regression entry is (fields you will see):
+
+```yaml
+path: skills/aws-eks/SKILL.md
+verdict: reject_cost            # or "refine" | "reject_floor"
+candidate_pass_rate: 0.67
+baseline_pass_rate: 0.67
+floor_pass_rate: 0.67           # null when floor arm did not run
+win_rate: 0.0
+baseline_cost_per_success: 0.0931
+candidate_cost_per_success: 0.1500
+cost_per_success_delta_pct: 0.611    # +61.1 % cost growth
+cost_tolerance: 0.10                  # base τ
+effective_cost_tolerance: 0.10        # τ_eff after quality-bonus scaling
+failing_scenarios: [ ... ]
+```
+
+### CASE verdict == "reject_floor"
+
+The candidate scored WORSE than the bare model with no system prompt.
+Your prompt engineering is **net-negative** — it's actively making the
+agent less useful than doing nothing.
+
+**Action: TRIM AGGRESSIVELY.**
+
+- Cut sections that add structure but no signal — long preambles,
+  redundant rule restatements, framing that doesn't change behaviour.
+- Question every "constraint" or "rule" — does it actually help the
+  agent do the task, or just box it in?
+- Look at the `failing_scenarios` and ask: what about the prompt
+  prevents the agent from doing the obvious thing? Remove that.
+- The bare model is your benchmark. If you can't beat it, your prompt
+  has become anti-helpful. Don't add more rules — remove them.
+
+### CASE verdict == "refine"
+
+Quality is below the incumbent. Standard refinement — add coverage
+for what's failing, preserve what already works.
+
+**Action: TARGETED ADD-COVERAGE.**
+
+- Read every `failing_scenarios[].scenario_id` and identify the
+  competency gap.
+- Add competency-specific content to fix those gaps.
+- Do NOT trim — quality is the bottleneck, not cost.
+- Preserve the structure and length envelope of the incumbent;
+  inflate only where it directly addresses a failure.
+
+### CASE verdict == "reject_cost"
+
+Quality matches incumbent (within ε) but `candidate_cost_per_success`
+exceeded `incumbent_cost_per_success` by more than
+`effective_cost_tolerance × 100 %`.
+
+**Action: TRIM TOKENS without losing competency coverage.**
+
+The cost-per-success metric normalises for quality. Your candidate
+costs more per successful trial than the incumbent — usually because
+the prompt is longer, more verbose, or causes the agent to take more
+turns/tokens per task. Reduce that without losing the parts that
+actually drive correct outputs.
+
+Specific trim targets, ranked by likely-payoff:
+
+1. **Verbose anti-pattern explanations** — keep one example, drop the rest.
+2. **Long anti-example contrasts** ("DON'T do X like this …") —
+   compress to one-line do/don't pairs.
+3. **Redundant examples** — if you have 3 examples for the same
+   competency, keep 1.
+4. **Quote-heavy citations** — paraphrase or drop.
+5. **Long preamble sections** ("your role is …", "you are a …") —
+   one tight sentence each.
+
+Target: **≤ baseline word count**. If you can't shrink it while
+holding quality, your prompt is at a Pareto-frontier and the cost
+gate is doing its job — escalate to the orchestrator rather than
+churn through another round.
+
+**Trade-off knob.** If you genuinely think more competency coverage
+is needed AND will lift quality, do BOTH: add competency content
+and trim verbosity to net out. The effective cost tolerance grows
+with quality gain: each +1 pp candidate-vs-incumbent pass-rate
+earns roughly +1 pp τ headroom (capped). A +5 pp quality lift
+means you can absorb ~+5 % extra cost-per-success and still
+promote — but you have to actually deliver the quality lift, not
+just speculate it'll appear.
 </agentic_refinement>
 
 <changelog_format>
@@ -324,8 +442,17 @@ When merging optimized sections:
 **Primary output:**
 - `workspace/{resource_id}/{resource_id}-v{N}.md` - Optimized resource version
 
-**Supporting artifacts:**
-- `workspace/{resource_id}/sessions/{resource_id}-v{N}.summary.json` - Improvement summary
+**Supporting artifacts (Python writes; agent must NOT):**
+- `{parent_dir_of_original}/sessions/{stem}-v{N}.summary.json` —
+  Improvement summary.  **Always written by Python** from the
+  `[SUMMARY]` / `[KEY_IMPROVEMENTS]` signal blocks above, in both
+  single-resource and multi-resource modes.  Agent emits ONLY the
+  signals; never write the JSON file directly (any name).  Examples
+  of correct on-disk paths (note `{stem}` matches the original file's
+  basename without extension — `SKILL`, not the parent dir slug):
+  - `workspace/python-expert/sessions/python-expert-v1.summary.json`
+  - `workspace/iac-team/agents/sessions/iac-analyzer-v1.summary.json`
+  - `workspace/iac-team/skills/aws-cli/sessions/SKILL-v1.summary.json`
 - `workspace/{resource_id}/CHANGELOG.md` - Optimization history (single-resource mode)
 </output_artifacts>
 

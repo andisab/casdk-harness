@@ -229,19 +229,45 @@ sticky — one indeterminate grader marks the whole trial as
 
 ### Promotion gate
 
-Simple-threshold gate in `_orchestrator_phases/execution_eval.py`:
+Three-stage gate in `optimization/gating.py::decide` (Phase A
+refinements 4.1–4.3, branch `cgf-eval-ab`):
 
-```
-candidate promotes iff candidate.pass_rate ≥ baseline.pass_rate + epsilon
-```
+1. **Floor stage** — first-time-promotion only.  `candidate >= floor + 2*ε`.
+   Fail → `"reject_floor"`.  Floor arm is the bare model (no system
+   prompt); built once per resource by `_orchestrator_phases/_baseline_floor.py`
+   and gated by `ResourceStatus.last_promoted_version`.
+2. **Incumbent stage** — always.  `candidate >= incumbent + ε`.
+   Fail → `"refine"`.  Preserves Phase A `>=` semantics (equality
+   promotes).
+3. **Cost stage** — `candidate.cost_per_success <= incumbent.cost_per_success
+   × (1 + τ)`.  Fail → `"reject_cost"`.  Auto-passes when either side
+   has `None` (no signal to regress against).
 
-`epsilon = CGF_EVAL_PROMOTION_EPSILON` (default 0.0; any strict
-improvement). Phase B will replace with a bootstrap-CI gate on win
-rate (see CGF-EVAL-ROADMAP § Phase B).
+`epsilon = CGF_EVAL_PROMOTION_EPSILON` (default 0.0).
+`τ = CGF_TOKEN_REGRESSION_TOLERANCE` (default 0.10).
+Phase B replaces the incumbent stage with a bootstrap-CI gate.
 
 Held-out scenarios drive the gate but are **stripped from feedback** to
 the optimizer. The optimizer never sees the held-out subset; this
 keeps EVAL_DESIGN cheap to repeat without leaking labels.
+
+### Mid-loop suite-hash guard (4.4.a)
+
+EVAL_DESIGN writes `MultiResourceState.eval_suite_hash` (SHA-256 of
+`eval-suite.yaml` bytes after CRLF→LF normalisation).  EXECUTION_EVAL
+recomputes on every round and `RuntimeError`s on mismatch — guards
+against mid-loop suite rewrites leaking optimizer reasoning into the
+gate.  The held-out usage sidecar (4.4.c) writes to a **separate**
+file (`eval/held-out-usage.json`) precisely to keep this invariant
+clean.
+
+### Stagnation early-stop (4.4.b)
+
+EXECUTION_EVAL escalates to VALIDATE when the round-over-round
+Δmean_candidate_pass_rate falls below `CGF_MIN_GAIN_PER_ROUND`
+(default 0.02 = 2pp).  Cheap insurance against lateral drift within
+the max-feedback cap.  Each feedback entry persists
+`round_mean_candidate_pass_rate` so the check is O(1) lookup.
 
 ## Single-resource path: `cgf_session.py`
 
@@ -272,7 +298,9 @@ optimization/
 ├── quality_evaluator.py           # QualityEvaluator (agentic scoring)
 ├── _orchestrator_helpers.py       # shared constants, path validators, eval span helper
 ├── _orchestrator_phases/          # one module per multi-resource phase
-├── eval_harness/                  # Phase A two-arm runner
+│   └── _baseline_floor.py         # Phase A refinement 4.2 — synthetic bare-model resource generator
+├── gating.py                      # Phase A refinement 4.2/4.3 — Gate.decide (floor + incumbent + cost stages)
+├── eval_harness/                  # Phase A two-arm runner (optional 3rd floor arm under refinement 4.2)
 ├── graders/                       # Phase A grader implementations
 ├── protocols/                     # signals, resource_types, quality, state, workspace
 ├── resources/                     # AgentResource, SkillResource, CommandResource, PromptResource
@@ -305,6 +333,9 @@ Multi-resource Phase A:
 | `CGF_JUDGE_MODEL` | opus | `graders/llm_judge.py:50` |
 | `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | `multi_resource_orchestrator.py:908` |
 | `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | `_orchestrator_phases/execution_eval.py:177` |
+| `CGF_TOKEN_REGRESSION_TOLERANCE` | 0.10 | `_orchestrator_phases/execution_eval.py::_resolve_cost_tolerance` (Phase A refinement 4.3) |
+| `CGF_MIN_GAIN_PER_ROUND` | 0.02 | `_orchestrator_phases/execution_eval.py::_resolve_min_gain` (Phase A refinement 4.4.b stagnation early-stop) |
+| `CGF_DESIGN_MODEL` | (sonnet via agent YAML) | `graders/llm_judge.py::_resolve_judge_model` reads it only to WARN on self-preference collision (Phase A refinement 4.1) |
 | `CGF_GENERATE_CONCURRENCY` | 8 | `_orchestrator_phases/generate.py:47` |
 | `CGF_ITERATE_CONCURRENCY` | 4 | `_orchestrator_phases/iterate.py:56` |
 | `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | `_orchestrator_phases/execution_eval.py:63` |

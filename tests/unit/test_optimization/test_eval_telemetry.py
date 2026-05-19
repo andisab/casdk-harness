@@ -131,6 +131,8 @@ def _make_orchestrator(
 
     state = MagicMock()
     state.eval_suite_path = "eval/eval-suite.yaml"
+    # Phase A refinement 4.4.a: empty string disables the mid-loop hash guard.
+    state.eval_suite_hash = ""
     state.eval_results_path = ""
     state.feedback_history = []
     state.current_phase = OptimizationPhase.EXECUTION_EVAL
@@ -437,18 +439,21 @@ class TestLLMJudgeNoDecisionCounter:
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(side_effect=RuntimeError("boom"))
         with patch.object(llm_judge_module, "get_judge_client", return_value=mock_client):
+            from harness.config import MODEL_SHORTHAND_MAP
+
+            opus_id = MODEL_SHORTHAND_MAP["opus"]
             grader = LLMJudgeGrader(rubric="Score 1-5.", eval_model="opus")
             transcript = AgentTranscript(final_output="x")
             scenario = EvalScenario(id="x", level="unit", prompt="hi")
 
             before = _counter_value(
                 harness_eval_judge_no_decision_total,
-                model="claude-opus-4-5-20250929",
+                model=opus_id,
             )
             result = await grader.grade(transcript, scenario)
             after = _counter_value(
                 harness_eval_judge_no_decision_total,
-                model="claude-opus-4-5-20250929",
+                model=opus_id,
             )
 
         assert result.no_decision is True
@@ -481,11 +486,12 @@ class TestEnvVarsExposed:
     @pytest.mark.parametrize(
         "var",
         [
-            "CGF_DESIGN_MODEL",
             "CGF_JUDGE_MODEL",
             "CGF_EVAL_TOKEN_BUDGET",
             "CGF_EVAL_PROMOTION_EPSILON",
-            "CGF_EVAL_HELD_OUT_FRACTION",
+            "CGF_TOKEN_REGRESSION_TOLERANCE",
+            "CGF_COST_QUALITY_BONUS",  # I15
+            "CGF_MIN_GAIN_PER_ROUND",
         ],
     )
     def test_var_in_docker_compose(self, var: str, compose_yaml: str) -> None:
@@ -496,11 +502,12 @@ class TestEnvVarsExposed:
     @pytest.mark.parametrize(
         "var",
         [
-            "CGF_DESIGN_MODEL",
             "CGF_JUDGE_MODEL",
             "CGF_EVAL_TOKEN_BUDGET",
             "CGF_EVAL_PROMOTION_EPSILON",
-            "CGF_EVAL_HELD_OUT_FRACTION",
+            "CGF_TOKEN_REGRESSION_TOLERANCE",
+            "CGF_COST_QUALITY_BONUS",  # I15
+            "CGF_MIN_GAIN_PER_ROUND",
         ],
     )
     def test_var_in_env_example(self, var: str, env_example: str) -> None:

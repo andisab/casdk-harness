@@ -1,6 +1,6 @@
 {
-  "title": "Claude Agent Harness \u2014 SDK: Cost & Spend",
-  "uid": "casdk-sdk-cost",
+  "title": "3: Productivity & Tools",
+  "uid": "casdk-productivity",
   "tags": [
     "claude",
     "harness"
@@ -172,7 +172,7 @@
       "icon": "external link"
     },
     {
-      "title": "00 \u2014 Overview",
+      "title": "0: Main",
       "type": "link",
       "url": "/d/casdk-overview",
       "icon": "dashboard",
@@ -181,43 +181,34 @@
       "targetBlank": false
     },
     {
-      "title": "20 \u2014 SDK: Productivity",
+      "title": "1: Cost & Spend",
       "type": "link",
-      "url": "/d/casdk-sdk-productivity",
+      "url": "/d/casdk-cost",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "30 \u2014 SDK: Cache",
+      "title": "2: Cache & Token Efficiency",
       "type": "link",
-      "url": "/d/casdk-sdk-cache",
+      "url": "/d/casdk-cache",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "40 \u2014 SDK: Tools",
+      "title": "4: Errors & Reliability",
       "type": "link",
-      "url": "/d/casdk-sdk-tools",
+      "url": "/d/casdk-reliability",
       "icon": "dashboard",
       "includeVars": true,
       "keepTime": true,
       "targetBlank": false
     },
     {
-      "title": "50 \u2014 SDK: Reliability",
-      "type": "link",
-      "url": "/d/casdk-sdk-reliability",
-      "icon": "dashboard",
-      "includeVars": true,
-      "keepTime": true,
-      "targetBlank": false
-    },
-    {
-      "title": "60 \u2014 Mode: Interactive",
+      "title": "5: Mode: Interactive",
       "type": "link",
       "url": "/d/casdk-mode-interactive",
       "icon": "dashboard",
@@ -226,7 +217,7 @@
       "targetBlank": false
     },
     {
-      "title": "65 \u2014 Mode: Autonomous",
+      "title": "6: Mode: Autonomous",
       "type": "link",
       "url": "/d/casdk-mode-autonomous",
       "icon": "dashboard",
@@ -235,7 +226,7 @@
       "targetBlank": false
     },
     {
-      "title": "70 \u2014 Mode: CGF Optimization",
+      "title": "7: Mode: CGF Optimization",
       "type": "link",
       "url": "/d/casdk-cgf",
       "icon": "dashboard",
@@ -244,7 +235,7 @@
       "targetBlank": false
     },
     {
-      "title": "99 \u2014 Raw Events",
+      "title": "9: TBD: Raw Events",
       "type": "link",
       "url": "/d/casdk-raw-events",
       "icon": "dashboard",
@@ -255,208 +246,15 @@
   ],
   "panels": [
     {
+      "id": 20100,
       "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "decimals": 2,
-          "unit": "currencyUSD",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 25
-              },
-              {
-                "color": "red",
-                "value": 100
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "id": 10050,
-      "title": "Spend (last 24h)",
-      "description": "Total cost across the rolling 24-hour window ending now. Independent of dashboard time picker. \"Today\" approximated as 24h because Prometheus cannot trivially align to midnight in a user-local timezone.",
+      "title": "Active Sessions",
+      "description": "Currently active sessions across all agents (harness-side gauge).",
       "gridPos": {
-        "h": 4,
-        "w": 8,
         "x": 0,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(claude_code_cost_usage_USD_total{model=~\"$model\"}[24h]))",
-          "refId": "A",
-          "instant": false
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#A0A0A0"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "decimals": 0,
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "id": 10060,
-      "title": "Tokens In (last 24h)",
-      "description": "Sum of input + cache-read + cache-creation tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens in\" semantics.",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[24h]))",
-          "refId": "A",
-          "instant": false
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#A0A0A0"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "decimals": 0,
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "id": 10070,
-      "title": "Tokens Out (last 24h)",
-      "description": "Output tokens over the rolling 24h window. Matches Anthropic console's \"Total tokens out\".",
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(claude_code_token_usage_tokens_total{model=~\"$model\",type=\"output\"}[24h]))",
-          "refId": "A",
-          "instant": false
-        }
-      ]
-    },
-    {
-      "id": 10100,
-      "type": "stat",
-      "title": "Spend Rate ($/hour)",
-      "description": "Current cost rate normalized to per-hour from a 5m window.",
-      "gridPos": {
-        "h": 4,
+        "y": 0,
         "w": 6,
-        "x": 0,
-        "y": 4
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -464,141 +262,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) * 3600",
-          "refId": "A",
-          "instant": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "area",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "currencyUSD",
-          "decimals": 2,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 20
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 10110,
-      "type": "stat",
-      "title": "Spend (selected range)",
-      "description": "Total spend across the dashboard time window.",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range]))",
-          "refId": "A",
-          "instant": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "none",
-        "colorMode": "none",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#A0A0A0"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "currencyUSD",
-          "decimals": 2
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 10120,
-      "type": "stat",
-      "title": "Cost / Accepted Edit",
-      "description": "Average cost per accepted code edit, computed as total spend \u00f7 total accepted edits across the dashboard range. A defensible efficiency KPI; rising values point to too much Opus where Sonnet would suffice, or over-high `effort` settings.",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "sum(increase(claude_code_cost_usage_USD_total[$__range])) / sum(increase(claude_code_code_edit_tool_decision_total{decision=\"accept\"}[$__range]))",
+          "expr": "sum(harness_agent_active_sessions)",
           "refId": "A",
           "instant": false
         }
@@ -628,87 +292,28 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
-          "decimals": 3
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 10130,
-      "type": "stat",
-      "title": "Projected Monthly Spend",
-      "description": "Linear extrapolation from the last 7 days of spend, projected 30 days ahead. Treat as directional, not a forecast \u2014 Anthropic has re-priced Opus downward 3\u00d7 within a year.",
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 4
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "expr": "predict_linear(claude_code_cost_usage_USD_total[7d], 30*86400)",
-          "refId": "A",
-          "instant": false
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "values": false,
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": ""
-        },
-        "graphMode": "none",
-        "colorMode": "value",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "#A0A0A0"
-          },
-          "mappings": [
-            {
-              "type": "special",
-              "options": {
-                "match": "null+nan",
-                "result": {
-                  "text": "\u2014",
-                  "color": "text-secondary"
-                }
-              }
-            }
-          ],
-          "unit": "currencyUSD",
+          "unit": "none",
           "decimals": 0
         },
         "overrides": []
       }
     },
     {
-      "id": 10200,
-      "type": "timeseries",
-      "title": "Spend by Model",
-      "description": "Per-model cost rate. Inspect for mid-session model switches.",
+      "id": 20110,
+      "type": "stat",
+      "title": "Sessions Started (selected range)",
+      "description": "Total session-start events in the dashboard time window.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -716,26 +321,29 @@
       },
       "targets": [
         {
-          "expr": "sum by (model) (rate(claude_code_cost_usage_USD_total{model=~\"$model\"}[5m])) * 3600",
-          "legendFormat": "{{model}}",
-          "refId": "A"
+          "expr": "sum(increase(claude_code_session_count_total[$__range]))",
+          "refId": "A",
+          "instant": false
         }
       ],
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -743,34 +351,28 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
-          "custom": {
-            "fillOpacity": 5,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "decimals": 2
+          "unit": "none",
+          "decimals": 0
         },
         "overrides": []
       }
     },
     {
-      "id": 10210,
-      "type": "timeseries",
-      "title": "Spend by query_source",
-      "description": "Cost rate broken down by main / subagent / auxiliary. Subagents (Task tool) typically use ~7\u00d7 more tokens than the main thread \u2014 this panel surfaces the differential.",
+      "id": 20120,
+      "type": "stat",
+      "title": "Net Lines of Code (selected range)",
+      "description": "Added − Removed lines via `sum_over_time` (NOT `increase` — these are delta-style counters; `increase` extrapolates them to nonsense values, per spec § 2 gotcha #3).",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 8
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -778,26 +380,29 @@
       },
       "targets": [
         {
-          "expr": "sum by (query_source) (rate(claude_code_cost_usage_USD_total[5m])) * 3600",
-          "legendFormat": "{{query_source}}",
-          "refId": "A"
+          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[$__range])) - sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[$__range]))",
+          "refId": "A",
+          "instant": false
         }
       ],
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
           },
           "mappings": [
             {
@@ -805,34 +410,28 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
-          "custom": {
-            "fillOpacity": 5,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": false
-          },
-          "decimals": 2
+          "unit": "none",
+          "decimals": 0
         },
         "overrides": []
       }
     },
     {
-      "id": 10220,
-      "type": "timeseries",
-      "title": "Spend by effort",
-      "description": "low / medium / high / xhigh / max. Cost scales with extended-thinking budget; this is the canonical lever for tuning cost-per-task. Empty when no `effort=` label is propagated by the SDK.",
+      "id": 40100,
+      "type": "stat",
+      "title": "Edit Acceptance Rate (Overall)",
+      "description": "accept / (accept + reject) across all code-edit tools. NOTE: SDK metric name is claude_code_code_edit_tool_decision_total (NOT _count_total as upstream spec lists). See OBSERVABILITY.md § 6 item 4.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "datasource": {
         "type": "prometheus",
@@ -840,8 +439,67 @@
       },
       "targets": [
         {
-          "expr": "sum by (effort) (rate(claude_code_cost_usage_USD_total[5m])) * 3600",
-          "legendFormat": "{{effort}}",
+          "expr": "sum(rate(claude_code_code_edit_tool_decision_total{decision=\"accept\"}[$__range])) / sum(rate(claude_code_code_edit_tool_decision_total[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20200,
+      "type": "timeseries",
+      "title": "Sessions Started by start_type",
+      "description": "fresh / resume / continue. Time-series per session-start kind.",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (start_type) (rate(claude_code_session_count_total[5m])) * 300",
+          "legendFormat": "{{start_type}}",
           "refId": "A"
         }
       ],
@@ -867,34 +525,33 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
+          "unit": "none",
           "custom": {
             "fillOpacity": 5,
             "lineWidth": 1,
             "showPoints": "never",
             "spanNulls": false
-          },
-          "decimals": 2
+          }
         },
         "overrides": []
       }
     },
     {
-      "id": 10230,
+      "id": 20410,
       "type": "barchart",
-      "title": "Spend by Terminal Type (selected range)",
-      "description": "vscode / tmux / cursor / iTerm.app / non-interactive. Horizontal bar, not pie \u2014 pies misrepresent the unequal magnitudes.",
+      "title": "Sessions by terminal_type (selected range)",
+      "description": "Where sessions are being run from.",
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 16
+        "y": 4,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
@@ -902,7 +559,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (terminal_type) (increase(claude_code_cost_usage_USD_total[$__range]))",
+          "expr": "sum by (terminal_type) (increase(claude_code_session_count_total[$__range]))",
           "legendFormat": "{{terminal_type}}",
           "instant": true,
           "refId": "A"
@@ -928,7 +585,7 @@
         "defaults": {
           "color": {
             "mode": "fixed",
-            "fixedColor": "#A0A0A0"
+            "fixedColor": "blue"
           },
           "mappings": [
             {
@@ -936,14 +593,14 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
-          "decimals": 2,
+          "unit": "none",
+          "decimals": 0,
           "custom": {
             "axisPlacement": "auto",
             "fillOpacity": 80,
@@ -955,15 +612,15 @@
       }
     },
     {
-      "id": 10300,
+      "id": 20300,
       "type": "timeseries",
-      "title": "Cost per Commit",
-      "description": "CAVEAT: claude_code_commit_count_total is empty in 24h on typical CGF-optimization workloads \u2014 see OBSERVABILITY.md \u00a7 6 item 7. This panel will render empty until Claude commits in-session (typically only happens in autonomous mode).",
+      "title": "Active Time — CLI vs User",
+      "description": "CAVEAT: type=\"user\" is interactive-only on current harness workloads; the line will sit at zero for non-interactive runs.",
       "gridPos": {
-        "h": 6,
-        "w": 12,
         "x": 0,
-        "y": 24
+        "y": 12,
+        "w": 12,
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
@@ -971,8 +628,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) / sum(rate(claude_code_commit_count_total[5m]))",
-          "legendFormat": "$/commit",
+          "expr": "sum by (type) (rate(claude_code_active_time_seconds_total[5m]))",
+          "legendFormat": "{{type}}",
           "refId": "A"
         }
       ],
@@ -998,13 +655,383 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20400,
+      "type": "timeseries",
+      "title": "Harness Session Duration (P50 / P95)",
+      "description": "Histogram from harness_session_duration_seconds_bucket — interactive mode only.",
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(harness_session_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "s",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40110,
+      "type": "stat",
+      "title": "Accepted Edits (selected range)",
+      "description": "",
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_code_edit_tool_decision_total{decision=\"accept\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40120,
+      "type": "stat",
+      "title": "Rejected Edits (selected range)",
+      "description": "",
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(claude_code_code_edit_tool_decision_total{decision=\"reject\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20130,
+      "type": "stat",
+      "title": "Productivity Multiplier (cli / user)",
+      "description": "CAVEAT: active_time{type=\"user\"} was never observed in 24h on harness workloads — likely interactive-only. This stat will show as Inf or '—' until interactive sessions populate the denominator. See OBSERVABILITY.md § 6 item 8. Treat as directional, never a performance KPI — Mike Lane reports >10,000× ratios with parallel agents.",
+      "gridPos": {
+        "x": 16,
+        "y": 20,
+        "w": 8,
+        "h": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(claude_code_active_time_seconds_total{type=\"cli\"}[$__range])) / sum(rate(claude_code_active_time_seconds_total{type=\"user\"}[$__range]))",
+          "refId": "A",
+          "instant": false
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "graphMode": "area",
+        "colorMode": "value",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A0A0A0"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 1
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20210,
+      "type": "timeseries",
+      "title": "Lines of Code Added / Removed",
+      "description": "Using `sum_over_time` not `increase` — these are delta counters. Mike Lane's gist explicitly warns about the `increase()` extrapolation pitfall.",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"added\"}[5m]))",
+          "legendFormat": "added",
+          "refId": "A"
+        },
+        {
+          "expr": "-sum(sum_over_time(claude_code_lines_of_code_count_total{type=\"removed\"}[5m]))",
+          "legendFormat": "removed",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40200,
+      "type": "timeseries",
+      "title": "Acceptance Rate by tool_name",
+      "description": "Edit / Write / NotebookEdit broken out.",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name) (rate(claude_code_code_edit_tool_decision_total{decision=\"accept\"}[5m])) / sum by (tool_name) (rate(claude_code_code_edit_tool_decision_total[5m]))",
+          "legendFormat": "{{tool_name}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
           "custom": {
             "fillOpacity": 5,
             "lineWidth": 1,
@@ -1017,15 +1044,15 @@
       }
     },
     {
-      "id": 10310,
+      "id": 40210,
       "type": "timeseries",
-      "title": "Cost per PR",
-      "description": "CAVEAT: claude_code_pull_request_count_total only fires when Claude itself opens the PR in-session (via `gh pr create` or an MCP tool). Manual PRs do not register. See OBSERVABILITY.md \u00a7 6 item 7.",
+      "title": "Rejection Rate by language",
+      "description": "Rejection rate broken out by language. Sustained >30% in one language means that language's tooling isn't giving Claude enough grounding — consider a project-level CLAUDE.md with more examples or stricter type information.",
       "gridPos": {
-        "h": 6,
+        "x": 0,
+        "y": 32,
         "w": 12,
-        "x": 12,
-        "y": 24
+        "h": 8
       },
       "datasource": {
         "type": "prometheus",
@@ -1033,8 +1060,8 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(claude_code_cost_usage_USD_total[5m])) / sum(rate(claude_code_pull_request_count_total[5m]))",
-          "legendFormat": "$/PR",
+          "expr": "sum by (language) (rate(claude_code_code_edit_tool_decision_total{decision=\"reject\"}[5m])) / sum by (language) (rate(claude_code_code_edit_tool_decision_total[5m]))",
+          "legendFormat": "{{language}}",
           "refId": "A"
         }
       ],
@@ -1060,13 +1087,13 @@
               "options": {
                 "match": "null+nan",
                 "result": {
-                  "text": "\u2014",
+                  "text": "—",
                   "color": "text-secondary"
                 }
               }
             }
           ],
-          "unit": "currencyUSD",
+          "unit": "percentunit",
           "custom": {
             "fillOpacity": 5,
             "lineWidth": 1,
@@ -1074,6 +1101,259 @@
             "spanNulls": false
           },
           "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40300,
+      "type": "timeseries",
+      "title": "Rejection Rate by exported_source",
+      "description": "Where rejections come from: config / hook / user_permanent / user_temporary / user_abort / user_reject. NOTE: label is `exported_source`, NOT `source` — Prometheus renames the SDK's source attribute because the scrape job applies its own `source` label first. See OBSERVABILITY.md § 6 item 5.",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (exported_source) (rate(claude_code_code_edit_tool_decision_total{decision=\"reject\"}[5m])) / sum by (exported_source) (rate(claude_code_code_edit_tool_decision_total[5m]))",
+          "legendFormat": "{{exported_source}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "percentunit",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20310,
+      "type": "timeseries",
+      "title": "Tool Calls (harness-side, by tool_name)",
+      "description": "From harness_tool_calls_total — populated by interactive.py. Autonomous + CGF runs don't currently emit harness-side tool metrics, so multi-mode coverage relies on the SDK-side code_edit_tool_decision (Dashboard 40).",
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name) (rate(harness_tool_calls_total[5m])) * 60",
+          "legendFormat": "{{tool_name}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40310,
+      "type": "barchart",
+      "title": "Edit Decisions by tool_name (selected range)",
+      "description": "Most-active edit tools across the window. Horizontal bar, not pie — pies misrepresent the long tail.",
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool_name) (increase(claude_code_code_edit_tool_decision_total[$__range]))",
+          "legendFormat": "{{tool_name}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0,
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "decimals": 0,
+          "custom": {
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40400,
+      "type": "timeseries",
+      "title": "Harness Tool Calls / status",
+      "description": "harness_tool_calls_total — success vs error. Populated by interactive.py. Autonomous + CGF modes don't emit harness-side tool metrics; use Dashboard 30+ above for SDK-side code-edit attribution in those modes.",
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(harness_tool_calls_total[5m])) * 60",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "—",
+                  "color": "text-secondary"
+                }
+              }
+            }
+          ],
+          "unit": "none",
+          "custom": {
+            "fillOpacity": 5,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": false
+          }
         },
         "overrides": []
       }

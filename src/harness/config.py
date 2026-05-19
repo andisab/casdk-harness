@@ -10,11 +10,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 if TYPE_CHECKING:
     pass  # For forward references
 
-# Model shorthand mapping (centralized from interactive.py/autonomous.py)
+# Model shorthand mapping — single source of truth for the harness AND
+# the CGF graders.  ``harness.optimization.graders.llm_judge`` imports
+# this directly; do not duplicate.
+#
+# Unversioned IDs (major.minor without the date suffix) auto-resolve to
+# the latest patch on the Anthropic API and survive minor bumps without
+# code changes.  Pin to a dated build only when you need reproducibility
+# across an Anthropic-side update — e.g. for Phase D calibration runs.
 MODEL_SHORTHAND_MAP: dict[str, str] = {
-    "sonnet": "claude-sonnet-4-5-20250929",
-    "opus": "claude-opus-4-5-20251101",
-    "haiku": "claude-3-5-haiku-20241022",
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-7",
 }
 
 
@@ -34,11 +41,22 @@ def resolve_model_name(model_shorthand: str) -> str | None:
     return None
 
 
-# Model context window sizes (tokens)
+# Model context window sizes (tokens).
+# Keyed by full Anthropic model ID; unversioned aliases (e.g.
+# "claude-sonnet-4-6") also resolve here because they share the family
+# context size.  Pin specific dated builds when they diverge.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
-    # Claude 4 models
+    # Claude 4.7 / 4.6 / 4.5 (unversioned aliases — current)
+    "claude-opus-4-7": 200_000,
+    "claude-sonnet-4-6": 200_000,
+    "claude-haiku-4-5": 200_000,
+    # Claude 4.7 / 4.6 / 4.5 pinned builds (for reproducibility)
+    "claude-haiku-4-5-20251001": 200_000,
+    # Claude 4 / 4.5 prior pinned builds (kept for backcompat with
+    # historical config files / artifacts)
     "claude-sonnet-4-5-20250929": 200_000,
     "claude-opus-4-5-20251101": 200_000,
+    "claude-opus-4-5-20250929": 200_000,
     # Claude 3.5 models
     "claude-3-5-sonnet-20241022": 200_000,
     "claude-3-5-haiku-20241022": 200_000,
@@ -72,7 +90,7 @@ class HarnessConfig(BaseSettings):
     # API Configuration
     anthropic_api_key: str = Field(..., description="Anthropic API key")
     claude_model: str = Field(
-        default="claude-sonnet-4-5-20250929",
+        default="claude-sonnet-4-6",
         description="Claude model to use",
     )
 
