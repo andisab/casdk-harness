@@ -1,7 +1,13 @@
 """LLM-judge grader (Phase A.3).
 
-Calls an LLM to score the agent transcript against a rubric on a 1–5
-scale, normalized to 0.0–1.0 via ``(score - 1) / 4``.  When the judge
+Calls an LLM to score the agent transcript against a rubric on an
+anchored 1–7 integer scale (per-level anchors in the system prompt),
+normalized to 0.0–1.0 via ``(score - 1) / 6``.  Phase A.5 A3 widened the
+scale from 1–5: frontier judges compress a 5-point scale to ~2–3 effective
+points, and retry→tie then collapses it further; a 7-point anchored scale
+recovers usable resolution (the discrimination lever from the eval
+literature). G-Eval probability-weighting would be finer still but needs
+token logprobs the Anthropic Messages API does not expose.  When the judge
 itself errors (rate limit, network, parse failure), the grader retries
 exactly once and then marks the result ``no_decision=True``.  The eval
 gate treats no-decision results as ties — neither arm wins, neither
@@ -96,9 +102,18 @@ def get_judge_client() -> AsyncAnthropic:
 
 
 _SYSTEM_PROMPT = (
-    "You are an evaluation judge for an AI agent's transcript. "
-    "Score the transcript on a 1–5 integer scale against the rubric. "
-    "Respond with ONLY a single integer 1, 2, 3, 4, or 5 — no other text."
+    "You are an evaluation judge for an AI agent's transcript. Score how "
+    "well the transcript satisfies the rubric on a 1–7 integer scale with "
+    "these anchors:\n"
+    "1 = fails the rubric entirely (wrong, irrelevant, or missing).\n"
+    "2 = major gaps; addresses the task only superficially.\n"
+    "3 = partially correct but with significant errors or omissions.\n"
+    "4 = roughly half-right; meets some criteria, misses others.\n"
+    "5 = mostly correct with minor errors or omissions.\n"
+    "6 = correct and complete; only trivial nits.\n"
+    "7 = fully correct, complete, and well-executed against the rubric.\n"
+    "Judge against the rubric ONLY — length, formatting, and confident "
+    "phrasing are not quality. Respond with ONLY a single integer 1-7."
 )
 
 
@@ -121,7 +136,7 @@ def build_user_prompt(rubric: str, transcript: AgentTranscript) -> str:
         f"Final output:\n{transcript.final_output[:4000]}\n\n"
         f"Total turns: {transcript.total_turns}\n"
         f"Tool calls: {len(transcript.tool_calls)}\n\n"
-        f"## Your score (1–5):"
+        f"## Your score (1–7):"
     )
 
 
@@ -180,13 +195,13 @@ def judge_rubric_hash(rubric: str, judge_model_id: str = "") -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-_INTEGER_RE = re.compile(r"\b([1-5])\b")
+_INTEGER_RE = re.compile(r"\b([1-7])\b")
 
 
 def _parse_score(text: str) -> int | None:
-    """Pull a 1–5 integer score out of the model's reply, or ``None``."""
+    """Pull a 1–7 integer score out of the model's reply, or ``None``."""
     stripped = text.strip()
-    if stripped in {"1", "2", "3", "4", "5"}:
+    if stripped in {"1", "2", "3", "4", "5", "6", "7"}:
         return int(stripped)
     match = _INTEGER_RE.search(stripped)
     if match is not None:
@@ -248,13 +263,13 @@ class LLMJudgeGrader(BaseGrader):
                     )
                 continue
 
-            normalized = (score_int - 1) / 4.0
+            normalized = (score_int - 1) / 6.0
             passed = normalized >= self.pass_threshold
             return GraderResult(
                 passed=passed,
                 score=normalized,
                 details=(
-                    f"judge={score_int}/5 (norm={normalized:.2f}, "
+                    f"judge={score_int}/7 (norm={normalized:.2f}, "
                     f"threshold={self.pass_threshold:.2f}, model={model})"
                 ),
                 grader_type="llm_judge",

@@ -116,8 +116,8 @@ def fallback_llm_judge(scenario: dict) -> dict:
         or "the requested task"
     ).strip()
     rubric = (
-        "Score on a 1-5 scale how correctly and completely the response "
-        "accomplishes the following (5 = fully correct and complete, "
+        "Score on a 1-7 scale how correctly and completely the response "
+        "accomplishes the following (7 = fully correct and complete, "
         f"1 = fails or is irrelevant): {desc}"
     )
     return {"type": "llm_judge", "rubric": rubric, "pass_threshold": 0.7}

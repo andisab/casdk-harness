@@ -354,12 +354,12 @@
         "type": { "const": "llm_judge" },
         "rubric": {
           "type": "string",
-          "description": "Rubric prompt for the judge model. Should describe scoring on a 1-5 scale.",
+          "description": "Rubric prompt for the judge model. The judge scores on an anchored 1-7 scale; write the rubric to say what high vs low means for this scenario.",
           "minLength": 10
         },
         "pass_threshold": {
           "type": "number",
-          "description": "Minimum normalized score (0.0-1.0) to count as pass. Score 1-5 is normalized to (score-1)/4.",
+          "description": "Minimum normalized score (0.0-1.0) to count as pass. Score 1-7 is normalized to (score-1)/6 (so 0.7 ≈ a 6/7 'correct and complete').",
           "minimum": 0.0,
           "maximum": 1.0,
           "default": 0.7

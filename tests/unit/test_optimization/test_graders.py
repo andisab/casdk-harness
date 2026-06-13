@@ -413,34 +413,34 @@ def _mock_judge_response(text: str) -> Any:
 
 class TestLLMJudgeGrader:
     @pytest.mark.asyncio
-    async def test_score_5_passes(self) -> None:
+    async def test_score_7_passes(self) -> None:
         with patch.object(
             llm_judge_module, "get_judge_client"
         ) as patched_client:
             mock_client = MagicMock()
             mock_client.messages.create = AsyncMock(
-                return_value=_mock_judge_response("5")
+                return_value=_mock_judge_response("7")
             )
             patched_client.return_value = mock_client
 
-            g = LLMJudgeGrader(rubric="Score quality 1-5.")
+            g = LLMJudgeGrader(rubric="Score quality 1-7.")
             r = await g.grade(_transcript("good output"), _scenario())
             assert r.passed
             assert r.score == 1.0
-            assert "judge=5/5" in r.details
+            assert "judge=7/7" in r.details
 
     @pytest.mark.asyncio
-    async def test_score_3_normalized_to_half(self) -> None:
+    async def test_score_4_normalized_to_half(self) -> None:
         with patch.object(llm_judge_module, "get_judge_client") as patched_client:
             mock_client = MagicMock()
             mock_client.messages.create = AsyncMock(
-                return_value=_mock_judge_response("3")
+                return_value=_mock_judge_response("4")
             )
             patched_client.return_value = mock_client
 
-            g = LLMJudgeGrader(rubric="Score 1-5.", pass_threshold=0.7)
+            g = LLMJudgeGrader(rubric="Score 1-7.", pass_threshold=0.7)
             r = await g.grade(_transcript("ok"), _scenario())
-            # (3 - 1) / 4 = 0.5 < 0.7
+            # (4 - 1) / 6 = 0.5 < 0.7
             assert r.score == 0.5
             assert not r.passed
 
@@ -449,13 +449,13 @@ class TestLLMJudgeGrader:
         with patch.object(llm_judge_module, "get_judge_client") as patched_client:
             mock_client = MagicMock()
             mock_client.messages.create = AsyncMock(
-                return_value=_mock_judge_response("Score: 4 (good)")
+                return_value=_mock_judge_response("Score: 6 (good)")
             )
             patched_client.return_value = mock_client
 
-            g = LLMJudgeGrader(rubric="Score 1-5.", pass_threshold=0.6)
+            g = LLMJudgeGrader(rubric="Score 1-7.", pass_threshold=0.6)
             r = await g.grade(_transcript("ok"), _scenario())
-            assert r.score == 0.75  # (4-1)/4
+            assert r.score == pytest.approx(5 / 6)  # (6-1)/6 ≈ 0.833
             assert r.passed
 
     @pytest.mark.asyncio

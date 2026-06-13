@@ -119,14 +119,16 @@ graders:
 - `kind: no_tool` uses **`tool:`** (tool name).
 The schema rejects any other field names. Copy the shapes above exactly.
 
-LLM-judge (qualitative only, when contains/regex can't capture it):
+LLM-judge (qualitative only, when contains/regex can't capture it). The judge
+scores on an anchored 1-7 scale; write the rubric to say what high vs low means
+for THIS scenario (include ≥1 criterion an unoptimized resource would miss):
 ```yaml
 graders:
   - type: llm_judge
     rubric: |
-      Score 1-5 on whether the response correctly identifies all
-      three IAM violations with appropriate severity.
-      5 = all three with severity; 3 = two correct; 1 = zero/one.
+      Score whether the response correctly identifies all three IAM
+      violations with appropriate severity.
+      7 = all three with correct severity; 4 = two correct; 1 = zero or one.
     pass_threshold: 0.6
 ```
 
