@@ -8,6 +8,7 @@ The canonical forward-looking plan for `ab-casdk-harness`. Covers:
 Companion docs:
 
 - **[PHASEA_SUMMARY.md](./PHASEA_SUMMARY.md)** — Phase A retrospective (shipped 2026-05-14). What was built, what was learned, what cost characteristics look like. Source of truth for the "as-built" state of the eval pipeline.
+- **[EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md)** — the **evidence record** (frozen 2026-06-13) behind the discrimination-first turn: verdict, run-data, assumption verdicts, 6 deep research notes. The *why*; **this roadmap is the *what/when* and the single source of truth for the plan.** Cite it for rationale — don't plan there.
 - **[OBSERVABILITY.md](./OBSERVABILITY.md)** — operator guide for the OTel + Prometheus + Grafana + AlertManager stack: 10 dashboards, 13 alert rules, full metric inventory.
 - **[CGF-USER-GUIDE.md](./CGF-USER-GUIDE.md)** — day-to-day CGF usage, environment variables, how to run.
 - **[CLAUDE.md](../CLAUDE.md)** — repo overview, current status snapshot, "Completed Recently" log, SDK loading behavior.

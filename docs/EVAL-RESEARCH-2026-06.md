@@ -3,6 +3,14 @@
 Durable record of the eval-strategy reassessment that produced the Phase A.5 /
 re-scoped Phase B / Phase E revision in [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md).
 
+**Role:** this is the **evidence record** (frozen 2026-06-13) — the *why* behind
+the turn (verdict, run-data, assumption verdicts, 6 research notes). The live
+**plan + status is the single source of truth in
+[CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md)** (the *what/when*); cite this doc
+from there, don't plan here. **Acted on since:** Phase A.5 A1–A6 + EVAL_DESIGN v2
+L1.1–L1.3 shipped and smoke-validated; A7–A15 folded into roadmap §4 (Phase B) /
+§5 (C) / §6 (D) / §6A (E).
+
 **Method:** a 13-agent research workflow — 6 web-research sweeps (Sonnet) on
 2024–2026 eval methodology, 6 adversarial verdict agents (Opus) that cross-examined
 the harness's load-bearing assumptions against both the literature and actual run
@@ -48,7 +56,14 @@ All grounding confirmed. The architect prompt (`cgf-eval-architect.md`) mandates
 
 ---
 
-# CGF Eval Strategy — Roadmap-Revision Proposal
+# CGF Eval Strategy — Roadmap-Revision Proposal (HISTORICAL — superseded by the roadmap)
+
+> ⚠ **Acted on; do not plan from this section.** It drove the 2026-06-13 turn —
+> A1–A6 shipped as Phase A.5 and EVAL_DESIGN v2 (L1.1–L1.3); A7–A15 are folded
+> into the live plan in [CGF-EVAL-ROADMAP.md](./CGF-EVAL-ROADMAP.md) §4 (Phase B)
+> / §5 (C) / §6 (D) / §6A (E). Kept below as the frozen record of how the
+> research became the plan — the action→roadmap mapping (§4) and owner
+> open-questions (§6) remain useful context for the Phase B/C/D/E work.
 
 *Lead eval architect → owner. Grounding: 5 research notes, 6 assumption verdicts (1 refuted-grader-priority, 1 refuted-adaptivity, 1 refuted-bootstrap, 3 challenged), Runs #7/#8 + archive v4, current code (`gating.py`, `llm_judge.py`, `resource_types.py`, `runner.py`, `cgf-eval-architect.md`).*
 
