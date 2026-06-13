@@ -460,7 +460,7 @@ The `scripts/derisk_eval_design.py` probe confirmed A1/A3/A5/A6 produce a discri
 - **Cost:** EVAL_DESIGN took **17m54s / 74 turns** for the architect to read 36 v0+v1 files and write 54 scenarios — finishing only ~2 min under the `CGF_EVAL_DESIGN` 1200s timeout. The reads dominate (the suite write was the last ~4 min). At 18 resources this is near the ceiling; a larger plugin or slower run risks timing out → no suite → the eval half of the pipeline skips.
 - **`max_turns` not enforced:** the agent frontmatter says `max_turns: 20`; the architect ran **74 turns**. The harness logs `max_turns=20` to the SDK, but the wall-clock timeout is the only effective cap — so bumping 10→20 (A6) was a no-op and the budget can't be reasoned about. A correctness bug to fix.
 
-**Design question (open — decide before building).** EVAL_DESIGN is the hardest single judgement in the pipeline; higher cost is acceptable, but signal return must justify it. Candidate approaches (not mutually exclusive):
+**Approaches considered.** EVAL_DESIGN is the hardest single judgement in the pipeline; higher cost is acceptable, but signal return must justify it. Candidates evaluated (the agreed plan is § 3.7.3):
 
 | # | Approach | Effect |
 |---|---|---|
@@ -471,7 +471,30 @@ The `scripts/derisk_eval_design.py` probe confirmed A1/A3/A5/A6 produce a discri
 | 5 | **Reuse via the learnings ledger (Phase E)** — cache discriminating scenarios per resource type across runs. | Amortises design cost; longer-horizon (depends on Phase E). |
 | 6 | **`max_turns` enforcement fix** — find why the frontmatter cap is ignored on the `call_agent_simple` path; make it bind. | Correctness; required regardless. #1 makes a tight cap viable. |
 
-**Leaning:** #1 + #2 (per-resource sharded design on diff-based context) is highest-leverage — it fixes the cost (smaller, parallel), makes `max_turns` meaningful (#6), and improves discrimination (focus) at once. #3 is the thoroughness add-on (opt-in). **Not yet decided.**
+### 3.7.3 EVAL_DESIGN v2 — agreed plan (2026-06-13)
+
+**Decision:** build EVAL_DESIGN v2 now (before A7 / later stages), **incrementally and empirically** — ship each step, verify with the `derisk_eval_design.py` probe, document, then proceed. Target = a fan-out/merge orchestration with a type-adaptive aspect panel inside each shard, built in **two layers with a measurement gate**.
+
+**Layer 1 — fan-out/merge orchestration (single architect per shard):**
+
+- **L1.1 — `max_turns` enforcement fix** (first; gates enforceable per-shard budgets). Trace `harness.subagent.call_agent_simple` → the `ClaudeAgentOptions` it builds and find where the agent-frontmatter `max_turns` is dropped (architect ran 74 turns with `max_turns: 20`); make the per-agent cap bind. + tests.
+- **L1.2 — v0→v1 diff context.** Python `difflib` helper → a concise per-resource capability diff, fed to the architect with the resource's purpose/metadata instead of two full files; full-file read kept as fallback. + tests.
+- **L1.3 — shard the EVAL_DESIGN phase.** Replace the single monster call with **parallel per-resource architect calls** (each sees one resource's diff + purpose, a tight `max_turns`) under the existing concurrency semaphore; a merge step concatenates per-resource scenarios into one `eval-suite.yaml`, then the existing grader-policy enforcement (A1) + held-out selection + suite-hash run on the merged result. **Per-resource is the default granularity.**
+- **Measure (probe):** confirm EVAL_DESIGN wall-time + turns drop sharply, `max_turns` binds, and discrimination holds (llm_judge present, 0 trajectory-on-content, scenarios v0 fails). Document before/after.
+
+**Layer 2 — type-adaptive aspect panel inside each shard (after L1 + measurement):**
+
+- Replace the single per-shard architect with **2–3 aspect-agents keyed by resource type** (a *simplified* catalog v1 — e.g. skill → {accuracy + currency, completeness, token-efficiency}; agent → {accuracy + doc-fidelity, workflow/sequencing, coverage}; mcp_* → {contract correctness, error-handling, idempotency}), each proposing scenarios from its lens on small context, in parallel.
+- **One synthesis pass** pools the proposals: dedupe, **drop any scenario without a v0-failing criterion**, balance difficulty + held-out, apply A1 routing, write the resource's scenarios.
+- **Measure (probe):** does the panel beat single-architect-per-resource enough to justify ~3× design calls, and for which resource types? Keep it where it pays.
+
+**Deferred (noted now, built later):**
+- **Sector-specific lenses / refined generation+eval research methodology** — the catalog starts type-keyed only; sector/domain-adaptive lenses are a later research-methodology pass of their own.
+- **Cross-critique *round*** (aspects critique each other before synthesis) — single synthesis pass first; add a round only if the data shows the synthesizer misses things.
+- **"By design" eval-grouping** — when inter-related resources need batching / cross-resource scenarios, the resource-architect (DESIGN) records an `eval_group` + `cross_resource` flag in `resource-plan.yaml` that L1.3 consumes; until a fixture needs it, per-resource sharding is the default (build when it helps, per the incremental approach).
+- **Empirical discrimination loop** (candidate #3 / A2 step 2), **tiered depth** (#4), **ledger reuse** (#5) — later thoroughness/cost levers.
+
+Sub-tasks ship as small commits with probe verification each; this section is the running ledger.
 
 ---
 
