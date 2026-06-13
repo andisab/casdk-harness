@@ -58,6 +58,12 @@ from harness.optimization._orchestrator_phases._baseline_floor import (
     build_floor_resource,
 )
 from harness.optimization.eval_harness import EvalHarness, EvalResults
+from harness.optimization.eval_harness.discrimination import (
+    DEFAULT_MIN_FLIP_RATE,
+)
+from harness.optimization.eval_harness.discrimination import (
+    analyze as analyze_discrimination,
+)
 from harness.optimization.eval_harness.runner import _resource_target_key
 from harness.optimization.gating import (
     GateInputs,
@@ -119,6 +125,103 @@ def _resolve_concurrency(env_var: str, default: int) -> int:
     except ValueError:
         return default
     return max(1, value)
+
+
+def _resolve_min_flip_rate() -> float:
+    """Phase A.5 A2: minimum scenario flip rate before a suite is trusted.
+
+    ``CGF_DISCRIMINATION_MIN_FLIP_RATE`` (default 0.40). Clamped to [0, 1];
+    invalid values fall back to the default.
+    """
+    raw = os.environ.get("CGF_DISCRIMINATION_MIN_FLIP_RATE")
+    if not raw:
+        return DEFAULT_MIN_FLIP_RATE
+    try:
+        value = float(raw)
+    except ValueError:
+        return DEFAULT_MIN_FLIP_RATE
+    return min(1.0, max(0.0, value))
+
+
+def _run_discrimination_audit(
+    results: EvalResults,
+    resource: ResourceStatus,
+    results_dir: Path,
+    resource_span: Any,
+) -> None:
+    """Phase A.5 A2: surface per-scenario discrimination from the floor arm.
+
+    Reuses the per-scenario bare-model floor arm (already run at first
+    promotion) to flag scenarios that pass/fail identically on the
+    candidate and the bare model — the flat-signal pathology run #8 hid.
+    Best-effort: writes a per-resource sidecar, stamps span attributes,
+    and logs a prominent warning when the suite under-discriminates.
+    Observational only — never influences the gate, never raises.
+    """
+    try:
+        report = analyze_discrimination(
+            results,
+            resource_path=resource.path,
+            min_flip_rate=_resolve_min_flip_rate(),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "EXECUTION_EVAL: discrimination audit failed",
+            path=resource.path,
+            error=str(exc)[:200],
+        )
+        return
+
+    # No floor arm this run (resume / already-promoted) — nothing to audit.
+    if report is None:
+        return
+
+    try:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        (results_dir / "discrimination-audit.json").write_text(
+            json.dumps(report.to_dict(), indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "EXECUTION_EVAL: could not write discrimination audit",
+            path=resource.path,
+            error=str(exc)[:200],
+        )
+
+    resource_span.set_attribute(
+        "harness.eval.discrimination_flip_rate", report.flip_rate
+    )
+    resource_span.set_attribute(
+        "harness.eval.discrimination_saturated", report.saturated
+    )
+    resource_span.set_attribute("harness.eval.discrimination_dead", report.dead)
+
+    if report.meets_target:
+        logger.info(
+            "EXECUTION_EVAL: discrimination audit",
+            path=resource.path,
+            flip_rate=round(report.flip_rate, 3),
+            classifiable=report.classifiable,
+            discriminating=report.discriminating,
+        )
+    else:
+        logger.warning(
+            "EXECUTION_EVAL: suite under-discriminates this resource",
+            path=resource.path,
+            flip_rate=round(report.flip_rate, 3),
+            min_flip_rate=report.min_flip_rate,
+            saturated=report.saturated,
+            dead=report.dead,
+            inverted=report.inverted,
+            non_discriminating=report.non_discriminating_ids[:10],
+            hint=(
+                "scenarios pass/fail identically on the candidate and the "
+                "bare-model floor; they cannot show improvement. Tighten "
+                "them (discrimination-first architect / grader routing, "
+                "Phase A.5)."
+            ),
+        )
 
 
 async def run_phase(self: MultiResourceOrchestrator) -> None:
@@ -655,6 +758,15 @@ async def _eval_single_resource(
                 "EXECUTION_EVAL", resource.path, err_msg,
             )
             return None  # joins harness_errors via the outer collector
+
+        # Phase A.5 A2: empirical discrimination audit. Reuses the
+        # per-scenario floor arm (already run at first promotion) to flag
+        # scenarios that pass/fail identically on the candidate and the
+        # bare model. Observational — surfaces the flat-signal pathology;
+        # never gates.
+        _run_discrimination_audit(
+            results, resource, results_dir, resource_span
+        )
 
         # F21: detect resources where feedback iteration cannot help.
         # Both arms scoring 0 across every scenario means either the

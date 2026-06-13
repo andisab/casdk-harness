@@ -180,7 +180,9 @@ eval_harness/
 ├── loader.py          # load_eval_suite() — YAML → EvalSuite + schema validation
 ├── models.py          # EvalSuite, EvalConfig, ScenarioWithGraders, TrialResult, ArmResults, EvalResults
 ├── runner.py          # EvalHarness — two-arm execution; runtime: in_process | ephemeral_container (Phase C)
-└── aggregate.py       # aggregate_arm, compare_arms, aggregate_subset, group_by_level, group_by_tag
+├── aggregate.py       # aggregate_arm, compare_arms, aggregate_subset, group_by_level, group_by_tag
+├── grader_policy.py   # Phase A.5 A1 — eval_strategy → grader routing; enforce_suite() strips tool-call assertions off content resources
+└── discrimination.py  # Phase A.5 A2 — per-scenario candidate-vs-floor classification + flip-rate report
 ```
 
 Runner entrypoint:
@@ -335,6 +337,7 @@ Multi-resource Phase A:
 | `CGF_EVAL_PROMOTION_EPSILON` | 0.0 | `_orchestrator_phases/execution_eval.py:177` |
 | `CGF_TOKEN_REGRESSION_TOLERANCE` | 0.10 | `_orchestrator_phases/execution_eval.py::_resolve_cost_tolerance` (Phase A refinement 4.3) |
 | `CGF_MIN_GAIN_PER_ROUND` | 0.02 | `_orchestrator_phases/execution_eval.py::_resolve_min_gain` (Phase A refinement 4.4.b stagnation early-stop) |
+| `CGF_DISCRIMINATION_MIN_FLIP_RATE` | 0.40 | `_orchestrator_phases/execution_eval.py::_resolve_min_flip_rate` (Phase A.5 A2 — under-discrimination warning threshold; observational) |
 | `CGF_DESIGN_MODEL` | (sonnet via agent YAML) | `graders/llm_judge.py::_resolve_judge_model` reads it only to WARN on self-preference collision (Phase A refinement 4.1) |
 | `CGF_GENERATE_CONCURRENCY` | 8 | `_orchestrator_phases/generate.py:47` |
 | `CGF_ITERATE_CONCURRENCY` | 4 | `_orchestrator_phases/iterate.py:56` |
