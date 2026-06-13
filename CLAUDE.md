@@ -122,10 +122,12 @@ Technical reference for developers working on this repository and for Claude's o
   `cgf-eval-architect.md` reframed per-resource (`max_turns` 120→15). Contract
   changes: signal parsing dropped (shard file on disk is authoritative);
   all-shards-fail → raise; partial failure proceeds. 2165 unit tests green;
-  my-code ruff+mypy clean. **NEXT: container probe** (`derisk_eval_design.py`,
-  needs `make build && make up`) to confirm wall-time/turn drop + discrimination
-  holds. **Layer 2** (after the probe measures L1): type-adaptive 2–3 aspect
-  panel + single synthesis pass per shard. Full ledger + resume point:
+  my-code ruff+mypy clean. **Probe ✓ (2026-06-13, iac-team 18 res):**
+  17m54s→5m11s (3.45×), 18/18 shards → 54 scenarios, per-shard turns 4 (monolith
+  was 74; `max_turns=15`, 0 cap-hits), 38 `llm_judge` (was 0), 0
+  trajectory-on-content. **NEXT: smoke #9** (end-to-end promote-rate; A2/A4 fire
+  in EXECUTION_EVAL, not the probe). **Layer 2** (later): type-adaptive 2–3
+  aspect panel + single synthesis pass per shard. Full ledger + resume point:
   `docs/CGF-EVAL-ROADMAP.md` § 3.7.3.
 - [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
   bug (full description above in Known Limitations). Three fix
