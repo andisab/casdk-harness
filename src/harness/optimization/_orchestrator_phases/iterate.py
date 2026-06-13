@@ -8,7 +8,7 @@ quality deltas.
 
 Phase F4: per-resource iteration runs in parallel under an
 ``asyncio.Semaphore`` bounded by ``CGF_ITERATE_CONCURRENCY`` (default
-4).  The inner iteration while-loop (1..N rounds for a single resource)
+6).  The inner iteration while-loop (1..N rounds for a single resource)
 stays sequential within each coroutine — only the outer fan-out across
 resources is parallel.  State and CHANGELOG writes use
 ``self._state_lock``.
@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_ITERATE_CONCURRENCY = 4
+DEFAULT_ITERATE_CONCURRENCY = 6  # §3.6 #7: raised 4→6 (same rate window as GENERATE's 8)
 
 
 def _resolve_concurrency(env_var: str, default: int) -> int:

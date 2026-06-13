@@ -194,7 +194,7 @@ by `docker compose`) or override per-run on the command line.
 | `CGF_MIN_GAIN_PER_ROUND` | 0.02 | Stagnation early-stop: between feedback rounds, escalate to VALIDATE when Δmean_candidate_pass_rate < this. Set 0 to disable |
 | `CGF_EVAL_TOKEN_BUDGET` | 1_000_000 | Observability + cost-warn; not a hard cutoff yet |
 | `CGF_GENERATE_CONCURRENCY` | 8 | In-flight resource generation. Drop if you hit 429s |
-| `CGF_ITERATE_CONCURRENCY` | 4 | In-flight per-resource iteration |
+| `CGF_ITERATE_CONCURRENCY` | 6 | In-flight per-resource iteration |
 | `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | In-flight eval runs |
 | `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Scenarios per eval run |
 | `CGF_BASELINE_HASH_CHECK` | 1 | SHA-256 protection against silent baseline edits |

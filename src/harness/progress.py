@@ -649,9 +649,11 @@ class ResourceStatus:
         path: Relative path to resource (e.g., "agents/iac-analyzer.md")
         resource_type: Type of resource (agent, skill, command)
         status: Current status (pending, in_progress, generated, optimized,
-            needs_refinement, failed, unwinnable). ``unwinnable`` (F21)
-            means baseline+candidate both scored 0 on every scenario in
-            round 1; the orchestrator skips feedback rounds for these.
+            needs_refinement, failed, unwinnable, cost_unwinnable).
+            ``unwinnable`` (F21) means baseline+candidate both scored 0 on
+            every scenario in round 1. ``cost_unwinnable`` (§3.6 #6) means the
+            candidate hit CGF_MAX_COST_REJECTIONS consecutive ``reject_cost``
+            verdicts; the orchestrator stops iterating it (incumbent stands).
         version: Current version number (0 = original, 1+ = optimized)
         last_evaluated_version: Last version of this resource that was
             scored by EXECUTION_EVAL (F17). EXECUTION_EVAL skips
@@ -667,6 +669,9 @@ class ResourceStatus:
         quality: Quality scores (None if not yet evaluated)
         iterations: Number of optimization iterations completed
         refinement_count: Number of targeted refinement loops
+        cost_reject_streak: Consecutive ``reject_cost`` verdicts (§3.6 #6);
+            reset to 0 on any non-cost verdict. At CGF_MAX_COST_REJECTIONS the
+            resource becomes ``cost_unwinnable`` and iteration stops.
         depends_on: List of resource paths this resource depends on
         depended_by: List of resource paths that depend on this resource
         error: Error message if failed
@@ -682,6 +687,7 @@ class ResourceStatus:
         "needs_refinement",
         "failed",
         "unwinnable",
+        "cost_unwinnable",
     ] = "pending"
     version: int = 0
     last_evaluated_version: int = 0
@@ -689,6 +695,7 @@ class ResourceStatus:
     quality: ResourceQuality | None = None
     iterations: int = 0
     refinement_count: int = 0
+    cost_reject_streak: int = 0
     depends_on: list[str] = field(default_factory=list)
     depended_by: list[str] = field(default_factory=list)
     error: str = ""
@@ -705,6 +712,7 @@ class ResourceStatus:
             "quality": self.quality.to_dict() if self.quality else None,
             "iterations": self.iterations,
             "refinement_count": self.refinement_count,
+            "cost_reject_streak": self.cost_reject_streak,
             "depends_on": self.depends_on,
             "depended_by": self.depended_by,
             "error": self.error,
@@ -752,6 +760,7 @@ class ResourceStatus:
             quality=quality,
             iterations=data.get("iterations", 0),
             refinement_count=data.get("refinement_count", 0),
+            cost_reject_streak=data.get("cost_reject_streak", 0),
             depends_on=data.get("depends_on", []),
             depended_by=data.get("depended_by", []),
             error=data.get("error", ""),
@@ -965,6 +974,7 @@ class MultiResourceState:
             "needs_refinement",
             "failed",
             "unwinnable",
+            "cost_unwinnable",
         ]
         | None = None,
         version: int | None = None,
@@ -973,6 +983,7 @@ class MultiResourceState:
         quality: ResourceQuality | None = None,
         iterations: int | None = None,
         refinement_count: int | None = None,
+        cost_reject_streak: int | None = None,
         depends_on: list[str] | None = None,
         depended_by: list[str] | None = None,
         error: str | None = None,
@@ -987,6 +998,7 @@ class MultiResourceState:
             quality: New quality scores.
             iterations: Number of iterations.
             refinement_count: Number of refinement loops.
+            cost_reject_streak: Consecutive reject_cost count (§3.6 #6).
             depends_on: List of dependencies.
             depended_by: List of dependents.
             error: Error message.
@@ -1015,6 +1027,8 @@ class MultiResourceState:
             resource.iterations = iterations
         if refinement_count is not None:
             resource.refinement_count = refinement_count
+        if cost_reject_streak is not None:
+            resource.cost_reject_streak = cost_reject_streak
         if depends_on is not None:
             resource.depends_on = depends_on
         if depended_by is not None:

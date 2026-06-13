@@ -420,6 +420,7 @@ _GATE_LABEL: dict[str, str] = {
     "reject_cost": "❌ Reject cost",
     "reject_floor": "❌ Reject floor",
     "unwinnable": "⚠️ Unwinnable",
+    "cost_unwinnable": "⚠️ Cost-unwinnable",
 }
 
 
@@ -551,6 +552,7 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
     rejected_floor = 0
     rejected_quality = 0
     unwinnable = 0
+    cost_unwinnable = 0
     generate_failed = 0
     pending = 0
     # I15: count of first-promotion rounds that actually ran the floor
@@ -566,6 +568,8 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
             generate_failed += 1
         elif status == "unwinnable":
             unwinnable += 1
+        elif status == "cost_unwinnable":
+            cost_unwinnable += 1
         else:
             verdict = latest_verdict.get(path)
             if verdict is None:
@@ -627,6 +631,7 @@ def _render_summary(state: dict[str, Any], eval_rounds: list[EvalRound]) -> str:
     lines.extend(
         [
             f"| ⚠️ Unwinnable | {unwinnable} |",
+            f"| ⚠️ Cost-unwinnable | {cost_unwinnable} |",
             f"| ❌ GENERATE failed | {generate_failed} |",
             f"| ⏸ Pending | {pending} |",
         ]
@@ -902,6 +907,12 @@ def _render_open_issues(
                 f"- ⚠️ **Unwinnable:** `{path}` scored 0/0 on both arms; "
                 "excluded from subsequent rounds (F21)."
             )
+        elif status == "cost_unwinnable":
+            items.append(
+                f"- ⚠️ **Cost-unwinnable:** `{path}` hit consecutive cost "
+                "rejections; excluded from further ITERATE (incumbent stands). "
+                "Rerun with a relaxed CGF_TOKEN_REGRESSION_TOLERANCE to retry."
+            )
 
     # Pending verdicts: resources in state but not in any eval round.
     seen_in_eval = {
@@ -910,7 +921,7 @@ def _render_open_issues(
     pending_paths = [
         p for p, r in resources.items()
         if p not in seen_in_eval
-        and (r.get("status") or "").lower() not in {"failed", "unwinnable"}
+        and (r.get("status") or "").lower() not in {"failed", "unwinnable", "cost_unwinnable"}
     ]
     if pending_paths and state.get("current_phase") != "COMPLETE":
         items.append(
@@ -990,6 +1001,8 @@ def _resource_status_label(
         return "❌ Failed"
     if status == "unwinnable":
         return "⚠️ Unwinnable"
+    if status == "cost_unwinnable":
+        return "⚠️ Cost-unwinnable"
 
     # Find the latest round this resource appears in.
     latest_round: int | None = None

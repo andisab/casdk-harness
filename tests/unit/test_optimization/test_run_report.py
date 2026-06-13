@@ -348,6 +348,7 @@ def test_summary_buckets_resources_correctly(tmp_path: Path) -> None:
             "b.md": _resource(path="b.md", status="failed"),
             "c.md": _resource(path="c.md", status="unwinnable"),
             "d.md": _resource(path="d.md"),
+            "e.md": _resource(path="e.md", status="cost_unwinnable"),
         },
     )
     eval_rounds = [
@@ -367,6 +368,7 @@ def test_summary_buckets_resources_correctly(tmp_path: Path) -> None:
     out = run_report.render(root)
     assert "✅ Promoted | 1 |" in out
     assert "Unwinnable | 1 |" in out
+    assert "Cost-unwinnable | 1 |" in out
     assert "GENERATE failed | 1 |" in out
     assert "⏸ Pending | 1 |" in out
 
@@ -527,6 +529,7 @@ def test_open_issues_emits_failed_and_unwinnable(tmp_path: Path) -> None:
             ),
             "b.md": _resource(path="b.md", status="unwinnable"),
             "c.md": _resource(path="c.md"),  # fine
+            "d.md": _resource(path="d.md", status="cost_unwinnable"),
         },
     )
     root = _make_workspace(tmp_path, state=state)
@@ -535,6 +538,8 @@ def test_open_issues_emits_failed_and_unwinnable(tmp_path: Path) -> None:
     assert "Generation timed out after 900s" in out
     assert "Unwinnable" in out
     assert "b.md" in out
+    assert "Cost-unwinnable" in out
+    assert "d.md" in out
 
 
 def test_atomic_write_creates_file(tmp_path: Path) -> None:

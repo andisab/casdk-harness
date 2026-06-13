@@ -229,7 +229,7 @@ Per-resource phases run under `asyncio.gather` + `Semaphore`. State writes seria
 | Knob | Default | Rationale |
 |---|---|---|
 | `CGF_GENERATE_CONCURRENCY` | 8 | I/O-bound on SDK API; 8-way saturates a typical sonnet rate window. |
-| `CGF_ITERATE_CONCURRENCY` | 4 | Each iteration is expensive (~1200s timeout, ~30k tokens); marginal speedup vs 429-risk is poor above 4. |
+| `CGF_ITERATE_CONCURRENCY` | 6 | Raised 4→6 (§3.6 #7): same model + rate window as GENERATE's 8-way; ~15–20% ITERATE-r1 win. Each iteration is still expensive (~1200s timeout, ~30k tokens), so 6 is the conservative ceiling vs 429-risk. |
 | `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | Judge calls are I/O-bound; 2-way left ~6 scenario slots idle in run #5i. |
 | `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | Inside one resource: 6 scenarios × 2 arms = 12 in-flight calls. |
 

@@ -1448,3 +1448,149 @@ class TestCostGateCounter:
             orch._state.resources["agents/iac.md"].status
             == "needs_refinement"
         )
+
+
+class TestCostUnwinnable:
+    """§3.6 #6: N consecutive reject_cost verdicts → cost_unwinnable skip.
+
+    Mirrors the F21 ``unwinnable`` thread: the resource becomes a terminal,
+    non-actionable state (incumbent stands) and is dropped from further
+    ITERATE rather than burning another round on a cost-trapped candidate.
+    """
+
+    @staticmethod
+    def _reject_cost_results() -> EvalResults:
+        # Quality passes (candidate beats baseline) but cost regressed 10×.
+        results = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5
+        )
+        results.candidate_cost_per_success = 1.00
+        results.baseline_cost_per_success = 0.10
+        return results
+
+    @staticmethod
+    async def _run(orch: MultiResourceOrchestrator, results: EvalResults) -> None:
+        mock_harness = MagicMock()
+        mock_harness.run = AsyncMock(return_value=results)
+        with patch(
+            "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
+            return_value=mock_harness,
+        ):
+            await orch._run_execution_eval()
+
+    @pytest.mark.asyncio
+    async def test_first_reject_cost_increments_streak(self, tmp_path: Path) -> None:
+        orch = _make_orchestrator(
+            tmp_path, resources=[{"path": "agents/iac.md", "version": 1}]
+        )
+        r = orch._state.resources["agents/iac.md"]
+        r.last_promoted_version = 1  # not first promotion → skip floor stage
+        r.cost_reject_streak = 0
+        await self._run(orch, self._reject_cost_results())
+        # Under the threshold: keep iterating, but the streak advances.
+        assert r.status == "needs_refinement"
+        assert r.cost_reject_streak == 1
+
+    @pytest.mark.asyncio
+    async def test_second_consecutive_reject_cost_marks_cost_unwinnable(
+        self, tmp_path: Path
+    ) -> None:
+        import json as _json
+
+        orch = _make_orchestrator(
+            tmp_path, resources=[{"path": "agents/iac.md", "version": 1}]
+        )
+        r = orch._state.resources["agents/iac.md"]
+        r.last_promoted_version = 1
+        r.cost_reject_streak = 1  # one prior reject_cost already
+        await self._run(orch, self._reject_cost_results())
+        assert r.status == "cost_unwinnable"
+        assert r.cost_reject_streak == 2
+        # Aggregate verdict reflects the terminal state, not a bare reject_cost.
+        agg = _json.loads(
+            (tmp_path / "eval" / "execution-eval-round-1.json").read_text()
+        )
+        assert agg["resources"][0]["verdict"] == "cost_unwinnable"
+        assert agg["resources"][0]["promoted"] is False
+        # Only non-actionable resource → advance to VALIDATE, no loop-back.
+        assert orch._state.current_phase == OptimizationPhase.VALIDATE
+        assert orch._state.feedback_history == []
+
+    @pytest.mark.asyncio
+    async def test_streak_resets_on_refine(self, tmp_path: Path) -> None:
+        orch = _make_orchestrator(
+            tmp_path, resources=[{"path": "agents/iac.md", "version": 1}]
+        )
+        r = orch._state.resources["agents/iac.md"]
+        r.last_promoted_version = 1
+        r.cost_reject_streak = 1
+        # Quality regression → "refine"; a non-cost verdict resets the streak.
+        await self._run(
+            orch,
+            _make_eval_results(candidate_pass_rate=0.3, baseline_pass_rate=0.6),
+        )
+        assert r.status == "needs_refinement"
+        assert r.cost_reject_streak == 0
+
+    @pytest.mark.asyncio
+    async def test_streak_resets_on_promote(self, tmp_path: Path) -> None:
+        orch = _make_orchestrator(
+            tmp_path, resources=[{"path": "agents/iac.md", "version": 1}]
+        )
+        r = orch._state.resources["agents/iac.md"]
+        r.last_promoted_version = 1
+        r.cost_reject_streak = 1
+        # Quality up, cost flat → promote; resets the streak.
+        results = _make_eval_results(
+            candidate_pass_rate=0.9, baseline_pass_rate=0.5
+        )
+        results.candidate_cost_per_success = 0.10
+        results.baseline_cost_per_success = 0.10
+        await self._run(orch, results)
+        assert r.status == "optimized"
+        assert r.cost_reject_streak == 0
+
+    def test_cost_unwinnable_excluded_from_iterate_selectors(self) -> None:
+        """ITERATE selects get_generated + get_needs_refinement; a
+        cost_unwinnable resource must appear in neither."""
+        from harness.progress import MultiResourceState, ResourceStatus
+
+        state = MultiResourceState(
+            spec_path="x", spec_type="PLUGIN", spec_hash="h",
+            current_phase=OptimizationPhase.ITERATE,
+        )
+        state.resources["a.md"] = ResourceStatus(
+            path="a.md", resource_type="agent",
+            status="cost_unwinnable", version=2,
+        )
+        assert state.get_needs_refinement_resources() == []
+        assert state.get_generated_resources() == []
+
+    def test_resolve_max_cost_rejections(self, monkeypatch: Any) -> None:
+        from harness.optimization._orchestrator_phases.execution_eval import (
+            _resolve_max_cost_rejections,
+        )
+
+        monkeypatch.delenv("CGF_MAX_COST_REJECTIONS", raising=False)
+        assert _resolve_max_cost_rejections() == 2
+        monkeypatch.setenv("CGF_MAX_COST_REJECTIONS", "3")
+        assert _resolve_max_cost_rejections() == 3
+        monkeypatch.setenv("CGF_MAX_COST_REJECTIONS", "0")
+        assert _resolve_max_cost_rejections() == 1  # clamped to >= 1
+        monkeypatch.setenv("CGF_MAX_COST_REJECTIONS", "abc")
+        assert _resolve_max_cost_rejections() == 2  # invalid → default
+
+    def test_resource_status_cost_streak_roundtrip(self) -> None:
+        r = ResourceStatus(
+            path="a.md", resource_type="agent",
+            status="cost_unwinnable", cost_reject_streak=2,
+        )
+        d = r.to_dict()
+        assert d["cost_reject_streak"] == 2
+        assert d["status"] == "cost_unwinnable"
+        r2 = ResourceStatus.from_dict(d)
+        assert r2.cost_reject_streak == 2
+        assert r2.status == "cost_unwinnable"
+        # Resume safety: a pre-feature state file (key absent) → streak 0.
+        d.pop("cost_reject_streak")
+        assert ResourceStatus.from_dict(d).cost_reject_streak == 0

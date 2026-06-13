@@ -284,15 +284,17 @@ class TestSemaphoreCap:
 
 
 class TestDefaults:
-    """Pin the documented defaults (F18: generate=8, iterate=4, eval=4)."""
+    """Pin the documented defaults (F18: generate=8, eval=4; §3.6 #7: iterate=6)."""
 
     def test_generate_default_is_eight(self) -> None:
         """F18: raised from 4 to 8 — per-resource generate is I/O-bound
         on the SDK API; 4-way left half the slots idle in run #5."""
         assert _gen.DEFAULT_GENERATE_CONCURRENCY == 8
 
-    def test_iterate_default_is_four(self) -> None:
-        assert _iter.DEFAULT_ITERATE_CONCURRENCY == 4
+    def test_iterate_default_is_six(self) -> None:
+        """§3.6 #7: raised 4→6 — same model + rate window as GENERATE's
+        8-way; ~15–20% ITERATE-r1 wall-time win."""
+        assert _iter.DEFAULT_ITERATE_CONCURRENCY == 6
 
     def test_execution_eval_default_is_four(self) -> None:
         """F18: raised from 2 to 4 — eval is I/O-bound on the judge

@@ -33,7 +33,7 @@ import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import structlog
 
@@ -85,12 +85,18 @@ logger = structlog.get_logger(__name__)
 DEFAULT_EXECUTION_EVAL_CONCURRENCY = 4  # F18: bumped from 2; eval is I/O-bound on judge API
 
 # Per-resource verdict surfaced into the aggregate JSON.  Superset of
-# ``gating.Verdict`` (adds ``"unwinnable"`` for the F21 short-circuit
-# branch where the gate is never consulted).  Operators reading
-# ``execution-eval-round-N.json`` see the same vocabulary the gate uses.
+# ``gating.Verdict`` (adds ``"unwinnable"`` for the F21 short-circuit and
+# ``"cost_unwinnable"`` for the §3.6 #6 consecutive-cost-rejection skip —
+# both branches where the gate verdict is overridden by a terminal state).
+# Operators reading ``execution-eval-round-N.json`` see the same vocabulary.
 AggregateVerdict = Literal[
-    "promote", "refine", "reject_floor", "reject_cost", "unwinnable"
+    "promote", "refine", "reject_floor", "reject_cost", "unwinnable",
+    "cost_unwinnable",
 ]
+
+# §3.6 #6: consecutive reject_cost verdicts before a resource is marked
+# cost_unwinnable and iteration stops.  Overridable via CGF_MAX_COST_REJECTIONS.
+DEFAULT_MAX_COST_REJECTIONS = 2
 
 
 def _is_unwinnable(results: EvalResults) -> bool:
@@ -124,6 +130,22 @@ def _resolve_concurrency(env_var: str, default: int) -> int:
         value = int(raw)
     except ValueError:
         return default
+    return max(1, value)
+
+
+def _resolve_max_cost_rejections() -> int:
+    """§3.6 #6: consecutive reject_cost verdicts before cost_unwinnable.
+
+    ``CGF_MAX_COST_REJECTIONS`` (default 2). Clamped to >= 1; invalid
+    values fall back to the default.
+    """
+    raw = os.environ.get("CGF_MAX_COST_REJECTIONS")
+    if not raw:
+        return DEFAULT_MAX_COST_REJECTIONS
+    try:
+        value = int(raw)
+    except ValueError:
+        return DEFAULT_MAX_COST_REJECTIONS
     return max(1, value)
 
 
@@ -409,6 +431,10 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     # gate treats them as non-blocking so a partial-unwinnable run can
     # still advance to VALIDATE on the strength of real promotions.
     unwinnable: list[ResourceStatus] = []
+    # §3.6 #6: resources that hit CGF_MAX_COST_REJECTIONS consecutive
+    # reject_cost verdicts.  Like unwinnable, terminal + non-actionable
+    # (incumbent stands) — neither promotion nor regression.
+    cost_unwinnable: list[ResourceStatus] = []
     # F8: track harness errors separately so the gate can't fail-OPEN
     # when every resource errored.  Previously, errors returned None or
     # were caught here without joining `regressions`, so `not regressions`
@@ -463,6 +489,8 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
         post_status = post_state.status if post_state is not None else None
         if post_status == "unwinnable":
             unwinnable.append(res)
+        elif post_status == "cost_unwinnable":
+            cost_unwinnable.append(res)
         elif post_status == "optimized":
             promotions.append(res)
         else:
@@ -476,8 +504,11 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             # here — ``unwinnable`` already went into ``unwinnable`` above
             # via the ``post_status == "unwinnable"`` branch.  A
             # defensive narrow keeps the type stable.
-            assert verdict != "unwinnable"
-            regressions.append((res, results, verdict))
+            # ``unwinnable`` and ``cost_unwinnable`` were routed into their
+            # own lists above by ``post_status``, so only GateVerdict values
+            # reach here.  The cast makes that explicit — mypy can't narrow
+            # the ``| Any`` the gather-unpacked tuple carries.
+            regressions.append((res, results, cast(GateVerdict, verdict)))
 
     # --- aggregate write ---
     aggregate_path = _write_aggregate_results(
@@ -504,11 +535,14 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
     # AND (3) at least one resource ended in a non-blocking state
     # (promotion or F21-unwinnable; both mean "no actionable feedback
     # left for this resource").
-    if not regressions and not harness_errors and (promotions or unwinnable):
+    if not regressions and not harness_errors and (
+        promotions or unwinnable or cost_unwinnable
+    ):
         logger.info(
             "EXECUTION_EVAL: No regressions; advancing to VALIDATE",
             promoted=len(promotions),
             unwinnable=len(unwinnable),
+            cost_unwinnable=len(cost_unwinnable),
         )
         self._emit_progress("EXECUTION_EVAL", "all", "complete")
         self._advance_phase(OptimizationPhase.VALIDATE)
@@ -520,6 +554,7 @@ async def _run_phase_body(self: MultiResourceOrchestrator) -> None:
             regressions=len(regressions),
             harness_errors=len(harness_errors),
             unwinnable=len(unwinnable),
+            cost_unwinnable=len(cost_unwinnable),
             promotions=0,
         )
 
@@ -888,6 +923,7 @@ async def _eval_single_resource(
                         status="optimized",
                         last_evaluated_version=resource.version,
                         last_promoted_version=resource.version,
+                        cost_reject_streak=0,
                     )
                     self._finalize_single_resource(resource.path)
                 # Tokens-to-goal: at promotion, observe the cumulative tokens
@@ -914,54 +950,49 @@ async def _eval_single_resource(
                     win_rate=f"{results.win_rate:.2f}",
                 )
             else:
-                # "refine", "reject_floor", and "reject_cost" all share
-                # the needs_refinement transition — downstream
-                # feedback-loop logic handles them identically.  The
-                # distinction surfaces in span.outcome + the structured
-                # log line for operator diagnosis.
-                outcome_label = {
-                    "refine": "regressed",
-                    "reject_floor": "rejected_floor",
-                    "reject_cost": "rejected_cost",
-                }[verdict]
-                async with self._state_lock:
-                    self._state.update_resource(
-                        resource.path,
-                        status="needs_refinement",
-                        last_evaluated_version=resource.version,
-                        refinement_count=resource.refinement_count + 1,
-                    )
-                resource_span.set_attribute(
-                    "harness.eval.outcome", outcome_label
+                # §3.6 #6: track consecutive reject_cost verdicts.  Any
+                # non-cost verdict resets the streak; CGF_MAX_COST_REJECTIONS
+                # consecutive reject_cost verdicts mark the resource
+                # cost_unwinnable and STOP iterating it (the incumbent
+                # stands) rather than burn another ITERATE round on a
+                # cost-trapped candidate (e.g. the helm-charts r3 burn).
+                new_streak = (
+                    resource.cost_reject_streak + 1
+                    if verdict == "reject_cost"
+                    else 0
                 )
-                progress_msg = {
-                    "refine": "regression",
-                    "reject_floor": "rejected (below floor)",
-                    "reject_cost": "rejected (cost regression)",
-                }[verdict]
-                self._emit_progress(
-                    "EXECUTION_EVAL", resource.path, progress_msg,
-                    results.candidate_pass_rate,
-                )
-                if verdict == "reject_floor":
-                    logger.warning(
-                        "EXECUTION_EVAL: Below floor — prompt engineering "
-                        "is net-negative vs bare model",
-                        path=resource.path,
-                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                        floor_pass_rate=(
-                            f"{results.floor_pass_rate:.2f}"
-                            if results.floor_pass_rate is not None
-                            else "n/a"
-                        ),
+                max_cost_rejections = _resolve_max_cost_rejections()
+                if (
+                    verdict == "reject_cost"
+                    and new_streak >= max_cost_rejections
+                ):
+                    verdict_for_aggregate = "cost_unwinnable"
+                    async with self._state_lock:
+                        self._state.update_resource(
+                            resource.path,
+                            status="cost_unwinnable",
+                            last_evaluated_version=resource.version,
+                            cost_reject_streak=new_streak,
+                            error=(
+                                f"{new_streak} consecutive cost rejections; "
+                                "candidate cost-per-success keeps exceeding "
+                                "the tolerance. Rerun with a relaxed "
+                                "CGF_TOKEN_REGRESSION_TOLERANCE to retry."
+                            ),
+                        )
+                    resource_span.set_attribute(
+                        "harness.eval.outcome", "cost_unwinnable"
                     )
-                elif verdict == "reject_cost":
+                    self._emit_progress(
+                        "EXECUTION_EVAL", resource.path, "cost_unwinnable",
+                        results.candidate_pass_rate,
+                    )
                     logger.warning(
-                        "EXECUTION_EVAL: Quality passed but cost regressed "
-                        "beyond τ",
+                        "EXECUTION_EVAL: marking cost_unwinnable — stopping "
+                        "iteration after consecutive cost rejections",
                         path=resource.path,
-                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                        cost_reject_streak=new_streak,
+                        max_cost_rejections=max_cost_rejections,
                         candidate_cps=(
                             f"${results.candidate_cost_per_success:.4f}"
                             if results.candidate_cost_per_success is not None
@@ -972,16 +1003,81 @@ async def _eval_single_resource(
                             if results.baseline_cost_per_success is not None
                             else "n/a"
                         ),
-                        tau=f"{tau:.2f}",
+                        hint=(
+                            "incumbent stands; rerun with relaxed "
+                            "CGF_TOKEN_REGRESSION_TOLERANCE to retry."
+                        ),
                     )
                 else:
-                    logger.warning(
-                        "EXECUTION_EVAL: Regression",
-                        path=resource.path,
-                        candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
-                        baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
-                        win_rate=f"{results.win_rate:.2f}",
+                    # "refine", "reject_floor", and "reject_cost" (still
+                    # under the streak threshold) all share the
+                    # needs_refinement transition — downstream feedback-loop
+                    # logic handles them identically.  The distinction
+                    # surfaces in span.outcome + the structured log line.
+                    outcome_label = {
+                        "refine": "regressed",
+                        "reject_floor": "rejected_floor",
+                        "reject_cost": "rejected_cost",
+                    }[verdict]
+                    async with self._state_lock:
+                        self._state.update_resource(
+                            resource.path,
+                            status="needs_refinement",
+                            last_evaluated_version=resource.version,
+                            refinement_count=resource.refinement_count + 1,
+                            cost_reject_streak=new_streak,
+                        )
+                    resource_span.set_attribute(
+                        "harness.eval.outcome", outcome_label
                     )
+                    progress_msg = {
+                        "refine": "regression",
+                        "reject_floor": "rejected (below floor)",
+                        "reject_cost": "rejected (cost regression)",
+                    }[verdict]
+                    self._emit_progress(
+                        "EXECUTION_EVAL", resource.path, progress_msg,
+                        results.candidate_pass_rate,
+                    )
+                    if verdict == "reject_floor":
+                        logger.warning(
+                            "EXECUTION_EVAL: Below floor — prompt engineering "
+                            "is net-negative vs bare model",
+                            path=resource.path,
+                            candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                            floor_pass_rate=(
+                                f"{results.floor_pass_rate:.2f}"
+                                if results.floor_pass_rate is not None
+                                else "n/a"
+                            ),
+                        )
+                    elif verdict == "reject_cost":
+                        logger.warning(
+                            "EXECUTION_EVAL: Quality passed but cost regressed "
+                            "beyond τ",
+                            path=resource.path,
+                            candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                            baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                            candidate_cps=(
+                                f"${results.candidate_cost_per_success:.4f}"
+                                if results.candidate_cost_per_success is not None
+                                else "n/a"
+                            ),
+                            baseline_cps=(
+                                f"${results.baseline_cost_per_success:.4f}"
+                                if results.baseline_cost_per_success is not None
+                                else "n/a"
+                            ),
+                            tau=f"{tau:.2f}",
+                        )
+                    else:
+                        logger.warning(
+                            "EXECUTION_EVAL: Regression",
+                            path=resource.path,
+                            candidate_pass_rate=f"{results.candidate_pass_rate:.2f}",
+                            baseline_pass_rate=f"{results.baseline_pass_rate:.2f}",
+                            win_rate=f"{results.win_rate:.2f}",
+                        )
 
         # I10: stamp the authoritative verdict back into the per-resource
         # ``eval-results.json``.  ``EvalHarness.run`` already wrote the
@@ -1030,7 +1126,7 @@ def _resources_to_evaluate(
     for r in self._state.resources.values():
         if r.version < 1:
             continue
-        if r.status in {"failed", "unwinnable"}:
+        if r.status in {"failed", "unwinnable", "cost_unwinnable"}:
             continue
         if r.version <= r.last_evaluated_version:
             logger.info(
