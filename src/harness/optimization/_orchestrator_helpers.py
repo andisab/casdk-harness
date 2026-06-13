@@ -11,6 +11,7 @@ on the orchestrator class.
 from __future__ import annotations
 
 import contextlib
+import difflib
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -108,6 +109,49 @@ def versioned_path(resource_path: str | Path, version: int) -> Path:
     """
     p = Path(resource_path)
     return p.parent / f"{p.stem}-v{version}{p.suffix}"
+
+
+def capability_diff(
+    v0_text: str | None,
+    v1_text: str,
+    *,
+    label: str = "resource",
+    max_lines: int = 240,
+) -> str:
+    """Concise v0→v1 unified diff for the eval-architect (Phase A.5 L1.2).
+
+    Feeds the architect *what changed* between the baseline (v0) and the
+    generated candidate (v1) — the capability gap its scenarios must
+    discriminate — instead of two full files (far smaller context, the basis
+    for the sharded EVAL_DESIGN v2). ``v0_text=None`` (new / CREATE-mode
+    resource with no baseline) returns a marker telling the architect to grade
+    against the candidate + rubric. Output is truncated to ``max_lines`` with
+    an elision marker so a large rewrite can't blow the prompt budget.
+    """
+    if v0_text is None:
+        return (
+            "(no v0 baseline — new resource; design scenarios from the "
+            "candidate + rubric, targeting its stated purpose)"
+        )
+    diff_lines = list(
+        difflib.unified_diff(
+            v0_text.splitlines(),
+            v1_text.splitlines(),
+            fromfile=f"{label} (v0 baseline)",
+            tofile=f"{label} (generated candidate)",
+            lineterm="",
+        )
+    )
+    if not diff_lines:
+        return "(v0 and candidate are identical — no capability change to test)"
+    if len(diff_lines) > max_lines:
+        elided = len(diff_lines) - max_lines
+        diff_lines = diff_lines[:max_lines]
+        diff_lines.append(
+            f"... [diff truncated: {elided} more lines — read the full "
+            "generated file if you need detail]"
+        )
+    return "\n".join(diff_lines)
 
 
 class PathViolationError(ValueError):
