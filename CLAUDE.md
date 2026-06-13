@@ -106,22 +106,20 @@ Technical reference for developers working on this repository and for Claude's o
 
 ### TODOs
 
-- [ ] **EVAL_DESIGN methodology (Phase A.5 follow-up — under discussion).**
-  The 2026-06-13 probe confirmed the discrimination-first architect works
-  but is costly: 17m54s / 74 turns reading 36 v0+v1 files, near the 1200s
-  timeout. Decide among: shard EVAL_DESIGN into N parallel per-resource
-  calls; feed a Python-computed v0→v1 diff instead of full files; an
-  empirical discrimination loop (run floor+candidate, drop
-  non-discriminating, regenerate = A2 step 2); tiered depth; ledger reuse
-  (Phase E). Leaning shard + diff-based context. See
-  `docs/CGF-EVAL-ROADMAP.md` § 3.7.2.
-- [ ] **`max_turns` frontmatter not enforced.** `cgf-eval-architect` has
-  `max_turns: 20` but ran 74 turns in the probe — the harness logs
-  `max_turns=20` to the SDK yet only the wall-clock timeout caps it.
-  Investigate the `harness.subagent.call_agent_simple` → SDK
-  `ClaudeAgentOptions` path and make the per-agent cap bind (otherwise the
-  param is meaningless). Prerequisite for sharded EVAL_DESIGN to have
-  enforceable budgets.
+- [ ] **EVAL_DESIGN v2 — sharded fan-out + aspect panel (Phase A.5 follow-up; plan locked, roadmap § 3.7.3).**
+  The 2026-06-13 probe confirmed the discrimination-first architect works but
+  is costly (17m54s / 74 turns reading 36 v0+v1 files, near the 1200s
+  timeout). Agreed: build incrementally, verifying each step with
+  `scripts/derisk_eval_design.py`. **L1.1 ✓** (`c87322b` — `max_turns` now
+  enforced harness-side in `subagent.call_agent` + turn/tool counting fixed;
+  the param finally binds). **L1.2 ✓** (`5928e27` — `capability_diff` v0→v1
+  helper in `_orchestrator_helpers.py`). **L1.3 NEXT (designed — resume here):**
+  shard the EVAL_DESIGN `delegate` into parallel per-resource architect calls
+  (diff inline, tight per-shard `max_turns` via a new `call_agent` override) +
+  a Python merge; reframe `cgf-eval-architect.md` for per-resource mode; then
+  re-probe in the container. **Layer 2** (after L1 measures): type-adaptive
+  2–3 aspect panel + single synthesis pass per shard. Full design + the exact
+  resume point: `docs/CGF-EVAL-ROADMAP.md` § 3.7.3.
 - [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
   bug (full description above in Known Limitations). Three fix
   candidates queued; (a) one-line env passthrough in
