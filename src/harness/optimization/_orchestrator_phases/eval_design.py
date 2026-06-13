@@ -28,6 +28,7 @@ from harness.optimization._orchestrator_helpers import (
     eval_phase_span,
     eval_suite_sha256,
     new_eval_task_id,
+    versioned_path,
 )
 from harness.optimization.eval_harness.grader_policy import (
     enforce_suite,
@@ -161,11 +162,27 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
             return strat_by_path[path]
         return eval_strategy_from_path(path, registry)
 
-    resource_list = "\n".join(
-        f"  - {r.path} (type: {r.resource_type}) -- "
-        f"{policy_summary(strat_by_path.get(r.path))}"
-        for r in eligible
-    )
+    # Phase A.5 A6: give the architect each resource's v0 baseline + generated
+    # path so it can capability-diff them and author scenarios a v0-level
+    # resource FAILS (the discrimination mandate). v0 is the pre-GENERATE
+    # original (`{name}-v0.md`); absent for new / CREATE-mode resources, in
+    # which case the architect grades against the rubric only. Reading the
+    # artifacts is NOT an isolation breach — the 4.1 contract forbids the
+    # optimizer's *reasoning*, not the resource files themselves.
+    def _resource_block(r: object) -> str:
+        v0_rel = versioned_path(r.path, 0)  # type: ignore[attr-defined]
+        if (workspace / v0_rel).exists():
+            v0_note = f"v0 baseline: {v0_rel}"
+        else:
+            v0_note = "v0 baseline: (none — new resource; judge against rubric)"
+        return (
+            f"  - {r.path} (type: {r.resource_type}) -- "  # type: ignore[attr-defined]
+            f"{policy_summary(strat_by_path.get(r.path))}\n"  # type: ignore[attr-defined]
+            f"      generated: {r.path}\n"  # type: ignore[attr-defined]
+            f"      {v0_note}"
+        )
+
+    resource_list = "\n".join(_resource_block(r) for r in eligible)
 
     # Phase A refinement 4.1: STRICT isolation contract for the
     # eval-architect.  The architect designs the eval suite from inputs
@@ -189,7 +206,10 @@ Inputs to read:
 - SPEC.md: {spec_path}
 - eval_criteria.yaml: {eval_criteria_path if eval_criteria_path.exists() else "(not present)"}
 - resource-plan.yaml: {resource_plan_path if resource_plan_path.exists() else "(not present)"}
-- Generated resources (read each one):
+- Resources to grade. For EACH resource, read BOTH its generated version and
+  its v0 baseline, then design scenarios the v0 baseline would FAIL and the
+  generated candidate would PASS (the discrimination mandate). Skim for the
+  capability gap; do not transcribe implementation details into graders.
 {resource_list}
 
 Output: {workspace}/eval/eval-suite.yaml
