@@ -43,6 +43,7 @@ The codebase has several overlapping "phase"-like concepts. To keep cross-refere
 - **Pipeline:** 9 phases working end-to-end — `RESEARCH → DESIGN → QA → GENERATE → EVAL_DESIGN → ITERATE → EXECUTION_EVAL → VALIDATE → COMPLETE`, with `EXECUTION_EVAL → ITERATE` feedback loop bounded at 2 rounds.
 - **Gate:** 3-stage `Gate.decide()` — floor (one-shot bare-model arm at first promotion) + incumbent (`pass_rate ≥ baseline + ε`) + cost (`cost_per_success ≤ baseline × (1 + τ)` with quality-bonus relief). Verdict-branched optimizer feedback (`reject_cost` / `reject_floor` / `refine`).
 - **Observability stack live:** OTel Collector → Prometheus, 10 pre-provisioned Grafana dashboards (reorganized 2026-05-19), AlertManager + 13 active alert rules. Canonical reference: [OBSERVABILITY.md](./OBSERVABILITY.md).
+- **2026-06-13 — eval-strategy reassessment (§ 1.1):** discrimination-first turn. Phase A.5 (§ 3.7) and Phase E (§ 6A) added; Phase B re-scoped (§ 4). Full research record: [EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md).
 
 | Stage | Status | Where |
 |---|---|---|
@@ -50,10 +51,37 @@ The codebase has several overlapping "phase"-like concepts. To keep cross-refere
 | **Stage 2 — MCP tool/server creation skills + Python/TypeScript scaffolds** | shipped | `main`, via Block 1 |
 | **Stage 3 Phase A — Comparison-aware eval harness** | **shipped** | `main` |
 | **Stage 3 Phase A polish + Run #7/#8 (this doc § 3, §§ 4.8–4.10 of PHASEA_SUMMARY)** | **shipped** | `main` via `29456bd` |
-| **Stage 3 Phase B — Statistical promotion gating** | not started | next |
+| **Stage 3 Phase A.5 — Signal-quality restoration (discrimination-first)** | **next** | planned (§ 3.7) |
+| **Stage 3 Phase B — Statistical promotion gating (re-scoped 2026-06-13)** | not started | after A.5 |
 | **Stage 3 Phase C — Ephemeral runtime** | not started | future |
 | **Stage 3 Phase D — Calibration & CI** | not started; queues I9 + I16 | future |
+| **Stage 3 Phase E — Compound learning (learnings ledger)** | not started | future (§ 6A) |
 | **Stage 4 — Integration & hardening** | not started; depends on Phase D | future |
+
+---
+
+### 1.1 Strategy reassessment — the discrimination-first turn (2026-06-13)
+
+A research + adversarial-review pass (13-agent workflow: 6 web-research sweeps on 2024–2026 eval methodology + 6 code-grounded verdict agents + synthesis; ~1.37M tokens) re-tested the eval strategy's load-bearing assumptions against both the literature and current-harness run data (iac-team run #8 + the 2026-05-26 `mobile-dev` run). Full record: **[EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md)**.
+
+**Core finding — the eval optimizes for cheapness when its job is discrimination.** The dominant failure mode is not a statistics problem; it is that contains-dominated, judge-starved suites cannot separate the two arms. Current-harness evidence:
+
+- Run #8's generated suite used **0 `llm_judge` graders** (98 `contains`) → 11/17 resources tied at 1.00/1.00.
+- The 2026-05-26 `mobile-dev` run (different resource type, current `main`) shows **`win_rate ≡ 0` across all 32 eval-results** — even where candidate pass-rate beat baseline — plus pervasive `no_decision` and **23% unwinnable**. The per-scenario `win_rate` metric is *degenerate*.
+- `eval_strategy` (the per-resource-type grader-routing field in `resource_types.py`) has **zero read-sites** — dead metadata. This caused `iac-generator`'s structurally-unwinnable 0/0 (trajectory graders on a system-prompt file that never executes tools).
+
+**What it overturned** (verdicts in the companion doc):
+
+| Overturned assumption | Correction |
+|---|---|
+| Cost-first grader priority | **Discrimination-first cascade**: deterministic checks gate; the judge discriminates every scenario both arms pass. |
+| Architect "mental-simulation" instructions are the § 3.2 prerequisite | An **empirical discrimination audit reusing the floor arm** outranks it; instructions become a supplement. |
+| Keep the 1–5 integer judge scale | Coarse scale + retry→tie collapses signal → **anchored 7-pt scale + criterion-decomposed sub-scores**. |
+| Bootstrap-CI win-rate gate | N is **3**, not 10–30; would promote ~0/18 → **Beta-Binomial posterior on paired discordant outcomes**. |
+| Cache baseline cost-per-success (§ 3.6 #1) | Caching freezes one draw of a ~110%-variance distribution → **multi-sample the baseline, then cache the stable estimate**. |
+| Adaptive across types; Phase D covers learning | `eval_strategy` routing is unbuilt; the **learnings ledger (Phase E)** is a distinct, uncovered capability. |
+
+**Resolved direction (owner, 2026-06-13):** full reprioritization (this revision); **cascade-gated judge** posture (restore discrimination while capping judge spend); learnings ledger **committed as Phase E**. Sequencing: **Phase A.5 → smoke #9 → re-scoped Phase B**. The near-term work is § 3.7; Phase B is re-scoped in § 4; Phase E is § 6A.
 
 ---
 
@@ -302,7 +330,7 @@ The same v0 file evaluated twice produces materially different `baseline_cost_pe
 
 The baseline CPS varied **$0.15 → $0.32 → $0.19** for the same v0 file across three rounds — a **2.1× swing**. A 10 % τ on a baseline with ~110 % round-to-round variance is statistical noise; the gate is testing a candidate against random draws of the baseline distribution rather than a stable reference. helm-charts was rejected three times running while every candidate scored quality 0.97–1.00.
 
-This is the canonical "Phase A's cost gate is brittle, Phase B's bootstrap-CI fixes win rate but not cost" gap. The fix is either (i) cache the floor-CPS once per `(resource, eval_suite_hash)` and reuse it, or (ii) add an absolute τ floor (`max(baseline × 1.10, baseline + $0.05)`) so small absolute differences don't trigger relative-percentage gates. Both are ~30 LoC in `gating.py`. § 3.6 lists them as the highest-leverage low-hanging fixes.
+This is the canonical "Phase A's cost gate is brittle, Phase B's bootstrap-CI fixes win rate but not cost" gap. The fix is either (i) cache the floor-CPS once per `(resource, eval_suite_hash)` and reuse it, or (ii) add an absolute τ floor (`max(baseline × 1.10, baseline + $0.05)`) so small absolute differences don't trigger relative-percentage gates. Both are ~30 LoC in `gating.py`. § 3.6 lists them as the highest-leverage low-hanging fixes. **(Superseded 2026-06-13: caching a single draw freezes a ~110%-variance baseline — replaced by *multi-sample then cache* + a ratio statistic, § 3.7 A4.)**
 
 ### 3.5.2 Tied-at-1.00 still dominates the pass-rate distribution
 
@@ -316,7 +344,7 @@ Final r2+ promotion outcomes (17 resources, 1 unwinnable excluded):
 
 Eleven of 17 resources are tied at 1.00 — the candidate and baseline both pass everything. This is **better than Run #6's mostly-0.67 distribution**, but the dominant failure mode is now "scenario passes regardless of which arm runs it." The cost gate is currently doing all the discrimination work (it's the only gate that can reject a tied-at-1.00 outcome), which is exactly the wrong way around — we want quality signal first, cost as a guardrail.
 
-This is the canonical § 3.2 problem (eval-design discrimination), upgraded from "biggest signal-quality lever" to "**the** outstanding Phase B prerequisite." A bootstrap-CI on win rate over scenarios where both arms pass 100 % of the time has nothing to bite into.
+This is the canonical § 3.2 problem (eval-design discrimination), upgraded from "biggest signal-quality lever" to "**the** outstanding Phase B prerequisite." A bootstrap-CI on win rate over scenarios where both arms pass 100 % of the time has nothing to bite into. **(Refined 2026-06-13: the prerequisite is met by the empirical floor-arm discrimination audit (§ 3.7 A2), which outranks the architect-prompt fix; and the win-rate metric itself is degenerate — § 3.5.6.)**
 
 ### 3.5.3 Trajectory graders on content-only agents are structurally unwinnable
 
@@ -357,9 +385,24 @@ The r3 helm-charts iteration alone burned ~36 minutes — half of r2's total. Tw
 
 ---
 
+### 3.5.6 Cross-resource-type confirmation + the degenerate win-rate metric (2026-06-13)
+
+The 2026-05-26 `workspace/mobile-dev` run (current `main`; a non-iac resource type — Android/iOS/Flutter/RN skills + agents) confirms the § 3.5.2 flat-signal finding is not iac-specific and sits *upstream* of the gate:
+
+- **`win_rate ≡ 0.00` on all 32 eval-results**, including resources where candidate pass-rate clearly beat baseline (mobile-unit-testing 0.67→1.00; mobile-accessibility 0.00→0.33). The per-scenario `win_rate` metric is **degenerate** — `no_decision` (driven by contains-dominated, judge-starved suites) eats the head-to-head comparisons before they count. **This upgrades § 3.5.2: Phase B's planned bootstrap-CI targets a metric that is ≈0 by construction.**
+- **23% unwinnable** (5/22) vs ~6% on iac-team — the uniform grader recipe transfers worse to a different resource type.
+- `mobile-tester` iterated v1→v3→v5, every round `reject_floor` — the optimizer drove it *below* the bare-model floor three times.
+- Measured grader mix (run #8 suite): **0 `llm_judge`** of 98 graders; the quality signal was entirely keyword-substring matching.
+
+These data drive the discrimination-first turn (§ 1.1) and Phase A.5 (§ 3.7). Archive runs `python-expert` / `iac-team-v1..v3` / archive `mobile-dev` are **pre-Phase-A (Jan–Feb 2026)** and `iac-team-v4` is **pre-3-stage-gate (May 13)** — see the timestamp anchoring in [EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md); do not read their gate stats as current.
+
+---
+
 ## 3.6 Low-hanging perf wins (do these before Phase B)
 
 Ranked by **(impact, effort)**. The first three would have meaningfully changed Run #8's outcome.
+
+> **Superseded ordering (2026-06-13).** The discrimination-first reassessment (§ 1.1) re-ranks this list and folds the top items into **Phase A.5 (§ 3.7)**. Two entries are *corrected*, not kept: **#1** (cache baseline CPS) → *multi-sample then cache* (§ 3.7 A4); **#4** (architect discrimination *instructions*) → demoted to a *supplement* behind the empirical floor-arm audit (§ 3.7 A2). The table is retained for provenance.
 
 | # | Fix | Impact | Effort | What it changes |
 |---|---|---|---|---|
@@ -378,6 +421,36 @@ Ranked by **(impact, effort)**. The first three would have meaningfully changed 
 
 ---
 
+## 3.7 Phase A.5 — Signal-quality restoration (discrimination-first)
+
+**New phase (2026-06-13), sequenced before Phase B.** Goal: make the quality signal *discriminate* before any statistical gate is built on top of it. Posture (owner decision): **cascade-gated judge** — deterministic checks act as a cheap pass-gate; the judge fires only on scenarios both arms pass (where discrimination is actually needed), capping judge spend while restoring signal. Grounding: [EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md).
+
+| ID | Task | Effort | Detail |
+|---|---|---|---|
+| **A1** | **Make `eval_strategy` load-bearing — grader routing by resource type** | ~60 LoC + tests | `resource_types.py` already tags `content_only` / `content_and_execution` / `executable` / `server`, but the field has **zero read-sites**. In EVAL_DESIGN, resolve each resource's `eval_strategy` and pass an allowed/forbidden grader-type set into the architect as a hard constraint. Route content-only (skill, command, hook, plugin, **and agent-definition files with no executable tools**) → `llm_judge` rubric + deterministic content checks, **never trajectory**. Route `executable`/`server` + tool-dispatching agents → trajectory + outcome. Replace the hardcoded level-mix table in `cgf-eval-architect.md`. **Kills the `iac-generator`/mobile unwinnable class by construction.** (was § 3.6 #3, promoted) |
+| **A2** | **Empirical discrimination audit (reuse the floor arm)** | ~80–120 LoC + tests | The per-scenario bare-model floor arm already exists (`ScenarioResult.floor`, run in `runner.py`) and its data is collapsed into one `floor_pass_rate`. Surface per-scenario discrimination `D = (candidate passes) ∧ (floor fails)`; **drop or auto-regenerate scenarios where floor and candidate both pass** (`D ≤ 0` — provably non-separating). Target **≥ 40% retained flip rate**. Runs as a gating sub-step between EVAL_DESIGN and EXECUTION_EVAL. **Outranks the architect-prompt fix** — grounds discrimination in *observed*, not *imagined*, behavior. (NEW; supersedes § 3.6 #4 as the lead lever) |
+| **A3** | **Judge scale fix — anchored 7-pt + criterion sub-scores** | ~30–60 LoC + tests | `llm_judge.py` does hard-argmax integer parse on a 1–5 scale that frontier judges compress to 2–3 effective points; retry→tie collapses it to 3 classes. Move to a **7-point scale with one-sentence anchors per level + criterion-decomposed sub-scores** (e.g. correctness / completeness / conciseness, aggregated). **NB:** G-Eval probability-weighting needs token logprobs, which the Anthropic Messages API does not expose — the anchored-scale form is the implementable one for a Claude judge unless it is routed through a logprob-capable path. (NEW, P0 — omitted from the prior plan) |
+| **A4** | **Cost gate: multi-sample baseline + ratio statistic, then cache** | ~40 LoC + tests | Replaces § 3.6 #1's "cache a single baseline CPS" — caching freezes one draw of a ~110%-variance distribution (helm-charts $0.15→$0.32→$0.19). Instead **multi-sample the floor/baseline arm (n ≥ 5; affordable — it runs once per resource and is reused across feedback rounds via F17), then cache the stable estimate** per `(resource, eval_suite_hash)`. Gate on a **ratio statistic** (median candidate-CPS / median baseline-CPS, or a CI on the ratio), not raw-mean vs raw-mean. Keep an absolute-τ floor (`|ΔCPS| < $0.02`) as a cheap secondary guard. τ stays uncalibrated → Phase D / I16. (revises § 3.6 #1 + #2) |
+| **A5** | **Discrimination-first architect rewrite** | ~80 LoC prompt + prompt-eval | Invert `cgf-eval-architect.md`'s cost-first directives ("use contains aggressively", "optimizer for completion latency, not coverage depth"). Mandate **≥ 1 grader criterion per scenario that an unoptimized/v0 resource is expected to fail** (HealthBench / BiGGen instance-specific partial-credit pattern). Stop framing `llm_judge` as an anti-pattern. (reframes § 3.6 #4) |
+| **A6** | **Give the architect a capability model** | ~40 LoC + prompt | Root cause: the architect is forbidden from reading the resource files it writes evals for, so it cannot author scenarios that separate v1 from v0. Lift the prohibition **for the narrow purpose of capability-diffing v0↔v1** (or feed v0 failure-mode transcripts from a cheap probe). The "mental-simulation" instruction becomes useful only once the agent has real material. (See § 3.7.1 Q2 on isolation risk.) |
+
+**Carry-forward from § 3.6 (unchanged):** #5 GENERATE word-count guidance, #6 auto-skip after 2 cost rejections, #7 `CGF_ITERATE_CONCURRENCY` 4→6. Defer #8 pre-flight dry-run, #9 per-type τ profile, #10 trials default behind A1–A4 and Phase D data.
+
+**Sequencing:** ship A1–A4 (+ A5/A6) → run **smoke #9** → then open Phase B on a suite that finally discriminates.
+
+**Exit criteria:** smoke #9 on the iac-team fixture shows (a) zero 0/0-both-arms (mis-routing) unwinnables, (b) tied-at-1.00 fraction materially below run #8's 11/17, (c) `win_rate` non-zero on a meaningful fraction of resources. ~30–40 new unit tests.
+
+### 3.7.1 Open questions (carried from the reassessment)
+
+1. **Judge-coverage cost.** Lifting `llm_judge` from ~0–5% toward every discrimination-tier scenario raises eval cost (judge calls dominate). The cascade (judge only where both arms pass) is the cap; confirm it holds the bill on the iac-team fixture.
+2. **Architect isolation vs. capability model (A6).** "No reading resource files" was deliberate isolation to stop the architect over-fitting scenarios to the implementation. Lifting it for v0↔v1 capability-diffing reintroduces that risk — scope strictly to the *diff*, or feed transcripts only.
+3. **Scenarios/trials budget (Phase B Task 3).** Raising both is the precondition for any statistical gate but multiplies cost linearly. Target decisive-N (~10–15) vs the per-run budget ceiling is an open trade.
+4. **Ledger ownership & staleness (Phase E).** Who curates anti-patterns; how to stop the ledger ossifying around the iac-team fixture before cross-domain runs exist.
+5. **Phase-ordering risk.** If smoke #9 (post A1–A4) *still* shows flat `win_rate`, the problem is deeper than grader resolution (a genuine resource-quality ceiling) — then invest in harder scenario generation (IRT pruning / hard-negative mining, deferred to Phase D) before Phase B.
+6. **Pairwise disagreement (Phase B Task 1).** If order-disagreement is < 5% on Opus/Sonnet as the 2026 data predicts, skip the second ordering and break ties on the continuous score — never a silent tie.
+
+---
+
 ## 4. Phase B — Statistical promotion gating
 
 End-state: the simple threshold from Phase A is replaced by a multi-signal statistical gate. Same data shape as Phase A — this is gating logic only.
@@ -385,6 +458,8 @@ End-state: the simple threshold from Phase A is replaced by a multi-signal stati
 ### 4.0 Decisions facing Phase B kickoff
 
 Four open decisions, each with the data from § 3.5 informing the recommendation. None are unilaterally blocking — the recommendation is to land § 3.6 fixes 1–5 in a short "Phase A.5" branch first, then open Phase B with cleaner signal.
+
+> **Resolved (2026-06-13).** **Decision A** → the empirical floor-arm discrimination audit (§ 3.7 A2) is the prerequisite; the architect-prompt work (A5/A6) is a *supplement*, not the lead. **Decision B** → land the architectural cost-gate fix now as *multi-sample + cache* (§ 3.7 A4), not cache-single-draw; empirical τ tuning stays in Phase D (I16). **Decision C** → grader-routing by `eval_strategy` (§ 3.7 A1) fixes the generator-agent class wholesale. **Decision D** → yes — run smoke #9 after Phase A.5, before opening Phase B. Phase B itself is **re-scoped** below (Beta-Binomial replaces bootstrap; pairwise becomes the per-scenario decision).
 
 | # | Decision | Options | Recommendation |
 |---|---|---|---|
@@ -395,18 +470,21 @@ Four open decisions, each with the data from § 3.5 informing the recommendation
 
 **Refresh note (post Phase A, post Run #8 — 2026-05-19):** Phase B's value depends on signal quality. Bootstrap CIs on tied-at-zero (or tied-at-one) scenarios don't help. § 3.1 (eval-as-Opus-agent) is shipped (refinement 4.1). § 3.2 (discriminating scenarios) and § 3.5.1 (cost-gate baseline noise) are the outstanding prerequisites — both addressable in 1–2 days of work per § 3.6, before opening Phase B.
 
-**Tasks:**
+**Tasks (re-scoped 2026-06-13 — depends on Phase A.5 landing first; see § 1.1):**
 
-1. **Pairwise judge with position balancing.** Run both A-B and B-A orderings of (baseline, candidate); disagreement → tie. Module: `src/harness/optimization/eval_harness/pairwise.py`. Standard mitigation for position bias (Wang et al. 2024).
-2. **Bootstrap CI gate.** `src/harness/optimization/gating.py`. 1000 resamples, 95% CI, **lower bound > 0.5 to promote** (more conservative than just "win rate > 0.5" — protects against false promotions on small N). Decision logged with per-scenario breakdown to `reviews/v{n}_eval.json` alongside the existing `v{n}_review.md`.
-3. ~~**Token-regression check.**~~ **Shipped in Phase A polish** (branch `cgf-eval-ab`, refinement 4.3). `Gate.decide()` already enforces `candidate.cost_per_success ≤ baseline.cost_per_success × (1 + τ)` where `τ = CGF_TOKEN_REGRESSION_TOLERANCE` (default 0.10). Cost source is the SDK's `ResultMessage.total_cost_usd` (no separate pricing system). Per-scenario opt-out via `cost_gate_exempt: true`.
-4. **Trigger accuracy for agents/skills.** Eval-suite scenarios already include positive + negative trigger contexts (Phase A schema); now compute precision and recall, gate at default precision ≥ 0.9, recall ≥ 0.8. Tunable per resource via `eval_profile.yaml`.
-5. **Multi-signal gate.** All applicable signals (win-rate CI, token regression, trigger precision, trigger recall) must clear for promotion. Single `Gate.decide()` entry point; verdict shape: `Promote | Refine | Reject`. Record full statistics in review file.
+1. **Pairwise judge as the per-scenario *decision*** (not an absolute add-on). `src/harness/optimization/eval_harness/pairwise.py`. The gate consumes a per-scenario win; pairwise should *produce* it, with the now-continuous anchored absolute score (§ 3.7 A3) retained only for monitoring/feedback. **Disagreement handling: do NOT silently emit a tie** — break it on the continuous absolute-score margin, or draw one tie-break sample. 2026 measurements put order-disagreement on frontier judges at ≤ 0.04 and mixed-sign, so log the disagreement rate and consider dropping the second ordering (saves 2× judge cost) if it is empirically < 5%. (Position-bias background: Wang et al. 2024.)
+2. **Beta-Binomial posterior gate on paired discordant outcomes** (replaces the bootstrap CI). `gating.py`. The arms are paired (same scenarios), so gate on the discordant pairs (exactly one arm passed) and promote iff the 5th percentile of `Beta(k + 0.5, N − k + 0.5)` (Jeffreys prior) > 0.5. The percentile bootstrap is undefined-in-practice at decisive N ≈ 3 (only 4 distinct point estimates) and under-covers below N ≈ 20 (arXiv 2503.01747); the Beta posterior is exact at any N (~10 LoC). **Abstain (don't fire) below a decisive-N floor (~10–15)** rather than promote/reject on noise. Decision + full stats → `reviews/v{n}_eval.json` alongside `v{n}_review.md`.
+3. **Raise statistical power (precondition for Task 2).** `trials_per_scenario` → 3 and scenarios-per-resource well above the current 3 — no gate has power at decisive N ≈ 2, and the old `len(wins) < 10` floor was structurally unreachable at 3 scenarios/resource. Bounded by `CGF_EVAL_TOKEN_BUDGET`; the cascade (§ 3.7) keeps the judge-call multiplier in check.
+4. **Treat `no_decision` / unbreakable tie as 0.5 (half-win), not discard.** `aggregate.py` currently drops them, collapsing effective N when `no_decision_rate` runs 0.33–0.67 (as in the mobile-dev data). Half-credit preserves N for Task 2.
+5. ~~**Token-regression check.**~~ **Shipped in Phase A polish** (refinement 4.3); de-noised in Phase A.5 A4. `Gate.decide()` enforces `candidate.cost_per_success ≤ baseline × (1 + τ)`, `τ = CGF_TOKEN_REGRESSION_TOLERANCE` (default 0.10), cost from `ResultMessage.total_cost_usd`; per-scenario opt-out `cost_gate_exempt: true`.
+6. **Trigger accuracy for agents/skills.** Scenarios already carry positive + negative trigger contexts; compute precision/recall, gate at default precision ≥ 0.9, recall ≥ 0.8. Tunable per resource via `eval_profile.yaml`.
+7. **Trajectory argument-correctness.** Where trajectory graders apply (executable resources only, post-A1), require `with_arg` / BFCL-style AST argument checks + a goal-progress check — presence-only `tool_called == True` is reward-hackable.
+8. **Multi-signal gate.** All applicable signals (paired Beta-Binomial win posterior, token regression, trigger precision/recall) must clear. Single `Gate.decide()` entry point; verdict shape `Promote | Refine | Reject`. Full statistics in the review file.
 
 **Exit criteria:**
 
-- A candidate that passed Phase A's threshold but fails any of the four signals is rejected with full statistics. **Reproducibility:** identical traces → byte-identical verdicts.
-- ~30 new tests (gate logic, bootstrap math, position balancing).
+- Opens only after Phase A.5 + smoke #9 confirm a non-degenerate `win_rate`. A candidate that passed Phase A's threshold but fails any signal is rejected with full statistics. **Reproducibility:** identical traces → byte-identical verdicts.
+- ~30 new tests (Beta-Binomial + paired-test math, pairwise position/disagreement handling, `no_decision` half-credit).
 
 ---
 
@@ -445,6 +523,24 @@ End-state: judges are trusted (Cohen's kappa ≥ 0.8 vs human labels), eval runs
 - **I16 — empirically tune `CGF_TOKEN_REGRESSION_TOLERANCE` and `CGF_COST_QUALITY_BONUS`.** Current defaults (`τ=0.10`, `bonus_factor=1.0`, `bonus_cap=0.5`) are educated guesses from the multi-objective eval literature.  The right values are data-dependent: collect cost-gate outcomes across runs, have humans label "should have promoted" vs "should have been rejected" on a sample, compute FP / FN rates across candidate τ values, pick the τ that minimises false-promotions.  Same `make eval-calibrate` machinery as the kappa work — calibration consumer #2.  Run #7's 8/18 cost rejections are the seed dataset; need ≥3–5 more runs of similar density to have signal.  Persist tuned defaults to `docs/JUDGE-CALIBRATION.md` next to the kappa scores so operators see both axes in one place.  Surfaced by iac-team smoke run #7's empirical fall-out; quality-scaled τ (I15) softens the worst symptom but doesn't replace empirical tuning of the base.
 
 **Exit criteria:** A PR that regresses a resource gets a failing eval comment within 10 min on GitHub Actions; calibration page shows current kappa per resource type AND tuned cost-gate thresholds; passing PRs get statistics published. ~15–17 new tests (~+2 for I9 persist + 0 for I16 since the tuning is data work, not code work).
+
+---
+
+## 6A. Stage 3 Phase E — Compound learning (the learnings ledger)
+
+**New committed workstream (2026-06-13), distinct from Phase D.** Phase D *calibration* answers "do I trust the judge's score?"; Phase E answers "**what context-engineering moves reliably improve which resource types?**" — and makes that knowledge survive `cgf-clean` so the optimizer starts run 1 of a new resource smarter than it finished run 8 of a similar one. Today nothing persists: the verdict-keyed feedback in `iterate.py` is write-once and discarded at the end of the loop. This is the capability the project brief calls for ("continuously track and record learnings on what works") and that Phase D does *not* cover.
+
+**Design** — append-only, workspace-external store; five layers (from the ExpeL / Reflexion / CLIN / Contextual-Experience-Replay literature; see [EVAL-RESEARCH-2026-06.md](./EVAL-RESEARCH-2026-06.md)):
+
+1. **Run records.** Per ITERATE/EXECUTION_EVAL cycle: `(resource_id, resource_type, sector/domain tags, edit_type, per-grader score deltas, cost delta, verdict)`.
+2. **Edit-pattern library.** ExpeL-style induced rules with N-observation confidence intervals — e.g. "for `mcp_tool` + input-schema-validation + `reject_floor`, adding an explicit JSON schema with examples raised pass_rate by avg +0.18 (n = 7)".
+3. **Causal map.** edit-move → score-shift, segmented by resource type.
+4. **Anti-patterns.** Reflexion-style negatives — moves that *degraded* scores.
+5. **Meta-rubric index.** Which rubrics are well-calibrated per `(resource type × judge)` — **the one layer that consumes Phase D's κ output** rather than duplicating it.
+
+**Plug-in points:** **WRITE** at the end of `_orchestrator_phases/execution_eval.py` (the verdict + per-scenario deltas already exist there in the feedback builder); **READ** via a semantic-similarity retrieval step at the start of RESEARCH / ITERATE that injects the top-K edit-patterns + anti-patterns for the current resource type + domain into the optimizer's context.
+
+**Status:** design-stage. Sequenced after Phase A.5/B produce trustworthy per-grader deltas, and after there are cross-domain runs (iac-team + mobile-dev + others) to induce patterns from — inducing a ledger off a single fixture risks ossifying around its idiosyncrasies (see § 3.7.1 Q4). **Exit criteria (draft):** a new-resource optimization measurably benefits from injected prior-run patterns (fewer ITERATE rounds to first promotion, or higher r1 pass-rate) vs a ledger-disabled control.
 
 ---
 
@@ -691,7 +787,10 @@ Closed since the previous HARDENING revision: `optimization/orchestrator.py` (51
 | Eval suite format | **YAML** with JSON Schema validation | Matches existing CGF SPEC pattern, human-authorable, schema gives machine validation. |
 | Sandbox isolation | **In-process for Phase A; ephemeral container in Phase C** | Phase A optimizes for iteration speed (still 2-arm comparison-aware); Phase C buys reproducibility once the harness is stable. |
 | Grader composition | **Three columns + composite gate** — each tier emits its own `GraderResult`; the gate combines them with explicit `AndGrader`/`OrGrader` per scenario. | Keeps signal separable for debugging. |
-| LLM-judge failure mode | **Retry-once-then-mark-no-decision** | Cost-conscious; "no decision" trials excluded from win-rate denominator (Phase B). |
+| LLM-judge failure mode | **Retry-once-then-mark-no-decision** | Cost-conscious. **(Revised 2026-06-13:** Phase B half-credits `no_decision` at 0.5 rather than excluding it, to preserve effective N — § 4 Task 4.) |
+| Grader priority | ~~Cost-first~~ → **discrimination-first cascade** (2026-06-13) | Cheap deterministic checks gate; the judge discriminates scenarios both arms pass. Cost-first produced flat signal (run #8: 0 `llm_judge`, 11/17 tied). See § 1.1, § 3.7 A1/A5. |
+| Judge score scale | ~~1–5 integer (hard-argmax)~~ → **anchored 7-pt + criterion sub-scores** (2026-06-13) | Coarse scale compresses to 2–3 effective points; retry→tie collapses to 3 classes. G-Eval logprob weighting is unavailable on the Anthropic Messages API. See § 3.7 A3. |
+| Promotion statistic | ~~Bootstrap CI lower-bound > 0.5~~ → **Beta-Binomial posterior on paired discordant outcomes** (2026-06-13) | Bootstrap undefined at decisive N ≈ 3; Beta posterior exact at any N; abstain below a decisive-N floor. See § 4 Task 2, § 11.4. |
 | Held-out scenario sourcing | **Hand-authored seed (5–10) + cgf-research-lead expansion to 20–30**; optimizer never sees them | Hand-authored ensures coverage of constraints the LLM might miss; expansion keeps cost down. |
 | Judge ensemble vs single | **Single judge + position balancing for Phase B; ensemble deferred to Phase D, applied per-resource-type only when calibration < 0.8** | Position balancing gets ~80% of the bias mitigation at 2× cost (vs ensemble's ~3–5×). |
 | Cost cap per eval run | **`CGF_EVAL_TOKEN_BUDGET` env var, default 1M tokens**; surfaced in `eval-results.json` | Prevents runaway feedback loops. |
@@ -699,6 +798,8 @@ Closed since the previous HARDENING revision: `optimization/orchestrator.py` (51
 | Model-version drift | **`CGF_MODEL_PIN` env var, recorded per eval run**; calibration is per-pin | Lets us compare apples-to-apples across pin changes. |
 
 ### 11.2 Resource-type evaluation matrix
+
+> **Make this load-bearing (§ 3.7 A1).** Today this matrix is documentation; `eval_strategy` in `resource_types.py` already encodes it but has zero read-sites. Phase A.5 A1 turns it into live grader-routing so each resource type gets the graders that actually discriminate it.
 
 | Resource Type | Trigger Accuracy | Pairwise Output Quality | Token Efficiency | Unit/Contract Tests | Coherence | Vs No-Resource Baseline |
 |---|---|---|---|---|---|---|
@@ -729,7 +830,7 @@ workspace/{spec}/eval/
 
 | Bias | Description | Mitigation in this plan |
 |---|---|---|
-| Position bias | Judge prefers first or last option | Run both A-B and B-A orderings; disagreement → tie (Phase B) |
+| Position bias | Judge prefers first or last option | ≤ 0.04 on 2026 frontier judges; run both orderings only if disagreement is empirically material, and break disagreements on the continuous score — never a silent tie (Phase B, revised 2026-06-13) |
 | Verbosity bias | Judge prefers longer answers | Rubric explicitly notes length ≠ quality; token efficiency gates separately (Phase B) |
 | Self-enhancement bias | Judge prefers outputs from its own model family | Different model for judge vs generator (`CGF_JUDGE_MODEL ≠ CGF_DESIGN_MODEL`) — shipped Phase A |
 | Authority bias | Judge swayed by claims of authority in output | Rubric anchored to behavioral criteria, not vague "is it better" |
@@ -738,20 +839,23 @@ workspace/{spec}/eval/
 
 ### 11.4 Statistical methodology
 
-**Pairwise win rate with bootstrap CI** (Phase B):
+**Paired Beta-Binomial promotion gate** (Phase B, revised 2026-06-13 — replaces the percentile bootstrap):
 
 ```python
-def promotion_gate(verdicts: list[Verdict], n_bootstrap=1000, ci=0.95) -> bool:
-    wins = [1 if v.candidate_wins else 0 for v in verdicts if not v.tie]
-    if len(wins) < 10:
-        return False  # insufficient sample
-    boot_means = [
-        np.mean(np.random.choice(wins, size=len(wins), replace=True))
-        for _ in range(n_bootstrap)
-    ]
-    lower = np.percentile(boot_means, (1 - ci) / 2 * 100)
-    return lower > 0.5
+from scipy.stats import beta
+
+def promotion_gate(verdicts: list[Verdict], min_decisive=10) -> bool:
+    # Arms are paired (same scenarios); count discordant pairs only.
+    wins   = sum(1 for v in verdicts if v.candidate_wins and not v.tie)
+    losses = sum(1 for v in verdicts if v.baseline_wins and not v.tie)
+    decisive = wins + losses             # no_decision/tie -> 0.5 elsewhere (§ 4 Task 4)
+    if decisive < min_decisive:
+        return False                      # abstain on insufficient power
+    # Jeffreys prior; promote iff 5th pct of the posterior win-rate > 0.5
+    return beta.ppf(0.05, wins + 0.5, losses + 0.5) > 0.5
 ```
+
+The percentile bootstrap (previous design) is undefined-in-practice at decisive N ≈ 3 (only four distinct point estimates) and under-covers below N ≈ 20 (arXiv 2503.01747); the Beta posterior is exact at any N. Raising `trials_per_scenario` and scenarios/resource (§ 4 Task 3) is what makes `min_decisive` reachable.
 
 **Position balancing in pairwise judge** (Phase B):
 
@@ -761,7 +865,9 @@ For each scenario s:
   v_BA = judge(scenario=s, first=candidate, second=baseline)
   if v_AB == v_BA == "first wins":  → baseline wins (consistent)
   if v_AB == v_BA == "second wins": → candidate wins (consistent)
-  else:                              → tie (judge order-dependent → low signal)
+  else:                              → break on the continuous absolute-score margin, or one
+                                       tie-break sample — never a silent tie (revised 2026-06-13).
+                                       Log the disagreement rate; if < 5% on the judge, drop the 2nd ordering.
 ```
 
 **Token regression check** (Phase B):
@@ -882,3 +988,7 @@ Unit tests: 1863 (Phase A baseline) → ~1925 across Phases B–D (Phase B ~+30,
 ### Memory
 
 Auto-memory `MEMORY.md` updated at end of each phase with new phase label, file pointers, new gotchas. Memory MCP entity for `ab-casdk-harness` updated when Stage 3 reaches a shippable milestone (probably end of Phase B, when statistical promotion is real).
+
+### Appendix
+
+[OpenAI Cookbooks: Evals](https://developers.openai.com/cookbook/topic/evals)
