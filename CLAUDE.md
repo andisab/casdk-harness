@@ -113,13 +113,20 @@ Technical reference for developers working on this repository and for Claude's o
   `scripts/derisk_eval_design.py`. **L1.1 ✓** (`c87322b` — `max_turns` now
   enforced harness-side in `subagent.call_agent` + turn/tool counting fixed;
   the param finally binds). **L1.2 ✓** (`5928e27` — `capability_diff` v0→v1
-  helper in `_orchestrator_helpers.py`). **L1.3 NEXT (designed — resume here):**
-  shard the EVAL_DESIGN `delegate` into parallel per-resource architect calls
-  (diff inline, tight per-shard `max_turns` via a new `call_agent` override) +
-  a Python merge; reframe `cgf-eval-architect.md` for per-resource mode; then
-  re-probe in the container. **Layer 2** (after L1 measures): type-adaptive
-  2–3 aspect panel + single synthesis pass per shard. Full design + the exact
-  resume point: `docs/CGF-EVAL-ROADMAP.md` § 3.7.3.
+  helper in `_orchestrator_helpers.py`). **L1.3 ✓ impl + unit tests (container
+  probe is the immediate next step):** `eval_design.delegate` now shards into
+  parallel per-resource architect calls (v0→v1 diff inlined, per-shard
+  `max_turns=15` via the new `subagent.call_agent(max_turns=…)` override) under
+  a `CGF_EVAL_DESIGN_CONCURRENCY=5` semaphore, then a Python merge stamps each
+  scenario's `target_resource` and assembles `eval/eval-suite.yaml`.
+  `cgf-eval-architect.md` reframed per-resource (`max_turns` 120→15). Contract
+  changes: signal parsing dropped (shard file on disk is authoritative);
+  all-shards-fail → raise; partial failure proceeds. 2165 unit tests green;
+  my-code ruff+mypy clean. **NEXT: container probe** (`derisk_eval_design.py`,
+  needs `make build && make up`) to confirm wall-time/turn drop + discrimination
+  holds. **Layer 2** (after the probe measures L1): type-adaptive 2–3 aspect
+  panel + single synthesis pass per shard. Full ledger + resume point:
+  `docs/CGF-EVAL-ROADMAP.md` § 3.7.3.
 - [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
   bug (full description above in Known Limitations). Three fix
   candidates queued; (a) one-line env passthrough in

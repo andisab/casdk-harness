@@ -12,10 +12,12 @@ leaving the whole eval half of the pipeline dead.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from harness.optimization._orchestrator_phases import eval_design
 from harness.progress import (
@@ -65,8 +67,9 @@ class TestEvalDesignSkipCondition:
     ) -> None:
         """The F11 regression scenario: resources at status=optimized
         (resume from EVAL_DESIGN with already-iterated work) MUST cause
-        EVAL_DESIGN to run, not silently skip."""
-        # Build a minimal orchestrator stand-in.
+        EVAL_DESIGN to run, not silently skip. Under EVAL_DESIGN v2 the phase
+        shards per resource and Python merges the shard suites; the invariant
+        is unchanged — a suite must be produced."""
         orch = MagicMock()
         orch._state = _make_state_with_optimized_resources()
         orch._spec = MagicMock(source_path=Path("SPEC.md"), constraints=[])
@@ -77,49 +80,50 @@ class TestEvalDesignSkipCondition:
             verbose=False,
             follow_logs=False,
         )
-        orch._signal_parser = MagicMock(parse=MagicMock(return_value=[]))
         orch._save_state = MagicMock()
         orch._emit_progress = MagicMock()
 
-        # Spec.md needs to exist for the workspace check.
         (tmp_path / "SPEC.md").write_text("# spec")
+        # The sharded delegate reads each resource's generated file to compute
+        # the v0→candidate diff, so the files must exist on disk.
+        for path in ("skills/a/SKILL.md", "agents/b.md", "commands/c.md"):
+            f = tmp_path / path
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f"# {path}\ncandidate content\n")
 
-        # Mock the agent call to return a faux success signal.
-        async def fake_call(*args, **kwargs):
-            return "[EVAL_DESIGN_COMPLETE]\neval_suite_path: eval/eval-suite.yaml\n"
-
-        # Also make sure the suite file appears on disk (since the
-        # phase verifies the file exists after the signal).
-        (tmp_path / "eval").mkdir()
-        (tmp_path / "eval" / "eval-suite.yaml").write_text("version: '1.0'\n")
-
-        with patch(
-            "harness.subagent.call_agent_simple",
-            new=AsyncMock(side_effect=fake_call),
-        ):
-            # The signal parser needs to return an EVAL_DESIGN_COMPLETE
-            # signal for the phase to mark eval_suite_path.  Build a
-            # minimal signal object.
-            from harness.optimization.protocols.signals import (
-                Signal,
-                SignalType,
+        async def _writer(agent_name, prompt, **kwargs):
+            m = re.search(r"(\S+/eval/shards/\S+\.yaml)", prompt)
+            assert m, "shard path missing from prompt"
+            shard = Path(m.group(1))
+            shard.parent.mkdir(parents=True, exist_ok=True)
+            rm = re.search(r"Resource:\s+(\S+)", prompt)
+            target = rm.group(1) if rm else "x.md"
+            shard.write_text(
+                yaml.safe_dump(
+                    {
+                        "version": "1.0",
+                        "target_resource": target,
+                        "config": {"trials_per_scenario": 1},
+                        "scenarios": [
+                            {
+                                "id": f"easy-{shard.stem}-01",
+                                "level": "unit",
+                                "prompt": "p",
+                                "graders": [
+                                    {"type": "contains", "needle": "x"}
+                                ],
+                            }
+                        ],
+                    }
+                )
             )
+            return "[EVAL_DESIGN_COMPLETE]"
 
-            orch._signal_parser.parse = MagicMock(
-                return_value=[
-                    Signal(
-                        type=SignalType.EVAL_DESIGN_COMPLETE,
-                        metadata={
-                            "eval_suite_path": "eval/eval-suite.yaml"
-                        },
-                    )
-                ]
-            )
-
+        with patch("harness.subagent.call_agent_simple", new=_writer):
             await eval_design.delegate(orch)
 
-        # F11 invariant: EVAL_DESIGN ran (eval_suite_path was set,
-        # which only happens after the agent call succeeded).
+        # F11 invariant: EVAL_DESIGN ran (eval_suite_path set after the merge,
+        # which only happens once at least one shard produced scenarios).
         assert orch._state.eval_suite_path == "eval/eval-suite.yaml", (
             f"F11 regression: EVAL_DESIGN should have run on "
             f"optimized resources, eval_suite_path is "

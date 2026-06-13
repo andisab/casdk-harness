@@ -343,6 +343,8 @@ Multi-resource Phase A:
 | `CGF_GENERATE_CONCURRENCY` | 8 | `_orchestrator_phases/generate.py:47` |
 | `CGF_ITERATE_CONCURRENCY` | 4 | `_orchestrator_phases/iterate.py:56` |
 | `CGF_EXECUTION_EVAL_CONCURRENCY` | 4 | `_orchestrator_phases/execution_eval.py:63` |
+| `CGF_EVAL_DESIGN_CONCURRENCY` | 5 | `_orchestrator_phases/eval_design.py::_resolve_eval_design_concurrency` (EVAL_DESIGN v2 L1.3 — in-flight per-resource architect shards) |
+| `CGF_EVAL_DESIGN_SHARD_MAX_TURNS` | 15 | `_orchestrator_phases/eval_design.py::_resolve_shard_max_turns` (EVAL_DESIGN v2 L1.3 — per-shard architect turn cap, forwarded to `subagent.call_agent(max_turns=…)`) |
 | `CGF_EVAL_SCENARIO_CONCURRENCY` | 6 | `eval_harness/runner.py` |
 | `CGF_EVAL_TRIAL_TIMEOUT` | 180 | `eval_harness/runner.py::_resolve_trial_timeout` (level=unit/e2e) |
 | `CGF_EVAL_TRAJECTORY_TRIAL_TIMEOUT` | 300 | same, level=trajectory |

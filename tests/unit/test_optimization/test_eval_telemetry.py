@@ -405,17 +405,49 @@ class TestEvalDesignEmitsPhaseDuration:
         state.resources = {"agents/x.md": r}
         orch._state = state
 
-        # Architect succeeds + writes the file.
-        suite = tmp_path / "eval" / "eval-suite.yaml"
-        suite.parent.mkdir(parents=True, exist_ok=True)
-        suite.write_text("version: '1.0'\nscenarios: []\nconfig: {}\n")
+        # Sharded EVAL_DESIGN: the generated file must exist (the delegate
+        # diffs v0→candidate per resource), and the architect writes a
+        # per-resource shard which Python merges into eval-suite.yaml.
+        import re as _re
+
+        import yaml as _yaml
+
+        gen = tmp_path / "agents" / "x.md"
+        gen.parent.mkdir(parents=True, exist_ok=True)
+        gen.write_text("# x\ncandidate content\n")
+
+        async def _writer(agent_name: str, prompt: str, **kwargs: object) -> str:
+            m = _re.search(r"(\S+/eval/shards/\S+\.yaml)", prompt)
+            assert m
+            shard = Path(m.group(1))
+            shard.parent.mkdir(parents=True, exist_ok=True)
+            shard.write_text(
+                _yaml.safe_dump(
+                    {
+                        "version": "1.0",
+                        "target_resource": "agents/x.md",
+                        "config": {"trials_per_scenario": 1},
+                        "scenarios": [
+                            {
+                                "id": "easy-x-01",
+                                "level": "unit",
+                                "prompt": "p",
+                                "graders": [
+                                    {"type": "contains", "needle": "x"}
+                                ],
+                            }
+                        ],
+                    }
+                )
+            )
+            return "[EVAL_DESIGN_COMPLETE]"
 
         before = _histogram_count(
             harness_eval_phase_duration_seconds, phase="EVAL_DESIGN"
         )
         with patch(
             "harness.subagent.call_agent_simple",
-            new=AsyncMock(return_value="[EVAL_DESIGN_COMPLETE]"),
+            new=_writer,
         ):
             await orch._delegate_eval_design()
         after = _histogram_count(

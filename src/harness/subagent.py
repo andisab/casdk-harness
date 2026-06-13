@@ -302,6 +302,7 @@ async def call_agent(
     system_prompt_override: str | None = None,
     model_override: str | None = None,
     timeout: float | None = None,
+    max_turns: int | None = None,
     **extra_options: Any,
 ) -> AsyncIterator[Union[UserMessage, AssistantMessage, SystemMessage, ResultMessage, StreamEvent]]:
     """Call an agent directly, bypassing the Task tool.
@@ -323,6 +324,11 @@ async def call_agent(
                        Useful for faster test evaluation.
         timeout: Query timeout in seconds. If None, uses CLAUDE_QUERY_TIMEOUT
                 env var or default (600s).
+        max_turns: Override the agent's declared ``max_turns`` (its YAML
+                frontmatter default). Caps BOTH the SDK ``--max-turns`` option
+                and the harness-side turn enforcement below. None = use the
+                agent's declared value. Used by sharded EVAL_DESIGN to set a
+                tight per-call budget without editing the agent file.
         **extra_options: Additional ClaudeAgentOptions parameters
 
     Yields:
@@ -354,7 +360,13 @@ async def call_agent(
         ...     pass
     """
     agent_info = get_agent_info(agent_name)
-    max_turns = agent_info.get("max_turns", 100)
+    # Phase A.5 L1.3: an explicit max_turns overrides the agent's declared
+    # frontmatter value, letting a caller (e.g. a sharded EVAL_DESIGN shard)
+    # set a tight per-call budget without editing the agent file. This single
+    # local drives BOTH the SDK option (options_dict["max_turns"]) and the
+    # harness-side cap below, so the override binds at both layers.
+    if max_turns is None:
+        max_turns = int(agent_info.get("max_turns", 100))
 
     # Resolve verbose from env var if not explicitly set
     if verbose is None:
@@ -541,6 +553,7 @@ async def call_agent_simple(
     system_prompt_override: str | None = None,
     model_override: str | None = None,
     timeout: float | None = None,
+    max_turns: int | None = None,
     max_retries: int | None = None,
     retry_backoff_seconds: float | None = None,
     **kwargs: Any,
@@ -564,6 +577,9 @@ async def call_agent_simple(
         model_override: Override the agent's model (sonnet/haiku for faster eval).
         timeout: Query timeout in seconds. If None, uses CLAUDE_QUERY_TIMEOUT
                 env var or default (600s).
+        max_turns: Override the agent's declared ``max_turns``. Forwarded to
+                ``call_agent`` (caps both the SDK option and harness-side
+                enforcement). None = use the agent's frontmatter value.
         max_retries: Additional attempts after the first on transient errors.
                 Default reads ``CGF_CALL_RETRIES`` env var (default 3).
         retry_backoff_seconds: Base for exponential backoff between attempts.
@@ -593,6 +609,7 @@ async def call_agent_simple(
                 system_prompt_override=system_prompt_override,
                 model_override=model_override,
                 timeout=timeout,
+                max_turns=max_turns,
                 **kwargs,
             ):
                 if isinstance(message, AssistantMessage) and hasattr(

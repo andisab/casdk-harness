@@ -238,6 +238,44 @@ class TestCallAgent:
         assert len(received) == 3
 
     @pytest.mark.asyncio
+    async def test_max_turns_override_param_wins(self) -> None:
+        """Phase A.5 L1.3: an explicit max_turns arg overrides the agent's
+        declared frontmatter value and binds BOTH the SDK --max-turns option
+        and the harness-side enforcement. Sharded EVAL_DESIGN uses this to set
+        a tight per-shard budget without editing the agent file."""
+        from claude_agent_sdk import AssistantMessage
+
+        info = {
+            "max_turns": 100,  # the agent's declared budget
+            "model": "sonnet",
+            "tools": None,
+            "prompt": "system prompt",
+            "source": "harness",
+        }
+        captured: dict[str, object] = {}
+
+        async def capture_query(*args, **kwargs):
+            opts = kwargs.get("options")
+            captured["max_turns"] = getattr(opts, "max_turns", None)
+            for _ in range(10):
+                yield AssistantMessage(content=[], model="sonnet")
+
+        with (
+            patch("harness.subagent.query", side_effect=capture_query),
+            patch("harness.subagent.get_agent_info", return_value=info),
+        ):
+            received = [
+                m
+                async for m in call_agent(
+                    "python-expert", "go", verbose=False, max_turns=2
+                )
+            ]
+        # Capped at the override (2), not the agent's declared 100.
+        assert len(received) == 2
+        # And the override propagated to the SDK options too.
+        assert captured["max_turns"] == 2
+
+    @pytest.mark.asyncio
     async def test_custom_permission_mode(self) -> None:
         """Test that custom permission_mode is passed through."""
 
