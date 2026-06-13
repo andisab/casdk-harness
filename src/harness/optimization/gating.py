@@ -30,6 +30,14 @@ shifts pass-rate by +13pp doesn't get rejected for a 16% cost-per-success
 bump.  See :func:`effective_cost_tolerance` below — it does NOT collapse
 quality and cost into a weighted scalar (Goodhart-on-tokens, Han et al.
 2025); it just lets ``τ`` borrow signal from the quality delta.
+
+Phase A.5 A4 adds an **absolute cost floor** on top of the relative gate:
+the cost ceiling is ``max(incumbent * (1 + τ_eff), incumbent +
+cost_abs_floor_usd)`` so a few-cents absolute regression can't trip the
+relative-percentage gate against a noisy single-draw baseline (the
+helm-charts run-#8 false-rejection).  Default floor ``0.0`` keeps existing
+callers on pure-relative behaviour.  Multi-sampling + caching the baseline
+CPS (the variance *cure*) is A4 step 2 — deferred.
 """
 
 from __future__ import annotations
@@ -159,6 +167,17 @@ class GateInputs:
     candidate_cost_per_success: float | None = None
     incumbent_cost_per_success: float | None = None
     tau: float = 0.10
+    # Phase A.5 A4: absolute cost-per-success floor (USD).  The cost gate
+    # allows ``candidate_cps`` up to ``max(incumbent * (1 + τ_eff),
+    # incumbent + cost_abs_floor_usd)`` so a few-cents absolute regression
+    # never trips the relative-percentage gate against a noisy baseline —
+    # the helm-charts run-#8 false-rejection (rejected 3× on a ~$0.04 delta
+    # at quality ~1.0).  Default ``0.0`` = no floor (pure relative, so
+    # existing callers are unaffected); ``execution_eval`` resolves
+    # ``CGF_COST_ABS_FLOOR_USD`` (default 0.05) and passes it in production.
+    # NB: this bounds the *impact* of baseline noise; the *cure* (multi-
+    # sampling + caching the baseline CPS) is A4 step 2 — deferred.
+    cost_abs_floor_usd: float = 0.0
 
 
 def decide(inputs: GateInputs) -> Verdict:
@@ -222,7 +241,14 @@ def decide(inputs: GateInputs) -> Verdict:
             base_tau=inputs.tau,
             quality_delta=quality_delta,
         )
-        cost_ceiling = inputs.incumbent_cost_per_success * (1.0 + effective_tau)
+        # Phase A.5 A4: allow the larger of the relative ceiling and an
+        # absolute few-cents floor, so small absolute CPS deltas don't trip
+        # the relative-percentage gate against a noisy single-draw baseline.
+        relative_ceiling = inputs.incumbent_cost_per_success * (1.0 + effective_tau)
+        absolute_ceiling = (
+            inputs.incumbent_cost_per_success + inputs.cost_abs_floor_usd
+        )
+        cost_ceiling = max(relative_ceiling, absolute_ceiling)
         if inputs.candidate_cost_per_success > cost_ceiling:
             return "reject_cost"
 

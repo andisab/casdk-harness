@@ -338,6 +338,7 @@ Multi-resource Phase A:
 | `CGF_TOKEN_REGRESSION_TOLERANCE` | 0.10 | `_orchestrator_phases/execution_eval.py::_resolve_cost_tolerance` (Phase A refinement 4.3) |
 | `CGF_MIN_GAIN_PER_ROUND` | 0.02 | `_orchestrator_phases/execution_eval.py::_resolve_min_gain` (Phase A refinement 4.4.b stagnation early-stop) |
 | `CGF_DISCRIMINATION_MIN_FLIP_RATE` | 0.40 | `_orchestrator_phases/execution_eval.py::_resolve_min_flip_rate` (Phase A.5 A2 — under-discrimination warning threshold; observational) |
+| `CGF_COST_ABS_FLOOR_USD` | 0.05 | `_orchestrator_phases/execution_eval.py::_resolve_cost_abs_floor` → `gating.decide` cost stage (Phase A.5 A4 — absolute cost-per-success floor; ceiling = max(relative, incumbent + floor)) |
 | `CGF_DESIGN_MODEL` | (sonnet via agent YAML) | `graders/llm_judge.py::_resolve_judge_model` reads it only to WARN on self-preference collision (Phase A refinement 4.1) |
 | `CGF_GENERATE_CONCURRENCY` | 8 | `_orchestrator_phases/generate.py:47` |
 | `CGF_ITERATE_CONCURRENCY` | 4 | `_orchestrator_phases/iterate.py:56` |

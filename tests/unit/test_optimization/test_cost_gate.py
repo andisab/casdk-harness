@@ -203,6 +203,7 @@ def _ginputs(
     tau: float = 0.10,
     candidate_pass: float | None = None,
     incumbent_pass: float | None = None,
+    cost_abs_floor: float = 0.0,
 ) -> GateInputs:
     """Quality stays at parity (1.0 == 1.0) by default so quality_delta=0
     and the I15 quality-bonus contributes nothing — letting these tests
@@ -224,7 +225,46 @@ def _ginputs(
         candidate_cost_per_success=candidate_cps,
         incumbent_cost_per_success=incumbent_cps,
         tau=tau,
+        cost_abs_floor_usd=cost_abs_floor,
     )
+
+
+class TestGateDecideCostAbsFloor:
+    """Phase A.5 A4: absolute cost floor — a few-cents absolute CPS delta
+    must not trip the relative-percentage gate against a noisy baseline."""
+
+    def test_small_absolute_delta_within_floor_promotes(self) -> None:
+        # helm-charts run-#8 case: incumbent $0.19, candidate $0.23.
+        # Relative ceiling (τ=0.10) = $0.209 → candidate exceeds it; the
+        # $0.05 absolute floor lifts the ceiling to $0.24, so it promotes.
+        v = decide(
+            _ginputs(candidate_cps=0.23, incumbent_cps=0.19, cost_abs_floor=0.05)
+        )
+        assert v == "promote"
+
+    def test_delta_over_both_relative_and_absolute_rejects(self) -> None:
+        # incumbent $0.19: relative ceiling $0.209, absolute ceiling $0.24;
+        # candidate $0.30 exceeds both → reject.
+        v = decide(
+            _ginputs(candidate_cps=0.30, incumbent_cps=0.19, cost_abs_floor=0.05)
+        )
+        assert v == "reject_cost"
+
+    def test_default_floor_zero_is_pure_relative(self) -> None:
+        # Default floor 0.0 → A4 is a no-op; over the relative ceiling still
+        # rejects (backward compatible with the pre-A4 gate).
+        v = decide(_ginputs(candidate_cps=0.23, incumbent_cps=0.19))
+        assert v == "reject_cost"
+
+    def test_relative_ceiling_dominates_when_larger(self) -> None:
+        # Large incumbent: relative ceiling ($1.10) exceeds the absolute one
+        # ($1.05), so the relative gate still governs.
+        assert decide(
+            _ginputs(candidate_cps=1.10, incumbent_cps=1.0, cost_abs_floor=0.05)
+        ) == "promote"
+        assert decide(
+            _ginputs(candidate_cps=1.20, incumbent_cps=1.0, cost_abs_floor=0.05)
+        ) == "reject_cost"
 
 
 class TestGateDecideCostStage:

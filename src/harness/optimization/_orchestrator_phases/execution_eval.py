@@ -143,6 +143,24 @@ def _resolve_min_flip_rate() -> float:
     return min(1.0, max(0.0, value))
 
 
+def _resolve_cost_abs_floor() -> float:
+    """Phase A.5 A4: absolute cost-per-success floor in USD.
+
+    ``CGF_COST_ABS_FLOOR_USD`` (default 0.05). A candidate within this many
+    dollars of the incumbent's cost-per-success clears the cost gate even
+    when it exceeds the relative tolerance — guards against false rejections
+    on a noisy single-draw baseline. Negative values clamp to 0.0.
+    """
+    raw = os.environ.get("CGF_COST_ABS_FLOOR_USD")
+    if not raw:
+        return 0.05
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.05
+    return max(0.0, value)
+
+
 def _run_discrimination_audit(
     results: EvalResults,
     resource: ResourceStatus,
@@ -818,6 +836,7 @@ async def _eval_single_resource(
                     candidate_cost_per_success=results.candidate_cost_per_success,
                     incumbent_cost_per_success=results.baseline_cost_per_success,
                     tau=tau,
+                    cost_abs_floor_usd=_resolve_cost_abs_floor(),
                 )
             )
             verdict_for_aggregate = verdict
