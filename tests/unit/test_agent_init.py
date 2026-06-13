@@ -317,7 +317,7 @@ class TestContextManager:
             mock_client.disconnect = AsyncMock()
             mock_client_class.return_value = mock_client
 
-            async with AgentSession(agent_name="test", config=mock_config) as session:
+            async with AgentSession(agent_name="test", config=mock_config):
                 pass
 
             # After context exit, shutdown should have been called

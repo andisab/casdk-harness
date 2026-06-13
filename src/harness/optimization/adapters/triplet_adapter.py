@@ -24,12 +24,11 @@ Example usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from harness.optimization.adapters.base import (
     AgentFeedback,
     BaseFeedback,
-    BaseAdapter,
     CommandFeedback,
     PromptFeedback,
     SkillFeedback,
@@ -210,12 +209,11 @@ class TripletAdapter:
                 return str(span.attributes["user.message"])
 
             # Check span name for context
-            if "input" in span.name.lower():
-                if span.attributes:
-                    # Return first string attribute as fallback
-                    for value in span.attributes.values():
-                        if isinstance(value, str) and len(value) > 10:
-                            return value
+            if "input" in span.name.lower() and span.attributes:
+                # Return first string attribute as fallback
+                for value in span.attributes.values():
+                    if isinstance(value, str) and len(value) > 10:
+                        return value
 
         return ""
 

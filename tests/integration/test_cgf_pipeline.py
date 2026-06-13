@@ -10,7 +10,6 @@ to validate the integration of all CGF components.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -19,23 +18,23 @@ from harness.optimization.adapters import (
     AdapterRegistry,
     AgentAdapter,
     AgentFeedback,
-    SkillAdapter,
-    SkillFeedback,
-    PromptAdapter,
-    PromptFeedback,
     CommandAdapter,
     CommandFeedback,
+    PromptAdapter,
+    PromptFeedback,
+    SkillAdapter,
+    SkillFeedback,
 )
 from harness.optimization.rewards import ResourceReward
 from harness.optimization.store import MemoryOptimizationStore
 from harness.tracer import (
-    get_tracer,
-    reset_tracer,
     Span,
     SpanKind,
     SpanStatus,
-    generate_trace_id,
     generate_span_id,
+    generate_trace_id,
+    get_tracer,
+    reset_tracer,
 )
 from harness.tracer.exporters import StoreSpanExporter
 
@@ -512,7 +511,7 @@ class TestTracerStoreIntegration:
         exporter = StoreSpanExporter(store=memory_store)
 
         # Patch get_tracer to use our exporter
-        with patch("harness.tracer._auto_configure_exporters") as mock_config:
+        with patch("harness.tracer._auto_configure_exporters"):
             # Create tracer without auto-config
             tracer = get_tracer(service_name="test", auto_configure=False)
             tracer.add_exporter(exporter)

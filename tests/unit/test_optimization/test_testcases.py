@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from harness.optimization.testcases import validators as _validators_module
 from harness.optimization.testcases import (
     CodeExtractor,
     CodeLLMValidator,
@@ -33,6 +32,7 @@ from harness.optimization.testcases import (
     get_validator,
     is_valid_python_syntax,
 )
+from harness.optimization.testcases import validators as _validators_module
 
 
 @pytest.fixture(autouse=True)

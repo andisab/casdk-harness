@@ -561,12 +561,11 @@ class TestExecutionEvalNoScenarios:
         with patch(
             "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
             return_value=mock_harness,
+        ), pytest.raises(
+            RuntimeError,
+            match="ALL resources errored|all .* resources errored",
         ):
-            with pytest.raises(
-                RuntimeError,
-                match="ALL resources errored|all .* resources errored",
-            ):
-                await orch._run_execution_eval()
+            await orch._run_execution_eval()
 
 
 class TestExecutionEvalErrorHandling:
@@ -587,11 +586,10 @@ class TestExecutionEvalErrorHandling:
         with patch(
             "harness.optimization._orchestrator_phases.execution_eval.EvalHarness",
             return_value=mock_harness,
+        ), pytest.raises(
+            RuntimeError, match=r"all \d+ resources errored"
         ):
-            with pytest.raises(
-                RuntimeError, match=r"all \d+ resources errored"
-            ):
-                await orch._run_execution_eval()
+            await orch._run_execution_eval()
 
         # F8: state is updated to needs_refinement BEFORE the abort,
         # so the resource record reflects the error.

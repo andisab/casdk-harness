@@ -23,7 +23,7 @@ from __future__ import annotations
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -161,7 +161,7 @@ class MemoryOptimizationStore:
         """Register a new resource or version."""
         with self._lock:
             content_hash = compute_content_hash(content)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Check if resource exists
             existing = self._resources.get(resource_id)
@@ -324,7 +324,7 @@ class MemoryOptimizationStore:
                 config=config or {},
                 priority=priority,
                 status=EvaluationStatus.PENDING,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
 
             self._evaluation_queue.append(task)
@@ -349,7 +349,7 @@ class MemoryOptimizationStore:
     ) -> EvaluationTask | None:
         """Dequeue the next evaluation task."""
         with self._lock:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Find first pending task
             for i, task in enumerate(self._evaluation_queue):
@@ -402,7 +402,7 @@ class MemoryOptimizationStore:
                 return False
 
             task.status = EvaluationStatus.COMPLETED if success else EvaluationStatus.FAILED
-            task.completed_at = datetime.now(timezone.utc)
+            task.completed_at = datetime.now(UTC)
             task.error_message = error_message
 
             logger.debug(
@@ -442,7 +442,7 @@ class MemoryOptimizationStore:
                 resource_version=resource_version,
                 reward=reward,
                 metadata=metadata or {},
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
 
             self._results[resource_id].append(result)

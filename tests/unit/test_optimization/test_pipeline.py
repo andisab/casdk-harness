@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from harness.optimization.optimizers import OptimizationConfig, OptimizationResult
+from harness.optimization.optimizers import OptimizationConfig
 from harness.optimization.pipeline import (
     OutputFormat,
     PipelineConfig,

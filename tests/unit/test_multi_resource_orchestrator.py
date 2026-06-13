@@ -1235,10 +1235,10 @@ class TestSubagentHangAudit:
     ) -> None:
         """If psutil import fails, the audit must degrade silently to
         an empty set rather than raise."""
-        from harness.optimization import multi_resource_orchestrator as mro
-
         # Sabotage psutil import.
         import builtins
+
+        from harness.optimization import multi_resource_orchestrator as mro
 
         real_import = builtins.__import__
 

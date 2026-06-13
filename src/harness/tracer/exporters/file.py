@@ -14,10 +14,9 @@ Example usage:
 from __future__ import annotations
 
 import json
-import os
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -153,7 +152,7 @@ class FileSpanExporter:
         """Rotate the current log file."""
         try:
             # Generate rotated filename with timestamp
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
             rotated_name = f"{self.file_path.stem}_{timestamp}{self.file_path.suffix}"
             rotated_path = self.file_path.parent / rotated_name
 

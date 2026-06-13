@@ -1683,7 +1683,7 @@ class TestMainCLI:
                 # Verify run_autonomous was called with quiet=True
                 mock_run.assert_called_once()
                 # Get the coroutine passed to asyncio.run
-                coro = mock_run.call_args[0][0]
+                mock_run.call_args[0][0]
                 # The coroutine is run_autonomous(...) - we can't easily inspect it
                 # but we can verify it was called with the right parameters by
                 # checking the frame or using a different approach

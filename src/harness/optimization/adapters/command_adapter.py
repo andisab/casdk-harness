@@ -103,9 +103,11 @@ class CommandAdapter(BaseAdapter[CommandFeedback]):
                 invocation_count += 1
 
             # Check agent execution spans for command context
-            if span.kind.value == "agent_execution":
-                if "command.name" in span.attributes:
-                    invocation_count += 1
+            if (
+                span.kind.value == "agent_execution"
+                and "command.name" in span.attributes
+            ):
+                invocation_count += 1
 
         feedback.invocation_count = invocation_count
 

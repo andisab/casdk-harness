@@ -5,8 +5,8 @@ prompt optimization.
 """
 
 from harness.optimization.templates.loader import (
-    TemplateLoader,
     TemplateInfo,
+    TemplateLoader,
     get_template_loader,
 )
 

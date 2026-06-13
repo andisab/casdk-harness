@@ -365,7 +365,7 @@ class TestRecordTokens:
         """Test recording token usage on current span."""
         tracer, exporter = tracer_with_exporter
 
-        with tracer.span("llm.request", SpanKind.LLM_REQUEST) as span:
+        with tracer.span("llm.request", SpanKind.LLM_REQUEST):
             record_tokens(input_tokens=100, output_tokens=50, cached_tokens=10, model="gpt-4")
 
         assert len(exporter.spans) == 1

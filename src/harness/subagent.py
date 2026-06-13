@@ -33,10 +33,19 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Union
+from typing import TYPE_CHECKING, Any
 
 import structlog
+from claude_agent_sdk import ClaudeAgentOptions, query
+from claude_agent_sdk.types import (
+    AssistantMessage,
+    ResultMessage,
+    StreamEvent,
+    SystemMessage,
+    UserMessage,
+)
 
 from harness.agent_progress import (
     AgentProgress,
@@ -45,6 +54,8 @@ from harness.agent_progress import (
     extract_tool_calls,
     extract_tool_info,  # noqa: F401 — kept for backwards-compat callers
 )
+from harness.agents.definitions import AGENT_DEFINITIONS
+from harness.plugin_manager import PluginManager
 
 # Environment variable for verbose mode inheritance
 VERBOSE_ENV_VAR = "CLAUDE_AGENT_VERBOSE"
@@ -132,22 +143,8 @@ def _get_query_timeout() -> float:
 def _get_default_verbose() -> bool:
     """Get default verbose setting from environment or default to True."""
     env_val = os.environ.get(VERBOSE_ENV_VAR, "").lower()
-    if env_val in ("0", "false", "no", "off"):
-        return False
-    # Default to True if not explicitly disabled
-    return True
-
-from claude_agent_sdk import ClaudeAgentOptions, query
-from claude_agent_sdk.types import (
-    AssistantMessage,
-    ResultMessage,
-    StreamEvent,
-    SystemMessage,
-    UserMessage,
-)
-
-from harness.agents.definitions import AGENT_DEFINITIONS
-from harness.plugin_manager import PluginManager
+    # Default to True unless explicitly disabled.
+    return env_val not in ("0", "false", "no", "off")
 
 if TYPE_CHECKING:
     from claude_agent_sdk.types import AgentDefinition as SDKAgentDefinition
@@ -304,7 +301,7 @@ async def call_agent(
     timeout: float | None = None,
     max_turns: int | None = None,
     **extra_options: Any,
-) -> AsyncIterator[Union[UserMessage, AssistantMessage, SystemMessage, ResultMessage, StreamEvent]]:
+) -> AsyncIterator[UserMessage | AssistantMessage | SystemMessage | ResultMessage | StreamEvent]:
     """Call an agent directly, bypassing the Task tool.
 
     This function loads the agent's configuration and invokes it directly
@@ -538,7 +535,7 @@ async def call_agent(
         raise TimeoutError(
             f"Agent '{agent_name}' query timed out after {query_timeout}s. "
             f"Set {QUERY_TIMEOUT_ENV_VAR} env var to increase timeout."
-        )
+        ) from None
 
     finally:
         # Print completion summary

@@ -1,5 +1,6 @@
 """Configuration management for Claude Agent SDK Harness."""
 
+import contextlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -418,12 +419,10 @@ class HarnessConfig(BaseSettings):
             directories.append(self.cgf_file_export_path)
 
         for directory in directories:
-            try:
+            # Skip directories that can't be created (e.g., Docker paths like
+            # /workspace when running locally).
+            with contextlib.suppress(OSError):
                 directory.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                # Skip directories that can't be created (e.g., Docker paths
-                # like /workspace when running locally)
-                pass
 
 
 # Global config instance

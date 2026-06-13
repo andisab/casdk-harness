@@ -24,7 +24,7 @@ class TestSkillWorkspaceCreation:
     """Test workspace setup for skill optimization."""
 
     def test_workspace_structure_created(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace directory structure for skill resource."""
         ws = cgf_skill_workspace
@@ -35,7 +35,7 @@ class TestSkillWorkspaceCreation:
         assert ws.reviews_dir.exists()
 
     def test_workspace_identifies_skill_type(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace correctly identifies resource as skill."""
         ws = cgf_skill_workspace
@@ -47,7 +47,7 @@ class TestSkillWorkspaceCreation:
         assert config["resource"]["type"] == "skill"
 
     def test_workspace_uses_trigger_strategy(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify skill uses trigger_optimization strategy."""
         ws = cgf_skill_workspace
@@ -57,7 +57,7 @@ class TestSkillWorkspaceCreation:
         assert config["strategy"] == "trigger_optimization"
 
     def test_workspace_has_run_state(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify run_state.json is created with INIT state."""
         ws = cgf_skill_workspace
@@ -71,7 +71,7 @@ class TestSkillResearchPhase:
     """Test research phase for skill optimization."""
 
     def test_research_generates_eval_criteria(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify research generates eval criteria for skill."""
         ws = cgf_skill_workspace
@@ -113,7 +113,7 @@ class TestSkillResearchPhase:
         assert "Trigger Recall" in str(criteria["competencies"])
 
     def test_skill_criteria_addresses_activation_patterns(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify criteria addresses skill activation patterns."""
         ws = cgf_skill_workspace
@@ -131,7 +131,7 @@ class TestSkillTestGenPhase:
     """Test test generation phase for skill optimization."""
 
     def test_test_gen_produces_trigger_tests(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify TEST_GEN produces trigger-focused test cases."""
         ws = cgf_skill_workspace
@@ -188,7 +188,7 @@ class TestSkillTestGenPhase:
         assert "negative" in tags
 
     def test_test_suite_covers_false_positives(
-        self, cgf_skill_workspace: "CGFWorkspace"
+        self, cgf_skill_workspace: CGFWorkspace
     ) -> None:
         """Verify test suite includes false positive scenarios."""
         ws = cgf_skill_workspace
@@ -222,7 +222,7 @@ class TestSkillOptimizePhase:
     """Test optimization phase for skill optimization."""
 
     def test_optimize_improves_trigger_patterns(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization produces improved skill file."""
@@ -238,7 +238,7 @@ class TestSkillOptimizePhase:
         assert "optimized" in content.lower()
 
     def test_optimize_preserves_skill_structure(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization preserves skill frontmatter structure."""
@@ -258,7 +258,7 @@ class TestSkillEvaluatePhase:
     """Test evaluation phase for skill optimization."""
 
     def test_evaluate_generates_skill_review(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
     ) -> None:
         """Verify evaluation generates review for skill."""
         ws = cgf_skill_workspace
@@ -275,7 +275,7 @@ class TestSkillEvaluatePhase:
         assert "ACCEPT" in content
 
     def test_review_addresses_trigger_quality(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
     ) -> None:
         """Verify review addresses trigger detection quality."""
         ws = cgf_skill_workspace
@@ -293,7 +293,7 @@ class TestSkillFullPipeline:
     """Test complete pipeline execution for skill optimization."""
 
     def test_full_pipeline_success(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test complete successful pipeline for skill."""
@@ -350,7 +350,7 @@ class TestSkillFullPipeline:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_pipeline_maintains_trigger_boundaries(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimized skill maintains correct trigger boundaries."""
@@ -371,7 +371,7 @@ class TestSkillFullPipeline:
         assert "final_score" in content or "optimized" in content.lower()
 
     def test_pipeline_with_false_positive_refinement(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test pipeline handles refinement for false positive issues."""
@@ -407,7 +407,7 @@ class TestSkillStrategyValidation:
     """Test skill-specific optimization strategy validation."""
 
     def test_skill_strategy_is_trigger_optimization(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
     ) -> None:
         """Verify skill uses trigger_optimization strategy."""
         ws = cgf_skill_workspace
@@ -420,7 +420,7 @@ class TestSkillStrategyValidation:
         assert state["strategy"] == "trigger_optimization"
 
     def test_skill_research_focuses_on_activation(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
     ) -> None:
         """Verify research phase focuses on activation patterns."""
         ws = cgf_skill_workspace
@@ -445,7 +445,7 @@ class TestSkillStrategyValidation:
         )
 
     def test_skill_tests_cover_boundary_conditions(
-        self, cgf_skill_workspace: "CGFWorkspace",
+        self, cgf_skill_workspace: CGFWorkspace,
     ) -> None:
         """Verify test suite covers trigger boundary conditions."""
         ws = cgf_skill_workspace

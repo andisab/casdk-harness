@@ -268,7 +268,6 @@ class TestCompiledPatterns:
 
     def test_compiled_patterns_are_regex(self) -> None:
         """Compiled patterns are regex Pattern objects."""
-        import re
         for pattern in COMPILED_BLOCKED_PATTERNS:
             assert hasattr(pattern, "search")
             assert hasattr(pattern, "pattern")

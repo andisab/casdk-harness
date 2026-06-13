@@ -25,7 +25,7 @@ class TestCommandWorkspaceCreation:
     """Test workspace setup for command optimization."""
 
     def test_workspace_structure_created(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace directory structure for command resource."""
         ws = cgf_command_workspace
@@ -36,7 +36,7 @@ class TestCommandWorkspaceCreation:
         assert ws.reviews_dir.exists()
 
     def test_workspace_identifies_command_type(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace correctly identifies resource as command."""
         ws = cgf_command_workspace
@@ -48,7 +48,7 @@ class TestCommandWorkspaceCreation:
         assert config["resource"]["type"] == "command"
 
     def test_workspace_uses_schema_strategy(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify command uses schema_optimization strategy."""
         ws = cgf_command_workspace
@@ -58,7 +58,7 @@ class TestCommandWorkspaceCreation:
         assert config["strategy"] == "schema_optimization"
 
     def test_workspace_has_run_state(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify run_state.json is created with INIT state."""
         ws = cgf_command_workspace
@@ -72,7 +72,7 @@ class TestCommandResearchPhase:
     """Test research phase for command optimization."""
 
     def test_research_generates_eval_criteria(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify research generates eval criteria for command."""
         ws = cgf_command_workspace
@@ -114,7 +114,7 @@ class TestCommandResearchPhase:
         assert "Error Messaging" in str(criteria["competencies"])
 
     def test_command_criteria_addresses_schema_concerns(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify criteria addresses command schema concerns."""
         ws = cgf_command_workspace
@@ -131,7 +131,7 @@ class TestCommandTestGenPhase:
     """Test test generation phase for command optimization."""
 
     def test_test_gen_produces_argument_tests(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify TEST_GEN produces argument validation test cases."""
         ws = cgf_command_workspace
@@ -197,7 +197,7 @@ class TestCommandTestGenPhase:
         assert "error" in tags
 
     def test_test_suite_covers_error_scenarios(
-        self, cgf_command_workspace: "CGFWorkspace"
+        self, cgf_command_workspace: CGFWorkspace
     ) -> None:
         """Verify test suite includes error handling scenarios."""
         ws = cgf_command_workspace
@@ -231,7 +231,7 @@ class TestCommandOptimizePhase:
     """Test optimization phase for command optimization."""
 
     def test_optimize_improves_command_schema(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization produces improved command file."""
@@ -247,7 +247,7 @@ class TestCommandOptimizePhase:
         assert "optimized" in content.lower()
 
     def test_optimize_preserves_command_structure(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization preserves command frontmatter."""
@@ -266,7 +266,7 @@ class TestCommandEvaluatePhase:
     """Test evaluation phase for command optimization."""
 
     def test_evaluate_generates_command_review(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
     ) -> None:
         """Verify evaluation generates review for command."""
         ws = cgf_command_workspace
@@ -283,7 +283,7 @@ class TestCommandEvaluatePhase:
         assert "ACCEPT" in content
 
     def test_review_addresses_error_handling(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
     ) -> None:
         """Verify review addresses error handling quality."""
         ws = cgf_command_workspace
@@ -301,7 +301,7 @@ class TestCommandFullPipeline:
     """Test complete pipeline execution for command optimization."""
 
     def test_full_pipeline_success(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test complete successful pipeline for command."""
@@ -361,7 +361,7 @@ class TestCommandFullPipeline:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_pipeline_preserves_valid_behavior(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimized command preserves valid input behavior."""
@@ -381,7 +381,7 @@ class TestCommandFullPipeline:
         assert "final_score" in content or "optimized" in content.lower()
 
     def test_pipeline_with_error_handling_refinement(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test pipeline handles refinement for error handling issues."""
@@ -417,7 +417,7 @@ class TestCommandStrategyValidation:
     """Test command-specific optimization strategy validation."""
 
     def test_command_strategy_is_schema_optimization(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
     ) -> None:
         """Verify command uses schema_optimization strategy."""
         ws = cgf_command_workspace
@@ -430,7 +430,7 @@ class TestCommandStrategyValidation:
         assert state["strategy"] == "schema_optimization"
 
     def test_command_research_focuses_on_validation(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
     ) -> None:
         """Verify research phase focuses on argument validation."""
         ws = cgf_command_workspace
@@ -455,7 +455,7 @@ class TestCommandStrategyValidation:
         )
 
     def test_command_tests_cover_edge_cases(
-        self, cgf_command_workspace: "CGFWorkspace",
+        self, cgf_command_workspace: CGFWorkspace,
     ) -> None:
         """Verify test suite covers command edge cases."""
         ws = cgf_command_workspace

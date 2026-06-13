@@ -20,6 +20,14 @@ Example usage:
     )
 """
 
+# Agentic optimizer (always available)
+from harness.optimization.optimizers.agentic_optimizer import (
+    AgenticOptimizationConfig,
+    AgenticOptimizationResult,
+    AgenticSectionOptimizer,
+    CritiqueResult,
+    get_agentic_optimizer,
+)
 from harness.optimization.optimizers.metrics import (
     MetricFunction,
     MetricRegistry,
@@ -45,15 +53,6 @@ from harness.optimization.optimizers.protocol import (
     OptimizationResult,
     OptimizerProtocol,
     PromptCandidate,
-)
-
-# Agentic optimizer (always available)
-from harness.optimization.optimizers.agentic_optimizer import (
-    AgenticSectionOptimizer,
-    AgenticOptimizationConfig,
-    AgenticOptimizationResult,
-    CritiqueResult,
-    get_agentic_optimizer,
 )
 
 __all__ = [

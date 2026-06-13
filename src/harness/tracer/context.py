@@ -16,6 +16,7 @@ Example usage:
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -169,12 +170,10 @@ class TraceContext:
             TRACESTATE_HEADER.title()
         )
         if tracestate:
-            try:
+            with contextlib.suppress(ValueError):
                 context.trace_state = dict(
                     pair.split("=", 1) for pair in tracestate.split(",")
                 )
-            except ValueError:
-                pass
 
         # Parse CGF context if present
         cgf_header = headers.get(CGF_CONTEXT_HEADER) or headers.get(

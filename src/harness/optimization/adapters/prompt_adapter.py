@@ -134,7 +134,7 @@ class PromptAdapter(BaseAdapter[PromptFeedback]):
                     missing_variables.update(vars_missing)
 
             # Check for individual variable attributes
-            for key, value in span.attributes.items():
+            for key, _value in span.attributes.items():
                 if key.startswith("prompt.var."):
                     var_name = key.replace("prompt.var.", "")
                     variables_used.add(var_name)

@@ -1,8 +1,6 @@
 """Unit tests for Span and related base types."""
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from harness.tracer.base import (
     Span,
@@ -214,7 +212,7 @@ class TestSpan:
 
     def test_from_dict(self) -> None:
         """Test deserialization from dictionary."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = {
             "trace_id": "a" * 32,
             "span_id": "b" * 16,

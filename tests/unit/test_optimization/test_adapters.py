@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,10 +21,9 @@ from harness.optimization.adapters import (
     TripletAdapter,
     get_adapter,
     get_default_registry,
+    reset_default_registry,
 )
-from harness.optimization.adapters import reset_default_registry
 from harness.tracer.base import Span, SpanKind, SpanStatus
-
 
 # =============================================================================
 # Test Fixtures
@@ -35,7 +34,7 @@ from harness.tracer.base import Span, SpanKind, SpanStatus
 def sample_agent_spans() -> list[Span]:
     """Create sample spans for agent execution."""
     trace_id = "abc123"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     return [
         Span(
@@ -107,7 +106,7 @@ def sample_agent_spans() -> list[Span]:
 def sample_skill_spans() -> list[Span]:
     """Create sample spans for skill execution."""
     trace_id = "def456"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     return [
         Span(
@@ -134,7 +133,7 @@ def sample_skill_spans() -> list[Span]:
 def sample_prompt_spans() -> list[Span]:
     """Create sample spans for prompt usage."""
     trace_id = "ghi789"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     return [
         Span(
@@ -162,7 +161,7 @@ def sample_prompt_spans() -> list[Span]:
 def sample_command_spans() -> list[Span]:
     """Create sample spans for command execution."""
     trace_id = "jkl012"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     return [
         Span(
@@ -688,7 +687,7 @@ class TestTripletAdapter:
                 span_id="bad1",
                 name="agent.execute",
                 kind=SpanKind.AGENT_EXECUTION,
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 status=SpanStatus.ERROR,
                 error_message="Task failed",
                 resource_type="agent",

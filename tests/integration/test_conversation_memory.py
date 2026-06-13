@@ -16,11 +16,10 @@ def extract_assistant_text(messages: list) -> str:
     """Extract text from AssistantMessage content blocks."""
     text = ""
     for msg in messages:
-        if msg.__class__.__name__ == "AssistantMessage":
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    if hasattr(block, "text"):
-                        text += block.text + " "
+        if msg.__class__.__name__ == "AssistantMessage" and hasattr(msg, "content"):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    text += block.text + " "
     return text
 
 

@@ -1,11 +1,10 @@
 """Unit tests for OTelTracer implementation."""
 
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from harness.tracer.base import Span, SpanExporter, SpanKind, SpanStatus
+from harness.tracer.base import Span, SpanKind, SpanStatus
 from harness.tracer.otel_tracer import OTelTracer
 
 
@@ -101,7 +100,7 @@ class TestOTelTracerContextManager:
         tracer.add_exporter(exporter)
 
         with pytest.raises(ValueError):
-            with tracer.span("failing.operation", SpanKind.AGENT_EXECUTION) as span:
+            with tracer.span("failing.operation", SpanKind.AGENT_EXECUTION):
                 raise ValueError("test error")
 
         assert len(exporter.spans) == 1

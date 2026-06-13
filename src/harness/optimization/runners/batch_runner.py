@@ -24,7 +24,8 @@ import asyncio
 import hashlib
 import sys
 import time
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -369,9 +370,8 @@ class BatchRunner(BaseRunner):
         for tc in suite.test_cases:
             if ids and tc.id not in ids:
                 continue
-            if tags:
-                if not any(tag in tc.tags for tag in tags):
-                    continue
+            if tags and not any(tag in tc.tags for tag in tags):
+                continue
             filtered.append(tc)
 
         if not filtered:

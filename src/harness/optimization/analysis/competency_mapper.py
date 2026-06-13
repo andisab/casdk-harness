@@ -371,10 +371,7 @@ def is_deterministic_test(test: TestCase) -> bool:
         return validation.require_syntax_valid
 
     # JSON schema validation is deterministic
-    if val_type in ("json", "json_schema"):
-        return True
-
-    return False
+    return val_type in ("json", "json_schema")
 
 
 def is_llm_judge_test(test: TestCase) -> bool:
@@ -396,10 +393,7 @@ def is_llm_judge_test(test: TestCase) -> bool:
         val_type = val_type.value
 
     # LLM-based validators
-    if val_type in ("llm_judge", "semantic", "code_llm"):
-        return True
-
-    return False
+    return val_type in ("llm_judge", "semantic", "code_llm")
 
 
 def map_tests_to_competencies(

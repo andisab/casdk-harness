@@ -19,14 +19,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from harness.optimization.eval_harness.models import EvalConfig, EvalSuite
 from harness.optimization.eval_harness.runner import (
     _filter_scenarios_for_resource,
     _resource_target_key,
 )
-
 
 # ---------------------------------------------------------------------------
 # _resource_target_key — path normalization

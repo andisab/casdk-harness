@@ -13,7 +13,6 @@ from harness.optimization.analysis import (
     Competency,
     EdgeCase,
     EvalCriteria,
-    OptimizableSection,
     OptimizationStrategy,
     PromptSection,
     assess_coverage,
@@ -22,9 +21,7 @@ from harness.optimization.analysis import (
     map_tests_to_competencies,
 )
 from harness.optimization.analysis.synthesizer import (
-    ParsedPrompt,
     PromptSynthesizer,
-    SynthesisResult,
     merge_optimized_sections,
 )
 from harness.optimization.analysis.test_subset import (
@@ -693,8 +690,8 @@ class TestAgenticOptimizerTestIntegration:
     def test_combine_validation_scores_heuristic_pass_tests_pass(self) -> None:
         """Test combining scores when both heuristic and tests pass."""
         from harness.optimization.optimizers.agentic_optimizer import (
-            AgenticSectionOptimizer,
             AgenticOptimizationConfig,
+            AgenticSectionOptimizer,
         )
 
         optimizer = AgenticSectionOptimizer()
@@ -714,8 +711,8 @@ class TestAgenticOptimizerTestIntegration:
     def test_combine_validation_scores_heuristic_fail(self) -> None:
         """Test that heuristic failure leads to rejection."""
         from harness.optimization.optimizers.agentic_optimizer import (
-            AgenticSectionOptimizer,
             AgenticOptimizationConfig,
+            AgenticSectionOptimizer,
         )
 
         optimizer = AgenticSectionOptimizer()
@@ -735,8 +732,8 @@ class TestAgenticOptimizerTestIntegration:
     def test_combine_validation_scores_custom_weight(self) -> None:
         """Test custom test weight configuration."""
         from harness.optimization.optimizers.agentic_optimizer import (
-            AgenticSectionOptimizer,
             AgenticOptimizationConfig,
+            AgenticSectionOptimizer,
         )
 
         optimizer = AgenticSectionOptimizer()
@@ -775,8 +772,8 @@ class TestCrossSectionRegression:
 
     def test_section_impact_dataclass(self) -> None:
         """Test SectionImpact dataclass fields."""
-        from harness.optimization.orchestrator import SectionImpact
         from harness.optimization.analysis import PromptSection
+        from harness.optimization.orchestrator import SectionImpact
 
         impact = SectionImpact(
             source_section=PromptSection.BEST_PRACTICES,
@@ -794,8 +791,9 @@ class TestCrossSectionRegression:
 
     def test_config_includes_cross_section_check(self) -> None:
         """Test that config has cross_section_check attribute."""
-        from harness.optimization.orchestrator import SectionOptimizationConfig
         from pathlib import Path
+
+        from harness.optimization.orchestrator import SectionOptimizationConfig
 
         config = SectionOptimizationConfig(
             agent_path=Path("test.md"),
@@ -811,8 +809,9 @@ class TestCrossSectionRegression:
 
     def test_config_regression_threshold_customizable(self) -> None:
         """Test that regression threshold can be customized."""
-        from harness.optimization.orchestrator import SectionOptimizationConfig
         from pathlib import Path
+
+        from harness.optimization.orchestrator import SectionOptimizationConfig
 
         config = SectionOptimizationConfig(
             agent_path=Path("test.md"),
@@ -828,11 +827,11 @@ class TestCrossSectionRegression:
 
     def test_orchestration_result_includes_impact_matrix(self) -> None:
         """Test that OrchestrationResult includes impact matrix."""
+        from harness.optimization.analysis import PromptSection
         from harness.optimization.orchestrator import (
             OrchestrationResult,
             SectionImpact,
         )
-        from harness.optimization.analysis import PromptSection
 
         impact = SectionImpact(
             source_section=PromptSection.CORE_APPROACH,

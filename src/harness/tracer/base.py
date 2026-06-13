@@ -19,11 +19,12 @@ Example usage:
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Iterator, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -104,7 +105,7 @@ class Span:
     span_id: str
     name: str
     kind: SpanKind
-    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Optional fields with defaults
     parent_span_id: str | None = None
@@ -158,7 +159,7 @@ class Span:
         """
         self.events.append({
             "name": name,
-            "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
+            "timestamp": (timestamp or datetime.now(UTC)).isoformat(),
             "attributes": attributes or {},
         })
 
@@ -175,7 +176,7 @@ class Span:
             status: Final span status.
             error_message: Error description if status is ERROR.
         """
-        self.end_time = datetime.now(timezone.utc)
+        self.end_time = datetime.now(UTC)
         self.duration_ms = (self.end_time - self.start_time).total_seconds() * 1000
         self.status = status
         if error_message:

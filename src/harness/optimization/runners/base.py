@@ -19,8 +19,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from harness.optimization.adapters import AgentFeedback
-    from harness.optimization.testcases import TestCase, TestResult, TestSuite, SuiteResult
+    from harness.optimization.testcases import SuiteResult, TestCase, TestResult, TestSuite
 
 
 @dataclass

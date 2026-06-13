@@ -50,7 +50,7 @@ logger = structlog.get_logger(__name__)
 
 
 # Shared HTTP client instance for validators (lazy initialization)
-_shared_client: "AsyncAnthropic | None" = None
+_shared_client: AsyncAnthropic | None = None
 
 # Default model for LLM validators, can be overridden via set_eval_model()
 DEFAULT_EVAL_MODEL = "claude-sonnet-4-20250514"
@@ -83,7 +83,7 @@ def get_eval_model() -> str:
     return _eval_model_override or DEFAULT_EVAL_MODEL
 
 
-def get_shared_anthropic_client() -> "AsyncAnthropic":
+def get_shared_anthropic_client() -> AsyncAnthropic:
     """Get or create a shared AsyncAnthropic client.
 
     Reuses a single client instance across all validators to avoid

@@ -25,7 +25,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -101,7 +101,7 @@ class ResourceVersion:
     version: int
     version_id: str = field(default_factory=generate_version_id)
     content_hash: str = ""
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -121,7 +121,7 @@ class ResourceVersion:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         return cls(
             version=data["version"],
@@ -154,8 +154,8 @@ class Resource:
     content: str
     current_version: ResourceVersion
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -176,13 +176,13 @@ class Resource:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
         elif updated_at is None:
-            updated_at = datetime.now(timezone.utc)
+            updated_at = datetime.now(UTC)
 
         return cls(
             resource_id=data["resource_id"],
@@ -224,7 +224,7 @@ class EvaluationTask:
     priority: int = 0
     status: EvaluationStatus = EvaluationStatus.PENDING
     runner_id: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     completed_at: datetime | None = None
     timeout_at: datetime | None = None
@@ -260,7 +260,7 @@ class EvaluationTask:
 
         created_at = parse_datetime(data.get("created_at"))
         if created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         status = data.get("status", "pending")
         if isinstance(status, str):
@@ -307,7 +307,7 @@ class EvaluationResult:
     reward: dict[str, float] = field(default_factory=dict)
     composite_score: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
         """Compute composite score if not set."""
@@ -331,7 +331,7 @@ class EvaluationResult:
 
         if weights is None:
             # Default: equal weighting
-            weights = {k: 1.0 for k in self.reward}
+            weights = dict.fromkeys(self.reward, 1.0)
 
         total_weight = sum(weights.get(k, 0.0) for k in self.reward)
         if total_weight == 0:
@@ -362,7 +362,7 @@ class EvaluationResult:
         if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
         elif created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         return cls(
             evaluation_id=data["evaluation_id"],

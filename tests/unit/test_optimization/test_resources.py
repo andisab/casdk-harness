@@ -17,13 +17,11 @@ from harness.optimization.resources import (
     ValidationError,
 )
 from harness.optimization.resources.base import (
-    BaseResource,
     compute_content_hash,
     compute_diff,
     parse_frontmatter,
     serialize_frontmatter,
 )
-
 
 # =============================================================================
 # Helper Function Tests

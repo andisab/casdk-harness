@@ -28,7 +28,6 @@ from harness.optimization.testcases.models import SuiteResult, TestResult
 from harness.optimization.testcases.validators import get_validator
 
 if TYPE_CHECKING:
-    from harness.optimization.adapters import AgentFeedback
     from harness.optimization.testcases import TestCase, TestSuite
     from harness.tracer import Span
 
@@ -102,7 +101,6 @@ class AgentRunner(BaseRunner):
         """
         start_time = time.time()
         tracer = self._get_tracer() if self.config.collect_spans else None
-        trace_id = None
         spans: list[Span] = []
         output = ""
         error_message = None
@@ -141,7 +139,7 @@ class AgentRunner(BaseRunner):
                     adapter = self._get_adapter()
                     feedback = adapter.adapt(spans)
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             error_message = f"Test case timed out after {timeout}s"
             logger.warning(
                 "Test case timeout",

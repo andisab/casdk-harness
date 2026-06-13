@@ -25,7 +25,7 @@ class TestWorkflowWorkspaceCreation:
     """Test workspace setup for workflow optimization."""
 
     def test_workspace_structure_created(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace directory structure for workflow resource."""
         ws = cgf_workflow_workspace
@@ -36,7 +36,7 @@ class TestWorkflowWorkspaceCreation:
         assert ws.reviews_dir.exists()
 
     def test_workspace_identifies_workflow_type(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace correctly identifies resource as workflow."""
         ws = cgf_workflow_workspace
@@ -48,7 +48,7 @@ class TestWorkflowWorkspaceCreation:
         assert config["resource"]["type"] == "workflow"
 
     def test_workspace_uses_workflow_strategy(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify workflow uses workflow_optimization strategy."""
         ws = cgf_workflow_workspace
@@ -58,7 +58,7 @@ class TestWorkflowWorkspaceCreation:
         assert config["strategy"] == "workflow_optimization"
 
     def test_workspace_has_run_state(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify run_state.json is created with INIT state."""
         ws = cgf_workflow_workspace
@@ -72,7 +72,7 @@ class TestWorkflowResearchPhase:
     """Test research phase for workflow optimization."""
 
     def test_research_generates_eval_criteria(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify research generates eval criteria for workflow."""
         ws = cgf_workflow_workspace
@@ -114,7 +114,7 @@ class TestWorkflowResearchPhase:
         assert "Error Recovery" in str(criteria["competencies"])
 
     def test_workflow_criteria_addresses_coordination(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify criteria addresses workflow coordination concerns."""
         ws = cgf_workflow_workspace
@@ -131,7 +131,7 @@ class TestWorkflowTestGenPhase:
     """Test test generation phase for workflow optimization."""
 
     def test_test_gen_produces_workflow_tests(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify TEST_GEN produces workflow test cases."""
         ws = cgf_workflow_workspace
@@ -197,7 +197,7 @@ class TestWorkflowTestGenPhase:
         assert "error" in tags
 
     def test_test_suite_covers_interruptions(
-        self, cgf_workflow_workspace: "CGFWorkspace"
+        self, cgf_workflow_workspace: CGFWorkspace
     ) -> None:
         """Verify test suite includes interruption scenarios."""
         ws = cgf_workflow_workspace
@@ -231,7 +231,7 @@ class TestWorkflowOptimizePhase:
     """Test optimization phase for workflow optimization."""
 
     def test_optimize_improves_workflow(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization produces improved workflow file."""
@@ -247,7 +247,7 @@ class TestWorkflowOptimizePhase:
         assert "optimized" in content.lower()
 
     def test_optimize_preserves_workflow_structure(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimization preserves workflow frontmatter."""
@@ -266,7 +266,7 @@ class TestWorkflowEvaluatePhase:
     """Test evaluation phase for workflow optimization."""
 
     def test_evaluate_generates_workflow_review(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify evaluation generates review for workflow."""
         ws = cgf_workflow_workspace
@@ -283,7 +283,7 @@ class TestWorkflowEvaluatePhase:
         assert "ACCEPT" in content
 
     def test_review_addresses_state_handling(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify review addresses state machine handling."""
         ws = cgf_workflow_workspace
@@ -301,7 +301,7 @@ class TestWorkflowFullPipeline:
     """Test complete pipeline execution for workflow optimization."""
 
     def test_full_pipeline_success(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test complete successful pipeline for workflow."""
@@ -361,7 +361,7 @@ class TestWorkflowFullPipeline:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_pipeline_handles_state_machine(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Verify optimized workflow handles state machine correctly."""
@@ -381,7 +381,7 @@ class TestWorkflowFullPipeline:
         assert "final_score" in content or "optimized" in content.lower()
 
     def test_pipeline_with_reliability_refinement(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
         mock_optimizer: MagicMock,
     ) -> None:
         """Test pipeline handles refinement for reliability issues."""
@@ -417,7 +417,7 @@ class TestWorkflowStrategyValidation:
     """Test workflow-specific optimization strategy validation."""
 
     def test_workflow_strategy_is_workflow_optimization(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify workflow uses workflow_optimization strategy."""
         ws = cgf_workflow_workspace
@@ -430,7 +430,7 @@ class TestWorkflowStrategyValidation:
         assert state["strategy"] == "workflow_optimization"
 
     def test_workflow_research_focuses_on_coordination(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify research phase focuses on step coordination."""
         ws = cgf_workflow_workspace
@@ -458,7 +458,7 @@ class TestWorkflowStrategyValidation:
         )
 
     def test_workflow_tests_cover_state_transitions(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify test suite covers state transition scenarios."""
         ws = cgf_workflow_workspace
@@ -503,7 +503,7 @@ class TestWorkflowInterruptionHandling:
     """Test workflow-specific interruption handling."""
 
     def test_workflow_handles_graceful_shutdown(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify workflow handles graceful shutdown."""
         ws = cgf_workflow_workspace
@@ -533,7 +533,7 @@ class TestWorkflowInterruptionHandling:
         assert len(shutdown_tests) >= 1
 
     def test_workflow_handles_forced_abort(
-        self, cgf_workflow_workspace: "CGFWorkspace",
+        self, cgf_workflow_workspace: CGFWorkspace,
     ) -> None:
         """Verify workflow handles forced abort."""
         ws = cgf_workflow_workspace

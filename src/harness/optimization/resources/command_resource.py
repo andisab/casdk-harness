@@ -145,13 +145,16 @@ class CommandResource(BaseResource):
             ))
 
         # Check for argument placeholders if hint suggests arguments
-        if self.argument_hint:
-            if "$1" not in self.instructions and "$ARGUMENTS" not in self.instructions:
-                errors.append(ValidationError(
-                    "instructions",
-                    f"Argument hint '{self.argument_hint}' provided but no $1 or $ARGUMENTS in instructions",
-                    severity="warning"
-                ))
+        if (
+            self.argument_hint
+            and "$1" not in self.instructions
+            and "$ARGUMENTS" not in self.instructions
+        ):
+            errors.append(ValidationError(
+                "instructions",
+                f"Argument hint '{self.argument_hint}' provided but no $1 or $ARGUMENTS in instructions",
+                severity="warning"
+            ))
 
         return errors
 

@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
 from harness.optimization.optimizers import (
-    BaseOptimizer,
     IterationResult,
     OptimizationConfig,
     OptimizationResult,
-    OptimizerProtocol,
     PromptCandidate,
 )
 from harness.optimization.optimizers.metrics import (
@@ -24,8 +18,6 @@ from harness.optimization.optimizers.metrics import (
     get_metric,
     get_suite_metric,
     pass_fail_metric,
-    register_metric,
-    reward_composite_metric,
     suite_average_score,
     suite_composite_metric,
     suite_pass_rate,
@@ -34,11 +26,7 @@ from harness.optimization.optimizers.metrics import (
 )
 from harness.optimization.testcases import (
     SuiteResult,
-    TestCase,
     TestResult,
-    TestSuite,
-    ValidationConfig,
-    ValidationType,
 )
 
 

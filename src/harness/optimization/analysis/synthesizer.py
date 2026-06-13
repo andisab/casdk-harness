@@ -355,12 +355,14 @@ class PromptSynthesizer:
                     # Check required fields for resource type
                     if self.template:
                         for field_name in self.template.frontmatter_fields:
-                            if field_name not in frontmatter:
-                                # Only error on truly required fields
-                                if field_name in ("name", "description"):
-                                    errors.append(
-                                        f"Missing required frontmatter: {field_name}"
-                                    )
+                            # Only error on truly required fields that are missing
+                            if field_name not in frontmatter and field_name in (
+                                "name",
+                                "description",
+                            ):
+                                errors.append(
+                                    f"Missing required frontmatter: {field_name}"
+                                )
                 except yaml.YAMLError as e:
                     errors.append(f"Invalid YAML frontmatter: {e}")
 
@@ -381,8 +383,8 @@ class PromptSynthesizer:
         open_tags = re.findall(r"<(\w+)>", prompt)
         close_tags = re.findall(r"</(\w+)>", prompt)
 
-        open_set = set(tag.lower() for tag in open_tags)
-        close_set = set(tag.lower() for tag in close_tags)
+        open_set = {tag.lower() for tag in open_tags}
+        close_set = {tag.lower() for tag in close_tags}
 
         unmatched = open_set - close_set
         if unmatched:

@@ -27,7 +27,7 @@ import hashlib
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
@@ -146,7 +146,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     try:
         metadata = yaml.safe_load(match.group(1)) or {}
     except yaml.YAMLError as e:
-        raise ValueError(f"Invalid YAML frontmatter: {e}")
+        raise ValueError(f"Invalid YAML frontmatter: {e}") from e
 
     body = match.group(2).strip()
     return metadata, body
@@ -237,7 +237,7 @@ class BaseResource(ABC):
     _metadata: dict[str, Any] = field(default_factory=dict)
     _body: str = ""
     _source_path: Path | None = None
-    _loaded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    _loaded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def resource_id(self) -> str:

@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-import pytest
-
 from harness.optimization.optimizers.optimizer_utils import (
     DEFAULT_ITERATION_TIMEOUT,
     ITERATION_TIMEOUT_ENV_VAR,

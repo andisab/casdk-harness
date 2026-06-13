@@ -1,10 +1,7 @@
 """Unit tests for span exporters."""
 
 import json
-import tempfile
 from pathlib import Path
-
-import pytest
 
 from harness.tracer.base import Span, SpanKind, SpanStatus
 from harness.tracer.exporters.file import FileSpanExporter
@@ -41,7 +38,7 @@ class TestFileSpanExporter:
     def test_exporter_creates_parent_directory(self, tmp_path: Path) -> None:
         """Test exporter creates parent directories."""
         span_file = tmp_path / "nested" / "dir" / "spans.jsonl"
-        exporter = FileSpanExporter(file_path=span_file)
+        FileSpanExporter(file_path=span_file)
 
         assert span_file.parent.exists()
 

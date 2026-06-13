@@ -152,7 +152,7 @@ class TestGetLibraryDocs:
             mock_client.return_value = mock_instance
 
             # Library ID without leading slash
-            result = await get_library_docs(
+            await get_library_docs(
                 {"context7CompatibleLibraryID": "vercel/next.js"}
             )
 

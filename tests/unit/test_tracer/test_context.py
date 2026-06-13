@@ -1,6 +1,5 @@
 """Unit tests for trace context propagation."""
 
-import pytest
 
 from harness.tracer.base import Span, SpanKind
 from harness.tracer.context import (

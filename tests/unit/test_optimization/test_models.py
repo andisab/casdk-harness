@@ -1,6 +1,6 @@
 """Unit tests for optimization store models."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -101,7 +101,7 @@ class TestResourceVersion:
 
     def test_resource_version_to_dict(self) -> None:
         """Test serializing resource version."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         version = ResourceVersion(
             version=2,
             version_id="v-test123",
@@ -120,7 +120,7 @@ class TestResourceVersion:
 
     def test_resource_version_from_dict(self) -> None:
         """Test deserializing resource version."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = {
             "version": 3,
             "version_id": "v-abc12345",
@@ -168,7 +168,7 @@ class TestResource:
 
     def test_resource_to_dict(self) -> None:
         """Test serializing resource."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         version = ResourceVersion(version=1, content_hash="hash", created_at=now)
         resource = Resource(
             resource_id="my-skill",
@@ -190,7 +190,7 @@ class TestResource:
 
     def test_resource_from_dict(self) -> None:
         """Test deserializing resource."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = {
             "resource_id": "test-prompt",
             "resource_type": "prompt",
@@ -233,7 +233,7 @@ class TestEvaluationTask:
 
     def test_evaluation_task_to_dict(self) -> None:
         """Test serializing evaluation task."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         task = EvaluationTask(
             evaluation_id="eval-test123456",
             resource_id="skill-1",
@@ -255,7 +255,7 @@ class TestEvaluationTask:
 
     def test_evaluation_task_from_dict(self) -> None:
         """Test deserializing evaluation task."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = {
             "evaluation_id": "eval-abc123def4",
             "resource_id": "prompt-1",
@@ -349,7 +349,7 @@ class TestEvaluationResult:
 
     def test_evaluation_result_from_dict(self) -> None:
         """Test deserializing evaluation result."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data = {
             "evaluation_id": "eval-abc",
             "resource_id": "skill-1",

@@ -30,7 +30,6 @@ import pytest
 
 from harness.optimization.eval_harness.runner import _parse_resource_file
 
-
 # ---------------------------------------------------------------------------
 # tools: parsing
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 """Checkpoint and recovery system for long-running agent sessions."""
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import subprocess
@@ -42,11 +43,10 @@ class CheckpointManager:
         self.workspace_dir = Path(workspace_dir) if workspace_dir else Path("/workspace")
         self.memory_dir = Path(memory_dir) if memory_dir else Path("/memory/graph")
 
-        # Ensure directory exists (skip if path is not writable, e.g., Docker paths locally)
-        try:
+        # Ensure directory exists; retried when actually saving if the path is
+        # not writable yet (e.g., Docker paths like /workspace running locally).
+        with contextlib.suppress(OSError):
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass  # Directory creation will be retried when actually saving
 
     async def auto_checkpoint(
         self,

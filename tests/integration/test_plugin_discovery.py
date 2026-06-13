@@ -73,7 +73,7 @@ async def test_sdk_loads_plugins_without_error():
 
     try:
         # Initialize client (this is where SDK loads plugins)
-        client = ClaudeSDKClient(options)
+        ClaudeSDKClient(options)
 
         # If we get here, plugins loaded successfully
         assert True

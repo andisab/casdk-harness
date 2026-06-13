@@ -316,5 +316,6 @@ def test_runtime_config_immutable() -> None:
     config = HarnessConfig(anthropic_api_key="test-key")
     runtime = RuntimeConfig.from_harness_config(config)
 
-    with pytest.raises(Exception):  # FrozenInstanceError
+    # Frozen dataclass raises dataclasses.FrozenInstanceError, a subclass of AttributeError.
+    with pytest.raises(AttributeError):
         runtime.model = "different-model"  # type: ignore[misc]

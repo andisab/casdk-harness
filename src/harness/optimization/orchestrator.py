@@ -34,11 +34,9 @@ from harness.optimization.analysis import (
     OptimizationStrategy,
     PromptSection,
     assess_coverage,
-    create_section_suites,
     load_eval_criteria,
     map_tests_to_competencies,
 )
-from harness.optimization.optimizers.protocol import OptimizationConfig
 from harness.optimization.resources import AgentResource
 from harness.optimization.testcases import TestSuiteLoader
 
@@ -279,13 +277,13 @@ class SectionOptimizer:
         )
 
         # Use agentic optimizer for all sections
-        from harness.optimization.optimizers.agentic_optimizer import (
-            AgenticSectionOptimizer,
-            AgenticOptimizationConfig,
-        )
         from harness.optimization.analysis import (
             extract_all_sections_from_prompt,
             replace_section_in_prompt,
+        )
+        from harness.optimization.optimizers.agentic_optimizer import (
+            AgenticOptimizationConfig,
+            AgenticSectionOptimizer,
         )
 
         agentic_optimizer = AgenticSectionOptimizer()
@@ -304,7 +302,7 @@ class SectionOptimizer:
         logger.info(
             "AGENTIC: Extracted sections",
             count=len(sections),
-            sections=[s.value for s in sections.keys()],
+            sections=[s.value for s in sections],
         )
 
         for prompt_section, content in sections.items():

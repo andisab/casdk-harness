@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -148,7 +148,7 @@ class RedisOptimizationStore:
             logger.debug("Redis store connected", url=self.url)
         except ImportError:
             logger.error("redis package not installed")
-            raise RuntimeError("redis package required: pip install redis")
+            raise RuntimeError("redis package required: pip install redis") from None
         except Exception as e:
             logger.error("Redis connection failed", error=str(e))
             self._connected = False
@@ -208,12 +208,12 @@ class RedisOptimizationStore:
         """Query spans with optional filters."""
         results: list[Span] = []
 
-        if trace_id:
-            # Query specific trace
-            trace_ids = [trace_id]
-        else:
-            # Query all traces from index
-            trace_ids = list(self._client.smembers(KEY_SPANS_INDEX))
+        # [trace_id] for a specific trace; otherwise all traces from the index
+        trace_ids = (
+            [trace_id]
+            if trace_id
+            else list(self._client.smembers(KEY_SPANS_INDEX))
+        )
 
         # Build score range
         min_score = start_time.timestamp() if start_time else "-inf"
@@ -281,7 +281,7 @@ class RedisOptimizationStore:
     ) -> ResourceVersion:
         """Register a new resource or version."""
         content_hash = compute_content_hash(content)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         resource_key = KEY_RESOURCES.format(resource_id=resource_id)
         versions_key = KEY_RESOURCE_VERSIONS.format(resource_id=resource_id)
@@ -534,7 +534,7 @@ class RedisOptimizationStore:
             config=config or {},
             priority=priority,
             status=EvaluationStatus.PENDING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         task_data = json.dumps(task.to_dict())
@@ -559,7 +559,7 @@ class RedisOptimizationStore:
         timeout_seconds: int = 30,
     ) -> EvaluationTask | None:
         """Dequeue the next evaluation task."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Pop highest priority item (lowest score)
         result = self._client.zpopmin(KEY_EVAL_QUEUE, count=1)
@@ -620,7 +620,7 @@ class RedisOptimizationStore:
         if not self._client.exists(status_key):
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         status = EvaluationStatus.COMPLETED if success else EvaluationStatus.FAILED
 
         self._client.hset(status_key, mapping={
@@ -664,7 +664,7 @@ class RedisOptimizationStore:
             resource_version=resource_version,
             reward=reward,
             metadata=metadata or {},
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         results_key = KEY_RESULTS.format(resource_id=resource_id)

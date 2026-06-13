@@ -1,6 +1,6 @@
 """Unit tests for MemoryOptimizationStore."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -23,7 +23,7 @@ def sample_span() -> Span:
         span_id="b" * 16,
         name="test.operation",
         kind=SpanKind.AGENT_EXECUTION,
-        start_time=datetime.now(timezone.utc),
+        start_time=datetime.now(UTC),
         status=SpanStatus.OK,
         resource_id="agent-1",
         agent_name="test-agent",
@@ -73,7 +73,7 @@ class TestSpanOperations:
                 span_id=f"{i}" * 16,
                 name=f"operation-{i}",
                 kind=SpanKind.TOOL_CALL,
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 status=SpanStatus.OK,
             )
             for i in range(5)
@@ -104,7 +104,7 @@ class TestSpanOperations:
             span_id="1" * 16,
             name="op1",
             kind=SpanKind.AGENT_EXECUTION,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             status=SpanStatus.OK,
             resource_id="resource-a",
         )
@@ -113,7 +113,7 @@ class TestSpanOperations:
             span_id="2" * 16,
             name="op2",
             kind=SpanKind.AGENT_EXECUTION,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             status=SpanStatus.OK,
             resource_id="resource-b",
         )
@@ -135,7 +135,7 @@ class TestSpanOperations:
             span_id="1" * 16,
             name="op",
             kind=SpanKind.AGENT_EXECUTION,
-            start_time=datetime.now(timezone.utc),
+            start_time=datetime.now(UTC),
             status=SpanStatus.OK,
             agent_name="special-agent",
         )
@@ -150,7 +150,7 @@ class TestSpanOperations:
         self, store: MemoryOptimizationStore
     ) -> None:
         """Test querying spans by time range."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         old_span = Span(
             trace_id="a" * 32,
             span_id="1" * 16,
@@ -187,7 +187,7 @@ class TestSpanOperations:
                 span_id=f"{i}" * 16,
                 name=f"op-{i}",
                 kind=SpanKind.TOOL_CALL,
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
                 status=SpanStatus.OK,
             )
             store.store_span(span)
@@ -201,7 +201,7 @@ class TestSpanOperations:
     ) -> None:
         """Test trace spans are sorted by start time."""
         trace_id = "a" * 32
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for i in range(3):
             span = Span(
@@ -604,7 +604,7 @@ class TestThreadSafety:
                     span_id=f"{i}" * 16,
                     name="concurrent",
                     kind=SpanKind.AGENT_EXECUTION,
-                    start_time=datetime.now(timezone.utc),
+                    start_time=datetime.now(UTC),
                     status=SpanStatus.OK,
                 )
                 store.store_span(span)

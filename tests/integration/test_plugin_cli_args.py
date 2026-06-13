@@ -7,7 +7,6 @@ when plugins are specified in ClaudeAgentOptions.
 import tempfile
 from pathlib import Path
 
-import pytest
 import structlog
 from claude_agent_sdk import ClaudeAgentOptions
 

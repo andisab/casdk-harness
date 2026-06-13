@@ -27,12 +27,11 @@ Example usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
 from harness.optimization.resources.base import BaseResource, ValidationError
-
 
 # Valid models
 VALID_MODELS = {"sonnet", "opus", "haiku"}

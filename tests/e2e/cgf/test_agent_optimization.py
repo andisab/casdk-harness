@@ -24,7 +24,7 @@ class TestAgentWorkspaceCreation:
     """Test workspace setup for agent optimization."""
 
     def test_workspace_structure_created(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify workspace directory structure is created correctly."""
         ws = cgf_agent_workspace
@@ -37,7 +37,7 @@ class TestAgentWorkspaceCreation:
         assert ws.reviews_dir.exists()
 
     def test_workspace_has_original_resource(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify original resource file is created."""
         ws = cgf_agent_workspace
@@ -49,7 +49,7 @@ class TestAgentWorkspaceCreation:
         assert "original" in content.lower()
 
     def test_workspace_has_run_config(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify run_config.yaml is created with correct settings."""
         ws = cgf_agent_workspace
@@ -64,7 +64,7 @@ class TestAgentWorkspaceCreation:
         assert config["optimizer"] == "agentic"
 
     def test_workspace_has_run_state(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify run_state.json is created with INIT state."""
         ws = cgf_agent_workspace
@@ -82,7 +82,7 @@ class TestAgentResearchPhase:
     """Test research phase for agent optimization."""
 
     def test_research_generates_eval_criteria(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify research phase produces eval_criteria.yaml."""
         ws = cgf_agent_workspace
@@ -97,7 +97,7 @@ class TestAgentResearchPhase:
         assert criteria["resource_type"] == "agent"
 
     def test_eval_criteria_has_required_fields(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify eval_criteria.yaml has all required fields."""
         ws = cgf_agent_workspace
@@ -123,7 +123,7 @@ class TestAgentResearchPhase:
             assert "indicators" in comp
 
     def test_research_state_transition(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify state transitions from INIT to RESEARCH."""
         ws = cgf_agent_workspace
@@ -143,7 +143,7 @@ class TestAgentTestGenPhase:
     """Test test generation phase for agent optimization."""
 
     def test_test_gen_produces_test_suite(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify TEST_GEN phase produces test_suite.yaml."""
         ws = cgf_agent_workspace
@@ -158,7 +158,7 @@ class TestAgentTestGenPhase:
         assert len(suite["test_cases"]) >= 3
 
     def test_test_suite_has_valid_structure(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify test suite has properly structured test cases."""
         ws = cgf_agent_workspace
@@ -176,7 +176,7 @@ class TestAgentTestGenPhase:
             assert "criteria" in tc["validation"]
 
     def test_test_suite_covers_difficulty_levels(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify test suite includes tests at multiple difficulty levels."""
         ws = cgf_agent_workspace
@@ -190,7 +190,7 @@ class TestAgentTestGenPhase:
         assert "intermediate" in difficulties or "advanced" in difficulties
 
     def test_test_gen_state_transition(
-        self, cgf_agent_workspace: "CGFWorkspace"
+        self, cgf_agent_workspace: CGFWorkspace
     ) -> None:
         """Verify state transitions from RESEARCH to TEST_GEN."""
         ws = cgf_agent_workspace
@@ -208,7 +208,7 @@ class TestAgentOptimizePhase:
     """Test optimization phase for agent optimization."""
 
     def test_optimize_produces_versioned_resource(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify OPTIMIZE phase produces optimized resource file."""
         ws = cgf_agent_workspace
@@ -224,7 +224,7 @@ class TestAgentOptimizePhase:
         assert "optimized" in content.lower()
 
     def test_optimize_creates_summary_json(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify optimization creates summary.json with metrics."""
         ws = cgf_agent_workspace
@@ -242,7 +242,7 @@ class TestAgentOptimizePhase:
         assert summary["scores"]["improvement"] > 0
 
     def test_optimize_state_transition(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify state transitions from TEST_GEN to OPTIMIZE."""
         ws = cgf_agent_workspace
@@ -261,7 +261,7 @@ class TestAgentEvaluatePhase:
     """Test evaluation phase for agent optimization."""
 
     def test_evaluate_generates_review_report(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
         mock_evaluator_agent: MagicMock,
     ) -> None:
         """Verify EVALUATE phase generates review report."""
@@ -279,7 +279,7 @@ class TestAgentEvaluatePhase:
         assert "Evaluation Report" in content
 
     def test_review_contains_cair_assessment(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify review contains CAIR multi-dimensional evaluation."""
         ws = cgf_agent_workspace
@@ -295,7 +295,7 @@ class TestAgentEvaluatePhase:
         assert "REGRESSION" in content
 
     def test_review_recommendations(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify review can produce different recommendations."""
         ws = cgf_agent_workspace
@@ -319,7 +319,7 @@ class TestAgentEvaluatePhase:
         assert "quality standards" in content.lower()
 
     def test_evaluate_state_transition(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify state transitions from OPTIMIZE to EVALUATE."""
         ws = cgf_agent_workspace
@@ -337,7 +337,7 @@ class TestAgentFinalizePhase:
     """Test finalization phase for agent optimization."""
 
     def test_finalize_accept_completes_run(
-        self, completed_workspace: "CGFWorkspace",
+        self, completed_workspace: CGFWorkspace,
     ) -> None:
         """Verify ACCEPT recommendation leads to COMPLETE state."""
         ws = completed_workspace
@@ -351,7 +351,7 @@ class TestAgentFinalizePhase:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_finalize_refine_triggers_iteration(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify REFINE recommendation triggers another iteration."""
         ws = cgf_agent_workspace
@@ -372,7 +372,7 @@ class TestAgentFinalizePhase:
         assert ws.get_current_state() == "OPTIMIZE"
 
     def test_finalize_reject_marks_failed(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify REJECT recommendation can lead to failure state."""
         ws = cgf_agent_workspace
@@ -397,7 +397,7 @@ class TestAgentFullPipeline:
     """Test complete pipeline execution for agent optimization."""
 
     def test_full_pipeline_success(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
         mock_research_agent: MagicMock,
         mock_evaluator_agent: MagicMock,
     ) -> None:
@@ -440,7 +440,7 @@ class TestAgentFullPipeline:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_pipeline_with_refine_iteration(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Test pipeline with REFINE iteration loop."""
         ws = cgf_agent_workspace
@@ -475,7 +475,7 @@ class TestAgentFullPipeline:
         assert ws.get_current_state() == "COMPLETE"
 
     def test_pipeline_artifacts_integrity(
-        self, completed_workspace: "CGFWorkspace",
+        self, completed_workspace: CGFWorkspace,
     ) -> None:
         """Verify all pipeline artifacts are properly linked."""
         ws = completed_workspace
@@ -497,7 +497,7 @@ class TestAgentReviewMode:
     """Test review mode with checkpoints for agent optimization."""
 
     def test_review_mode_creates_checkpoint(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify review mode creates checkpoint at EVALUATE."""
         ws = cgf_agent_workspace
@@ -521,7 +521,7 @@ class TestAgentReviewMode:
         assert cp["awaiting_review"] is True
 
     def test_review_mode_resumes_from_checkpoint(
-        self, cgf_agent_workspace: "CGFWorkspace",
+        self, cgf_agent_workspace: CGFWorkspace,
     ) -> None:
         """Verify pipeline can resume from review checkpoint."""
         ws = cgf_agent_workspace

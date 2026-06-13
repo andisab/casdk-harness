@@ -781,13 +781,7 @@ class CGFSessionRunner:
                 default="c",
             )
             # Normalize to full word
-            if choice == "c":
-                return "continue"
-            elif choice == "e":
-                return "edit"
-            elif choice == "a":
-                return "abort"
-            return choice
+            return {"c": "continue", "e": "edit", "a": "abort"}.get(choice, choice)
         except (KeyboardInterrupt, EOFError):
             self.console.print("\n[yellow]Interrupted. Saving state...[/yellow]")
             return "abort"
@@ -1652,7 +1646,7 @@ Then output: [SPEC_READY]
             else:
                 raise FileNotFoundError(
                     "cgf-orchestrator.md not found in prompts or plugins"
-                )
+                ) from None
 
         # NOTE: we deliberately do NOT embed the resource content here.
         # Linux's MAX_ARG_STRLEN (per-argv limit) is 128KB, and the SDK
@@ -1713,7 +1707,7 @@ Begin optimization now.
         phase = task_list.current_phase
         iteration = task_list.iteration
 
-        if phase == "research":
+        if phase == "research":  # noqa: SIM116 — branches interpolate `iteration`; a dict would eagerly build every message
             return "Resume from RESEARCH phase. Continue gathering domain knowledge."
         elif phase == "iterate":
             return (
@@ -2494,6 +2488,7 @@ Examples:
 
     # Configure logging
     import logging
+
     import structlog
 
     log_level = os.environ.get("LOG_LEVEL", "INFO")

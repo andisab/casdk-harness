@@ -24,6 +24,17 @@ Example usage:
             path = write_temp_suite(focused, output_dir)
 """
 
+from harness.optimization.analysis.coherence import (
+    CoherenceAnalysis,
+    CoherenceIssue,
+    DetailLevel,
+    IssueSeverity,
+    IssueType,
+    PromptCoherenceAnalyzer,
+    SectionAnalysis,
+    analyze_prompt_coherence,
+    fix_coherence_issues,
+)
 from harness.optimization.analysis.competency_mapper import (
     CommonMistake,
     Competency,
@@ -40,13 +51,12 @@ from harness.optimization.analysis.competency_mapper import (
     load_eval_criteria,
     map_tests_to_competencies,
 )
-from harness.optimization.analysis.test_subset import (
-    create_focused_suite,
-    create_focused_suite_for_competency,
-    create_focused_suite_for_section,
-    create_section_suites,
-    load_focused_suite,
-    write_temp_suite,
+from harness.optimization.analysis.conventions import (
+    ConventionsChecker,
+    QualityLevel,
+    QualitySignal,
+    StructureQuality,
+    get_conventions_checker,
 )
 from harness.optimization.analysis.synthesizer import (
     ParsedPrompt,
@@ -58,23 +68,13 @@ from harness.optimization.analysis.synthesizer import (
     replace_section_in_prompt,
     save_optimized_prompt,
 )
-from harness.optimization.analysis.coherence import (
-    CoherenceAnalysis,
-    CoherenceIssue,
-    DetailLevel,
-    IssueType,
-    IssueSeverity,
-    PromptCoherenceAnalyzer,
-    SectionAnalysis,
-    analyze_prompt_coherence,
-    fix_coherence_issues,
-)
-from harness.optimization.analysis.conventions import (
-    ConventionsChecker,
-    QualityLevel,
-    QualitySignal,
-    StructureQuality,
-    get_conventions_checker,
+from harness.optimization.analysis.test_subset import (
+    create_focused_suite,
+    create_focused_suite_for_competency,
+    create_focused_suite_for_section,
+    create_section_suites,
+    load_focused_suite,
+    write_temp_suite,
 )
 
 __all__ = [

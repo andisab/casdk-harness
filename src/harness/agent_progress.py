@@ -16,7 +16,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # J1: signal markers we always want to surface in the preview even
 # when prose preamble would push them past the truncation cap.
 # Matches `[TAG_COMPLETE]`, `[TAG_COMPLETE:arg]`, `[TAG_ISSUES:arg]`

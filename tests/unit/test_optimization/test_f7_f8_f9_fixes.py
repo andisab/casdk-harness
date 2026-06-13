@@ -13,7 +13,6 @@ from harness.optimization._orchestrator_phases.validate import (
     _strip_version_suffix,
 )
 
-
 # ---------------------------------------------------------------------------
 # F9 — version-suffix stripping
 # ---------------------------------------------------------------------------
@@ -190,7 +189,7 @@ class TestIterateTimeoutDefault:
 # (no regressions AND no harness errors AND at least one promotion)
 # to advance to VALIDATE.  Verified by reading the source.
 
-import inspect
+import inspect  # noqa: E402 — imported at point of use; see the invariant note above
 
 
 class TestExecutionEvalGateLogic:

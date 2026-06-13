@@ -38,8 +38,6 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from harness.optimization.analysis.conventions import (
-    ConventionsChecker,
-    QualityLevel,
     get_conventions_checker,
 )
 
@@ -805,7 +803,7 @@ Please rewrite this section to address the issues while preserving strengths."""
         Returns:
             Tuple of (average_score, list_of_issues).
         """
-        from harness.optimization.testcases import get_validator, ValidationType
+        from harness.optimization.testcases import ValidationType, get_validator
 
         # Filter to qualitative tests only
         qualitative_types = {

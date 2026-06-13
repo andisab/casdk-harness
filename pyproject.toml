@@ -76,7 +76,9 @@ dev = [
     "httpx>=0.26.0",
 
     # Linting & Formatting
-    "ruff>=0.1.9",
+    # ruff PINNED (was >=0.1.9): unpinned floated to a newer ruff whose added
+    # rules silently turned `make lint` red on rebuild. Bump deliberately.
+    "ruff==0.15.17",
     "mypy>=1.8.0",
     "types-redis>=4.6.0.20240106",
     "types-pyyaml>=6.0.12.12",
@@ -202,11 +204,21 @@ ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults
     "W191",  # indentation contains tabs
+    # `class X(str, Enum)` is intentional across the optimization package;
+    # converting to StrEnum (UP042) changes str()/f-string formatting that
+    # serialization + signal paths rely on. Modernize deliberately, not via lint.
+    "UP042",
+    # PEP 695 type-parameter syntax (`class X[T]`) — deferred migration; the
+    # Generic[T] form is valid. Convert deliberately, not via a lint sweep.
+    "UP046",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"tests/**/*.py" = ["ARG"]
+# Tests lean on nested `with patch(...)` and isinstance/hasattr guard blocks;
+# combining them (SIM117/SIM102) hurts readability with no benefit. Same style
+# latitude tests already get for ARG.
+"tests/**/*.py" = ["ARG", "SIM117", "SIM102"]
 # Graders share a uniform (transcript, scenario) signature dictated by
 # BaseGrader.grade; some implementations don't need both inputs but must
 # accept them for the interface contract.
@@ -217,6 +229,16 @@ ignore = [
 # ``self._parse_iteration_result(...)`` work via Python's descriptor
 # protocol), even when the function body doesn't reference ``self``.
 "src/harness/optimization/_orchestrator_phases/*.py" = ["ARG001"]
+# Resource subclasses share a build(self, name, body, ...) signature dictated
+# by the base Resource; not every resource type consumes every arg.
+"src/harness/optimization/resources/*.py" = ["ARG003"]
+# Interface/visitor/handler signatures across analysis, optimizers, templates,
+# and the memory MCP server keep args a given implementation doesn't consume.
+"src/harness/optimization/analysis/coherence.py" = ["ARG002"]
+"src/harness/optimization/optimizers/agentic_optimizer.py" = ["ARG002"]
+"src/harness/optimization/optimizers/metrics.py" = ["ARG001"]
+"src/harness/optimization/templates/loader.py" = ["ARG004"]
+"src/mcp_servers/memory/server.py" = ["ARG001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["harness", "mcp_servers"]

@@ -2,13 +2,10 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
-
-import pytest
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from harness.agent import AgentSession
 from harness.config import HarnessConfig
-
 
 # Get the correct plugin base path
 PLUGIN_BASE_PATH = (

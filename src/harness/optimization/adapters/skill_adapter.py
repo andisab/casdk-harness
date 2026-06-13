@@ -101,11 +101,13 @@ class SkillAdapter(BaseAdapter[SkillFeedback]):
                     correct_activations += 1
 
             # Also check span attributes
-            if "skill.activated" in span.attributes:
-                if span.attributes["skill.activated"]:
-                    activation_count += 1
-                    if span.attributes.get("skill.activation_correct", True):
-                        correct_activations += 1
+            if (
+                "skill.activated" in span.attributes
+                and span.attributes["skill.activated"]
+            ):
+                activation_count += 1
+                if span.attributes.get("skill.activation_correct", True):
+                    correct_activations += 1
 
             # Get resource ID
             if span.resource_id and span.resource_type == "skill":
@@ -139,11 +141,13 @@ class SkillAdapter(BaseAdapter[SkillFeedback]):
                     success_count += 1
 
             # Also check for resource evaluation spans
-            if span.kind.value == "resource_evaluation":
-                if span.resource_type == "skill":
-                    execution_count += 1
-                    if span.status.value == "ok":
-                        success_count += 1
+            if (
+                span.kind.value == "resource_evaluation"
+                and span.resource_type == "skill"
+            ):
+                execution_count += 1
+                if span.status.value == "ok":
+                    success_count += 1
 
         feedback.execution_count = execution_count
         feedback.execution_success_count = success_count

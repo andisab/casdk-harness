@@ -8,6 +8,12 @@ from __future__ import annotations
 
 import pytest
 
+from harness.optimization.adapters.base import (
+    AgentFeedback,
+    CommandFeedback,
+    PromptFeedback,
+    SkillFeedback,
+)
 from harness.optimization.rewards import (
     DEFAULT_WEIGHTS,
     WEIGHT_PRESETS,
@@ -16,13 +22,6 @@ from harness.optimization.rewards import (
     compare_rewards,
     create_reward,
 )
-from harness.optimization.adapters.base import (
-    AgentFeedback,
-    CommandFeedback,
-    PromptFeedback,
-    SkillFeedback,
-)
-
 
 # =============================================================================
 # ResourceReward Basic Tests
@@ -795,4 +794,4 @@ class TestWeightPresets:
 
     def test_default_weights_is_balanced(self) -> None:
         """Test DEFAULT_WEIGHTS matches balanced preset."""
-        assert DEFAULT_WEIGHTS == WEIGHT_PRESETS["balanced"]
+        assert WEIGHT_PRESETS["balanced"] == DEFAULT_WEIGHTS

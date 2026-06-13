@@ -53,32 +53,6 @@ Rewards:
 
 from __future__ import annotations
 
-# Re-export store components
-from harness.optimization.store import (
-    EvaluationResult,
-    EvaluationStatus,
-    EvaluationTask,
-    MemoryOptimizationStore,
-    OptimizationStore,
-    Resource,
-    ResourceType,
-    ResourceVersion,
-    StoreMetrics,
-    get_store,
-    reset_store,
-)
-
-# Re-export resource components
-from harness.optimization.resources import (
-    AgentResource,
-    CommandResource,
-    PromptResource,
-    ResourceProtocol,
-    ResourceRegistry,
-    SkillResource,
-    ValidationError,
-)
-
 # Re-export adapter components
 from harness.optimization.adapters import (
     AdapterProtocol,
@@ -98,6 +72,52 @@ from harness.optimization.adapters import (
     get_default_registry,
 )
 
+# Re-export optimizer components
+from harness.optimization.optimizers import (
+    AgenticOptimizationConfig,
+    AgenticOptimizationResult,
+    # Agentic optimizer (primary)
+    AgenticSectionOptimizer,
+    # Protocol and base types
+    BaseOptimizer,
+    CritiqueResult,
+    IterationResult,
+    OptimizationConfig,
+    OptimizationResult,
+    OptimizerProtocol,
+    PromptCandidate,
+    get_agentic_optimizer,
+    # Metrics
+    suite_average_score,
+    validation_score_metric,
+)
+
+# Re-export orchestration components
+from harness.optimization.orchestrator import (
+    OrchestrationResult,
+    SectionOptimizationConfig,
+    SectionOptimizer,
+    SectionResult,
+    run_section_optimization,
+)
+
+# Re-export pipeline components
+from harness.optimization.pipeline import (
+    OutputFormat,
+    PipelineConfig,
+)
+
+# Re-export resource components
+from harness.optimization.resources import (
+    AgentResource,
+    CommandResource,
+    PromptResource,
+    ResourceProtocol,
+    ResourceRegistry,
+    SkillResource,
+    ValidationError,
+)
+
 # Re-export reward components
 from harness.optimization.rewards import (
     DEFAULT_WEIGHTS,
@@ -106,17 +126,6 @@ from harness.optimization.rewards import (
     aggregate_rewards,
     compare_rewards,
     create_reward,
-)
-
-# Re-export test case components
-from harness.optimization.testcases import (
-    SuiteResult,
-    TestCase,
-    TestResult,
-    TestSuite,
-    TestSuiteLoader,
-    ValidationConfig,
-    ValidationType,
 )
 
 # Re-export runner components
@@ -129,39 +138,30 @@ from harness.optimization.runners import (
     RunnerProtocol,
 )
 
-# Re-export optimizer components
-from harness.optimization.optimizers import (
-    # Protocol and base types
-    BaseOptimizer,
-    IterationResult,
-    OptimizationConfig,
-    OptimizationResult,
-    OptimizerProtocol,
-    PromptCandidate,
-    # Agentic optimizer (primary)
-    AgenticSectionOptimizer,
-    AgenticOptimizationConfig,
-    AgenticOptimizationResult,
-    CritiqueResult,
-    get_agentic_optimizer,
-    # Metrics
-    suite_average_score,
-    validation_score_metric,
+# Re-export store components
+from harness.optimization.store import (
+    EvaluationResult,
+    EvaluationStatus,
+    EvaluationTask,
+    MemoryOptimizationStore,
+    OptimizationStore,
+    Resource,
+    ResourceType,
+    ResourceVersion,
+    StoreMetrics,
+    get_store,
+    reset_store,
 )
 
-# Re-export pipeline components
-from harness.optimization.pipeline import (
-    OutputFormat,
-    PipelineConfig,
-)
-
-# Re-export orchestration components
-from harness.optimization.orchestrator import (
-    OrchestrationResult,
-    SectionOptimizationConfig,
-    SectionOptimizer,
-    SectionResult,
-    run_section_optimization,
+# Re-export test case components
+from harness.optimization.testcases import (
+    SuiteResult,
+    TestCase,
+    TestResult,
+    TestSuite,
+    TestSuiteLoader,
+    ValidationConfig,
+    ValidationType,
 )
 
 __all__ = [

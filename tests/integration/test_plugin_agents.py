@@ -166,7 +166,6 @@ class TestPluginAgentInvocation:
 
             async for msg in client.receive_response():
                 messages.append(msg)
-                msg_type = type(msg).__name__
 
                 # Check for Task tool usage
                 if hasattr(msg, "name") and "Task" in str(getattr(msg, "name", "")):
@@ -233,9 +232,8 @@ class TestAvailableAgents:
             )
 
             async for msg in client.receive_response():
-                if isinstance(msg, SystemMessage):
-                    if hasattr(msg, "data"):
-                        all_agents = msg.data.get("agents", [])
+                if isinstance(msg, SystemMessage) and hasattr(msg, "data"):
+                    all_agents = msg.data.get("agents", [])
 
                 # Also capture the assistant's response
                 if hasattr(msg, "content"):

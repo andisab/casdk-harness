@@ -38,11 +38,10 @@ async def test_sdk_aware_of_plugin_skills():
     # Extract text from AssistantMessage content (TextBlock objects)
     response_text = ""
     for msg in messages:
-        if msg.__class__.__name__ == "AssistantMessage":
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    if hasattr(block, "text"):
-                        response_text += block.text + " "
+        if msg.__class__.__name__ == "AssistantMessage" and hasattr(msg, "content"):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    response_text += block.text + " "
     response_text = response_text.lower()
 
     # Verify plugin skills are mentioned
@@ -99,11 +98,10 @@ async def test_sdk_aware_of_plugin_agents():
     # Extract text from AssistantMessage content (TextBlock objects)
     response_text = ""
     for msg in messages:
-        if msg.__class__.__name__ == "AssistantMessage":
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    if hasattr(block, "text"):
-                        response_text += block.text + " "
+        if msg.__class__.__name__ == "AssistantMessage" and hasattr(msg, "content"):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    response_text += block.text + " "
     response_text = response_text.lower()
 
     # Verify plugin agents are mentioned
@@ -168,11 +166,10 @@ async def test_sdk_can_invoke_plugin_skill():
     # Extract text from AssistantMessage content (TextBlock objects)
     response_text = ""
     for msg in messages:
-        if msg.__class__.__name__ == "AssistantMessage":
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    if hasattr(block, "text"):
-                        response_text += block.text + " "
+        if msg.__class__.__name__ == "AssistantMessage" and hasattr(msg, "content"):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    response_text += block.text + " "
     response_text = response_text.lower()
 
     skill_mentioned = (
@@ -217,11 +214,10 @@ async def test_sdk_plugin_count():
     # Extract text from AssistantMessage content (TextBlock objects)
     response_text = ""
     for msg in messages:
-        if msg.__class__.__name__ == "AssistantMessage":
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    if hasattr(block, "text"):
-                        response_text += block.text + " "
+        if msg.__class__.__name__ == "AssistantMessage" and hasattr(msg, "content"):
+            for block in msg.content:
+                if hasattr(block, "text"):
+                    response_text += block.text + " "
     response_text = response_text.lower()
 
     # Look for plugin names in response

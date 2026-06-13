@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 import structlog
 
-from harness.tracer.base import SpanKind, SpanStatus
+from harness.tracer.base import SpanKind
 
 if TYPE_CHECKING:
     from harness.tracer.otel_tracer import OTelTracer

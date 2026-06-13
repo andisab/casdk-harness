@@ -6,7 +6,7 @@ limitation (GitHub issues #11205, #12212).
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import structlog
@@ -64,7 +64,7 @@ class TestListAvailableAgents:
         result = list_available_agents()
 
         # Check for known plugin agents (namespaced)
-        plugin_agents = [k for k in result.keys() if ":" in k]
+        plugin_agents = [k for k in result if ":" in k]
         assert len(plugin_agents) >= 1  # At least context-engineer
 
     def test_descriptions_are_strings(self) -> None:
@@ -79,7 +79,7 @@ class TestListAvailableAgents:
         """Test that all harness agent definitions are included."""
         result = list_available_agents()
 
-        for agent_name in AGENT_DEFINITIONS.keys():
+        for agent_name in AGENT_DEFINITIONS:
             assert agent_name in result, f"Missing harness agent: {agent_name}"
 
 
@@ -122,7 +122,7 @@ class TestGetAgentInfo:
         """Test getting info for a plugin agent."""
         # Get first plugin agent from available
         agents = list_available_agents()
-        plugin_agents = [k for k in agents.keys() if ":" in k]
+        plugin_agents = [k for k in agents if ":" in k]
 
         if plugin_agents:
             info = get_agent_info(plugin_agents[0])
@@ -283,7 +283,7 @@ class TestCallAgent:
             return
             yield
 
-        with patch("harness.subagent.query", return_value=mock_query_gen()) as mock_query:
+        with patch("harness.subagent.query", return_value=mock_query_gen()):
             async for _ in call_agent(
                 "python-expert", "test", permission_mode="bypassPermissions"
             ):
@@ -410,7 +410,7 @@ class TestAgentModels:
 
     def test_all_harness_agents_have_valid_models(self) -> None:
         """Test that all harness agents have valid model values."""
-        for name in AGENT_DEFINITIONS.keys():
+        for name in AGENT_DEFINITIONS:
             info = get_agent_info(name)
             assert info["model"] in ["sonnet", "opus", "haiku"], (
                 f"Agent {name} has invalid model: {info['model']}"
@@ -460,7 +460,7 @@ class TestAgentIntegration:
         """Test that all listed agents can have their info retrieved."""
         agents = list_available_agents()
 
-        for agent_name in agents.keys():
+        for agent_name in agents:
             # Should not raise
             info = get_agent_info(agent_name)
             assert info is not None
@@ -470,8 +470,8 @@ class TestAgentIntegration:
         """Test that harness and plugin agents can coexist."""
         agents = list_available_agents()
 
-        harness_count = sum(1 for k in agents.keys() if ":" not in k)
-        plugin_count = sum(1 for k in agents.keys() if ":" in k)
+        harness_count = sum(1 for k in agents if ":" not in k)
+        plugin_count = sum(1 for k in agents if ":" in k)
 
         # Should have both types
         assert harness_count > 0, "No harness agents found"
