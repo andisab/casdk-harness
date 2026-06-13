@@ -33,6 +33,13 @@ Technical reference for developers working on this repository and for Claude's o
   - Stage 3 Phases C/D + Stage 4 — not started; I9 + I16 queued under Phase D.
 
 ### Completed Recently
+- **Phase A.5 — discrimination-first eval rework (2026-06-13, pushed to `main` `beb6df6`..`4af4b80`)** — Acted on the eval-strategy reassessment (research record `docs/EVAL-RESEARCH-2026-06.md`; roadmap § 1.1, which overturned the cost-first grader priority). The reassessment found the eval optimized for grader *cheapness* when its job is *discrimination*: run #8's generated suite had **0 `llm_judge`** graders (98 `contains`) → 11/17 resources tied at 1.00/1.00, and the 2026-05-26 mobile-dev run showed `win_rate ≡ 0` across all 32 results. Six commits (A1–A6):
+  - **A1** (`55ef803`) — wired the previously-dead `eval_strategy` field into grader routing; `eval_harness/grader_policy.py` strips tool-call assertions off content resources + reroutes a grader-less scenario to llm_judge; kills the `iac-generator` "unwinnable 0/0" class by construction. +22 tests.
+  - **A2 step 1** (`dcfaf15`) — `eval_harness/discrimination.py`: per-scenario candidate-vs-floor classification + flip-rate report → `discrimination-audit.json` + `harness.eval.discrimination_*` span attrs + under-discrimination WARNING, reusing the floor arm at no extra eval cost (`CGF_DISCRIMINATION_MIN_FLIP_RATE=0.40`). +18 tests. Auto-prune is step 2 (deferred).
+  - **A3** (`6a948a3`) — judge scale 1–5 → anchored **1–7** (`(score-1)/6`) + verbosity-bias guard in `llm_judge.py`. Criterion sub-scores deferred (Anthropic Messages API exposes no logprobs for G-Eval weighting).
+  - **A4 step 1** (`292c1f3`) — absolute cost floor: ceiling = `max(incumbent×(1+τ_eff), incumbent + CGF_COST_ABS_FLOOR_USD=0.05)`; fixes the helm-charts noisy-baseline false-rejection (rejected 3× on a ~$0.04 delta). Multi-sample+cache is step 2 (deferred). +4 tests.
+  - **A5+A6** (`60fe821`) — rewrote `cgf-eval-architect.md` discrimination-first (every scenario needs a grader the v0 baseline fails; inverted the contains-aggressive / llm_judge-avoidant / "completion-latency-not-coverage" framing) + capability model (`eval_design.py` passes each resource's v0+generated paths so the architect grounds scenarios in the real v0→v1 gap; `max_turns` 10→20, turn budget relaxed).
+  - **Verified** (`4af4b80` adds `scripts/derisk_eval_design.py`) — one-shot EVAL_DESIGN probe on the iac-team resources: **28 `llm_judge` vs run #8's 0, 18/18 resources discriminating, 0 trajectory-on-content**, rubrics grounded in concrete v0→v1 gaps. Discrimination-first turn confirmed. **Cost finding:** EVAL_DESIGN took 17m54s / 74 turns reading 36 v0+v1 files (near the 1200s timeout), and **`max_turns: 20` is not enforced** on the `call_agent_simple` path (ran 74 turns) — next workstream is an EVAL_DESIGN methodology (shard + fan out, diff-based context, max_turns fix; roadmap § 3.7.2, under discussion). A2/A4 runtime + end-to-end promote-rate still need a full smoke. +44 unit tests across A1/A2/A4; full unit suite green throughout; ruff + mypy clean.
 - **Phase A polish + Run #7/#8 validation + Grafana reorg (2026-05-19, merge `29456bd`)** — Branch `cgf-eval-ab` merged to `main` carrying three workstreams:
   - **Phase A refinement Steps 1–5** (commits `de3a21e`, `bb48f32`, `c02db21`, `fe85e96`, `fac1845`): eval-agent isolation (refinement 4.1 — addresses the architectural blocker for Phase B value; EVAL_DESIGN + judge calls in isolated SDK sessions, no shared conversation, Opus default for judge via `CGF_JUDGE_MODEL`), dual-baseline gate (4.2 — floor arm runs once per resource at first promotion + incumbent), cost-per-success two-gate (4.3 — `Gate.decide()` enforces `cost_per_success ≤ baseline × (1 + τ)`, `CGF_TOKEN_REGRESSION_TOLERANCE=0.10`), pipeline tightening (4.4 — `eval_suite_hash` guard, stagnation early-stop via `CGF_MIN_GAIN_PER_ROUND=0.02`, held-out usage sidecar), release notes (4.5).
   - **Pre-smoke polish A–E** (commits `ecabe97`, `6cae9d6`, `9bc2bb0`, `5f224a0`, `5f047e1`): YAML-list `tools:` parser (smoke blocker), aggregate JSON verdict + cost-gate counter scope, empty-scenario fail-closed + `last_promoted_version` migration, `judge_rubric_hash` stability across runs, Makefile cosmetic.
@@ -99,6 +106,22 @@ Technical reference for developers working on this repository and for Claude's o
 
 ### TODOs
 
+- [ ] **EVAL_DESIGN methodology (Phase A.5 follow-up — under discussion).**
+  The 2026-06-13 probe confirmed the discrimination-first architect works
+  but is costly: 17m54s / 74 turns reading 36 v0+v1 files, near the 1200s
+  timeout. Decide among: shard EVAL_DESIGN into N parallel per-resource
+  calls; feed a Python-computed v0→v1 diff instead of full files; an
+  empirical discrimination loop (run floor+candidate, drop
+  non-discriminating, regenerate = A2 step 2); tiered depth; ledger reuse
+  (Phase E). Leaning shard + diff-based context. See
+  `docs/CGF-EVAL-ROADMAP.md` § 3.7.2.
+- [ ] **`max_turns` frontmatter not enforced.** `cgf-eval-architect` has
+  `max_turns: 20` but ran 74 turns in the probe — the harness logs
+  `max_turns=20` to the SDK yet only the wall-clock timeout caps it.
+  Investigate the `harness.subagent.call_agent_simple` → SDK
+  `ClaudeAgentOptions` path and make the per-agent cap bind (otherwise the
+  param is meaningless). Prerequisite for sharded EVAL_DESIGN to have
+  enforceable budgets.
 - [ ] **Sub-agent `HOME` mismatch.** Investigate the EACCES-on-`~`-paths
   bug (full description above in Known Limitations). Three fix
   candidates queued; (a) one-line env passthrough in
