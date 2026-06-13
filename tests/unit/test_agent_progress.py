@@ -60,6 +60,21 @@ class TestExtractToolCalls:
         assert calls[0][0] == "Read"
         assert "file_path=" in calls[0][1]
 
+    def test_real_sdk_tooluseblock_detected(self) -> None:
+        """Regression for the '0 tool calls' bug (Phase A.5 L1.1): the real
+        SDK ``ToolUseBlock`` is class-typed — fields ``id``/``name``/``input``,
+        NO ``.type`` field — so the old ``block.type == 'tool_use'`` check
+        never matched. Detection must be structural. The existing tests above
+        used fake blocks with a ``.type`` attribute, so they never caught it."""
+        from claude_agent_sdk import AssistantMessage, ToolUseBlock
+
+        msg = AssistantMessage(
+            content=[ToolUseBlock(id="t1", name="Read", input={"file_path": "/a"})],
+            model="sonnet",
+        )
+        calls = extract_tool_calls(msg)
+        assert [name for name, _ in calls] == ["Read"]
+
     def test_multiple_tool_use_blocks_all_counted(self) -> None:
         """A single AssistantMessage may carry parallel tool_use blocks
         (Read + Write + Bash).  All three must be counted."""

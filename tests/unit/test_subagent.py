@@ -209,6 +209,35 @@ class TestCallAgent:
         assert messages == []  # Empty because mock returns nothing
 
     @pytest.mark.asyncio
+    async def test_max_turns_enforced_harness_side(self) -> None:
+        """Phase A.5 L1.1: call_agent caps at the agent's max_turns even when
+        the underlying query yields more turns. The SDK forwards --max-turns
+        to the CLI but it did not bind in practice (the eval-architect ran 73
+        turns at max_turns=20), so the cap is enforced harness-side."""
+        from claude_agent_sdk import AssistantMessage
+
+        async def mock_query_gen(*args, **kwargs):
+            for _ in range(10):
+                yield AssistantMessage(content=[], model="sonnet")
+
+        info = {
+            "max_turns": 3,
+            "model": "sonnet",
+            "tools": None,
+            "prompt": "system prompt",
+            "source": "harness",
+        }
+        with (
+            patch("harness.subagent.query", return_value=mock_query_gen()),
+            patch("harness.subagent.get_agent_info", return_value=info),
+        ):
+            received = [
+                m async for m in call_agent("python-expert", "go", verbose=False)
+            ]
+        # Capped at max_turns=3 assistant turns, not the 10 the query yielded.
+        assert len(received) == 3
+
+    @pytest.mark.asyncio
     async def test_custom_permission_mode(self) -> None:
         """Test that custom permission_mode is passed through."""
 

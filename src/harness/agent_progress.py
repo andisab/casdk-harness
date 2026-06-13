@@ -172,7 +172,17 @@ def extract_tool_calls(message: Any) -> list[tuple[str, str]]:
 
     out: list[tuple[str, str]] = []
     for block in content:
-        if not hasattr(block, "type") or block.type != "tool_use":
+        # SDK content blocks are class-typed: ``ToolUseBlock`` carries
+        # ``id``/``name``/``input`` and has NO ``.type`` string field, so the
+        # old ``block.type == "tool_use"`` check never matched and the counter
+        # always read 0 (the "0 tool calls" display bug). Detect a tool-use
+        # block structurally — it has both ``name`` and ``input`` (TextBlock
+        # has only ``text``; ToolResultBlock has ``tool_use_id``/``content``) —
+        # while still honoring an explicit ``type`` tag if a future SDK adds one.
+        is_tool_use = getattr(block, "type", None) == "tool_use" or (
+            hasattr(block, "name") and hasattr(block, "input")
+        )
+        if not is_tool_use:
             continue
 
         tool_name = getattr(block, "name", "unknown")

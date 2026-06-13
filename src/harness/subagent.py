@@ -429,15 +429,21 @@ async def call_agent(
     )
 
     try:
+        # Phase A.5 L1.1: authoritative per-agent turn counter, tracked
+        # regardless of verbose/progress so the cap below always binds. One
+        # AssistantMessage == one agentic turn.
+        assistant_turns = 0
         async with asyncio.timeout(query_timeout):
             async for message in query(prompt=prompt, options=options):
-                # Track progress
+                is_assistant = isinstance(message, AssistantMessage)
+                if is_assistant:
+                    assistant_turns += 1
+
+                # Track progress (display only)
                 if progress:
                     # F3: count EVERY tool_use block, not just the first.
                     # A single AssistantMessage may carry multiple
-                    # tool_use blocks (parallel Read+Write+Bash); the
-                    # old extract_tool_info returned only block[0],
-                    # so the displayed counter undercounted.
+                    # tool_use blocks (parallel Read+Write+Bash).
                     tool_calls = extract_tool_calls(message)
                     if tool_calls:
                         progress.tool_calls += len(tool_calls)
@@ -460,16 +466,17 @@ async def call_agent(
                                     )
                                 )
 
-                    elif isinstance(message, AssistantMessage):
-                        progress.turn_count += 1
+                    # Count the turn for display even when it carried tool
+                    # calls — the old ``elif`` skipped tool-bearing turns,
+                    # inflating the apparent count vs the real turn budget.
+                    if is_assistant:
+                        progress.turn_count = assistant_turns
                         preview = extract_text_preview(message)
                         if preview:
                             progress.print_status(
                                 progress.format_turn("AssistantMessage", preview)
                             )
-
                     elif isinstance(message, ResultMessage):
-                        progress.turn_count += 1
                         progress.print_status(
                             progress.format_turn("ResultMessage", "Tool result received")
                         )
@@ -479,6 +486,26 @@ async def call_agent(
                     on_progress(f"{type(message).__name__}")
 
                 yield message
+
+                # Phase A.5 L1.1: enforce the per-agent turn cap harness-side.
+                # The SDK forwards --max-turns to the CLI, but it did not bind
+                # in practice (cgf-eval-architect ran 73 turns at max_turns=20),
+                # so we cap at the layer we control. The caller keeps whatever
+                # was produced up to the cap (graceful, like the timeout path).
+                if is_assistant and max_turns and assistant_turns >= max_turns:
+                    logger.warning(
+                        "Agent reached max_turns; stopping",
+                        agent=agent_name,
+                        max_turns=max_turns,
+                        turns=assistant_turns,
+                    )
+                    if progress:
+                        progress.print_status(
+                            f"{Colors.YELLOW}{Colors.BOLD}⚠ [{agent_name}]"
+                            f"{Colors.RESET} {Colors.DIM}max_turns "
+                            f"({max_turns}) reached — stopping{Colors.RESET}"
+                        )
+                    break
 
     except TimeoutError:
         elapsed = time.time() - progress.start_time if progress else 0

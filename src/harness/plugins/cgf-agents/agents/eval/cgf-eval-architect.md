@@ -14,7 +14,7 @@ description: >
   </examples>
 tools: Read, Write
 model: sonnet
-max_turns: 20
+max_turns: 120
 color: "#458588"
 ---
 
