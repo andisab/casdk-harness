@@ -14,9 +14,12 @@ Function mounted onto :class:`MultiResourceOrchestrator` as
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+import yaml
 
 from harness.monitoring import harness_eval_phase_duration_seconds
 from harness.optimization._orchestrator_helpers import (
@@ -26,6 +29,12 @@ from harness.optimization._orchestrator_helpers import (
     eval_suite_sha256,
     new_eval_task_id,
 )
+from harness.optimization.eval_harness.grader_policy import (
+    enforce_suite,
+    eval_strategy_from_path,
+    policy_summary,
+)
+from harness.optimization.protocols.resource_types import ResourceTypeRegistry
 from harness.optimization.protocols.signals import SignalType
 
 if TYPE_CHECKING:
@@ -34,6 +43,46 @@ if TYPE_CHECKING:
     )
 
 logger = structlog.get_logger(__name__)
+
+
+def _enforce_grader_policy(
+    suite_path: Path, resolve_strategy: Callable[[str], str | None]
+) -> list[str]:
+    """Strip execution-only trajectory assertions from content-resource
+    scenarios (Phase A.5 A1).
+
+    Rewrites the suite file only when something changed. Never raises —
+    enforcement is best-effort and must not block the pipeline.
+    """
+    try:
+        suite = yaml.safe_load(suite_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "EVAL_DESIGN: grader-policy enforcement could not parse suite",
+            error=str(exc)[:200],
+        )
+        return []
+    if not isinstance(suite, dict):
+        return []
+    cleaned, actions = enforce_suite(suite, resolve_strategy)
+    if actions:
+        try:
+            suite_path.write_text(
+                yaml.safe_dump(cleaned, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "EVAL_DESIGN: grader-policy could not rewrite suite",
+                error=str(exc)[:200],
+            )
+            return []
+        logger.warning(
+            "EVAL_DESIGN: grader-policy rerouted graders on content resources",
+            action_count=len(actions),
+            actions=actions[:20],
+        )
+    return actions
 
 
 async def delegate(self: MultiResourceOrchestrator) -> None:
@@ -94,8 +143,28 @@ async def delegate(self: MultiResourceOrchestrator) -> None:
     eval_criteria_path = workspace / "research" / "eval_criteria.yaml"
     resource_plan_path = workspace / "resource-plan.yaml"
 
+    # Phase A.5 A1: resolve each resource's eval_strategy so the architect
+    # is told, per resource, which grader types can actually discriminate
+    # it. Content resources (skills/commands/hooks/plugins/agent-definition
+    # files) run as content in eval and cannot satisfy tool-call assertions;
+    # only executable/server resources can. resolve_strategy falls back to
+    # path-prefix inference for any target not tracked in state.
+    registry = ResourceTypeRegistry.default()
+    strat_by_path: dict[str, str] = {}
+    for r in eligible:
+        cfg = registry.get_by_string(r.resource_type)
+        if cfg is not None:
+            strat_by_path[r.path] = cfg.eval_strategy
+
+    def resolve_strategy(path: str) -> str | None:
+        if path in strat_by_path:
+            return strat_by_path[path]
+        return eval_strategy_from_path(path, registry)
+
     resource_list = "\n".join(
-        f"  - {r.path} (type: {r.resource_type})" for r in eligible
+        f"  - {r.path} (type: {r.resource_type}) -- "
+        f"{policy_summary(strat_by_path.get(r.path))}"
+        for r in eligible
     )
 
     # Phase A refinement 4.1: STRICT isolation contract for the
@@ -128,6 +197,17 @@ Output: {workspace}/eval/eval-suite.yaml
 The output MUST conform to ``schemas/eval_suite.schema.json``.
 Apply the level mix per resource type, the 40/40/20 difficulty split,
 and the 20-30% held_out: true selection rule from your system prompt.
+
+GRADER ROUTING (HARD CONSTRAINT). Each resource above is annotated with its
+eval grader policy. Resources marked CONTENT-ONLY are run as content (their
+file is loaded as a system prompt) and do NOT dispatch tools during eval, so
+trajectory `tool_called` / `no_tool` / `ordering` assertions on them score 0
+on BOTH arms and are worthless. For CONTENT-ONLY resources use llm_judge /
+contains / regex / code graders (a trajectory `constraint`, which is
+LLM-judged, is also fine). Reserve `tool_called` / `no_tool` / `ordering`
+assertions for resources marked EXECUTES tools. Violations are stripped
+automatically after design — but author them correctly so each scenario keeps
+a grader that actually discriminates the candidate from the baseline.
 
 Emit [EVAL_DESIGN_COMPLETE] when done.
 """
@@ -188,6 +268,13 @@ Emit [EVAL_DESIGN_COMPLETE] when done.
     # on disk; the signal is just an early hint.
     if suite_exists:
         self._state.eval_suite_path = "eval/eval-suite.yaml"
+        # Phase A.5 A1: enforce grader-routing policy BEFORE the hash is
+        # taken, so the suite-hash baseline reflects the enforced suite.
+        # Strips execution-only trajectory assertions from content resources
+        # (the iac-generator / mobile "unwinnable 0/0" class) and reroutes a
+        # scenario left grader-less to an llm_judge built from its
+        # description. Only rewrites the file when something changed.
+        _enforce_grader_policy(suite_path, resolve_strategy)
         # Phase A refinement 4.4.a: capture suite hash here.  EXECUTION_EVAL
         # checks against this on every round; mismatch → hard abort.  This
         # is the single chokepoint where the suite-hash baseline is set;

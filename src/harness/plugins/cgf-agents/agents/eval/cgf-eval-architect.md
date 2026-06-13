@@ -48,16 +48,18 @@ That is sufficient input. Do NOT glob or read additional files.
 
 For each resource in resource-plan.yaml, generate **3 scenarios** (1 easy / 1 medium / 1 hard). Total ≈ 3 × resource_count. Pick scenarios that exercise the resource's stated `purpose` and the competencies in `eval_criteria.yaml` that match the resource type.
 
-Required level mix per resource type:
+Required level mix per resource type (level = granularity, NOT grader type):
 
-| Type | Level |
-|---|---|
-| agent | 1 trajectory + 1 e2e + 1 unit |
-| skill | 1 unit + 1 e2e + 1 trajectory |
-| command | 3 unit |
-| hook | 3 unit |
-| mcp_tool | 3 unit |
-| mcp_server | 2 unit + 1 trajectory |
+| Type | Level mix | Graders (HARD CONSTRAINT) |
+|---|---|---|
+| agent | 1 trajectory + 1 e2e + 1 unit | `llm_judge` / `contains` / `code`, or trajectory `constraint`. **NEVER** `tool_called` / `no_tool` / `ordering`. |
+| skill | 1 unit + 1 e2e + 1 trajectory | `llm_judge` / `contains` / `regex`, or trajectory `constraint`. **NEVER** `tool_called` / `no_tool` / `ordering`. |
+| command | 3 unit | `contains` / `regex` / `llm_judge`. **NEVER** `tool_called` / `no_tool` / `ordering`. |
+| hook | 3 unit | `contains` / `regex` / `code`. **NEVER** `tool_called` / `no_tool` / `ordering`. |
+| mcp_tool | 3 unit | `code` / `contains`; trajectory `tool_called` / `ordering` ALLOWED (executes). |
+| mcp_server | 2 unit + 1 trajectory | trajectory `tool_called` / `ordering` ALLOWED (executes). |
+
+**Grader routing is a HARD CONSTRAINT.** A trajectory-*level* scenario does NOT require a `type: trajectory` grader. `tool_called` / `no_tool` / `ordering` assertions only resolve correctly for `mcp_tool` / `mcp_server`, which actually execute tools during eval; on content resources (`agent` / `skill` / `command` / `hook` / `plugin`) the file is loaded as a system prompt and never dispatches tools, so those assertions score 0 on BOTH arms — the "unwinnable 0/0" failure. Grade content resources with `llm_judge` / `contains` / `regex` / `code` (a trajectory `constraint`, which is LLM-judged, is allowed everywhere). The EVAL_DESIGN prompt annotates each resource CONTENT-ONLY vs EXECUTES — obey it; violations are stripped automatically after design.
 
 **Mark the third (hard) scenario of each resource `held_out: true`.** That gives you a deterministic ~33% held-out set, predictable for audit. No tuning required.
 
@@ -147,15 +149,15 @@ graders:
 | "Output mentions keyword X" | `contains` |
 | "Output matches pattern" | `regex` |
 | "Output is exactly Y" | `exact` |
-| "Agent used tool X / didn't use tool Y" | `trajectory` with `assertions[]` |
-| "Agent did tool A before tool B" | `trajectory` with `kind: ordering` |
+| "Resource used tool X / didn't use tool Y" (`mcp_tool`/`mcp_server` ONLY) | `trajectory` with `assertions[]` |
+| "Resource did tool A before tool B" (`mcp_tool`/`mcp_server` ONLY) | `trajectory` with `kind: ordering` |
 | "Output is qualitatively correct" | `llm_judge` |
 | "Multiple cheap checks must all pass" | `composite` operator: and |
 | Default fallback | `contains` with a competency keyword |
 
-**Agents** typically get one `trajectory` grader (with 1-2 assertions) plus one `contains` or `llm_judge`.
+**Agents** are evaluated as content (the definition file is a system prompt), so they get an `llm_judge` for behavioral quality plus a `contains`/`code` check — NOT `tool_called`/`no_tool`/`ordering` assertions (those score 0/0). A trajectory `constraint` (LLM-judged) is fine for behavioral phrasing.
 
-**Skills/commands** typically get one `contains` per scenario.
+**Skills/commands** get a `contains` or `llm_judge` per scenario — pair a keyword `contains` with an `llm_judge` when quality (not just keyword presence) is what separates a good candidate from the baseline.
 
 Call `Write` once with the full YAML. Path: `{workspace}/eval/eval-suite.yaml`.
 
