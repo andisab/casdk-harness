@@ -46,6 +46,11 @@ logger = structlog.get_logger(__name__)
 # the IDs live.
 _DEFAULT_JUDGE_MODEL = MODEL_SHORTHAND_MAP["opus"]
 
+# Self-preference warning is deduped to once per resolved model per process.
+# Without this it fires on every judge call (265× in run #9 — log spam, not a
+# signal). Reset in tests via ``llm_judge._self_pref_warned.clear()``.
+_self_pref_warned: set[str] = set()
+
 
 def _resolve_judge_model(model: str | None) -> str:
     """Apply the precedence: explicit param > env var > default opus.
@@ -66,7 +71,8 @@ def _resolve_judge_model(model: str | None) -> str:
     design_raw = os.environ.get("CGF_DESIGN_MODEL")
     if design_raw:
         design_resolved = MODEL_SHORTHAND_MAP.get(design_raw, design_raw)
-        if design_resolved == resolved:
+        if design_resolved == resolved and resolved not in _self_pref_warned:
+            _self_pref_warned.add(resolved)
             logger.warning(
                 "judge model matches design/optimizer model — "
                 "self-preference bias risk",
@@ -115,6 +121,13 @@ _SYSTEM_PROMPT = (
     "Judge against the rubric ONLY — length, formatting, and confident "
     "phrasing are not quality. Respond with ONLY a single integer 1-7."
 )
+
+# Assistant-message prefill: forcing the reply to begin with this makes the
+# model emit the integer as its FIRST token instead of a preamble that
+# ``max_tokens`` would truncate before the score appears (the 77-unparseable
+# failure mode in run #9). NOT hashed — judge_rubric_hash stays stable, so
+# calibration keys are unaffected.
+_JUDGE_PREFILL = "Score (1-7): "
 
 
 def build_user_prompt(rubric: str, transcript: AgentTranscript) -> str:
@@ -234,9 +247,17 @@ class LLMJudgeGrader(BaseGrader):
                 client = get_judge_client()
                 response = await client.messages.create(
                     model=model,
-                    max_tokens=8,
+                    # 8→16: headroom so the integer isn't truncated behind any
+                    # stray preamble; the prefill below makes the digit first.
+                    max_tokens=16,
                     system=_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": user_prompt}],
+                    messages=[
+                        {"role": "user", "content": user_prompt},
+                        # Prefill forces the score as the first emitted token
+                        # (judge output contract) — kills the preamble-then-
+                        # truncated → unparseable → no_decision failure mode.
+                        {"role": "assistant", "content": _JUDGE_PREFILL},
+                    ],
                 )
             except Exception as exc:  # noqa: BLE001 — judge error → retry/no-decision
                 logger.warning(

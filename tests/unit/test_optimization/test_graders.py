@@ -511,6 +511,43 @@ class TestLLMJudgeGrader:
         assert _resolve_judge_model("sonnet") == MODEL_SHORTHAND_MAP["sonnet"]
         assert _resolve_judge_model("haiku") == MODEL_SHORTHAND_MAP["haiku"]
 
+    @pytest.mark.asyncio
+    async def test_judge_uses_assistant_prefill(self) -> None:
+        """The judge call forces the score as the first token via an assistant
+        prefill so a preamble can't truncate it (run #9's 77 unparseable
+        responses); max_tokens raised 8→16 for headroom."""
+        with patch.object(llm_judge_module, "get_judge_client") as patched_client:
+            mock_client = MagicMock()
+            mock_client.messages.create = AsyncMock(
+                return_value=_mock_judge_response("5")
+            )
+            patched_client.return_value = mock_client
+
+            g = LLMJudgeGrader(rubric="Score 1-7.")
+            r = await g.grade(_transcript("ok"), _scenario())
+            assert r.score == pytest.approx((5 - 1) / 6)
+            _, kwargs = mock_client.messages.create.call_args
+            msgs = kwargs["messages"]
+            assert msgs[-1]["role"] == "assistant"  # prefill present
+            assert msgs[-1]["content"].lower().startswith("score")
+            assert kwargs["max_tokens"] > 8  # raised from the truncating 8
+
+    def test_self_preference_warning_deduped(self, monkeypatch: Any) -> None:
+        """When judge == design model the self-preference warning fires ONCE
+        per process, not per call (run #9 logged it 265×)."""
+        from harness.optimization.graders import llm_judge as lj
+
+        lj._self_pref_warned.clear()
+        monkeypatch.setenv("CGF_DESIGN_MODEL", "sonnet")
+        monkeypatch.setenv("CGF_JUDGE_MODEL", "sonnet")
+        calls: list[Any] = []
+        monkeypatch.setattr(lj.logger, "warning", lambda *a, **k: calls.append(a))
+        for _ in range(3):
+            assert lj._resolve_judge_model(None) == lj.MODEL_SHORTHAND_MAP["sonnet"]
+        self_pref = [c for c in calls if c and "self-preference" in str(c[0])]
+        assert len(self_pref) == 1
+        lj._self_pref_warned.clear()  # don't leak state to other tests
+
     def test_model_alias_targets_current_versions(self) -> None:
         """Guards I14: the alias map MUST track current Anthropic model IDs.
 
